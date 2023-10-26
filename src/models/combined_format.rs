@@ -3,7 +3,7 @@ use crate::errors::FormatError;
 
 use std::{collections::HashMap, ops::Deref};
 
-const VIDEO_FORMATS: [&str; 24] = [
+const VIDEO_FORMATS: [&str; 26] = [
     "701", // 2160p60 + mp4
     "401", // 2160p60 + mp4
     "305", // 2160p60 + mp4
@@ -26,8 +26,10 @@ const VIDEO_FORMATS: [&str; 24] = [
     "696", // 360p60 + mp4
     "396", // 360p30 + mp4
     "134", // 360p30 + mp4
-    "133", // 240p + mp4
-    "160", // 144p + mp4
+    "133", // 240p30 + mp4
+    "395", // 240p30 + mp4
+    "160", // 144p30 + mp4
+    "394", // 144p30 + mp4
 ];
 
 const AUDIO_FORMATS: [&str; 8] = [
@@ -41,11 +43,20 @@ const AUDIO_FORMATS: [&str; 8] = [
     "249", // 50k + Opus
 ];
 
-const VIDEO_PLUS_AUDIO_FORMATS: [&str; 4] = [
-    "37", // 1080p30 + mp4 + 128K + m4a
-    "22", // 720p30 + mp4 + 128k + m4a
-    "59", // 480p30 + mp4 + 128k + m4a
-    "18", // 360p30 + mp4 + 96k + m4a
+const VIDEO_PLUS_AUDIO_FORMATS: [&str; 16] = [
+    "301", // 1080p60 + mp4 + 128k + m4a
+    "96",  // 1080p30 + mp4 + 256k + m4a
+    "37",  // 1080p30 + mp4 + 128K + m4a
+    "300", // 720p60 + mp4 + 128k + m4a
+    "95",  // 720p30 + mp4 + 256k + m4a
+    "22",  // 720p30 + mp4 + 128k + m4a
+    "59",  // 480p30 + mp4 + 128k + m4a
+    "94",  // 480p30 + mp4 + 128k + m4a
+    "93",  // 360p30 + mp4 + 128k + m4a
+    "18",  // 360p30 + mp4 + 96k + m4a
+    "92",  // 240p + mp4 + 48k + m4a
+    "91",  // 144p + mp4 + 48k + m4a
+    "fhd", "hd", "sd", "ld",
 ];
 
 #[derive(Clone, Debug)]
