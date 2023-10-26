@@ -56,7 +56,7 @@ async fn on_shutdown(yt_dlp: YtDlp) -> simple::HandlerResult {
     Ok(())
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let config = match read_config_from_env() {
         Ok(config) => {
