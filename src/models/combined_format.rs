@@ -43,7 +43,7 @@ const AUDIO_FORMATS: [&str; 8] = [
     "249", // 50k + Opus
 ];
 
-const VIDEO_PLUS_AUDIO_FORMATS: [&str; 16] = [
+const VIDEO_PLUS_AUDIO_FORMATS: [&str; 12] = [
     "301", // 1080p60 + mp4 + 128k + m4a
     "96",  // 1080p30 + mp4 + 256k + m4a
     "37",  // 1080p30 + mp4 + 128K + m4a
@@ -56,7 +56,6 @@ const VIDEO_PLUS_AUDIO_FORMATS: [&str; 16] = [
     "18",  // 360p30 + mp4 + 96k + m4a
     "92",  // 240p + mp4 + 48k + m4a
     "91",  // 144p + mp4 + 48k + m4a
-    "fhd", "hd", "sd", "ld",
 ];
 
 #[derive(Clone, Debug)]
@@ -113,7 +112,7 @@ impl<'a> CombinedFormats<'a> {
                 .as_ref()
                 .unwrap_or(audio_format.filesize_approx.as_ref().unwrap_or(&0.0));
 
-            video_format_size.to_bits() + audio_format_size.to_bits() >= size
+            (video_format_size + audio_format_size).round() as u64 <= size
         });
     }
 }
