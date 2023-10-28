@@ -45,13 +45,11 @@ async fn on_shutdown(yt_dlp: YtDlp) -> simple::HandlerResult {
         return Ok(());
     }
 
-    tokio::fs::remove_dir_all(yt_dlp.dir_path)
-        .await
-        .map_err(|err| {
-            event!(Level::ERROR, %err, "Error while removing yt-dlp path");
+    tokio::fs::remove_dir_all(yt_dlp.dir_path).await.map_err(|err| {
+        event!(Level::ERROR, %err, "Error while removing yt-dlp path");
 
-            HandlerError::new(err)
-        })?;
+        HandlerError::new(err)
+    })?;
 
     Ok(())
 }
@@ -83,10 +81,7 @@ async fn main() {
     let bot = Bot::new(bot_token);
 
     let mut router = Router::new("main");
-    router
-        .message
-        .register(start)
-        .filter(Command::many(["start", "help"]));
+    router.message.register(start).filter(Command::many(["start", "help"]));
     router
         .message
         .register(url)
@@ -97,9 +92,7 @@ async fn main() {
         .outer_middlewares
         .register(ConfigMiddleware::new(config.yt_dlp.clone()));
 
-    router
-        .startup
-        .register(on_startup, (config.yt_dlp.clone(),));
+    router.startup.register(on_startup, (config.yt_dlp.clone(),));
     router.shutdown.register(on_shutdown, (config.yt_dlp,));
 
     let dispatcher = Dispatcher::builder()
@@ -108,12 +101,7 @@ async fn main() {
         .bot(bot)
         .build();
 
-    match dispatcher
-        .to_service_provider_default()
-        .unwrap()
-        .run_polling()
-        .await
-    {
+    match dispatcher.to_service_provider_default().unwrap().run_polling().await {
         Ok(_) => event!(Level::INFO, "Bot stopped"),
         Err(err) => event!(Level::ERROR, error = %err, "Bot stopped"),
     }

@@ -60,9 +60,7 @@ impl From<SingleVideo> for Video {
             url: video.url,
             thumbnail: video.thumbnail,
             thumbnails: video.thumbnails,
-            formats: video
-                .formats
-                .map(|formats| formats.into_iter().map(Format::from).collect()),
+            formats: video.formats.map(|formats| formats.into_iter().map(Format::from).collect()),
         }
     }
 }
@@ -71,10 +69,6 @@ impl From<SingleVideo> for Video {
 pub struct Videos(pub Vec<Video>);
 
 impl Videos {
-    pub fn get_by_id(&self, id: &str) -> Option<&Video> {
-        self.0.iter().find(|video| video.id == id)
-    }
-
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }

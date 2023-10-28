@@ -4,7 +4,6 @@ edition = "2021"
 max_width = 140
 fn_params_layout = "Tall"
 hard_tabs = false
-match_block_trailing_comma = true
 merge_derives = true
 remove_nested_parens = true
 tab_spaces = 4

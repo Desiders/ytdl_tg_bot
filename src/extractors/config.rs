@@ -2,8 +2,7 @@ use crate::config::YtDlp;
 
 use std::{ops::Deref, sync::Arc};
 use telers::{
-    client::Bot, context::Context, errors::ExtractionError, extractors::FromEventAndContext,
-    from_context_into_impl, types::Update,
+    client::Bot, context::Context, errors::ExtractionError, extractors::FromEventAndContext, from_context_into_impl, types::Update,
 };
 
 pub struct YtDlpWrapper(pub Arc<YtDlp>);

@@ -28,10 +28,7 @@ pub struct Config {
 #[derive(thiserror::Error, Debug)]
 pub enum ErrorKind {
     #[error("env error: {source} for key {key}")]
-    Env {
-        source: VarError,
-        key: Cow<'static, str>,
-    },
+    Env { source: VarError, key: Cow<'static, str> },
     #[error(transparent)]
     ParseInt(#[from] ParseIntError),
     #[error(transparent)]

@@ -167,10 +167,7 @@ impl<'a> TryFrom<&'a [Format]> for CombinedFormats<'a> {
 
         for video_plus_audio_format_id in VIDEO_PLUS_AUDIO_FORMATS {
             if let Some(video_plus_audio_format) = formats_map.get(video_plus_audio_format_id) {
-                combined_formats.push(CombinedFormat::new(
-                    video_plus_audio_format,
-                    video_plus_audio_format,
-                ));
+                combined_formats.push(CombinedFormat::new(video_plus_audio_format, video_plus_audio_format));
             }
         }
 
