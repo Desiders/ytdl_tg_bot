@@ -1,15 +1,22 @@
 use crate::{
     extractors::YtDlpWrapper,
-    models::{CombinedFormats, FileIds, Videos},
+    models::{CombinedFormats, Videos},
 };
 
-use std::{mem, path::PathBuf, sync::Arc, thread};
+use std::{
+    path::Path,
+    sync::{
+        atomic::{AtomicU16, Ordering},
+        Arc,
+    },
+    thread,
+};
 use telers::{
     enums::ParseMode,
-    errors::{HandlerError, SessionErrorKind},
+    errors::HandlerError,
     event::{telegram::HandlerResult, EventReturn},
-    methods::{SendMediaGroup, SendMessage},
-    types::{InputFile, InputMediaVideo, Message},
+    methods::{SendMessage, SendVideo},
+    types::{InputFile, Message},
     utils::text_decorations::{TextDecoration, HTML_DECORATION},
     Bot,
 };
@@ -35,7 +42,7 @@ fn ytdl_new_with_get_info_args(url: &str, ytdl_path: &str) -> YoutubeDl {
 fn ytdl_new_with_download_args(id_or_url: &str, ytdl_path: &str, format: &str) -> YoutubeDl {
     let mut ytdl = YoutubeDl::new(id_or_url);
     ytdl.socket_timeout("15");
-    ytdl.output_template("%(id)s.%(ext)s");
+    ytdl.output_template("%(id)s");
     ytdl.extra_arg("--no-call-home");
     ytdl.extra_arg("--no-check-certificate");
     ytdl.extra_arg("--no-cache-dir");
@@ -47,7 +54,7 @@ fn ytdl_new_with_download_args(id_or_url: &str, ytdl_path: &str, format: &str) -
     ytdl
 }
 
-async fn await_handles(handles: Vec<JoinHandle<HandlerResult>>) -> HandlerResult {
+async fn await_handles(handles: Vec<JoinHandle<HandlerResult>>) -> Result<(), HandlerError> {
     for handle in handles {
         match handle.await {
             Ok(result) => result?,
@@ -57,66 +64,27 @@ async fn await_handles(handles: Vec<JoinHandle<HandlerResult>>) -> HandlerResult
                 return Err(HandlerError::new(err));
             }
         };
-
-        event!(Level::DEBUG, "Handle joined");
     }
 
-    event!(Level::DEBUG, "All handles joined");
-
-    Ok(EventReturn::Finish)
+    Ok(())
 }
 
-fn spawn_delete_file(path: PathBuf) {
+fn spawn_delete_file(path: impl AsRef<Path>) {
+    let path = path.as_ref().to_owned();
+
     thread::spawn(move || {
-        if let Err(err) = std::fs::remove_file(&path) {
+        if let Err(err) = std::fs::remove_file(path.as_path()) {
             event!(Level::ERROR, %err, ?path, "Error while deleting file");
         }
     });
 }
 
-#[allow(clippy::cast_precision_loss)]
-fn get_request_timeout_by_len(len: usize) -> f32 {
-    (len * 90) as f32
-}
-
-async fn send_videos_and_get_file_ids(
-    bot: &Bot,
-    message: &Message,
-    media_group: Vec<InputMediaVideo<'_>>,
-    request_timeout: f32,
-) -> Result<Vec<FileIds>, SessionErrorKind> {
-    bot.send(
-        &SendMediaGroup::new(message.chat_id(), media_group)
-            .reply_to_message_id(message.message_id)
-            .allow_sending_without_reply(true),
-        Some(request_timeout),
-    )
-    .await?
-    .into_iter()
-    .map(|message| {
-        let video = message.video.unwrap();
-
-        Ok(FileIds {
-            file_id: video.file_id,
-            file_unique_id: video.file_unique_id,
-        })
-    })
-    .collect()
-}
-
-#[allow(clippy::too_many_lines)]
-pub async fn url(
-    bot: Arc<Bot>,
-    message: Message,
-    YtDlpWrapper(yt_dlp_config): YtDlpWrapper,
-) -> HandlerResult {
+pub async fn url(bot: Arc<Bot>, message: Message, YtDlpWrapper(yt_dlp_config): YtDlpWrapper) -> HandlerResult {
     // `unwrap` is safe here, because we check that `message.text` is `Some` by filters
     let url = message.text.as_ref().unwrap();
     let chat_id = message.chat_id();
 
-    let ytdl = ytdl_new_with_get_info_args(url, &yt_dlp_config.full_path);
-
-    let videos = match ytdl.run_async().await {
+    let videos = match ytdl_new_with_get_info_args(url, &yt_dlp_config.full_path).run_async().await {
         Ok(ytdl_output) => Videos::from(ytdl_output),
         Err(err) => {
             event!(Level::ERROR, %err, url, "Error while getting video/playlist info");
@@ -128,7 +96,6 @@ pub async fn url(
                 )
                 .reply_to_message_id(message.message_id)
                 .allow_sending_without_reply(true),
-                None,
             )
             .await?;
 
@@ -143,38 +110,41 @@ pub async fn url(
             &SendMessage::new(chat_id, "Playlist doesn't have videos to download.")
                 .reply_to_message_id(message.message_id)
                 .allow_sending_without_reply(true),
-            None,
         )
         .await?;
 
         return Ok(EventReturn::Finish);
     }
 
-    // Create temp dir to store videos and playlists
-    let temp_dir = TempDir::new("ytdl_videos").map_err(HandlerError::new)?;
-    // `unwrap` is safe here, because `TempDir` creates temp dir with ASCII name, so it's always valid UTF-8
-    let temp_dir_path = temp_dir.path().to_str().unwrap().to_owned();
-
     // Max files size to download in one request.
     // We use this value to choose the best format for each video and avoid errors from Telegram.
     let max_files_size_in_bytes = yt_dlp_config.max_files_size_in_bytes;
     let max_files_size_in_mb = max_files_size_in_bytes / MEGABYTE;
 
-    // Create handles to download videos in tokio tasks and wait for them
-    await_handles(videos.clone().map(|video| {
+    let count_downloaded_videos = Arc::new(AtomicU16::new(0));
+    let count_videos_skipped_by_size = Arc::new(AtomicU16::new(0));
+
+    let mut handles: Vec<JoinHandle<HandlerResult>> = vec![];
+
+    for video in videos {
+        // Create temp dir to store videos and playlists
+        let temp_dir = TempDir::new("ytdl_videos").map_err(HandlerError::new)?;
+
+        let video_id = video.id.clone();
+        let video_title = video.title.clone().unwrap_or("Untitled".to_owned());
         let bot = bot.clone();
         let yt_dlp_config = yt_dlp_config.clone();
-        let temp_dir_path = temp_dir_path.clone();
+        let count_downloaded_videos = count_downloaded_videos.clone();
+        let count_videos_skipped_by_size = count_videos_skipped_by_size.clone();
 
-        tokio::spawn(async move {
+        handles.push(tokio::spawn(async move {
+            let temp_dir_path = temp_dir.path();
             let combined_formats = CombinedFormats::try_from(video.formats.as_ref().map(AsRef::as_ref)).map(|mut combined_formats| {
                 // Filter out formats that are bigger than `max_files_size_in_bytes`
                 combined_formats.skip_with_size_less_than(max_files_size_in_bytes);
                 combined_formats
             });
             let combined_formats_is_err_or_empty = combined_formats.as_ref().map_or(true, CombinedFormats::is_empty);
-
-            let title = video.title.as_ref().map_or("Empty title", String::as_str);
 
             if combined_formats_is_err_or_empty {
                 event!(Level::ERROR, ?video, "No combined formats found");
@@ -183,12 +153,12 @@ pub async fn url(
                     &SendMessage::new(
                         chat_id,
                         format!(
-                            "Sorry, suitable formats for video `{title}` not found. \
+                            "Sorry, suitable formats for video {title} not found. \
                             Maybe video size is too big or video has unsupported format.",
-                            title = HTML_DECORATION.code(HTML_DECORATION.quote(title).as_str()),
+                            title = HTML_DECORATION.code(HTML_DECORATION.quote(video_title.as_str()).as_str()),
                         ),
-                    ).parse_mode(ParseMode::HTML),
-                    None,
+                    )
+                    .parse_mode(ParseMode::HTML),
                 )
                 .await?;
 
@@ -197,29 +167,107 @@ pub async fn url(
 
             // `unwrap` is safe here, because we check that `combined_formats` is `Ok` and not empty
             let combined_formats = combined_formats.unwrap();
-            let id = video.id.as_str();
 
-            let mut is_downloaded = false;
-
-            for ref combined_format in combined_formats {
+            for combined_format in combined_formats {
                 // `unwrap` is safe here, because we create `combined_formats` from `video.formats` and check that it's not empty
                 let format_id = combined_format.get_format_id().unwrap();
 
-                let ytdl = ytdl_new_with_download_args(id, yt_dlp_config.full_path.as_str(), format_id.as_str());
-
-                if let Err(err) = ytdl.download_to_async(temp_dir_path.as_str()).await {
+                if let Err(err) = ytdl_new_with_download_args(video_id.as_str(), yt_dlp_config.full_path.as_str(), format_id.as_str())
+                    .download_to_async(temp_dir_path)
+                    .await
+                {
                     event!(Level::ERROR, %err, ?video, ?combined_format, "Error while downloading video");
 
                     continue;
                 };
 
-                is_downloaded = true;
+                count_downloaded_videos.fetch_add(1, Ordering::SeqCst);
 
-                break;
-            }
+                let mut stream = tokio::fs::read_dir(temp_dir_path).await.map_err(|err| {
+                    event!(Level::ERROR, %err, ?temp_dir_path, "Error while reading temp dir");
 
-            // If video is downloaded, we don't need to download other formats for this video
-            if is_downloaded {
+                    HandlerError::new(err)
+                })?;
+                let entry = stream
+                    .next_entry()
+                    .await
+                    .map_err(|err| {
+                        event!(Level::ERROR, %err, ?combined_format, ?temp_dir_path, "Error while reading temp dir");
+
+                        HandlerError::new(err)
+                    })?
+                    .expect("Temp dir is empty, but it should contain at least one file");
+
+                let file_path = entry.path();
+                let file_path_ref = file_path.as_path();
+
+                let input_file = InputFile::fs(file_path_ref);
+
+                let metadata = match tokio::fs::metadata(file_path_ref).await {
+                    Ok(metadata) => metadata,
+                    Err(err) => {
+                        event!(Level::ERROR, %err, file_path = ?file_path_ref, "Error while reading file metadata");
+
+                        spawn_delete_file(file_path_ref);
+
+                        bot.send(
+                            &SendMessage::new(
+                                chat_id,
+                                "Sorry, something went wrong while reading file metadata. File skipped to avoid errors.",
+                            )
+                            .reply_to_message_id(message.message_id)
+                            .allow_sending_without_reply(true),
+                        )
+                        .await?;
+
+                        return Err(HandlerError::new(err));
+                    }
+                };
+
+                let file_size_in_bytes = metadata.len();
+
+                // We check before downloading, but we need to check again, maybe real file size is bigger than approximated?
+                // I don't sure that it's possible.
+                if file_size_in_bytes > max_files_size_in_bytes {
+                    let file_size_in_mb = file_size_in_bytes / MEGABYTE;
+
+                    event!(
+                        Level::WARN,
+                        path = ?file_path,
+                        file_size_in_bytes,
+                        file_size_in_mb,
+                        "File size is too big, skipping"
+                    );
+
+                    spawn_delete_file(file_path_ref);
+
+                    count_videos_skipped_by_size.fetch_add(1, Ordering::SeqCst);
+
+                    bot.send(&SendMessage::new(
+                        chat_id,
+                        format!(
+                            "Sorry, file size is too big to send. \
+                            Max file size is {max_files_size_in_mb} MB. \
+                            Current file size is {file_size_in_mb} MB. \
+                            File skipped to avoid errors.",
+                        ),
+                    ))
+                    .await?;
+
+                    continue;
+                }
+
+                bot.send(
+                    SendVideo::new(chat_id, input_file)
+                        .reply_to_message_id(message.message_id)
+                        .allow_sending_without_reply(true)
+                        .supports_streaming(true)
+                        .thumbnail_option(video.get_best_thumbnail().map(|thumbnail| {
+                            InputFile::url(thumbnail.url.as_ref().expect("Thumbnail URL is `None`, but it should be `Some`"))
+                        })),
+                )
+                .await?;
+
                 return Ok(EventReturn::Finish);
             }
 
@@ -227,181 +275,40 @@ pub async fn url(
                 &SendMessage::new(
                     chat_id,
                     format!(
-                        "Sorry, an error occurred while downloading video `{title}`. \
-                        Try again later.",
-                        title = HTML_DECORATION.code(HTML_DECORATION.quote(title).as_str()),
+                        "Sorry, an error occurred while downloading video {title}. Try again later.",
+                        title = HTML_DECORATION.code(HTML_DECORATION.quote(video_title.as_str()).as_str()),
                     ),
                 )
                 .reply_to_message_id(message.message_id)
                 .allow_sending_without_reply(true)
                 .parse_mode(ParseMode::HTML),
-                None,
             )
             .await?;
 
             Ok(EventReturn::Finish)
-        })
-    }).collect()).await?;
-
-    // Read temp dir to get video files and send them to the chat
-    let mut stream = tokio::fs::read_dir(temp_dir_path).await.map_err(|err| {
-        event!(Level::ERROR, %err, "Error while reading temp playlist dir");
-
-        HandlerError::new(err)
-    })?;
-
-    let mut count_files_skipped_by_size: u16 = 0;
-
-    let (mut input_media, mut input_media_sizes) = (vec![], vec![]);
-
-    while let Some(file) = stream.next_entry().await.map_err(|err| {
-        event!(Level::ERROR, %err, "Error while reading temp playlist dir entry");
-
-        HandlerError::new(err)
-    })? {
-        let file_path = file.path();
-
-        let metadata = match file.metadata().await {
-            Ok(metadata) => metadata,
-            Err(err) => {
-                event!(Level::ERROR, %err, ?file_path, "Error while reading file metadata");
-
-                spawn_delete_file(file_path);
-
-                bot.send(
-                    &SendMessage::new(
-                        chat_id,
-                        "Sorry, something went wrong while reading file metadata. File skipped to avoid errors.",
-                    )
-                    .reply_to_message_id(message.message_id)
-                    .allow_sending_without_reply(true),
-                    None,
-                )
-                .await?;
-
-                continue;
-            }
-        };
-
-        let file_id = file.file_name();
-        let file_name = file_id.to_string_lossy();
-        let file_name_without_ext = file_name
-            .split('.')
-            .next()
-            .expect("File name doesn't have extension");
-        let file_size_in_bytes = metadata.len();
-        let file_size_in_mb = file_size_in_bytes / MEGABYTE;
-
-        if file_size_in_bytes > max_files_size_in_bytes {
-            event!(
-                Level::DEBUG,
-                path = ?file_path,
-                file_size_in_bytes,
-                file_size_in_mb,
-                "File size is too big, skipping"
-            );
-
-            spawn_delete_file(file_path);
-
-            count_files_skipped_by_size += 1;
-
-            bot.send(
-                &SendMessage::new(
-                    chat_id,
-                    format!(
-                        "Sorry, file size is too big to send. \
-                         Max file size is {max_files_size_in_mb} MB. \
-                         Current file size is {file_size_in_mb} MB. \
-                         File skipped to avoid errors.",
-                    ),
-                ),
-                None,
-            )
-            .await?;
-
-            continue;
-        }
-
-        event!(Level::DEBUG, path = ?file_path, file_size_in_bytes, file_size_in_mb, "Adding file to playlist");
-
-        let video = videos
-            .get_by_id(file_name_without_ext)
-            .expect("Video not found by id");
-
-        input_media.push(if let Some(thumbnail) = video.get_best_thumbnail() {
-            InputMediaVideo::new(InputFile::fs(file_path, None))
-                .supports_streaming(true)
-                .thumb(InputFile::url(thumbnail.url.as_ref().unwrap()))
-        } else {
-            InputMediaVideo::new(InputFile::fs(file_path, None)).supports_streaming(true)
-        });
-        input_media_sizes.push(file_size_in_bytes);
+        }));
     }
 
-    if input_media.is_empty() {
-        event!(Level::ERROR, url, "No videos found in playlist");
+    await_handles(handles).await?;
 
+    if count_downloaded_videos.load(Ordering::SeqCst) == 0 {
         // If we skip some videos because of their size, we don't need to send a message about download failure again
-        if count_files_skipped_by_size > 0 {
+        if count_videos_skipped_by_size.load(Ordering::SeqCst) > 0 {
             return Ok(EventReturn::Finish);
         }
+
+        event!(Level::ERROR, url, "No videos found in playlist");
 
         bot.send(
             &SendMessage::new(
                 chat_id,
-                "Sorry, something went wrong. Not any video has been uploaded. Try again later.",
+                "Sorry, something went wrong. Not any video has been downloaded. Try again later.",
             )
             .reply_to_message_id(message.message_id)
             .allow_sending_without_reply(true),
-            None,
         )
         .await?;
-
-        return Ok(EventReturn::Finish);
     }
-
-    event!(Level::DEBUG, ?input_media, "Sending playlist");
-
-    let mut media_group_file_size = 0;
-    let mut media_group = vec![];
-    let mut file_ids = vec![];
-
-    for (input_media, input_media_size) in input_media.into_iter().zip(input_media_sizes) {
-        if (media_group_file_size + input_media_size) > max_files_size_in_bytes {
-            let mut media_group_to_send = vec![];
-            mem::swap(&mut media_group_to_send, &mut media_group);
-
-            // This should never happen, because we check each video size when reading playlist dir
-            assert!(
-                !media_group_to_send.is_empty(),
-                "Media group file size is reached, but media group is empty"
-            );
-
-            media_group_file_size = 0;
-
-            let request_timeout = get_request_timeout_by_len(media_group_to_send.len());
-
-            file_ids.extend(
-                send_videos_and_get_file_ids(&bot, &message, media_group_to_send, request_timeout)
-                    .await?,
-            );
-        }
-
-        media_group_file_size += input_media_size;
-
-        media_group.push(input_media);
-    }
-
-    if media_group.is_empty() {
-        event!(Level::DEBUG, "Media group is empty");
-
-        return Ok(EventReturn::Finish);
-    }
-
-    let request_timeout = get_request_timeout_by_len(media_group.len());
-
-    file_ids
-        .extend(send_videos_and_get_file_ids(&bot, &message, media_group, request_timeout).await?);
 
     Ok(EventReturn::Finish)
 }
