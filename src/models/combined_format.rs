@@ -91,13 +91,10 @@ impl<'a> CombinedFormats<'a> {
     pub fn push(&mut self, combined_format: CombinedFormat<'a>) {
         self.0.push(combined_format);
     }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
 }
 
 impl<'a> CombinedFormats<'a> {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub fn skip_with_size_less_than(&mut self, size: u64) {
         self.0.retain(|combined_format| {
             let video_format = combined_format.video_format;

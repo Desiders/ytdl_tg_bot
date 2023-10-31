@@ -50,6 +50,10 @@ impl Video {
             .filter(|thumbnail| thumbnail.url.is_some())
             .max_by_key(|thumbnail| thumbnail.filesize)
     }
+
+    pub fn get_best_thumbnail_url(&self) -> Option<&str> {
+        self.get_best_thumbnail().and_then(|thumbnail| thumbnail.url.as_deref())
+    }
 }
 
 impl From<SingleVideo> for Video {
