@@ -1,45 +1,44 @@
-use serde::{Deserialize, Serialize};
-use std::ops::Deref;
-use youtube_dl::{Format as YtdlFormat, SingleVideo, Thumbnail, YoutubeDlOutput};
+use super::{AnyFormat, CombinedFormats};
 
-#[derive(Clone, Serialize, Deserialize, Debug, Default)]
-pub struct Format {
-    pub format_id: Option<String>,
-    pub format: Option<String>,
-    pub format_note: Option<String>,
-    pub ext: Option<String>,
-    pub resolution: Option<String>,
+use serde::Deserialize;
+use std::{collections::VecDeque, ops::Deref};
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Thumbnail {
+    pub filesize: Option<i64>,
+    pub height: Option<f64>,
+    pub id: Option<String>,
+    pub preference: Option<i64>,
     pub url: Option<String>,
-    pub filesize: Option<f64>,
-    pub filesize_approx: Option<f64>,
+    pub width: Option<f64>,
 }
 
-impl From<YtdlFormat> for Format {
-    fn from(format: YtdlFormat) -> Self {
-        Self {
-            format_id: format.format_id,
-            format: format.format,
-            format_note: format.format_note,
-            ext: format.ext,
-            resolution: format.resolution,
-            url: format.url,
-            filesize: format.filesize,
-            filesize_approx: format.filesize_approx,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Video {
     pub id: String,
     pub title: Option<String>,
     pub url: Option<String>,
     pub thumbnail: Option<String>,
     pub thumbnails: Option<Vec<Thumbnail>>,
-    pub formats: Option<Vec<Format>>,
+
+    formats: Vec<AnyFormat>,
 }
 
 impl Video {
+    pub fn get_combined_formats<'a>(&'a self) -> CombinedFormats<'a> {
+        let mut format_kinds = vec![];
+
+        for format in self.formats.iter() {
+            let Ok(format) = format.kind() else {
+                continue;
+            };
+
+            format_kinds.push(format);
+        }
+
+        CombinedFormats::from(format_kinds)
+    }
+
     pub fn get_best_thumbnail(&self) -> Option<&Thumbnail> {
         let Some(thumbnails) = self.thumbnails.as_ref() else {
             return None;
@@ -56,21 +55,8 @@ impl Video {
     }
 }
 
-impl From<SingleVideo> for Video {
-    fn from(video: SingleVideo) -> Self {
-        Self {
-            id: video.id,
-            title: video.title,
-            url: video.url,
-            thumbnail: video.thumbnail,
-            thumbnails: video.thumbnails,
-            formats: video.formats.map(|formats| formats.into_iter().map(Format::from).collect()),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct Videos(pub Vec<Video>);
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct Videos(pub VecDeque<Video>);
 
 impl Videos {
     pub fn is_empty(&self) -> bool {
@@ -82,7 +68,7 @@ impl Iterator for Videos {
     type Item = Video;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.pop()
+        self.0.pop_front()
     }
 }
 
@@ -93,24 +79,9 @@ impl Extend<Video> for Videos {
 }
 
 impl Deref for Videos {
-    type Target = Vec<Video>;
+    type Target = VecDeque<Video>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
-    }
-}
-
-impl From<YoutubeDlOutput> for Videos {
-    fn from(ytdl_output: YoutubeDlOutput) -> Self {
-        match ytdl_output {
-            YoutubeDlOutput::SingleVideo(video) => Self(vec![Video::from(*video)]),
-            YoutubeDlOutput::Playlist(playlist) => {
-                let Some(entries) = playlist.entries else {
-                    return Self::default();
-                };
-
-                Self(entries.into_iter().map(Video::from).collect())
-            }
-        }
     }
 }

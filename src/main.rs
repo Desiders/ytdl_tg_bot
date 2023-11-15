@@ -1,3 +1,4 @@
+mod cmd;
 mod config;
 mod errors;
 mod extractors;

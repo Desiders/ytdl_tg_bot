@@ -1,86 +1,49 @@
-use super::Format;
-use crate::errors::FormatError;
+use super::{AudioFormat, FormatKind, VideoFormat};
 
-use std::{collections::HashMap, ops::Deref};
-
-const VIDEO_FORMATS: [&str; 26] = [
-    "701", // 2160p60 + mp4
-    "401", // 2160p60 + mp4
-    "305", // 2160p60 + mp4
-    "266", // 2160p30 + mp4
-    "700", // 1440p60 + mp4
-    "400", // 1440p60 + mp4
-    "304", // 1440p60 + mp4
-    "264", // 1440p30 + mp4
-    "699", // 1080p60 + mp4
-    "399", // 1080p60 + mp4
-    "299", // 1080p60 + mp4
-    "137", // 1080p30 + mp4
-    "698", // 720p60 + mp4
-    "398", // 720p60 + mp4
-    "298", // 720p60 + mp4
-    "136", // 720p30 + mp4
-    "697", // 480p60 + mp4
-    "397", // 480p60 + mp4
-    "135", // 480p30 + mp4
-    "696", // 360p60 + mp4
-    "396", // 360p30 + mp4
-    "134", // 360p30 + mp4
-    "133", // 240p30 + mp4
-    "395", // 240p30 + mp4
-    "160", // 144p30 + mp4
-    "394", // 144p30 + mp4
-];
-
-const AUDIO_FORMATS: [&str; 8] = [
-    "258", // 386k + m4a
-    "256", // 192k + m4a
-    "251", // 160k + Opus
-    "141", // 256k + m4a
-    "140", // 128k + m4a
-    "139", // 48k + m4a
-    "250", // 70k + Opus
-    "249", // 50k + Opus
-];
-
-const VIDEO_PLUS_AUDIO_FORMATS: [&str; 12] = [
-    "301", // 1080p60 + mp4 + 128k + m4a
-    "96",  // 1080p30 + mp4 + 256k + m4a
-    "37",  // 1080p30 + mp4 + 128K + m4a
-    "300", // 720p60 + mp4 + 128k + m4a
-    "95",  // 720p30 + mp4 + 256k + m4a
-    "22",  // 720p30 + mp4 + 128k + m4a
-    "59",  // 480p30 + mp4 + 128k + m4a
-    "94",  // 480p30 + mp4 + 128k + m4a
-    "93",  // 360p30 + mp4 + 128k + m4a
-    "18",  // 360p30 + mp4 + 96k + m4a
-    "92",  // 240p + mp4 + 48k + m4a
-    "91",  // 144p + mp4 + 48k + m4a
-];
+use std::{cmp::Ordering, ops::Deref};
 
 #[derive(Clone, Debug)]
 pub struct CombinedFormat<'a> {
-    pub video_format: &'a Format,
-    pub audio_format: &'a Format,
+    video_format: VideoFormat<'a>,
+    audio_format: AudioFormat<'a>,
+    format_id: Box<str>,
 }
 
 impl<'a> CombinedFormat<'a> {
-    pub fn new(video_format: &'a Format, audio_format: &'a Format) -> CombinedFormat<'a> {
-        CombinedFormat {
+    pub fn new(video_format: VideoFormat<'a>, audio_format: AudioFormat<'a>) -> Self {
+        let format_id = format!("{}+{}", video_format.id, audio_format.id).into_boxed_str();
+
+        Self {
             video_format,
             audio_format,
+            format_id,
         }
     }
 
-    pub fn get_format_id(&self) -> Option<String> {
-        let Some(video_format) = self.video_format.format_id.as_ref() else {
-            return None;
-        };
-        let Some(audio_format) = self.audio_format.format_id.as_ref() else {
-            return None;
-        };
+    pub fn filesize(&self) -> Option<f64> {
+        self.video_format
+            .filesize
+            .and_then(|video_filesize| self.audio_format.filesize.map(|audio_filesize| video_filesize + audio_filesize))
+    }
 
-        Some(format!("{video_format}+{audio_format}"))
+    pub fn filesize_approx(&self) -> Option<f64> {
+        self.video_format.filesize_approx.and_then(|video_filesize_approx| {
+            self.audio_format
+                .filesize_approx
+                .map(|audio_filesize_approx| video_filesize_approx + audio_filesize_approx)
+        })
+    }
+
+    pub fn filesize_or_approx(&self) -> Option<f64> {
+        self.filesize().or(self.filesize_approx())
+    }
+
+    pub fn get_extension(&self) -> &str {
+        self.video_format.get_extension()
+    }
+
+    pub fn format_id(&self) -> &str {
+        &self.format_id
     }
 }
 
@@ -97,28 +60,29 @@ impl<'a> CombinedFormats<'a> {
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub fn skip_with_size_less_than(&mut self, size: u64) {
         self.0.retain(|combined_format| {
-            let video_format = combined_format.video_format;
-            let audio_format = combined_format.audio_format;
+            let Some(filesize_or_approx) = combined_format.filesize_or_approx() else {
+                return true;
+            };
 
-            let video_format_size = video_format
-                .filesize
-                .as_ref()
-                .unwrap_or(video_format.filesize_approx.as_ref().unwrap_or(&0.0));
-            let audio_format_size = audio_format
-                .filesize
-                .as_ref()
-                .unwrap_or(audio_format.filesize_approx.as_ref().unwrap_or(&0.0));
-
-            (video_format_size + audio_format_size).round() as u64 <= size
+            filesize_or_approx.round() as u64 <= size
         });
     }
-}
 
-impl<'a> Iterator for CombinedFormats<'a> {
-    type Item = CombinedFormat<'a>;
+    pub fn sort_by_format_id_priority(&mut self) {
+        self.0.sort_by(|a, b| {
+            let a_video_format_id_priority = a.video_format.priority;
+            let b_video_format_id_priority = b.video_format.priority;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.pop()
+            match a_video_format_id_priority.cmp(&b_video_format_id_priority) {
+                Ordering::Equal => {
+                    let a_audio_format_id_priority = a.audio_format.priority;
+                    let b_audio_format_id_priority = b.audio_format.priority;
+
+                    a_audio_format_id_priority.cmp(&b_audio_format_id_priority)
+                }
+                ordering => ordering,
+            }
+        });
     }
 }
 
@@ -136,49 +100,45 @@ impl<'a> Deref for CombinedFormats<'a> {
     }
 }
 
-impl<'a> TryFrom<&'a [Format]> for CombinedFormats<'a> {
-    type Error = FormatError<'a>;
-
-    fn try_from(formats: &'a [Format]) -> Result<Self, Self::Error> {
-        let mut formats_map = HashMap::with_capacity(formats.len());
-
-        for format in formats {
-            if let Some(format_id) = format.format_id.as_ref() {
-                formats_map.insert(format_id.as_str(), format);
-            } else {
-                return Err(FormatError::FormatIdNotFound { format });
-            }
-        }
-
+impl<'a> From<Vec<FormatKind<'a>>> for CombinedFormats<'a> {
+    fn from(formats: Vec<FormatKind<'a>>) -> Self {
         let mut combined_formats = CombinedFormats::default();
 
-        for video_format_id in VIDEO_FORMATS {
-            if let Some(video_format) = formats_map.get(video_format_id) {
-                for audio_format_id in AUDIO_FORMATS {
-                    if let Some(audio_format) = formats_map.get(audio_format_id) {
-                        combined_formats.push(CombinedFormat::new(video_format, audio_format));
-                    }
+        let mut video_formats = Vec::new();
+        let mut audio_formats = Vec::new();
+
+        for format in formats {
+            match format {
+                FormatKind::Video(video_format) => {
+                    video_formats.push(video_format);
+                }
+                FormatKind::Audio(audio_format) => {
+                    audio_formats.push(audio_format);
                 }
             }
         }
 
-        for video_plus_audio_format_id in VIDEO_PLUS_AUDIO_FORMATS {
-            if let Some(video_plus_audio_format) = formats_map.get(video_plus_audio_format_id) {
-                combined_formats.push(CombinedFormat::new(video_plus_audio_format, video_plus_audio_format));
+        for audio_format in audio_formats.iter() {
+            for video_format in video_formats.iter() {
+                if !audio_format.support_video_format(video_format) {
+                    continue;
+                }
+
+                let combined_format = CombinedFormat::new(video_format.clone(), audio_format.clone());
+
+                combined_formats.push(combined_format);
             }
         }
 
-        Ok(combined_formats)
+        combined_formats
     }
 }
 
-impl<'a> TryFrom<Option<&'a [Format]>> for CombinedFormats<'a> {
-    type Error = FormatError<'a>;
-
-    fn try_from(formats: Option<&'a [Format]>) -> Result<Self, Self::Error> {
+impl<'a> From<Option<Vec<FormatKind<'a>>>> for CombinedFormats<'a> {
+    fn from(formats: Option<Vec<FormatKind<'a>>>) -> Self {
         match formats {
-            Some(formats) => CombinedFormats::try_from(formats),
-            None => Ok(CombinedFormats::default()),
+            Some(formats) => CombinedFormats::from(formats),
+            None => CombinedFormats::default(),
         }
     }
 }
