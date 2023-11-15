@@ -1,7 +1,4 @@
-use crate::{
-    extractors::YtDlpWrapper,
-    models::{CombinedFormats, Videos},
-};
+use crate::{cmd::ytdl, extractors::YtDlpWrapper};
 
 use bytes::{Bytes, BytesMut};
 use futures::TryStreamExt as _;
@@ -23,13 +20,13 @@ use telers::{
     utils::text_decorations::{TextDecoration, HTML_DECORATION},
     Bot,
 };
-use tempdir::TempDir;
+use tempfile::tempdir;
 use tokio::{
     fs::DirEntry,
     sync::mpsc::{self, error::SendError},
     task::JoinHandle,
 };
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::codec::{BytesCodec, FramedRead};
 use tracing::{event, field, instrument, span, Level, Span};
 use youtube_dl::YoutubeDl;
@@ -45,19 +42,7 @@ enum SenderError {
     IO(#[from] io::Error),
 }
 
-fn ytdl_new_with_get_info_args(url: &str, ytdl_path: &str) -> YoutubeDl {
-    let mut ytdl = YoutubeDl::new(url);
-    ytdl.socket_timeout("15");
-    ytdl.extra_arg("--no-call-home");
-    ytdl.extra_arg("--no-check-certificate");
-    ytdl.extra_arg("--skip-download");
-    ytdl.extra_arg("--abort-on-error");
-    ytdl.youtube_dl_path(ytdl_path);
-
-    ytdl
-}
-
-fn ytdl_new_with_download_args(id_or_url: &str, ytdl_path: impl AsRef<Path>, format: &str) -> YoutubeDl {
+fn ytdl_new_with_download_args(id_or_url: &str, ytdl_path: impl AsRef<Path>, format: &str, output_ext: &str) -> YoutubeDl {
     let mut ytdl = YoutubeDl::new(id_or_url);
     ytdl.socket_timeout("15");
     ytdl.output_template("%(id)s.%(ext)s");
@@ -67,29 +52,32 @@ fn ytdl_new_with_download_args(id_or_url: &str, ytdl_path: impl AsRef<Path>, for
     ytdl.extra_arg("--no-mtime");
     ytdl.extra_arg("--no-part");
     ytdl.extra_arg("--abort-on-error");
+    ytdl.extra_arg("--prefer-ffmpeg");
+    ytdl.extra_arg("--hls-prefer-ffmpeg");
     ytdl.youtube_dl_path(ytdl_path.as_ref());
     ytdl.format(format);
+    ytdl.extra_arg(format!("--merge-output-format={output_ext}"));
 
     ytdl
 }
 
-/// Get first entry from dir in loop.
+/// Get entry from dir in loop.
 /// If dir is empty, sleep for 100 ms and try again.
 #[instrument(skip(path), fields(path))]
-async fn get_first_entry_from_dir_in_loop(path: impl AsRef<Path>) -> Result<DirEntry, io::Error> {
+async fn get_entry_from_dir_in_loop(path: impl AsRef<Path>, filename: &str) -> Result<DirEntry, io::Error> {
     let path = path.as_ref();
 
     Span::current().record("path", path.display().to_string());
 
-    let duration = Duration::from_millis(100);
+    let duration = Duration::from_millis(250);
 
     loop {
+        tokio::time::sleep(duration).await;
+
         let mut read_dir = match tokio::fs::read_dir(path).await {
             Ok(read_dir) => read_dir,
             Err(err) => {
                 event!(Level::TRACE, %err, "Directory not found");
-
-                tokio::time::sleep(duration).await;
 
                 continue;
             }
@@ -100,6 +88,12 @@ async fn get_first_entry_from_dir_in_loop(path: impl AsRef<Path>) -> Result<DirE
 
             err
         })? {
+            if entry.file_name() != filename {
+                event!(Level::TRACE, "Entry is not video file");
+
+                continue;
+            }
+
             return Ok(entry);
         }
 
@@ -109,8 +103,8 @@ async fn get_first_entry_from_dir_in_loop(path: impl AsRef<Path>) -> Result<DirE
     }
 }
 
-fn get_receiver_and_sender<T>() -> (mpsc::Sender<T>, ReceiverStream<T>) {
-    let (sender, receiver) = mpsc::channel(CAPACITY);
+fn get_receiver_and_sender<T>() -> (mpsc::UnboundedSender<T>, UnboundedReceiverStream<T>) {
+    let (sender, receiver) = mpsc::unbounded_channel();
 
     (sender, receiver.into())
 }
@@ -133,8 +127,8 @@ pub async fn url(bot: Arc<Bot>, message: Message, YtDlpWrapper(yt_dlp_config): Y
 
     let _enter = span.enter();
 
-    let videos = match ytdl_new_with_get_info_args(url, &yt_dlp_config.full_path).run_async().await {
-        Ok(ytdl_output) => Videos::from(ytdl_output),
+    let videos = match ytdl::get_video_or_playlist_info(&yt_dlp_config.full_path, url).await {
+        Ok(videos) => videos,
         Err(err) => {
             event!(Level::ERROR, %err, "Error while getting video/playlist info");
 
@@ -153,7 +147,7 @@ pub async fn url(bot: Arc<Bot>, message: Message, YtDlpWrapper(yt_dlp_config): Y
     };
 
     if videos.is_empty() {
-        event!(Level::ERROR, "Playlist doesn't have entries");
+        event!(Level::ERROR, "Playlist doesn't have videos");
 
         bot.send(
             &SendMessage::new(chat_id, "Playlist doesn't have videos to download.")
@@ -174,18 +168,20 @@ pub async fn url(bot: Arc<Bot>, message: Message, YtDlpWrapper(yt_dlp_config): Y
     for video in videos {
         let span = span.clone();
 
+        let temp_dir = tempdir().map_err(HandlerError::new)?;
+
         let video_id = video.id.clone();
         let video_title = video.title.clone().unwrap_or("Untitled".to_owned());
         let bot = bot.clone();
         let yt_dlp_full_path = yt_dlp_config.as_ref().full_path.clone();
 
         handles.push(tokio::spawn(async move {
-            let combined_formats = CombinedFormats::try_from(video.formats.as_ref().map(AsRef::as_ref)).map(|mut combined_formats| {
-                // Filter out formats that are bigger than `max_files_size_in_bytes`
-                combined_formats.skip_with_size_less_than(max_files_size_in_bytes);
-                combined_formats
-            });
-            let Ok(Some(combined_format)) = combined_formats.as_ref().map(|combined_formats| combined_formats.first()) else {
+            let mut combined_formats = video.get_combined_formats();
+            // Filter out formats that are bigger than `max_files_size_in_bytes`
+            combined_formats.skip_with_size_less_than(max_files_size_in_bytes);
+            combined_formats.sort_by_format_id_priority();
+
+            let Some(combined_format) = combined_formats.last() else {
                 event!(Level::ERROR, "No combined formats found");
 
                 bot.send(
@@ -204,33 +200,40 @@ pub async fn url(bot: Arc<Bot>, message: Message, YtDlpWrapper(yt_dlp_config): Y
                 return Ok(EventReturn::Finish);
             };
 
-            // `unwrap` is safe here, because we create `combined_formats` from `video.formats` and check that it's not empty
-            let format_id = combined_format.get_format_id().unwrap();
+            event!(Level::DEBUG, ?combined_format, "Got combined format");
 
-            span.record("format_id", format_id.as_str());
+            let format_id = combined_format.format_id();
+            let format_extension = combined_format.get_extension();
+            let filename = format!("{}.{}", video_id, format_extension);
+
+            span.record("format_id", format_id);
 
             let video_downloaded = Arc::new(AtomicBool::new(false));
             let video_download_failed = Arc::new(AtomicBool::new(false));
 
-            // Create temp dir to store videos and playlists
-            let temp_dir = TempDir::new("ytdl_videos").map_err(HandlerError::new)?;
-
             let inner_temp_dir_path = temp_dir.path().to_path_buf();
             let inner_video_downloaded = video_downloaded.clone();
             let inner_video_download_failed = video_download_failed.clone();
+            let inner_format_id = format_id.to_owned();
+            let inner_format_extension = format_extension.to_owned();
 
             // Download video to temp dir
             let download_handle = async move {
-                if ytdl_new_with_download_args(video_id.as_str(), yt_dlp_full_path, format_id.as_str())
-                    .download_to_async(inner_temp_dir_path)
-                    .await
-                    .is_err()
+                if ytdl_new_with_download_args(
+                    video_id.as_str(),
+                    yt_dlp_full_path,
+                    inner_format_id.as_str(),
+                    inner_format_extension.as_str(),
+                )
+                .download_to_async(inner_temp_dir_path)
+                .await
+                .is_err()
                 {
                     event!(Level::ERROR, "Error while downloading video");
 
                     inner_video_download_failed.store(true, Ordering::SeqCst);
                 } else {
-                    event!(Level::DEBUG, "Video downloaded successfully");
+                    event!(Level::DEBUG, "Video downloading finished");
 
                     inner_video_downloaded.store(true, Ordering::SeqCst);
                 };
@@ -252,10 +255,10 @@ pub async fn url(bot: Arc<Bot>, message: Message, YtDlpWrapper(yt_dlp_config): Y
                     }
 
                     // If video is downloaded successfully, we need to get first entry from dir
-                    get_first_entry_from_dir_in_loop(temp_dir.as_ref()).await
+                    get_entry_from_dir_in_loop(temp_dir.as_ref(), filename.as_str()).await
                 }
                 // If this branch is executed, it means that dir and file are created, but video is not downloaded yet
-                result = get_first_entry_from_dir_in_loop(temp_dir.as_ref()) => result
+                result = get_entry_from_dir_in_loop(temp_dir.as_ref(), filename.as_str()) => result
             }
             .map_err(HandlerError::new)?;
 
@@ -269,11 +272,12 @@ pub async fn url(bot: Arc<Bot>, message: Message, YtDlpWrapper(yt_dlp_config): Y
 
                 span.record("file_path", file_path.display().to_string());
 
-                let duration = Duration::from_millis(100);
-
                 let mut file = tokio::fs::File::open(file_path).await?;
+                // We need to read file at least once to send bytes to `receiver` even if video is downloaded.
+                // Without this, `receiver_handle` empty video will be sent to Telegram.
+                let mut readed_at_least_once = false;
 
-                while !video_downloaded.load(Ordering::SeqCst) && !video_download_failed.load(Ordering::SeqCst) {
+                while (!readed_at_least_once || !video_downloaded.load(Ordering::SeqCst)) && !video_download_failed.load(Ordering::SeqCst) {
                     for bytes in FramedRead::with_capacity(&mut file, BytesCodec::new(), CAPACITY)
                         .map_ok(BytesMut::freeze)
                         .try_collect::<Vec<_>>()
@@ -281,10 +285,10 @@ pub async fn url(bot: Arc<Bot>, message: Message, YtDlpWrapper(yt_dlp_config): Y
                     {
                         event!(Level::TRACE, bytes_len = %bytes.len(), "Sending bytes");
 
-                        sender.send(Ok(bytes)).await?;
+                        sender.send(Ok(bytes))?;
                     }
 
-                    tokio::time::sleep(duration).await;
+                    readed_at_least_once = true;
                 }
 
                 Ok::<_, SenderError>(())
@@ -293,14 +297,12 @@ pub async fn url(bot: Arc<Bot>, message: Message, YtDlpWrapper(yt_dlp_config): Y
             // Read bytes from `sender` and send them to Telegram until video is downloaded or video download failed
             // or request timeout is reached
             let receiver_handle = async move {
-                let video_thumnail_input_file = video.get_best_thumbnail_url().map(InputFile::url);
-
                 bot.send_with_timeout(
                     SendVideo::new(chat_id, InputFile::stream(receiver))
                         .reply_to_message_id(message.message_id)
                         .allow_sending_without_reply(true)
                         .supports_streaming(true)
-                        .thumbnail_option(video_thumnail_input_file),
+                        .thumbnail_option(video.get_best_thumbnail_url().map(InputFile::url)),
                     REQUEST_TIMEOUT,
                 )
                 .await
