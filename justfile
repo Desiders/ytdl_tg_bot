@@ -26,6 +26,10 @@ build-run:
 build-run-release:
     cargo run -- --build --release
 
+# Update dependencies
+update:
+    cargo update
+
 # Clippy
 clippy:
     cargo clippy --all --all-features -- -W clippy::pedantic
