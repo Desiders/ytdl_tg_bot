@@ -42,8 +42,24 @@ impl<'a> CombinedFormat<'a> {
         self.video_format.get_extension()
     }
 
-    pub fn format_id(&self) -> &str {
+    pub const fn audio_codec(&self) -> &str {
+        self.audio_format.codec
+    }
+
+    pub const fn video_codec(&self) -> &str {
+        self.video_format.codec
+    }
+
+    pub const fn format_id(&self) -> &str {
         &self.format_id
+    }
+
+    pub const fn audio_format_id(&self) -> &str {
+        self.audio_format.id
+    }
+
+    pub const fn video_format_id(&self) -> &str {
+        self.video_format.id
     }
 }
 
@@ -118,8 +134,8 @@ impl<'a> From<Vec<FormatKind<'a>>> for CombinedFormats<'a> {
             }
         }
 
-        for audio_format in audio_formats.iter() {
-            for video_format in video_formats.iter() {
+        for audio_format in &audio_formats {
+            for video_format in &video_formats {
                 if !audio_format.support_video_format(video_format) {
                     continue;
                 }

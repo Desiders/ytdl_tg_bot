@@ -25,10 +25,10 @@ pub struct Video {
 }
 
 impl Video {
-    pub fn get_combined_formats<'a>(&'a self) -> CombinedFormats<'a> {
+    pub fn get_combined_formats(&self) -> CombinedFormats<'_> {
         let mut format_kinds = vec![];
 
-        for format in self.formats.iter() {
+        for format in &self.formats {
             let Ok(format) = format.kind() else {
                 continue;
             };

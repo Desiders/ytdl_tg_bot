@@ -4,8 +4,8 @@ use lazy_static::lazy_static;
 use serde::Deserialize;
 use std::collections::HashMap;
 
-const AUDIO_CODECS: [&'static str; 5] = ["AAC", "ALAC", "FLAC", "Opus", "PCM"];
-const VIDEO_CODECS: [&'static str; 4] = ["H.264", "HEVC", "AV1", "ProRes"];
+const AUDIO_CODECS: [&str; 5] = ["AAC", "ALAC", "FLAC", "Opus", "PCM"];
+const VIDEO_CODECS: [&str; 4] = ["H.264", "HEVC", "AV1", "ProRes"];
 
 lazy_static! {
     static ref AUDIO_AND_VIDEO_CODECS_AND_ITS_CONTAINERS: HashMap<&'static str, HashMap<&'static str, Box<[&'static str]>>> = {
@@ -79,11 +79,10 @@ lazy_static! {
             ("600", "Opus"),
         ]);
 
-        for (_, codec) in map.iter() {
+        for codec in map.values() {
             assert!(
                 AUDIO_CODECS.contains(codec),
-                "Audio codec `{}` does not exist in `AUDIO_CODECS`",
-                codec,
+                "Audio codec `{codec}` does not exist in `AUDIO_CODECS`"
             );
         }
 
@@ -136,11 +135,10 @@ lazy_static! {
             ("702", ("AV1", "MP4")),
         ]);
 
-        for (_, (codec, _)) in map.iter() {
+        for (codec, _) in map.values() {
             assert!(
                 VIDEO_CODECS.contains(codec),
-                "Video codec `{}` does not exist in `VIDEO_CODECS`",
-                codec,
+                "Video codec `{codec}` does not exist in `VIDEO_CODECS`"
             );
         }
 
@@ -179,6 +177,7 @@ lazy_static! {
     ]);
 }
 
+#[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
 pub struct VideoFormat<'a> {
     pub id: &'a str,
@@ -210,6 +209,7 @@ impl<'a> VideoFormat<'a> {
     }
 }
 
+#[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
 pub struct AudioFormat<'a> {
     pub id: &'a str,
@@ -241,12 +241,14 @@ impl<'a> AudioFormat<'a> {
     }
 }
 
+#[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
 pub enum FormatKind<'a> {
     Audio(AudioFormat<'a>),
     Video(VideoFormat<'a>),
 }
 
+#[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct AnyFormat {
     #[serde(rename = "format_id")]
@@ -256,8 +258,7 @@ pub struct AnyFormat {
 }
 
 impl AnyFormat {
-    #[must_use]
-    pub fn kind<'a>(&'a self) -> Result<FormatKind<'a>, FormatError<'a>> {
+    pub fn kind(&self) -> Result<FormatKind<'_>, FormatError<'_>> {
         if let Some(codec) = AUDIO_IDS_AND_CODEC.get(self.id.as_str()) {
             Ok(FormatKind::Audio(AudioFormat::new(
                 self.id.as_str(),
