@@ -42,24 +42,8 @@ impl<'a> CombinedFormat<'a> {
         self.video_format.get_extension()
     }
 
-    pub const fn audio_codec(&self) -> &str {
-        self.audio_format.codec
-    }
-
-    pub const fn video_codec(&self) -> &str {
-        self.video_format.codec
-    }
-
     pub const fn format_id(&self) -> &str {
         &self.format_id
-    }
-
-    pub const fn audio_format_id(&self) -> &str {
-        self.audio_format.id
-    }
-
-    pub const fn video_format_id(&self) -> &str {
-        self.video_format.id
     }
 }
 

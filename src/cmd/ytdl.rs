@@ -1,10 +1,14 @@
 use crate::models::Videos;
 
+use futures_util::stream::StreamExt as _;
 use serde_json::{json, Value};
-use std::{io, process::Stdio};
-use tokio::process::{ChildStderr, ChildStdout, Command};
-use tokio_stream::StreamExt as _;
+use std::{
+    io,
+    process::{Output, Stdio},
+};
+use tokio::process::Command;
 use tokio_util::codec::{FramedRead, LinesCodec};
+use tracing::{event, Level};
 
 #[derive(Debug, thiserror::Error)]
 pub enum GetInfoError {
@@ -16,55 +20,49 @@ pub enum GetInfoError {
     Json(#[from] serde_json::Error),
 }
 
-pub struct OutputSreams {
-    pub stdout: FramedRead<ChildStdout, LinesCodec>,
-    pub stderr: FramedRead<ChildStderr, LinesCodec>,
-}
-
-async fn run_process<'a>(executable_path: &'a str, args: &'a [&str]) -> Result<OutputSreams, io::Error> {
-    let cmd = Command::new(executable_path)
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-
-    let stdout = FramedRead::new(cmd.stdout.unwrap(), LinesCodec::new());
-    let stderr = FramedRead::new(cmd.stderr.unwrap(), LinesCodec::new());
-
-    let output_streams = OutputSreams { stdout, stderr };
-
-    Ok(output_streams)
-}
-
-pub async fn download_video_to_stdout<'a>(
-    executable_path: &'a str,
-    video_id_or_url: &'a str,
-    format_id: &'a str,
-) -> Result<OutputSreams, GetInfoError> {
+pub async fn download_video_to_path(
+    executable_path: &str,
+    dir_path: &str,
+    id_or_url: &str,
+    format: &str,
+    output_extension: &str,
+) -> Result<(), GetInfoError> {
     let args = &[
         "--no-call-home",
-        "--no-cache-dir",
         "--no-check-certificate",
+        "--no-cache-dir",
         "--no-mtime",
-        "--prefer-ffmpeg",
-        "--hls-prefer-ffmpeg",
         "--abort-on-error",
+        "--prefer-ffmpeg",
+        "--no-simulate",
+        "--no-progress",
+        "--hls-prefer-ffmpeg",
         "--socket-timeout",
         "15",
         "-o",
-        "-",
+        "%(id)s.%(ext)s",
+        "-P",
+        dir_path,
         "-J",
-        video_id_or_url,
+        id_or_url,
         "-f",
-        format_id,
+        format,
+        "--merge-output-format",
+        output_extension,
     ];
 
-    let output_streams = run_process(executable_path, args).await?;
+    let Output { status, stderr, .. } = Command::new(executable_path).args(args).output().await?;
 
-    Ok(output_streams)
+    if !status.success() {
+        let msg = String::from_utf8_lossy(&stderr);
+
+        return Err(io::Error::new(io::ErrorKind::Other, format!("Youtube-dl exited with status `{status}`: {msg}")).into());
+    }
+
+    Ok(())
 }
 
-pub async fn get_video_or_playlist_info<'a>(executable_path: &'a str, video_id_or_url: &'a str) -> Result<Videos, GetInfoError> {
+pub async fn get_video_or_playlist_info(executable_path: &str, id_or_url: &str) -> Result<Videos, GetInfoError> {
     let args = &[
         "--no-call-home",
         "--no-check-certificate",
@@ -75,12 +73,19 @@ pub async fn get_video_or_playlist_info<'a>(executable_path: &'a str, video_id_o
         "-o",
         "%(id)s.%(ext)s",
         "-J",
-        video_id_or_url,
+        id_or_url,
     ];
 
-    let OutputSreams { mut stdout, mut stderr } = run_process(executable_path, args).await?;
+    let mut child = Command::new(executable_path)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
 
     let mut videos = Vec::new();
+    let mut stdout = FramedRead::new(child.stdout.take().unwrap(), LinesCodec::new());
+    let mut stderr = FramedRead::new(child.stderr.take().unwrap(), LinesCodec::new());
 
     while let Some(line) = stdout.next().await {
         let line = line?;
@@ -102,10 +107,24 @@ pub async fn get_video_or_playlist_info<'a>(executable_path: &'a str, video_id_o
         }
     }
 
+    let mut lines = vec![];
+
     while let Some(line) = stderr.next().await {
         let line = line?;
 
-        eprintln!("{}", line);
+        lines.push(line);
+    }
+
+    let status = child.wait().await?;
+
+    if !status.success() {
+        event!(Level::ERROR, "Child process exited with error status: {status}");
+
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Youtube-dl exited with status `{status}`: {msg}", msg = lines.join("\n")),
+        )
+        .into());
     }
 
     Ok(Videos(videos.into()))
