@@ -1,6 +1,6 @@
 use crate::{cmd::ytdl, extractors::YtDlpWrapper};
 
-use std::{io, path::Path, sync::Arc, time::Duration};
+use std::sync::Arc;
 use telers::{
     enums::ParseMode,
     errors::HandlerError,
@@ -11,52 +11,10 @@ use telers::{
     Bot,
 };
 use tempfile::tempdir;
-use tokio::{fs::DirEntry, task::JoinHandle};
-use tracing::{event, field, instrument, span, Level, Span};
+use tokio::task::JoinHandle;
+use tracing::{event, field, span, Level};
 
 const REQUEST_TIMEOUT: f32 = 300.0; // 5 minutes
-
-/// Get entry from dir in loop.
-/// If dir is empty, sleep for 100 ms and try again.
-#[instrument(skip(path), fields(path))]
-async fn get_entry_from_dir_in_loop(path: impl AsRef<Path>, filename: &str) -> Result<DirEntry, io::Error> {
-    let path = path.as_ref();
-
-    Span::current().record("path", path.display().to_string());
-
-    let duration = Duration::from_millis(250);
-
-    loop {
-        tokio::time::sleep(duration).await;
-
-        let mut read_dir = match tokio::fs::read_dir(path).await {
-            Ok(read_dir) => read_dir,
-            Err(err) => {
-                event!(Level::TRACE, %err, "Directory not found");
-
-                continue;
-            }
-        };
-
-        if let Some(entry) = read_dir.next_entry().await.map_err(|err| {
-            event!(Level::ERROR, "Error while getting next entry");
-
-            err
-        })? {
-            if entry.file_name() != filename {
-                event!(Level::TRACE, "Entry is not video file");
-
-                continue;
-            }
-
-            return Ok(entry);
-        }
-
-        event!(Level::TRACE, "Directory is empty");
-
-        tokio::time::sleep(duration).await;
-    }
-}
 
 pub async fn url(bot: Arc<Bot>, message: Message, YtDlpWrapper(yt_dlp_config): YtDlpWrapper) -> HandlerResult {
     // `unwrap` is safe here, because we check that `message.text` is `Some` by filters
@@ -132,7 +90,9 @@ pub async fn url(bot: Arc<Bot>, message: Message, YtDlpWrapper(yt_dlp_config): Y
             combined_formats.skip_with_size_less_than(max_files_size_in_bytes);
             combined_formats.sort_by_format_id_priority();
 
-            let Some(combined_format) = combined_formats.last() else {
+            event!(Level::TRACE, ?combined_formats, "Got combined formats");
+
+            let Some(combined_format) = combined_formats.first() else {
                 event!(Level::ERROR, "No combined formats found");
 
                 bot.send(
@@ -153,28 +113,30 @@ pub async fn url(bot: Arc<Bot>, message: Message, YtDlpWrapper(yt_dlp_config): Y
 
             event!(Level::DEBUG, ?combined_format, "Got combined format");
 
-            let format_id = combined_format.format_id();
-            let format_extension = combined_format.get_extension();
-            let temp_dir_path = temp_dir.path();
-            let file_path = temp_dir_path.join(format!("{video_id}.{format_extension}"));
+            let file_path = temp_dir.path().join(format!(
+                "{video_id}.{format_extension}",
+                format_extension = combined_format.get_extension()
+            ));
 
-            span.record("format_id", format_id);
+            span.record("format_id", combined_format.format_id());
             span.record("file_path", file_path.display().to_string());
 
-            match ytdl::download_video_to_path(
+            event!(Level::DEBUG, "Downloading video and audio");
+
+            match ytdl::download_to_path(
                 yt_dlp_full_path.as_str(),
-                temp_dir_path.to_string_lossy().as_ref(),
+                temp_dir.path().to_string_lossy().as_ref(),
                 video_id.as_str(),
-                format_id,
-                format_extension,
+                combined_format.format_id().as_ref(),
+                combined_format.get_extension(),
             )
             .await
             {
                 Ok(()) => {
-                    event!(Level::DEBUG, "Video downloading finished");
+                    event!(Level::DEBUG, "Video and audio downloading finished");
                 }
                 Err(err) => {
-                    event!(Level::ERROR, %err, "Error while downloading video");
+                    event!(Level::ERROR, %err, "Error while downloading video and audio");
 
                     return Err(HandlerError::new(err));
                 }

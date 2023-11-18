@@ -1,210 +1,394 @@
 use crate::errors::FormatError;
 
 use lazy_static::lazy_static;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use std::collections::HashMap;
 
-const AUDIO_CODECS: [&str; 5] = ["AAC", "ALAC", "FLAC", "Opus", "PCM"];
-const VIDEO_CODECS: [&str; 4] = ["H.264", "HEVC", "AV1", "ProRes"];
+const DEFAULT_PRIORITY: u8 = 19;
 
+// Source: https://voussoir.net/writing/youtubedl_formats
 lazy_static! {
-    static ref AUDIO_AND_VIDEO_CODECS_AND_ITS_CONTAINERS: HashMap<&'static str, HashMap<&'static str, Box<[&'static str]>>> = {
-        let mut map: HashMap<&'static str, HashMap<&'static str, Box<[&'static str]>>> = HashMap::new();
-
-        map.insert("AAC", {
-            let mut map: HashMap<&'static str, Box<[&'static str]>> = HashMap::new();
-
-            map.insert("H.264", Box::new(["Any"]));
-            map.insert("HEVC", Box::new(["MP4", "MOV", "MKV", "TC"]));
-            map.insert("AV1", Box::new(["MP4", "MKV"]));
-            map.insert("ProRes", Box::new(["MOV", "MKV"]));
-            map
-        });
-
-        map.insert("ALAC", {
-            let mut map: HashMap<&'static str, Box<[&'static str]>> = HashMap::new();
-
-            map.insert("H.264", Box::new(["MP4", "MOV", "MKV"]));
-            map.insert("HEVC", Box::new(["MP4", "MOV", "MKV"]));
-            map.insert("AV1", Box::new(["MP4", "MKV"]));
-            map.insert("ProRes", Box::new(["MOV", "MKV"]));
-            map
-        });
-
-        map.insert("FLAC", {
-            let mut map: HashMap<&'static str, Box<[&'static str]>> = HashMap::new();
-
-            map.insert("H.264", Box::new(["MP4", "MKV"]));
-            map.insert("HEVC", Box::new(["MP4", "MKV"]));
-            map.insert("AV1", Box::new(["MP4", "MKV"]));
-            map.insert("ProRes", Box::new(["MKV"]));
-            map
-        });
-
-        map.insert("Opus", {
-            let mut map: HashMap<&'static str, Box<[&'static str]>> = HashMap::new();
-
-            map.insert("H.264", Box::new(["MP4", "MKV", "TS"]));
-            map.insert("HEVC", Box::new(["MP4", "MKV", "TS"]));
-            map.insert("AV1", Box::new(["MP4", "MKV"]));
-            map.insert("ProRes", Box::new(["MKV"]));
-            map
-        });
-
-        map.insert("PCM", {
-            let mut map: HashMap<&'static str, Box<[&'static str]>> = HashMap::new();
-
-            map.insert("H.264", Box::new(["MOV", "MKV"]));
-            map.insert("HEVC", Box::new(["MOV", "MKV"]));
-            map.insert("AV1", Box::new(["MKV"]));
-            map.insert("ProRes", Box::new(["MOV", "MKV"]));
-            map
-        });
-
-        map
-    };
-    static ref AUDIO_IDS_AND_CODEC: HashMap<&'static str, &'static str> = {
-        let map = HashMap::from([
-            ("139", "AAC"),
-            ("140", "AAC"),
-            ("141", "AAC"),
-            ("249", "Opus"),
-            ("250", "Opus"),
-            ("251", "Opus"),
-            ("256", "Opus"),
-            ("258", "Opus"),
-            ("327", "AAC"),
-            ("338", "Opus"),
-            ("599", "AAC"),
-            ("600", "Opus"),
-        ]);
-
-        for codec in map.values() {
-            assert!(
-                AUDIO_CODECS.contains(codec),
-                "Audio codec `{codec}` does not exist in `AUDIO_CODECS`"
-            );
-        }
-
-        map
-    };
-    static ref AUDIO_IDS_AND_PRIORITY: HashMap<&'static str, u8> = HashMap::from([
-        ("139", 1),
-        ("140", 4),
-        ("141", 7),
-        ("249", 2),
-        ("250", 3),
-        ("251", 5),
-        ("256", 6),
-        ("258", 8),
-        ("327", 7),
-        ("338", 9),
-        ("599", 1),
-        ("600", 1),
-    ]);
-    static ref VIDEO_IDS_AND_CODEC_CONTAINER_PAIR: HashMap<&'static str, (&'static str, &'static str)> = {
-        let map = HashMap::from([
-            ("133", ("H.264", "MP4")),
-            ("134", ("H.264", "MP4")),
-            ("135", ("H.264", "MP4")),
-            ("136", ("H.264", "MP4")),
-            ("137", ("H.264", "MP4")),
-            ("138", ("H.264", "MP4")),
-            ("160", ("H.264", "MP4")),
-            ("216", ("H.264", "MP4")),
-            ("298", ("H.264", "MP4")),
-            ("299", ("H.264", "MP4")),
-            ("394", ("AV1", "MP4")),
-            ("395", ("AV1", "MP4")),
-            ("396", ("AV1", "MP4")),
-            ("397", ("AV1", "MP4")),
-            ("398", ("AV1", "MP4")),
-            ("399", ("AV1", "MP4")),
-            ("400", ("AV1", "MP4")),
-            ("401", ("AV1", "MP4")),
-            ("402", ("AV1", "MP4")),
-            ("571", ("AV1", "MP4")),
-            ("694", ("AV1", "MP4")),
-            ("695", ("AV1", "MP4")),
-            ("696", ("AV1", "MP4")),
-            ("697", ("AV1", "MP4")),
-            ("698", ("AV1", "MP4")),
-            ("699", ("AV1", "MP4")),
-            ("700", ("AV1", "MP4")),
-            ("701", ("AV1", "MP4")),
-            ("702", ("AV1", "MP4")),
-        ]);
-
-        for (codec, _) in map.values() {
-            assert!(
-                VIDEO_CODECS.contains(codec),
-                "Video codec `{codec}` does not exist in `VIDEO_CODECS`"
-            );
-        }
-
-        map
-    };
     static ref VIDEO_IDS_AND_PRIORITY: HashMap<&'static str, u8> = HashMap::from([
-        ("133", 2),
-        ("134", 3),
-        ("135", 4),
-        ("136", 5),
-        ("137", 6),
-        ("138", 9),
-        ("160", 1),
-        ("216", 6),
-        ("298", 5),
-        ("299", 6),
-        ("394", 1),
-        ("395", 2),
-        ("396", 3),
-        ("397", 4),
-        ("398", 5),
-        ("399", 6),
-        ("400", 7),
-        ("401", 8),
-        ("402", 9),
-        ("571", 9),
-        ("694", 1),
-        ("695", 2),
-        ("696", 3),
-        ("697", 4),
-        ("698", 5),
-        ("699", 6),
-        ("700", 7),
-        ("701", 8),
-        ("702", 9),
+        ("571", 1),
+        ("272", 2),
+        ("337", 3),
+        ("401", 3),
+        ("305", 3),
+        ("315", 3),
+        ("266", 4),
+        ("313", 4),
+        ("336", 5),
+        ("400", 5),
+        ("404", 5),
+        ("304", 5),
+        ("308", 5),
+        ("264", 6),
+        ("271", 6),
+        ("335", 7),
+        ("399", 7),
+        ("299", 7),
+        ("303", 7),
+        ("137", 8),
+        ("248", 8),
+        ("334", 9),
+        ("398", 9),
+        ("298", 9),
+        ("302", 9),
+        ("136", 10),
+        ("247", 10),
+        ("333", 11),
+        ("397", 12),
+        ("135", 12),
+        ("244", 12),
+        ("332", 13),
+        ("396", 14),
+        ("134", 14),
+        ("243", 14),
+        ("331", 15),
+        ("395", 16),
+        ("133", 16),
+        ("242", 16),
+        ("330", 17),
+        ("394", 18),
+        ("160", 18),
+        ("278", 18),
     ]);
+    static ref AUDIO_IDS_AND_PRIORITY: HashMap<&'static str, u8> =
+        HashMap::from([("258", 1), ("256", 2), ("251", 3), ("140", 4), ("250", 5), ("249", 6)]);
+    static ref COMBINED_IDS_AND_PRIORITY: HashMap<&'static str, u8> = HashMap::from([("22", 14), ("18", 18)]);
+}
+
+#[allow(clippy::upper_case_acronyms)]
+#[derive(Debug, Clone)]
+pub enum Container {
+    MP4,
+    MOV,
+    MKV,
+    TS,
+}
+
+fn is_mp4(container: &str) -> bool {
+    container.to_lowercase().starts_with("mp4") || container.to_lowercase().starts_with("m4")
+}
+
+fn is_mov(container: &str) -> bool {
+    container.to_lowercase().starts_with("mov") || container.to_lowercase().starts_with("qt")
+}
+
+fn is_mkv(container: &str) -> bool {
+    container.to_lowercase().starts_with("mkv")
+        || container.to_lowercase().starts_with("mk3d")
+        || container.to_lowercase().starts_with("mka")
+        || container.to_lowercase().starts_with("mks")
+}
+
+fn is_ts(container: &str) -> bool {
+    container.to_lowercase().starts_with("ts")
+        || container.to_lowercase().starts_with("tsv")
+        || container.to_lowercase().starts_with("tsa")
+        || container.to_lowercase().starts_with("m2t")
+}
+
+impl Container {
+    #[must_use]
+    pub const fn as_str(&self) -> &str {
+        match self {
+            Self::MP4 => "mp4",
+            Self::MOV => "mov",
+            Self::MKV => "mkv",
+            Self::TS => "ts",
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a str> for Container {
+    type Error = FormatError<'a>;
+
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+        match value {
+            _ if is_mp4(value) => Ok(Self::MP4),
+            _ if is_mov(value) => Ok(Self::MOV),
+            _ if is_mkv(value) => Ok(Self::MKV),
+            _ if is_ts(value) => Ok(Self::TS),
+            _ => Err(FormatError::ContainerNotSupported { container: value }),
+        }
+    }
+}
+
+impl<'a> TryFrom<(&AudioCodec<'a>, &VideoCodec<'a>)> for Container {
+    type Error = FormatError<'a>;
+
+    fn try_from(value: (&AudioCodec<'a>, &VideoCodec<'a>)) -> Result<Self, Self::Error> {
+        let (audio_codec, video_codec) = value;
+
+        if audio_codec.is_support_container_with_vcodec(video_codec, &Self::MP4) {
+            return Ok(Self::MP4);
+        }
+        if audio_codec.is_support_container_with_vcodec(video_codec, &Self::MKV) {
+            return Ok(Self::MP4);
+        }
+        if audio_codec.is_support_container_with_vcodec(video_codec, &Self::MOV) {
+            return Ok(Self::MOV);
+        }
+        if audio_codec.is_support_container_with_vcodec(video_codec, &Self::TS) {
+            return Ok(Self::TS);
+        }
+
+        Err(FormatError::VideoContainerEmpty)
+    }
+}
+
+#[allow(clippy::upper_case_acronyms)]
+#[derive(Debug, Clone)]
+pub enum VideoCodec<'a> {
+    AV1(&'a str),
+    H265(&'a str),
+    VP9(&'a str),
+    H264(&'a str),
+    ProRes(&'a str),
+}
+
+fn is_h264(codec: &str) -> bool {
+    codec.to_lowercase().starts_with("avc")
+        || codec.to_lowercase().starts_with("h264")
+        || codec.to_lowercase().starts_with("avc1")
+        || codec.to_lowercase().starts_with("avc3")
+}
+
+fn is_h265(codec: &str) -> bool {
+    codec.to_lowercase().starts_with("hevc")
+        || codec.to_lowercase().starts_with("h265")
+        || codec.to_lowercase().starts_with("hev1")
+        || codec.to_lowercase().starts_with("hvc1")
+}
+
+fn is_av1(codec: &str) -> bool {
+    codec.to_lowercase().starts_with("av1")
+        || codec.to_lowercase().starts_with("aom")
+        || codec.to_lowercase().starts_with("av01")
+        || codec.to_lowercase().starts_with("avo1")
+        || codec.to_lowercase().starts_with("av1x")
+}
+
+fn is_vp9(codec: &str) -> bool {
+    codec.to_lowercase().starts_with("vp9")
+        || codec.to_lowercase().starts_with("vp09")
+        || codec.to_lowercase().starts_with("vp9x")
+        || codec.to_lowercase().starts_with("vp09x")
+}
+
+fn is_prores(codec: &str) -> bool {
+    codec.to_lowercase().starts_with("apch")
+        || codec.to_lowercase().starts_with("apcn")
+        || codec.to_lowercase().starts_with("apcs")
+        || codec.to_lowercase().starts_with("apco")
+        || codec.to_lowercase().starts_with("ap4h")
+}
+
+impl VideoCodec<'_> {
+    #[must_use]
+    pub const fn as_str(&self) -> &str {
+        match self {
+            Self::H264(_) => "h264",
+            Self::H265(_) => "h265",
+            Self::AV1(_) => "av1",
+            Self::VP9(_) => "vp9",
+            Self::ProRes(_) => "prores",
+        }
+    }
+
+    #[must_use]
+    pub const fn is_support_container(&self, container: &Container) -> bool {
+        use Container::{MKV, MOV, MP4, TS};
+        use VideoCodec::{ProRes, AV1, H264, H265, VP9};
+
+        matches!(
+            (self, container),
+            (H264(_) | H265(_), MP4 | MOV | MKV | TS) | (AV1(_) | VP9(_), MP4 | MKV) | (ProRes(_), MOV | MKV)
+        )
+    }
+
+    #[must_use]
+    pub const fn get_priority_by_container(&self, container: &Container) -> u8 {
+        use Container::{MKV, MOV, MP4, TS};
+        use VideoCodec::{ProRes, AV1, H264, H265, VP9};
+
+        match (self, container) {
+            (AV1(_), MP4) => 1,
+            (AV1(_), MOV) => 2,
+            (AV1(_), MKV) => 3,
+            (H265(_), MP4) => 4,
+            (H265(_), MOV) => 5,
+            (H265(_), MKV) => 6,
+            (H265(_), TS) => 7,
+            (VP9(_), MP4) => 8,
+            (VP9(_), MOV) => 9,
+            (H264(_), MP4) => 10,
+            (H264(_), MOV) => 11,
+            (H264(_), MKV) => 12,
+            (H264(_), TS) => 13,
+            (ProRes(_), MP4) => 14,
+            (ProRes(_), MOV) => 15,
+            (ProRes(_), MKV) => 16,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a str> for VideoCodec<'a> {
+    type Error = FormatError<'a>;
+
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+        match value {
+            value if is_h264(value) => Ok(Self::H264(value)),
+            value if is_h265(value) => Ok(Self::H265(value)),
+            value if is_av1(value) => Ok(Self::AV1(value)),
+            value if is_vp9(value) => Ok(Self::VP9(value)),
+            value if is_prores(value) => Ok(Self::ProRes(value)),
+            _ => Err(FormatError::VideoCodecNotSupported { codec: value }),
+        }
+    }
+}
+
+#[allow(clippy::upper_case_acronyms)]
+#[derive(Debug, Clone)]
+pub enum AudioCodec<'a> {
+    FLAC(&'a str),
+    ALAC(&'a str),
+    Opus(&'a str),
+    AAC(&'a str),
+    PCM(&'a str),
+}
+
+fn is_aac(codec: &str) -> bool {
+    codec.to_lowercase().starts_with("aac")
+        || codec.to_lowercase().starts_with("m4a")
+        || codec.to_lowercase().starts_with("m4p")
+        || codec.to_lowercase().starts_with("m4b")
+        || codec.to_lowercase().starts_with("mp4")
+        || codec.to_lowercase().starts_with("3gp")
+}
+
+fn is_alac(codec: &str) -> bool {
+    codec.to_lowercase().starts_with("alac")
+}
+
+fn is_flac(codec: &str) -> bool {
+    codec.to_lowercase().starts_with("flac")
+}
+
+fn is_opus(codec: &str) -> bool {
+    codec.to_lowercase().starts_with("opus")
+}
+
+fn is_pcm(codec: &str) -> bool {
+    codec.to_lowercase().starts_with("pcm")
+}
+
+impl AudioCodec<'_> {
+    #[must_use]
+    pub const fn as_str(&self) -> &str {
+        match self {
+            Self::AAC(_) => "aac",
+            Self::ALAC(_) => "m4a",
+            Self::FLAC(_) => "flac",
+            Self::Opus(_) => "opus",
+            Self::PCM(_) => "wav",
+        }
+    }
+
+    #[must_use]
+    pub const fn is_support_container_with_vcodec(&self, video_codec: &VideoCodec, container: &Container) -> bool {
+        use AudioCodec::{Opus, AAC, ALAC, FLAC, PCM};
+        use Container::{MKV, MOV, MP4, TS};
+        use VideoCodec::{ProRes, AV1, H264, H265, VP9};
+
+        matches!(
+            (self, video_codec, container),
+            (AAC(_), H264(_), _)
+                | (AAC(_), H265(_), MP4 | MOV | MKV | TS)
+                | (AAC(_) | ALAC(_) | FLAC(_) | Opus(_), AV1(_) | VP9(_), MP4 | MKV)
+                | (AAC(_) | ALAC(_) | PCM(_), ProRes(_), MOV | MKV)
+                | (ALAC(_), H264(_) | H265(_), MP4 | MOV | MKV)
+                | (FLAC(_), H264(_) | H265(_), MP4 | MKV)
+                | (FLAC(_) | Opus(_), ProRes(_), MKV)
+                | (Opus(_), H264(_) | H265(_), MP4 | MKV | TS)
+                | (PCM(_), H264(_) | H265(_), MOV | MKV)
+                | (PCM(_), AV1(_) | VP9(_), MKV)
+        )
+    }
+
+    #[must_use]
+    pub const fn get_priority(&self) -> u8 {
+        use AudioCodec::{Opus, AAC, ALAC, FLAC, PCM};
+
+        match self {
+            FLAC(_) => 1,
+            ALAC(_) => 2,
+            Opus(_) => 3,
+            AAC(_) => 4,
+            PCM(_) => 5,
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a str> for AudioCodec<'a> {
+    type Error = FormatError<'a>;
+
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+        match value {
+            value if is_aac(value) => Ok(Self::AAC(value)),
+            value if is_alac(value) => Ok(Self::ALAC(value)),
+            value if is_flac(value) => Ok(Self::FLAC(value)),
+            value if is_opus(value) => Ok(Self::Opus(value)),
+            value if is_pcm(value) => Ok(Self::PCM(value)),
+            _ => Err(FormatError::AudioCodecNotSupported { codec: value }),
+        }
+    }
 }
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
 pub struct VideoFormat<'a> {
     pub id: &'a str,
-    pub priority: u8,
-    pub codec: &'static str,
-    pub container: &'static str,
+    pub codec: VideoCodec<'a>,
+    pub container: Container,
+    pub height: Option<f64>,
+    pub width: Option<f64>,
     pub filesize: Option<f64>,
     pub filesize_approx: Option<f64>,
 }
 
 impl<'a> VideoFormat<'a> {
-    pub fn new(id: &'a str, codec: &'static str, container: &'static str, filesize: Option<f64>, filesize_approx: Option<f64>) -> Self {
+    pub fn new(
+        id: &'a str,
+        codec: VideoCodec<'a>,
+        container: Container,
+        height: Option<f64>,
+        width: Option<f64>,
+        filesize: Option<f64>,
+        filesize_approx: Option<f64>,
+    ) -> Self {
         Self {
             id,
-            priority: *VIDEO_IDS_AND_PRIORITY.get(id).unwrap(),
             codec,
             container,
+            height,
+            width,
             filesize,
             filesize_approx,
         }
     }
 
-    #[must_use]
-    pub fn get_extension(&self) -> &'static str {
-        match self.container {
-            "MP4" => "mp4",
-            _ => unreachable!(),
+    pub fn get_priority(&self) -> u8 {
+        let codec_priority = self.codec.get_priority_by_container(&self.container);
+
+        if let Some(priority) = VIDEO_IDS_AND_PRIORITY.get(self.id) {
+            codec_priority + priority
+        } else if let Some(priority) = COMBINED_IDS_AND_PRIORITY.get(self.id) {
+            codec_priority + priority
+        } else {
+            codec_priority + DEFAULT_PRIORITY
         }
     }
 }
@@ -213,31 +397,31 @@ impl<'a> VideoFormat<'a> {
 #[derive(Debug, Clone)]
 pub struct AudioFormat<'a> {
     pub id: &'a str,
-    pub priority: u8,
-    pub codec: &'static str,
+    pub codec: AudioCodec<'a>,
     pub filesize: Option<f64>,
     pub filesize_approx: Option<f64>,
 }
 
 impl<'a> AudioFormat<'a> {
-    pub fn new(id: &'a str, codec: &'static str, filesize: Option<f64>, filesize_approx: Option<f64>) -> Self {
+    pub fn new(id: &'a str, codec: AudioCodec<'a>, filesize: Option<f64>, filesize_approx: Option<f64>) -> Self {
         Self {
             id,
-            priority: *AUDIO_IDS_AND_PRIORITY.get(id).unwrap(),
             codec,
             filesize,
             filesize_approx,
         }
     }
 
-    #[must_use]
-    pub fn support_video_format(&self, video_format: &VideoFormat) -> bool {
-        let container = AUDIO_AND_VIDEO_CODECS_AND_ITS_CONTAINERS
-            .get(self.codec)
-            .and_then(|map| map.get(video_format.codec))
-            .and_then(|containers| containers.iter().find(|container| container == &&video_format.container));
+    pub fn get_priority(&self) -> u8 {
+        let codec_priority = self.codec.get_priority();
 
-        container.is_some()
+        if let Some(priority) = AUDIO_IDS_AND_PRIORITY.get(self.id) {
+            codec_priority + priority
+        } else if let Some(priority) = COMBINED_IDS_AND_PRIORITY.get(self.id) {
+            codec_priority + priority
+        } else {
+            codec_priority + DEFAULT_PRIORITY
+        }
     }
 }
 
@@ -246,36 +430,123 @@ impl<'a> AudioFormat<'a> {
 pub enum FormatKind<'a> {
     Audio(AudioFormat<'a>),
     Video(VideoFormat<'a>),
+    CombinedFormat(AudioFormat<'a>, VideoFormat<'a>),
 }
 
 #[allow(clippy::module_name_repetitions)]
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct AnyFormat {
-    #[serde(rename = "format_id")]
     pub id: String,
+    pub acodec: Option<String>,
+    pub vcodec: Option<String>,
+    pub container: Option<String>,
+    pub height: Option<f64>,
+    pub width: Option<f64>,
     pub filesize: Option<f64>,
     pub filesize_approx: Option<f64>,
 }
 
+impl<'de> Deserialize<'de> for AnyFormat {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct AnyFormatRaw {
+            format_id: String,
+            acodec: Option<String>,
+            vcodec: Option<String>,
+            container: Option<String>,
+            height: Option<f64>,
+            width: Option<f64>,
+            filesize: Option<f64>,
+            filesize_approx: Option<f64>,
+        }
+
+        let raw = AnyFormatRaw::deserialize(deserializer)?;
+
+        Ok(Self {
+            id: raw.format_id,
+            acodec: raw.acodec.filter(|acodec| acodec != "none"),
+            vcodec: raw.vcodec.filter(|vcodec| vcodec != "none"),
+            container: raw.container,
+            height: raw.height,
+            width: raw.width,
+            filesize: raw.filesize,
+            filesize_approx: raw.filesize_approx,
+        })
+    }
+}
+
 impl AnyFormat {
+    #[allow(clippy::similar_names)]
     pub fn kind(&self) -> Result<FormatKind<'_>, FormatError<'_>> {
-        if let Some(codec) = AUDIO_IDS_AND_CODEC.get(self.id.as_str()) {
-            Ok(FormatKind::Audio(AudioFormat::new(
+        let acodec = self.acodec.as_ref();
+        let vcodec = self.vcodec.as_ref();
+
+        let is_combined = acodec.is_some() && vcodec.is_some();
+
+        if is_combined {
+            let acodec = AudioCodec::try_from(acodec.unwrap().as_str())?;
+            let vcodec = VideoCodec::try_from(vcodec.unwrap().as_str())?;
+
+            let container = Container::try_from((&acodec, &vcodec))?;
+
+            if !vcodec.is_support_container(&container) {
+                return Err(FormatError::ContainerNotSupportedByVideoCodec {
+                    container: container.as_str().to_string().into_boxed_str(),
+                    codec: vcodec.as_str().to_string().into_boxed_str(),
+                });
+            }
+
+            let audio_format = AudioFormat::new(self.id.as_str(), acodec, self.filesize, self.filesize_approx);
+
+            let video_format = VideoFormat::new(
                 self.id.as_str(),
-                codec,
-                self.filesize,
-                self.filesize_approx,
-            )))
-        } else if let Some((codec, container)) = VIDEO_IDS_AND_CODEC_CONTAINER_PAIR.get(self.id.as_str()) {
-            Ok(FormatKind::Video(VideoFormat::new(
-                self.id.as_str(),
-                codec,
+                vcodec,
                 container,
+                self.height,
+                self.width,
                 self.filesize,
                 self.filesize_approx,
-            )))
+            );
+
+            return Ok(FormatKind::CombinedFormat(audio_format, video_format));
+        }
+
+        if let Some(acodec) = acodec {
+            let acodec = AudioCodec::try_from(acodec.as_str())?;
+            let audio_format = AudioFormat::new(self.id.as_str(), acodec, self.filesize, self.filesize_approx);
+
+            Ok(FormatKind::Audio(audio_format))
+        } else if let Some(vcodec) = vcodec {
+            let Some(container) = self.container.as_ref() else {
+                return Err(FormatError::VideoContainerEmpty);
+            };
+
+            let vcodec = VideoCodec::try_from(vcodec.as_str())?;
+            let container = Container::try_from(container.as_str())?;
+
+            if !vcodec.is_support_container(&container) {
+                return Err(FormatError::ContainerNotSupportedByVideoCodec {
+                    container: container.as_str().to_string().into_boxed_str(),
+                    codec: vcodec.as_str().to_string().into_boxed_str(),
+                });
+            }
+
+            let video_format = VideoFormat::new(
+                self.id.as_str(),
+                vcodec,
+                container,
+                self.height,
+                self.width,
+                self.filesize,
+                self.filesize_approx,
+            );
+
+            Ok(FormatKind::Video(video_format))
         } else {
-            Err(FormatError::FormatIdNotSupported { id: self.id.as_str() })
+            Err(FormatError::AudioAndVideoCodecsEmpty)
         }
     }
 }
