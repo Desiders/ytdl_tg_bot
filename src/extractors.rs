@@ -1,3 +1,3 @@
 mod config;
 
-pub use config::YtDlpWrapper;
+pub use config::{BotConfigWrapper, YtDlpWrapper};
