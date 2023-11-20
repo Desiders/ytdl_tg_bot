@@ -2,12 +2,31 @@ use std::{
     borrow::Cow,
     env::{self, VarError},
     num::ParseIntError,
+    ops::Deref,
     str::ParseBoolError,
 };
 
 #[derive(Clone, Debug)]
 pub struct Bot {
     pub token: String,
+    pub receiver_video_chat_id: i64,
+}
+
+#[derive(Clone, Debug)]
+pub struct PhantomVideoId(pub String);
+
+impl Deref for PhantomVideoId {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum PhantomVideo {
+    Id(PhantomVideoId),
+    Path(String),
 }
 
 #[derive(Clone, Debug)]
@@ -22,6 +41,7 @@ pub struct YtDlp {
 #[derive(Clone, Debug)]
 pub struct Config {
     pub bot: Bot,
+    pub phantom_video: PhantomVideo,
     pub yt_dlp: YtDlp,
 }
 
@@ -36,13 +56,37 @@ pub enum ErrorKind {
 }
 
 pub fn read_config_from_env() -> Result<Config, ErrorKind> {
+    let phantom_video_id_env = env::var("PHANTOM_VIDEO_ID");
+    let phantom_video_path = env::var("PHANTOM_VIDEO_PATH");
+
+    let phantom_video = if phantom_video_id_env.is_ok() && !phantom_video_id_env.as_ref().unwrap().is_empty() {
+        #[allow(clippy::unnecessary_unwrap)]
+        PhantomVideo::Id(PhantomVideoId(phantom_video_id_env.unwrap()))
+    } else if phantom_video_path.is_ok() && !phantom_video_path.as_ref().unwrap().is_empty() {
+        #[allow(clippy::unnecessary_unwrap)]
+        PhantomVideo::Path(phantom_video_path.unwrap())
+    } else {
+        return Err(ErrorKind::Env {
+            source: VarError::NotPresent,
+            key: "PHANTOM_VIDEO_ID or PHANTOM_VIDEO_PATH".into(),
+        });
+    };
+
     Ok(Config {
         bot: Bot {
             token: env::var("BOT_TOKEN").map_err(|err| ErrorKind::Env {
                 source: err,
                 key: "BOT_TOKEN".into(),
             })?,
+            receiver_video_chat_id: env::var("RECEIVER_VIDEO_CHAT_ID")
+                .map_err(|err| ErrorKind::Env {
+                    source: err,
+                    key: "RECEIVER_VIDEO_CHAT_ID".into(),
+                })?
+                .parse()
+                .map_err(ErrorKind::ParseInt)?,
         },
+        phantom_video,
         yt_dlp: YtDlp {
             dir_path: env::var("YT_DLP_DIR_PATH").map_err(|err| ErrorKind::Env {
                 source: err,
