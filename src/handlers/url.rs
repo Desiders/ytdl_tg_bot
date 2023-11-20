@@ -1,44 +1,108 @@
-use crate::{cmd::ytdl, extractors::YtDlpWrapper};
+use crate::{
+    cmd::ytdl,
+    config::PhantomVideoId,
+    extractors::{BotConfigWrapper, YtDlpWrapper},
+    models::{CombinedFormat, CombinedFormats},
+};
 
-use std::sync::Arc;
+use futures_util::{TryFutureExt as _, TryStreamExt as _};
+use std::{
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use telers::{
     enums::ParseMode,
-    errors::HandlerError,
+    errors::{HandlerError, SessionErrorKind},
     event::{telegram::HandlerResult, EventReturn},
-    methods::{SendMessage, SendVideo},
-    types::{InputFile, Message},
+    methods::{
+        AnswerInlineQuery, DeleteMessage, EditMessageCaption, EditMessageMedia, EditMessageReplyMarkup, SendChatAction, SendMessage,
+        SendVideo,
+    },
+    types::{
+        input_file::DEFAULT_CAPACITY, ChosenInlineResult, InlineKeyboardButton, InlineKeyboardMarkup, InlineQuery, InlineQueryResult,
+        InlineQueryResultArticle, InlineQueryResultCachedVideo, InputFile, InputMediaVideo, InputTextMessageContent, Message,
+    },
     utils::text_decorations::{TextDecoration, HTML_DECORATION},
     Bot,
 };
 use tempfile::tempdir;
 use tokio::task::JoinHandle;
-use tracing::{event, field, span, Level};
+use tokio_util::codec::{BytesCodec, FramedRead};
+use tracing::{event, field, instrument, span, Level, Span};
+use uuid::Uuid;
 
-const REQUEST_TIMEOUT: f32 = 300.0; // 5 minutes
+const REQUEST_TIMEOUT: f32 = 60.0 * 5.0; // 5 minutes
+const VIDEOS_IN_PLAYLIST_CACHE_TIME: i32 = 1; // 60 * 60; // 1 hour
 
-pub async fn url(bot: Arc<Bot>, message: Message, YtDlpWrapper(yt_dlp_config): YtDlpWrapper) -> HandlerResult {
+fn filter_and_get_combined_format<'a>(
+    formats: &'a mut CombinedFormats<'a>,
+    max_files_size_in_bytes: u64,
+) -> Option<&'a CombinedFormat<'a>> {
+    formats.skip_with_size_less_than(max_files_size_in_bytes);
+    formats.sort_by_format_id_priority();
+
+    formats.first()
+}
+
+async fn send_upload_action_in_loop(bot: &Bot, chat_id: i64) {
+    loop {
+        if let Err(err) = bot.send(SendChatAction::new(chat_id, "upload_video")).await {
+            event!(Level::ERROR, %err, "Error while sending upload action");
+
+            break;
+        }
+
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    }
+}
+
+async fn error_occured(
+    bot: &Bot,
+    chat_id: i64,
+    reply_to_message_id: i64,
+    text: &str,
+    parse_mode: Option<ParseMode>,
+) -> Result<Message, SessionErrorKind> {
+    bot.send(
+        SendMessage::new(chat_id, text)
+            .reply_to_message_id(reply_to_message_id)
+            .allow_sending_without_reply(true)
+            .parse_mode_option(parse_mode),
+    )
+    .await
+}
+
+#[instrument(skip_all, fields(message_id, chat_id = chat.id, url))]
+pub async fn url(
+    bot: Arc<Bot>,
+    Message {
+        message_id,
+        text: url,
+        chat,
+        ..
+    }: Message,
+    YtDlpWrapper(yt_dlp_config): YtDlpWrapper,
+) -> HandlerResult {
     // `unwrap` is safe here, because we check that `message.text` is `Some` by filters
-    let url = message.text.as_ref().unwrap();
-    let chat_id = message.chat_id();
-
-    let span = span!(Level::DEBUG, "url_handler", message.message_id, chat_id, url);
-
-    let _enter = span.enter();
+    let url = url.as_ref().unwrap();
+    let chat_id = chat.id;
 
     event!(Level::DEBUG, "Got url");
 
-    let videos = match ytdl::get_video_or_playlist_info(&yt_dlp_config.full_path, url).await {
+    let videos = match ytdl::get_video_or_playlist_info(&yt_dlp_config.full_path, url, true).await {
         Ok(videos) => videos,
         Err(err) => {
             event!(Level::ERROR, %err, "Error while getting video/playlist info");
 
-            bot.send(
-                &SendMessage::new(
-                    chat_id,
-                    "Sorry, an error occurred while getting video/playlist info. Try again later.",
-                )
-                .reply_to_message_id(message.message_id)
-                .allow_sending_without_reply(true),
+            error_occured(
+                &bot,
+                chat_id,
+                message_id,
+                "Sorry, an error occurred while getting video/playlist info. Try again later.",
+                None,
             )
             .await?;
 
@@ -47,64 +111,62 @@ pub async fn url(bot: Arc<Bot>, message: Message, YtDlpWrapper(yt_dlp_config): Y
     };
 
     if videos.is_empty() {
-        event!(Level::ERROR, "Playlist doesn't have videos");
+        event!(Level::WARN, "Playlist doesn't have videos");
 
-        bot.send(
-            &SendMessage::new(chat_id, "Playlist doesn't have videos to download.")
-                .reply_to_message_id(message.message_id)
-                .allow_sending_without_reply(true),
-        )
-        .await?;
+        error_occured(&bot, chat_id, message_id, "Playlist doesn't have videos.", None).await?;
 
         return Ok(EventReturn::Finish);
     }
 
-    // Max files size to download in one request.
-    // We use this value to choose the best format for each video and avoid errors from Telegram.
-    let max_files_size_in_bytes = yt_dlp_config.max_files_size_in_bytes;
-
     let mut handles: Vec<JoinHandle<HandlerResult>> = vec![];
+
+    let upload_action_task = tokio::spawn({
+        let bot = bot.clone();
+
+        async move { send_upload_action_in_loop(&bot, chat_id).await }
+    });
 
     for video in videos {
         let span = span!(
-            parent: &span,
+            parent: Span::current(),
             Level::DEBUG,
             "video_downloader",
-            video.id,
-            format_id = field::Empty,
-            file_path = field::Empty
+            video_id = video.id, format_id = field::Empty, file_path = field::Empty,
         );
 
-        let temp_dir = tempdir().map_err(HandlerError::new)?;
+        let temp_dir = tempdir().map_err(|err| {
+            upload_action_task.abort();
+
+            HandlerError::new(err)
+        })?;
 
         let video_id = video.id.clone();
         let video_title = video.title.clone().unwrap_or("Untitled".to_owned());
         let bot = bot.clone();
+        let max_files_size_in_bytes = yt_dlp_config.max_files_size_in_bytes;
         let yt_dlp_full_path = yt_dlp_config.as_ref().full_path.clone();
 
         handles.push(tokio::spawn(async move {
             let _enter = span.enter();
 
             let mut combined_formats = video.get_combined_formats();
-            // Filter out formats that are bigger than `max_files_size_in_bytes`
-            combined_formats.skip_with_size_less_than(max_files_size_in_bytes);
-            combined_formats.sort_by_format_id_priority();
 
             event!(Level::TRACE, ?combined_formats, "Got combined formats");
 
-            let Some(combined_format) = combined_formats.first() else {
+            let Some(combined_format) = filter_and_get_combined_format(&mut combined_formats, max_files_size_in_bytes) else {
                 event!(Level::ERROR, "No combined formats found");
 
-                bot.send(
-                    &SendMessage::new(
-                        chat_id,
-                        format!(
-                            "Sorry, suitable formats for video {title} not found. \
-                            Maybe video size is too big or video has unsupported format.",
-                            title = HTML_DECORATION.code(HTML_DECORATION.quote(video_title.as_str()).as_str()),
-                        ),
+                error_occured(
+                    &bot,
+                    chat_id,
+                    message_id,
+                    format!(
+                        "Sorry, suitable formats for video {title} not found. \
+                        Maybe video size is too big or video has unsupported format.",
+                        title = HTML_DECORATION.code(HTML_DECORATION.quote(video_title.as_str()).as_str()),
                     )
-                    .parse_mode(ParseMode::HTML),
+                    .as_str(),
+                    Some(ParseMode::HTML),
                 )
                 .await?;
 
@@ -123,12 +185,13 @@ pub async fn url(bot: Arc<Bot>, message: Message, YtDlpWrapper(yt_dlp_config): Y
 
             event!(Level::DEBUG, "Downloading video and audio");
 
-            match ytdl::download_to_path(
+            match ytdl::download_video_to_path(
                 yt_dlp_full_path.as_str(),
                 temp_dir.path().to_string_lossy().as_ref(),
                 video_id.as_str(),
                 combined_format.format_id().as_ref(),
                 combined_format.get_extension(),
+                false,
             )
             .await
             {
@@ -142,52 +205,350 @@ pub async fn url(bot: Arc<Bot>, message: Message, YtDlpWrapper(yt_dlp_config): Y
                 }
             }
 
-            let _message = bot
-                .send_with_timeout(
-                    SendVideo::new(chat_id, InputFile::fs(file_path))
-                        .reply_to_message_id(message.message_id)
-                        .allow_sending_without_reply(true)
-                        .supports_streaming(true)
-                        .thumbnail_option(video.get_best_thumbnail_url().map(InputFile::url)),
-                    REQUEST_TIMEOUT,
-                )
-                .await?;
+            bot.send_with_timeout(
+                SendVideo::new(chat_id, InputFile::fs(file_path))
+                    .reply_to_message_id(message_id)
+                    .allow_sending_without_reply(true)
+                    .supports_streaming(true)
+                    .thumbnail_option(video.get_best_thumbnail_url().map(InputFile::url)),
+                REQUEST_TIMEOUT,
+            )
+            .await?;
 
             Ok(EventReturn::Finish)
         }));
     }
 
     for handle in handles {
+        let error_occured = error_occured(
+            &bot,
+            chat_id,
+            message_id,
+            "Sorry, an error occurred while sending video. Try again later.",
+            None,
+        );
+
         match handle.await {
             Ok(Ok(_)) => continue,
             Ok(Err(err)) => {
                 event!(Level::ERROR, %err, "Error while sending video");
 
-                bot.send(
-                    &SendMessage::new(chat_id, "Sorry, an error occurred while sending video. Try again later.")
-                        .reply_to_message_id(message.message_id)
-                        .allow_sending_without_reply(true),
-                )
-                .await?;
+                upload_action_task.abort();
+
+                error_occured.await?;
 
                 return Err(err);
             }
             Err(err) => {
                 event!(Level::ERROR, %err, "Error while joining handle");
 
-                bot.send(
-                    &SendMessage::new(chat_id, "Sorry, an error occurred while sending video. Try again later.")
-                        .reply_to_message_id(message.message_id)
-                        .allow_sending_without_reply(true),
-                )
-                .await?;
+                upload_action_task.abort();
+
+                error_occured.await?;
 
                 return Err(HandlerError::new(err));
             }
         }
     }
 
+    upload_action_task.abort();
+
     event!(Level::DEBUG, "All handles finished");
+
+    Ok(EventReturn::Finish)
+}
+
+#[instrument(skip_all, fields(inline_message_id, filesize))]
+async fn progress_by_edit_message(
+    bot: &Bot,
+    inline_message_id: &str,
+    text_template: &str,
+    filesize_progress: Arc<AtomicUsize>,
+    filesize: f64,
+) -> Result<(), SessionErrorKind> {
+    let mut last_progress = 0;
+
+    loop {
+        let filesize_progress = filesize_progress.load(Ordering::SeqCst);
+
+        #[allow(clippy::cast_precision_loss)]
+        #[allow(clippy::cast_sign_loss)]
+        #[allow(clippy::cast_possible_truncation)]
+        let progress = (filesize_progress as f64 / filesize * 100.0).round() as usize;
+
+        if progress == last_progress {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+
+            continue;
+        }
+
+        last_progress = progress;
+
+        if progress > 95 {
+            bot.send(
+                EditMessageReplyMarkup::new()
+                    .inline_message_id(inline_message_id)
+                    .reply_markup(InlineKeyboardMarkup::new([[InlineKeyboardButton::new(format!(
+                        "{text_template} 100%"
+                    ))
+                    .callback_data("video_progress")]])),
+            )
+            .await?;
+
+            break;
+        }
+
+        bot.send(
+            EditMessageReplyMarkup::new()
+                .inline_message_id(inline_message_id)
+                .reply_markup(InlineKeyboardMarkup::new([[InlineKeyboardButton::new(format!(
+                    "{text_template} {progress}%"
+                ))
+                .callback_data("video_progress")]])),
+        )
+        .await?;
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+
+    Ok(())
+}
+
+async fn error_chosen_inline_result(bot: &Bot, text: &str, inline_message_id: &str) -> Result<(), SessionErrorKind> {
+    bot.send(EditMessageCaption::new(text).inline_message_id(inline_message_id))
+        .await
+        .map(|_| ())
+}
+
+#[allow(clippy::module_name_repetitions)]
+#[instrument(skip_all, fields(inline_message_id, url, video_id = field::Empty, format_id = field::Empty, file_path = field::Empty))]
+pub async fn url_chosen_inline_result(
+    bot: Arc<Bot>,
+    ChosenInlineResult {
+        inline_message_id,
+        query: url,
+        ..
+    }: ChosenInlineResult,
+    YtDlpWrapper(yt_dlp_config): YtDlpWrapper,
+    BotConfigWrapper(bot_config): BotConfigWrapper,
+) -> HandlerResult {
+    let inline_message_id = inline_message_id.as_deref().unwrap();
+
+    event!(Level::DEBUG, "Got url");
+
+    let videos = match ytdl::get_video_or_playlist_info(&yt_dlp_config.full_path, url.as_ref(), false).await {
+        Ok(videos) => videos,
+        Err(err) => {
+            event!(Level::ERROR, %err, "Error while getting video/playlist info");
+
+            error_chosen_inline_result(
+                &bot,
+                "Sorry, an error occurred while getting video/playlist info. Try again later.",
+                inline_message_id,
+            )
+            .await?;
+
+            return Ok(EventReturn::Finish);
+        }
+    };
+
+    if videos.is_playlist() {
+        event!(Level::WARN, "Got playlist instead of video. This should not happen");
+    }
+
+    let Some(video) = videos.front().cloned() else {
+        event!(Level::ERROR, "Video not found");
+
+        error_chosen_inline_result(&bot, "Sorry, video not found.", inline_message_id).await?;
+
+        return Ok(EventReturn::Finish);
+    };
+
+    drop(videos);
+
+    Span::current().record("video_id", video.id.as_str());
+
+    let mut combined_formats = video.get_combined_formats();
+
+    event!(Level::TRACE, ?combined_formats, "Got combined formats");
+
+    let Some(combined_format) = filter_and_get_combined_format(&mut combined_formats, yt_dlp_config.max_files_size_in_bytes) else {
+        event!(Level::ERROR, "No combined formats found");
+
+        let video_title = video.title.as_deref().unwrap_or("Untitled");
+
+        error_chosen_inline_result(
+            &bot,
+            format!(
+                "Sorry, suitable formats for video {title} not found. \
+                Maybe video size is too big or video has unsupported format.",
+                title = HTML_DECORATION.code(HTML_DECORATION.quote(video_title).as_str()),
+            )
+            .as_str(),
+            inline_message_id,
+        )
+        .await?;
+
+        return Ok(EventReturn::Finish);
+    };
+
+    event!(Level::DEBUG, ?combined_format, "Got combined format");
+
+    let temp_dir = tempdir().map_err(HandlerError::new)?;
+
+    let file_path = temp_dir.path().join(format!(
+        "{video_id}.{format_extension}",
+        video_id = video.id.as_str(),
+        format_extension = combined_format.get_extension(),
+    ));
+
+    Span::current().record("format_id", combined_format.format_id());
+    Span::current().record("file_path", file_path.display().to_string());
+
+    event!(Level::DEBUG, "Downloading video and audio");
+
+    match ytdl::download_video_to_path(
+        yt_dlp_config.full_path.as_str(),
+        temp_dir.path().to_string_lossy().as_ref(),
+        video.id.as_str(),
+        combined_format.format_id().as_ref(),
+        combined_format.get_extension(),
+        false,
+    )
+    .await
+    {
+        Ok(()) => {
+            event!(Level::DEBUG, "Video and audio downloading finished");
+        }
+        Err(err) => {
+            event!(Level::ERROR, %err, "Error while downloading video and audio");
+
+            return Err(HandlerError::new(err));
+        }
+    }
+
+    let filesize_progress = Arc::new(AtomicUsize::new(0));
+
+    if let Some(filesize) = combined_format.filesize_or_approx() {
+        let bot = bot.clone();
+        let inline_message_id = inline_message_id.to_owned();
+        let filesize_progress = filesize_progress.clone();
+
+        tokio::spawn(async move {
+            progress_by_edit_message(&bot, inline_message_id.as_str(), "Sending video...", filesize_progress, filesize).await
+        });
+    }
+
+    let Message {
+        video, chat, message_id, ..
+    } = bot
+        .send_with_timeout(
+            SendVideo::new(
+                bot_config.receiver_video_chat_id,
+                InputFile::stream(Box::pin(
+                    tokio::fs::File::open(file_path)
+                        .map_ok(move |file| {
+                            FramedRead::with_capacity(file, BytesCodec::new(), DEFAULT_CAPACITY).map_ok(move |bytes_mut| {
+                                let bytes = bytes_mut.freeze();
+
+                                filesize_progress.fetch_add(bytes.len(), Ordering::SeqCst);
+
+                                bytes
+                            })
+                        })
+                        .try_flatten_stream(),
+                )),
+            )
+            .supports_streaming(true)
+            .thumbnail_option(video.get_best_thumbnail_url().map(InputFile::url)),
+            REQUEST_TIMEOUT,
+        )
+        .await?;
+
+    bot.send_with_timeout(
+        // `unwrap` is safe here, because `video` is always `Some` in `SendVideo` response
+        EditMessageMedia::new(InputMediaVideo::new(InputFile::id(video.unwrap().file_id.as_ref())))
+            .inline_message_id(inline_message_id)
+            .reply_markup(InlineKeyboardMarkup::new([[]])),
+        REQUEST_TIMEOUT,
+    )
+    .await?;
+
+    tokio::spawn(async move {
+        if let Err(err) = bot.send(DeleteMessage::new(chat.id, message_id)).await {
+            event!(Level::ERROR, %err, "Error while deleting video");
+        }
+    });
+
+    Ok(EventReturn::Finish)
+}
+
+async fn error_inline_query_occured(bot: &Bot, query_id: &str, text: &str) -> Result<(), SessionErrorKind> {
+    let result = InlineQueryResultArticle::new(query_id, text, InputTextMessageContent::new(text));
+    let results = [result];
+
+    bot.send(AnswerInlineQuery::new(query_id, results)).await.map(|_| ())
+}
+
+#[allow(clippy::module_name_repetitions)]
+#[instrument(skip_all, fields(query_id, url))]
+pub async fn url_inline_query(
+    bot: Arc<Bot>,
+    InlineQuery {
+        id: query_id, query: url, ..
+    }: InlineQuery,
+    YtDlpWrapper(yt_dlp_config): YtDlpWrapper,
+    PhantomVideoId(phantom_video_id): PhantomVideoId,
+) -> HandlerResult {
+    event!(Level::DEBUG, "Got url");
+
+    let videos = match ytdl::get_video_or_playlist_info(&yt_dlp_config.full_path, url.as_ref(), true).await {
+        Ok(videos) => videos,
+        Err(err) => {
+            event!(Level::ERROR, %err, "Error while getting video/playlist info");
+
+            error_inline_query_occured(
+                &bot,
+                query_id.as_ref(),
+                "Sorry, an error occurred while getting video/playlist info. Try again later.",
+            )
+            .await?;
+
+            return Ok(EventReturn::Finish);
+        }
+    };
+
+    if videos.is_empty() {
+        event!(Level::WARN, "Playlist doesn't have videos");
+
+        error_inline_query_occured(&bot, query_id.as_ref(), "Playlist doesn't have videos.").await?;
+
+        return Ok(EventReturn::Finish);
+    }
+
+    let mut results: Vec<InlineQueryResult> = Vec::with_capacity(videos.len());
+
+    for video in videos {
+        let video_title = video.title.as_deref().unwrap_or("Untitled");
+
+        let result = InlineQueryResultCachedVideo::new(Uuid::new_v4(), video_title, phantom_video_id.clone())
+            .caption(HTML_DECORATION.code(HTML_DECORATION.quote(video_title).as_str()))
+            .description("Click to send video")
+            .reply_markup(InlineKeyboardMarkup::new([[
+                InlineKeyboardButton::new("Video downloading...").callback_data("video_downloading")
+            ]]))
+            .parse_mode(ParseMode::HTML)
+            .into();
+
+        results.push(result);
+    }
+
+    bot.send(
+        AnswerInlineQuery::new(query_id, results)
+            .is_personal(false)
+            .cache_time(VIDEOS_IN_PLAYLIST_CACHE_TIME),
+    )
+    .await?;
 
     Ok(EventReturn::Finish)
 }

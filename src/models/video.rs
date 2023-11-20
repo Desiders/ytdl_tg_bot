@@ -56,11 +56,25 @@ impl Video {
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub struct Videos(pub VecDeque<Video>);
+pub struct Videos {
+    is_playlist: bool,
+    inner: VecDeque<Video>,
+}
 
 impl Videos {
+    pub fn new(is_playlist: bool, videos: impl Into<VecDeque<Video>>) -> Self {
+        Self {
+            is_playlist,
+            inner: videos.into(),
+        }
+    }
+
+    pub const fn is_playlist(&self) -> bool {
+        self.is_playlist
+    }
+
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.inner.is_empty()
     }
 }
 
@@ -68,13 +82,13 @@ impl Iterator for Videos {
     type Item = Video;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.pop_front()
+        self.inner.pop_front()
     }
 }
 
 impl Extend<Video> for Videos {
     fn extend<T: IntoIterator<Item = Video>>(&mut self, iter: T) {
-        self.0.extend(iter);
+        self.inner.extend(iter);
     }
 }
 
@@ -82,6 +96,6 @@ impl Deref for Videos {
     type Target = VecDeque<Video>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.inner
     }
 }

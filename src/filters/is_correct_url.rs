@@ -8,7 +8,7 @@ pub fn is_correct_url(_bot: &Bot, update: &Update, _context: &Context) -> impl F
         match Url::parse(text.trim()) {
             Ok(_) => true,
             Err(err) => {
-                event!(Level::DEBUG, %err, "Error while parsing url");
+                event!(Level::TRACE, %err, "Error while parsing url");
 
                 false
             }

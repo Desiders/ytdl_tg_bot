@@ -26,6 +26,7 @@ pub async fn download_video_to_path(
     id_or_url: &str,
     format: &str,
     output_extension: &str,
+    allow_playlist: bool,
 ) -> Result<(), GetInfoError> {
     let args = &[
         "--no-call-home",
@@ -34,11 +35,12 @@ pub async fn download_video_to_path(
         "--no-mtime",
         "--abort-on-error",
         "--prefer-ffmpeg",
+        "--hls-prefer-ffmpeg",
         "--no-simulate",
         "--no-progress",
-        "--hls-prefer-ffmpeg",
         "--socket-timeout",
         "15",
+        if allow_playlist { "--yes-playlist" } else { "--no-playlist" },
         "-o",
         "%(id)s.%(ext)s",
         "-P",
@@ -62,14 +64,18 @@ pub async fn download_video_to_path(
     Ok(())
 }
 
-pub async fn get_video_or_playlist_info(executable_path: &str, id_or_url: &str) -> Result<Videos, GetInfoError> {
+pub async fn get_video_or_playlist_info(executable_path: &str, id_or_url: &str, allow_playlist: bool) -> Result<Videos, GetInfoError> {
     let args = &[
         "--no-call-home",
         "--no-check-certificate",
+        "--no-cache-dir",
         "--skip-download",
+        "--no-simulate",
+        "--no-progress",
         "--abort-on-error",
         "--socket-timeout",
         "15",
+        if allow_playlist { "--yes-playlist" } else { "--no-playlist" },
         "-o",
         "%(id)s.%(ext)s",
         "-J",
@@ -87,12 +93,14 @@ pub async fn get_video_or_playlist_info(executable_path: &str, id_or_url: &str) 
     let mut stdout = FramedRead::new(child.stdout.take().unwrap(), LinesCodec::new());
     let mut stderr = FramedRead::new(child.stderr.take().unwrap(), LinesCodec::new());
 
+    let mut is_playlist = false;
+
     while let Some(line) = stdout.next().await {
         let line = line?;
 
         let value: Value = serde_json::from_reader(line.as_bytes())?;
 
-        let is_playlist = value["_type"] == json!("playlist");
+        is_playlist = value["_type"] == json!("playlist");
 
         if is_playlist {
             let Some(entries) = value["entries"].as_array() else {
@@ -127,5 +135,5 @@ pub async fn get_video_or_playlist_info(executable_path: &str, id_or_url: &str) 
         .into());
     }
 
-    Ok(Videos(videos.into()))
+    Ok(Videos::new(is_playlist, videos))
 }

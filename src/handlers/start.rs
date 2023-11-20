@@ -11,7 +11,7 @@ pub async fn start(bot: Bot, message: Message) -> HandlerResult {
         first_name = message.from.as_ref().map_or("Anonymous", |user| user.first_name.as_ref()),
     );
 
-    bot.send(&SendMessage::new(message.chat_id(), text)).await?;
+    bot.send(SendMessage::new(message.chat_id(), text)).await?;
 
     Ok(EventReturn::Finish)
 }
