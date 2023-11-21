@@ -99,6 +99,18 @@ impl Container {
             Self::TS => "ts",
         }
     }
+
+    #[must_use]
+    pub const fn get_priority(&self) -> u8 {
+        use Container::{MKV, MOV, MP4, TS};
+
+        match self {
+            MP4 => 1,
+            MOV => 2,
+            MKV => 3,
+            TS => 4,
+        }
+    }
 }
 
 impl<'a> TryFrom<&'a str> for Container {
@@ -125,7 +137,7 @@ impl<'a> TryFrom<(&AudioCodec<'a>, &VideoCodec<'a>)> for Container {
             return Ok(Self::MP4);
         }
         if audio_codec.is_support_container_with_vcodec(video_codec, &Self::MKV) {
-            return Ok(Self::MP4);
+            return Ok(Self::MKV);
         }
         if audio_codec.is_support_container_with_vcodec(video_codec, &Self::MOV) {
             return Ok(Self::MOV);
@@ -209,29 +221,21 @@ impl VideoCodec<'_> {
     }
 
     #[must_use]
-    pub const fn get_priority_by_container(&self, container: &Container) -> u8 {
-        use Container::{MKV, MOV, MP4, TS};
+    pub const fn get_priority(&self) -> u8 {
         use VideoCodec::{ProRes, AV1, H264, H265, VP9};
 
-        match (self, container) {
-            (AV1(_), MP4) => 1,
-            (AV1(_), MOV) => 2,
-            (AV1(_), MKV) => 3,
-            (H265(_), MP4) => 4,
-            (H265(_), MOV) => 5,
-            (H265(_), MKV) => 6,
-            (H265(_), TS) => 7,
-            (VP9(_), MP4) => 8,
-            (VP9(_), MOV) => 9,
-            (H264(_), MP4) => 10,
-            (H264(_), MOV) => 11,
-            (H264(_), MKV) => 12,
-            (H264(_), TS) => 13,
-            (ProRes(_), MP4) => 14,
-            (ProRes(_), MOV) => 15,
-            (ProRes(_), MKV) => 16,
-            _ => unreachable!(),
+        match self {
+            AV1(_) => 1,
+            H265(_) => 2,
+            VP9(_) => 3,
+            H264(_) => 4,
+            ProRes(_) => 5,
         }
+    }
+
+    #[must_use]
+    pub const fn get_priority_by_container(&self, container: &Container) -> u8 {
+        self.get_priority() + container.get_priority()
     }
 }
 
@@ -253,10 +257,10 @@ impl<'a> TryFrom<&'a str> for VideoCodec<'a> {
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone)]
 pub enum AudioCodec<'a> {
-    FLAC(&'a str),
-    ALAC(&'a str),
-    Opus(&'a str),
     AAC(&'a str),
+    ALAC(&'a str),
+    FLAC(&'a str),
+    Opus(&'a str),
     PCM(&'a str),
 }
 

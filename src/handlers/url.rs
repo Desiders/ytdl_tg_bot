@@ -7,6 +7,9 @@ use crate::{
 
 use futures_util::{TryFutureExt as _, TryStreamExt as _};
 use std::{
+    fs::Metadata,
+    io,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -35,7 +38,10 @@ use tracing::{event, field, instrument, span, Level, Span};
 use uuid::Uuid;
 
 const REQUEST_TIMEOUT: f32 = 60.0 * 5.0; // 5 minutes
-const VIDEOS_IN_PLAYLIST_CACHE_TIME: i32 = 1; // 60 * 60; // 1 hour
+const VIDEOS_IN_PLAYLIST_CACHE_TIME: i32 = 60 * 60; // 1 hour
+
+const MAX_THUMBNAIL_SIZE_IN_BYTES: u64 = 1024 * 200; // 200 KB
+const ACCEPTABLE_THUMBNAIL_EXTENSIONS: [&str; 2] = ["jpg", "jpeg"];
 
 fn filter_and_get_combined_format<'a>(
     formats: &'a mut CombinedFormats<'a>,
@@ -45,6 +51,54 @@ fn filter_and_get_combined_format<'a>(
     formats.sort_by_format_id_priority();
 
     formats.first()
+}
+
+async fn get_best_thumbnail_path_in_dir(path_dir: impl AsRef<Path>, name: &str) -> Result<Option<PathBuf>, io::Error> {
+    let path_dir = path_dir.as_ref();
+
+    let mut read_dir = tokio::fs::read_dir(path_dir).await?;
+
+    let mut best_thumbnail: Option<(PathBuf, Metadata)> = None;
+
+    while let Some(entry) = read_dir.next_entry().await? {
+        let entry_name = entry.file_name();
+
+        // If names are equal, then it's video file, not thumbnail
+        if entry_name == name {
+            continue;
+        }
+
+        let path = entry.path();
+
+        let Some(entry_extension) = path.extension() else {
+            continue;
+        };
+
+        if !ACCEPTABLE_THUMBNAIL_EXTENSIONS.contains(&entry_extension.to_str().unwrap_or_default()) {
+            continue;
+        }
+
+        let entry_metadata = entry.metadata().await?;
+        let entry_size = entry_metadata.len();
+
+        if entry_size > MAX_THUMBNAIL_SIZE_IN_BYTES {
+            continue;
+        }
+
+        if let Some((_, best_thumbnail_metadata)) = best_thumbnail.as_ref() {
+            if entry_size > best_thumbnail_metadata.len() {
+                event!(Level::TRACE, path = ?entry.path(), "Got better thumbnail");
+
+                best_thumbnail = Some((path, entry_metadata));
+            }
+        } else {
+            event!(Level::TRACE, path = ?entry.path(), "Got first thumbnail");
+
+            best_thumbnail = Some((entry.path(), entry.metadata().await?));
+        }
+    }
+
+    Ok(best_thumbnail.map(|(path, _)| path))
 }
 
 async fn send_upload_action_in_loop(bot: &Bot, chat_id: i64) {
@@ -173,8 +227,6 @@ pub async fn url(
                 return Ok(EventReturn::Finish);
             };
 
-            event!(Level::DEBUG, ?combined_format, "Got combined format");
-
             let file_path = temp_dir.path().join(format!(
                 "{video_id}.{format_extension}",
                 format_extension = combined_format.get_extension()
@@ -183,7 +235,7 @@ pub async fn url(
             span.record("format_id", combined_format.format_id());
             span.record("file_path", file_path.display().to_string());
 
-            event!(Level::DEBUG, "Downloading video and audio");
+            event!(Level::DEBUG, ?combined_format, "Got combined format");
 
             match ytdl::download_video_to_path(
                 yt_dlp_full_path.as_str(),
@@ -192,6 +244,7 @@ pub async fn url(
                 combined_format.format_id().as_ref(),
                 combined_format.get_extension(),
                 false,
+                true,
             )
             .await
             {
@@ -205,12 +258,21 @@ pub async fn url(
                 }
             }
 
+            let thumbnail_input_file = get_best_thumbnail_path_in_dir(temp_dir.path(), video_id.as_str())
+                .await
+                .ok()
+                .and_then(|thumbnail_path| thumbnail_path.map(InputFile::fs));
+
+            #[allow(clippy::cast_possible_truncation)]
             bot.send_with_timeout(
                 SendVideo::new(chat_id, InputFile::fs(file_path))
                     .reply_to_message_id(message_id)
                     .allow_sending_without_reply(true)
-                    .supports_streaming(true)
-                    .thumbnail_option(video.get_best_thumbnail_url().map(InputFile::url)),
+                    .width_option(video.width)
+                    .height_option(video.height)
+                    .duration_option(video.duration.map(|duration| duration as i64))
+                    .thumbnail_option(thumbnail_input_file)
+                    .supports_streaming(true),
                 REQUEST_TIMEOUT,
             )
             .await?;
@@ -314,10 +376,19 @@ async fn progress_by_edit_message(
     Ok(())
 }
 
-async fn error_chosen_inline_result(bot: &Bot, text: &str, inline_message_id: &str) -> Result<(), SessionErrorKind> {
-    bot.send(EditMessageCaption::new(text).inline_message_id(inline_message_id))
-        .await
-        .map(|_| ())
+async fn error_chosen_inline_result(
+    bot: &Bot,
+    text: &str,
+    inline_message_id: &str,
+    parse_mode: Option<ParseMode>,
+) -> Result<(), SessionErrorKind> {
+    bot.send(
+        EditMessageCaption::new(text)
+            .inline_message_id(inline_message_id)
+            .parse_mode_option(parse_mode),
+    )
+    .await
+    .map(|_| ())
 }
 
 #[allow(clippy::module_name_repetitions)]
@@ -345,6 +416,7 @@ pub async fn url_chosen_inline_result(
                 &bot,
                 "Sorry, an error occurred while getting video/playlist info. Try again later.",
                 inline_message_id,
+                None,
             )
             .await?;
 
@@ -359,7 +431,7 @@ pub async fn url_chosen_inline_result(
     let Some(video) = videos.front().cloned() else {
         event!(Level::ERROR, "Video not found");
 
-        error_chosen_inline_result(&bot, "Sorry, video not found.", inline_message_id).await?;
+        error_chosen_inline_result(&bot, "Sorry, video not found.", inline_message_id, None).await?;
 
         return Ok(EventReturn::Finish);
     };
@@ -386,6 +458,7 @@ pub async fn url_chosen_inline_result(
             )
             .as_str(),
             inline_message_id,
+            Some(ParseMode::HTML),
         )
         .await?;
 
@@ -414,6 +487,7 @@ pub async fn url_chosen_inline_result(
         combined_format.format_id().as_ref(),
         combined_format.get_extension(),
         false,
+        true,
     )
     .await
     {
@@ -428,6 +502,11 @@ pub async fn url_chosen_inline_result(
     }
 
     let filesize_progress = Arc::new(AtomicUsize::new(0));
+
+    let thumbnail_input_file = get_best_thumbnail_path_in_dir(temp_dir.path(), video.id.as_str())
+        .await
+        .ok()
+        .and_then(|thumbnail_path| thumbnail_path.map(InputFile::fs));
 
     if let Some(filesize) = combined_format.filesize_or_approx() {
         let bot = bot.clone();
@@ -459,11 +538,22 @@ pub async fn url_chosen_inline_result(
                         .try_flatten_stream(),
                 )),
             )
+            .thumbnail_option(thumbnail_input_file)
             .supports_streaming(true)
-            .thumbnail_option(video.get_best_thumbnail_url().map(InputFile::url)),
+            .disable_notification(true),
             REQUEST_TIMEOUT,
         )
         .await?;
+
+    tokio::spawn({
+        let bot = bot.clone();
+
+        async move {
+            if let Err(err) = bot.send(DeleteMessage::new(chat.id, message_id)).await {
+                event!(Level::ERROR, %err, "Error while deleting video");
+            }
+        }
+    });
 
     bot.send_with_timeout(
         // `unwrap` is safe here, because `video` is always `Some` in `SendVideo` response
@@ -473,12 +563,6 @@ pub async fn url_chosen_inline_result(
         REQUEST_TIMEOUT,
     )
     .await?;
-
-    tokio::spawn(async move {
-        if let Err(err) = bot.send(DeleteMessage::new(chat.id, message_id)).await {
-            event!(Level::ERROR, %err, "Error while deleting video");
-        }
-    });
 
     Ok(EventReturn::Finish)
 }

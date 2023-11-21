@@ -18,8 +18,9 @@ pub struct Video {
     pub id: String,
     pub title: Option<String>,
     pub url: Option<String>,
-    pub thumbnail: Option<String>,
-    pub thumbnails: Option<Vec<Thumbnail>>,
+    pub duration: Option<f64>,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
 
     formats: Vec<AnyFormat>,
 }
@@ -37,21 +38,6 @@ impl Video {
         }
 
         CombinedFormats::from(format_kinds)
-    }
-
-    pub fn get_best_thumbnail(&self) -> Option<&Thumbnail> {
-        let Some(thumbnails) = self.thumbnails.as_ref() else {
-            return None;
-        };
-
-        thumbnails
-            .iter()
-            .filter(|thumbnail| thumbnail.url.is_some())
-            .max_by_key(|thumbnail| thumbnail.filesize)
-    }
-
-    pub fn get_best_thumbnail_url(&self) -> Option<&str> {
-        self.get_best_thumbnail().and_then(|thumbnail| thumbnail.url.as_deref())
     }
 }
 

@@ -27,8 +27,9 @@ pub async fn download_video_to_path(
     format: &str,
     output_extension: &str,
     allow_playlist: bool,
+    download_thumbnails: bool,
 ) -> Result<(), GetInfoError> {
-    let args = &[
+    let mut args = Vec::from([
         "--no-call-home",
         "--no-check-certificate",
         "--no-cache-dir",
@@ -51,7 +52,11 @@ pub async fn download_video_to_path(
         format,
         "--merge-output-format",
         output_extension,
-    ];
+    ]);
+
+    if download_thumbnails {
+        args.push("--write-all-thumbnail");
+    }
 
     let Output { status, stderr, .. } = Command::new(executable_path).args(args).output().await?;
 
