@@ -2,7 +2,11 @@ use crate::errors::FormatError;
 
 use lazy_static::lazy_static;
 use serde::{Deserialize, Deserializer};
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    fmt::{self, Display, Formatter},
+    ops::Deref,
+};
 
 const DEFAULT_PRIORITY: u8 = 19;
 
@@ -150,6 +154,12 @@ impl<'a> TryFrom<(&AudioCodec<'a>, &VideoCodec<'a>)> for Container {
     }
 }
 
+impl Display for Container {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone)]
 pub enum VideoCodec<'a> {
@@ -201,11 +211,7 @@ impl VideoCodec<'_> {
     #[must_use]
     pub const fn as_str(&self) -> &str {
         match self {
-            Self::H264(_) => "h264",
-            Self::H265(_) => "h265",
-            Self::AV1(_) => "av1",
-            Self::VP9(_) => "vp9",
-            Self::ProRes(_) => "prores",
+            Self::H264(codec) | Self::H265(codec) | Self::AV1(codec) | Self::VP9(codec) | Self::ProRes(codec) => codec,
         }
     }
 
@@ -254,27 +260,30 @@ impl<'a> TryFrom<&'a str> for VideoCodec<'a> {
     }
 }
 
+impl Display for VideoCodec<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 #[allow(clippy::upper_case_acronyms)]
+#[allow(non_camel_case_types)]
 #[derive(Debug, Clone)]
 pub enum AudioCodec<'a> {
-    AAC(&'a str),
-    ALAC(&'a str),
+    AAC_OR_ALAC(&'a str),
     FLAC(&'a str),
     Opus(&'a str),
     PCM(&'a str),
 }
 
-fn is_aac(codec: &str) -> bool {
+fn is_aac_or_alac(codec: &str) -> bool {
     codec.to_lowercase().starts_with("aac")
+        || codec.to_lowercase().starts_with("alac")
         || codec.to_lowercase().starts_with("m4a")
         || codec.to_lowercase().starts_with("m4p")
         || codec.to_lowercase().starts_with("m4b")
         || codec.to_lowercase().starts_with("mp4")
         || codec.to_lowercase().starts_with("3gp")
-}
-
-fn is_alac(codec: &str) -> bool {
-    codec.to_lowercase().starts_with("alac")
 }
 
 fn is_flac(codec: &str) -> bool {
@@ -293,8 +302,14 @@ impl AudioCodec<'_> {
     #[must_use]
     pub const fn as_str(&self) -> &str {
         match self {
-            Self::AAC(_) => "aac",
-            Self::ALAC(_) => "m4a",
+            Self::AAC_OR_ALAC(codec) | Self::FLAC(codec) | Self::Opus(codec) | Self::PCM(codec) => codec,
+        }
+    }
+
+    #[must_use]
+    pub const fn get_extension(&self) -> &str {
+        match self {
+            Self::AAC_OR_ALAC(_) => "m4a",
             Self::FLAC(_) => "flac",
             Self::Opus(_) => "opus",
             Self::PCM(_) => "wav",
@@ -303,17 +318,16 @@ impl AudioCodec<'_> {
 
     #[must_use]
     pub const fn is_support_container_with_vcodec(&self, video_codec: &VideoCodec, container: &Container) -> bool {
-        use AudioCodec::{Opus, AAC, ALAC, FLAC, PCM};
+        use AudioCodec::{Opus, AAC_OR_ALAC, FLAC, PCM};
         use Container::{MKV, MOV, MP4, TS};
         use VideoCodec::{ProRes, AV1, H264, H265, VP9};
 
         matches!(
             (self, video_codec, container),
-            (AAC(_), H264(_), _)
-                | (AAC(_), H265(_), MP4 | MOV | MKV | TS)
-                | (AAC(_) | ALAC(_) | FLAC(_) | Opus(_), AV1(_) | VP9(_), MP4 | MKV)
-                | (AAC(_) | ALAC(_) | PCM(_), ProRes(_), MOV | MKV)
-                | (ALAC(_), H264(_) | H265(_), MP4 | MOV | MKV)
+            (AAC_OR_ALAC(_), H264(_), _)
+                | (AAC_OR_ALAC(_), H265(_), MP4 | MOV | MKV | TS)
+                | (AAC_OR_ALAC(_) | FLAC(_) | Opus(_), AV1(_) | VP9(_), MP4 | MKV)
+                | (AAC_OR_ALAC(_) | PCM(_), ProRes(_), MOV | MKV)
                 | (FLAC(_), H264(_) | H265(_), MP4 | MKV)
                 | (FLAC(_) | Opus(_), ProRes(_), MKV)
                 | (Opus(_), H264(_) | H265(_), MP4 | MKV | TS)
@@ -324,14 +338,13 @@ impl AudioCodec<'_> {
 
     #[must_use]
     pub const fn get_priority(&self) -> u8 {
-        use AudioCodec::{Opus, AAC, ALAC, FLAC, PCM};
+        use AudioCodec::{Opus, AAC_OR_ALAC, FLAC, PCM};
 
         match self {
             FLAC(_) => 1,
-            ALAC(_) => 2,
+            AAC_OR_ALAC(_) => 2,
             Opus(_) => 3,
-            AAC(_) => 4,
-            PCM(_) => 5,
+            PCM(_) => 4,
         }
     }
 }
@@ -341,13 +354,18 @@ impl<'a> TryFrom<&'a str> for AudioCodec<'a> {
 
     fn try_from(value: &'a str) -> Result<Self, Self::Error> {
         match value {
-            value if is_aac(value) => Ok(Self::AAC(value)),
-            value if is_alac(value) => Ok(Self::ALAC(value)),
+            value if is_aac_or_alac(value) => Ok(Self::AAC_OR_ALAC(value)),
             value if is_flac(value) => Ok(Self::FLAC(value)),
             value if is_opus(value) => Ok(Self::Opus(value)),
             value if is_pcm(value) => Ok(Self::PCM(value)),
             _ => Err(FormatError::AudioCodecNotSupported { codec: value }),
         }
+    }
+}
+
+impl Display for AudioCodec<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -394,6 +412,32 @@ impl<'a> Video<'a> {
             codec_priority + DEFAULT_PRIORITY
         }
     }
+
+    pub fn resolution(&self) -> String {
+        let width = self.width.unwrap_or(0.0);
+        let height = self.height.unwrap_or(0.0);
+
+        format!("{width}x{height}")
+    }
+
+    pub fn filesize_or_approx(&self) -> Option<f64> {
+        self.filesize.or(self.filesize_approx)
+    }
+}
+
+impl Display for Video<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{id}id {container}({codec}, {resolution}) {filesize_kb:.2}KB ({filesize_mb:.2}MB)",
+            id = self.id,
+            container = self.container,
+            codec = self.codec,
+            resolution = self.resolution(),
+            filesize_kb = self.filesize_or_approx().map_or(0.0, |filesize| filesize.round() / 1024.0),
+            filesize_mb = self.filesize_or_approx().map_or(0.0, |filesize| filesize.round() / 1024.0 / 1024.0),
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -424,6 +468,68 @@ impl<'a> Audio<'a> {
         } else {
             codec_priority + DEFAULT_PRIORITY
         }
+    }
+
+    pub fn filesize_or_approx(&self) -> Option<f64> {
+        self.filesize.or(self.filesize_approx)
+    }
+}
+
+impl Display for Audio<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{id}id ({codec}) {filesize_kb:.2}KB ({filesize_mb:.2}MB)",
+            id = self.id,
+            codec = self.codec,
+            filesize_kb = self.filesize_or_approx().map_or(0.0, |filesize| filesize.round() / 1024.0),
+            filesize_mb = self.filesize_or_approx().map_or(0.0, |filesize| filesize.round() / 1024.0 / 1024.0),
+        )
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Audios<'a>(pub Vec<Audio<'a>>);
+
+impl<'a> Audios<'a> {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    pub fn skip_with_size_less_than(&mut self, size: u64) {
+        self.0.retain(|audio| {
+            let Some(filesize) = audio.filesize else {
+                return false;
+            };
+
+            filesize.round() as u64 <= size
+        });
+    }
+
+    pub fn sort_by_format_id_priority(&mut self) {
+        self.0.sort_by_key(Audio::get_priority);
+    }
+
+    pub fn sort_by_priority_and_skip_by_size(&mut self, size: u64) {
+        self.sort_by_format_id_priority();
+        self.skip_with_size_less_than(size);
+    }
+}
+
+impl<'a> Extend<Audio<'a>> for Audios<'a> {
+    fn extend<T: IntoIterator<Item = Audio<'a>>>(&mut self, iter: T) {
+        self.0.extend(iter);
+    }
+}
+
+impl<'a> Deref for Audios<'a> {
+    type Target = Vec<Audio<'a>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'a> From<Vec<Audio<'a>>> for Audios<'a> {
+    fn from(formats: Vec<Audio<'a>>) -> Self {
+        Self(formats)
     }
 }
 

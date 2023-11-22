@@ -69,8 +69,56 @@ pub async fn download_video_to_path(
     Ok(())
 }
 
+pub async fn download_audio_to_path(
+    executable_path: &str,
+    dir_path: &str,
+    id_or_url: &str,
+    format: &str,
+    output_extension: &str,
+    download_thumbnails: bool,
+) -> Result<(), Error> {
+    let mut args = Vec::from([
+        "--no-call-home",
+        "--no-check-certificate",
+        "--no-cache-dir",
+        "--no-mtime",
+        "--abort-on-error",
+        "--prefer-ffmpeg",
+        "--hls-prefer-ffmpeg",
+        "--no-simulate",
+        "--no-progress",
+        "--socket-timeout",
+        "15",
+        "--extract-audio",
+        "--audio-format",
+        output_extension,
+        "-o",
+        "%(id)s.%(ext)s",
+        "-P",
+        dir_path,
+        "-J",
+        id_or_url,
+        "-f",
+        format,
+    ]);
+
+    if download_thumbnails {
+        args.push("--write-all-thumbnail");
+    }
+
+    let Output { status, stderr, .. } = Command::new(executable_path).args(args).output().await?;
+
+    if !status.success() {
+        let msg = String::from_utf8_lossy(&stderr);
+
+        return Err(io::Error::new(io::ErrorKind::Other, format!("Youtube-dl exited with status `{status}`: {msg}")).into());
+    }
+
+    Ok(())
+}
+
 pub async fn get_video_or_playlist_info(executable_path: &str, id_or_url: &str, allow_playlist: bool) -> Result<VideosInYT, Error> {
-    let args = &[
+    let args = [
         "--no-call-home",
         "--no-check-certificate",
         "--no-cache-dir",

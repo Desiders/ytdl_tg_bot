@@ -1,6 +1,9 @@
 use super::format;
 
-use std::ops::Deref;
+use std::{
+    fmt::{self, Display, Formatter},
+    ops::Deref,
+};
 
 #[derive(Clone, Debug)]
 pub struct Format<'a> {
@@ -50,6 +53,12 @@ impl<'a> Format<'a> {
     }
 }
 
+impl Display for Format<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "audio: {}, video: {}", self.audio_format, self.video_format)
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Formats<'a>(pub Vec<Format<'a>>);
 
@@ -72,12 +81,7 @@ impl<'a> Formats<'a> {
     }
 
     pub fn sort_by_format_id_priority(&mut self) {
-        self.0.sort_by(|a, b| {
-            let a_priority = a.get_priority();
-            let b_priority = b.get_priority();
-
-            a_priority.cmp(&b_priority)
-        });
+        self.0.sort_by_key(Format::get_priority);
     }
 
     pub fn sort_by_priority_and_skip_by_size(&mut self, size: u64) {

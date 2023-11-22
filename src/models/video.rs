@@ -40,6 +40,22 @@ impl VideoInYT {
 
         combined_format::Formats::from(format_kinds)
     }
+
+    pub fn get_audio_formats(&self) -> format::Audios<'_> {
+        let mut formats = vec![];
+
+        for format in &self.formats {
+            let Ok(format) = format.kind() else {
+                continue;
+            };
+
+            if let format::Kind::Audio(format) = format {
+                formats.push(format);
+            }
+        }
+
+        format::Audios::from(formats)
+    }
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]

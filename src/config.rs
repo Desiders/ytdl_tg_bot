@@ -26,8 +26,25 @@ impl Deref for PhantomVideoId {
 }
 
 #[derive(Clone, Debug)]
+pub struct PhantomAudioId(pub String);
+
+impl Deref for PhantomAudioId {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum PhantomVideo {
     Id(PhantomVideoId),
+    Path(String),
+}
+
+#[derive(Clone, Debug)]
+pub enum PhantomAudio {
+    Id(PhantomAudioId),
     Path(String),
 }
 
@@ -44,6 +61,7 @@ pub struct YtDlp {
 pub struct Config {
     pub bot: Bot,
     pub phantom_video: PhantomVideo,
+    pub phantom_audio: PhantomAudio,
     pub yt_dlp: YtDlp,
 }
 
@@ -74,6 +92,22 @@ pub fn read_config_from_env() -> Result<Config, ErrorKind> {
         });
     };
 
+    let phantom_audio_id_env = env::var("PHANTOM_AUDIO_ID");
+    let phantom_audio_path = env::var("PHANTOM_AUDIO_PATH");
+
+    let phantom_audio = if phantom_audio_id_env.is_ok() && !phantom_audio_id_env.as_ref().unwrap().is_empty() {
+        #[allow(clippy::unnecessary_unwrap)]
+        PhantomAudio::Id(PhantomAudioId(phantom_audio_id_env.unwrap()))
+    } else if phantom_audio_path.is_ok() && !phantom_audio_path.as_ref().unwrap().is_empty() {
+        #[allow(clippy::unnecessary_unwrap)]
+        PhantomAudio::Path(phantom_audio_path.unwrap())
+    } else {
+        return Err(ErrorKind::Env {
+            source: VarError::NotPresent,
+            key: "PHANTOM_AUDIO_ID or PHANTOM_AUDIO_PATH".into(),
+        });
+    };
+
     Ok(Config {
         bot: Bot {
             token: env::var("BOT_TOKEN").map_err(|err| ErrorKind::Env {
@@ -97,6 +131,7 @@ pub fn read_config_from_env() -> Result<Config, ErrorKind> {
                 .map_err(ErrorKind::ParseInt)?,
         },
         phantom_video,
+        phantom_audio,
         yt_dlp: YtDlp {
             dir_path: env::var("YT_DLP_DIR_PATH").map_err(|err| ErrorKind::Env {
                 source: err,

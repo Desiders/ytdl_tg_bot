@@ -1,4 +1,4 @@
-use crate::config::{Bot as BotConfig, PhantomVideoId, YtDlp};
+use crate::config::{Bot as BotConfig, PhantomAudioId, PhantomVideoId, YtDlp};
 
 use std::sync::Arc;
 use telers::{
@@ -25,3 +25,4 @@ impl From<Arc<BotConfig>> for BotConfigWrapper {
 from_context_into_impl!([Client], Arc<YtDlp> => YtDlpWrapper, "yt_dlp_config");
 from_context_into_impl!([Client], Arc<BotConfig> => BotConfigWrapper, "bot_config");
 from_context_impl!([Client], PhantomVideoId, "phantom_video_id");
+from_context_impl!([Client], PhantomAudioId, "phantom_audio_id");

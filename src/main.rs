@@ -9,16 +9,19 @@ mod handlers_utils;
 mod middlewares;
 mod models;
 
-use config::{read_config_from_env, Bot as BotConfig, PhantomVideo as PhantomVideoConfig, PhantomVideoId, YtDlp as YtDlpConfig};
+use config::{
+    read_config_from_env, Bot as BotConfig, PhantomAudio as PhantomAudioConfig, PhantomAudioId, PhantomVideo as PhantomVideoConfig,
+    PhantomVideoId, YtDlp as YtDlpConfig,
+};
 use filters::text_contains_url;
-use handlers::{start, video_download, video_download_chosen_inline_result, video_select_inline_query};
+use handlers::{audio_download, media_download_chosen_inline_result, media_select_inline_query, start, video_download};
 use middlewares::Config as ConfigMiddleware;
 use telers::{
     enums::{ChatType as ChatTypeEnum, ContentType as ContentTypeEnum},
     errors::{HandlerError, SessionErrorKind},
     event::{simple, ToServiceProvider as _},
     filters::{ChatType, Command, ContentType},
-    methods::{DeleteMessage, SendVideo},
+    methods::{DeleteMessage, SendAudio, SendVideo},
     types::InputFile,
     Bot, Dispatcher, Router,
 };
@@ -94,6 +97,45 @@ async fn get_phantom_video_id(
     }
 }
 
+async fn get_phantom_audio_id(
+    bot: Bot,
+    bot_config: BotConfig,
+    phantom_audio_config: PhantomAudioConfig,
+) -> Result<PhantomAudioId, SessionErrorKind> {
+    match phantom_audio_config {
+        PhantomAudioConfig::Id(id) => {
+            event!(Level::DEBUG, ?id, "Got phantom audio id from config");
+
+            Ok(id)
+        }
+        PhantomAudioConfig::Path(path) => {
+            event!(Level::DEBUG, ?path, "Got phantom audio path from config");
+
+            let phantom_file = InputFile::fs(path);
+
+            event!(Level::DEBUG, ?phantom_file, "Sending phantom video");
+
+            let message = bot
+                .send(
+                    SendAudio::new(bot_config.receiver_video_chat_id, phantom_file)
+                        .title("Audio of the video")
+                        .performer("Click to download audio")
+                        .duration(0)
+                        .disable_notification(true),
+                )
+                .await?;
+
+            tokio::spawn(async move {
+                bot.send(DeleteMessage::new(bot_config.receiver_video_chat_id, message.message_id))
+                    .await
+            });
+
+            // `unwrap` is safe because we checked that `message.audio` is `Some` in `SendAudio` method
+            Ok(PhantomAudioId(message.audio.unwrap().file_id.into_string()))
+        }
+    }
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let config = match read_config_from_env() {
@@ -126,18 +168,24 @@ async fn main() {
         .message
         .register(video_download)
         .filter(ContentType::one(ContentTypeEnum::Text))
-        .filter(ChatType::one(ChatTypeEnum::Private))
+        .filter(Command::many(["vd", "video_download"]))
+        .filter(text_contains_url);
+    router
+        .message
+        .register(audio_download)
+        .filter(ContentType::one(ContentTypeEnum::Text))
+        .filter(Command::many(["ad", "audio_download"]))
         .filter(text_contains_url);
     router
         .message
         .register(video_download)
         .filter(ContentType::one(ContentTypeEnum::Text))
-        .filter(Command::many(["d", "download", "vd", "video_download"]))
+        .filter(ChatType::one(ChatTypeEnum::Private))
         .filter(text_contains_url);
-    router.inline_query.register(video_select_inline_query).filter(text_contains_url);
+    router.inline_query.register(media_select_inline_query).filter(text_contains_url);
     router
         .chosen_inline_result
-        .register(video_download_chosen_inline_result)
+        .register(media_download_chosen_inline_result)
         .filter(text_contains_url);
 
     let phantom_video_id = match get_phantom_video_id(bot.clone(), config.bot.clone(), config.phantom_video).await {
@@ -149,10 +197,21 @@ async fn main() {
         }
     };
 
-    router
-        .update
-        .outer_middlewares
-        .register(ConfigMiddleware::new(config.yt_dlp.clone(), config.bot, phantom_video_id.clone()));
+    let phantom_audio_id = match get_phantom_audio_id(bot.clone(), config.bot.clone(), config.phantom_audio).await {
+        Ok(id) => id,
+        Err(err) => {
+            event!(Level::ERROR, %err, "Error while getting phantom audio id");
+
+            std::process::exit(1);
+        }
+    };
+
+    router.update.outer_middlewares.register(ConfigMiddleware::new(
+        config.yt_dlp.clone(),
+        config.bot,
+        phantom_video_id,
+        phantom_audio_id,
+    ));
 
     router.startup.register(on_startup, (config.yt_dlp.clone(),));
     router.shutdown.register(on_shutdown, (config.yt_dlp,));
