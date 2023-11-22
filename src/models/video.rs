@@ -1,7 +1,7 @@
-use super::{AnyFormat, CombinedFormats};
+use super::{combined_format, format};
 
 use serde::Deserialize;
-use std::{collections::VecDeque, ops::Deref};
+use std::{collections::VecDeque, ops::Deref, path::PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Thumbnail {
@@ -13,8 +13,9 @@ pub struct Thumbnail {
     pub width: Option<f64>,
 }
 
+#[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone, Deserialize)]
-pub struct Video {
+pub struct VideoInYT {
     pub id: String,
     pub title: Option<String>,
     pub url: Option<String>,
@@ -22,11 +23,11 @@ pub struct Video {
     pub width: Option<i64>,
     pub height: Option<i64>,
 
-    formats: Vec<AnyFormat>,
+    formats: Vec<format::Any>,
 }
 
-impl Video {
-    pub fn get_combined_formats(&self) -> CombinedFormats<'_> {
+impl VideoInYT {
+    pub fn get_combined_formats(&self) -> combined_format::Formats<'_> {
         let mut format_kinds = vec![];
 
         for format in &self.formats {
@@ -37,51 +38,72 @@ impl Video {
             format_kinds.push(format);
         }
 
-        CombinedFormats::from(format_kinds)
+        combined_format::Formats::from(format_kinds)
     }
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub struct Videos {
-    is_playlist: bool,
-    inner: VecDeque<Video>,
-}
+pub struct VideosInYT(VecDeque<VideoInYT>);
 
-impl Videos {
-    pub fn new(is_playlist: bool, videos: impl Into<VecDeque<Video>>) -> Self {
-        Self {
-            is_playlist,
-            inner: videos.into(),
-        }
-    }
-
-    pub const fn is_playlist(&self) -> bool {
-        self.is_playlist
+impl VideosInYT {
+    pub fn new(videos: impl Into<VecDeque<VideoInYT>>) -> Self {
+        Self(videos.into())
     }
 
     pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
+        self.0.is_empty()
     }
 }
 
-impl Iterator for Videos {
-    type Item = Video;
+impl Iterator for VideosInYT {
+    type Item = VideoInYT;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.pop_front()
+        self.0.pop_front()
     }
 }
 
-impl Extend<Video> for Videos {
-    fn extend<T: IntoIterator<Item = Video>>(&mut self, iter: T) {
-        self.inner.extend(iter);
+impl Extend<VideoInYT> for VideosInYT {
+    fn extend<T: IntoIterator<Item = VideoInYT>>(&mut self, iter: T) {
+        self.0.extend(iter);
     }
 }
 
-impl Deref for Videos {
-    type Target = VecDeque<Video>;
+impl Deref for VideosInYT {
+    type Target = VecDeque<VideoInYT>;
 
     fn deref(&self) -> &Self::Target {
-        &self.inner
+        &self.0
+    }
+}
+
+#[derive(Debug)]
+pub struct TgVideoInPlaylist {
+    pub file_id: Box<str>,
+    pub index_in_playlist: usize,
+}
+
+impl TgVideoInPlaylist {
+    pub fn new(file_id: impl Into<Box<str>>, index_in_playlist: usize) -> Self {
+        Self {
+            file_id: file_id.into(),
+            index_in_playlist,
+        }
+    }
+}
+
+#[allow(clippy::module_name_repetitions)]
+#[derive(Debug)]
+pub struct VideoInFS {
+    pub path: PathBuf,
+    pub thumbnail_path: Option<PathBuf>,
+}
+
+impl VideoInFS {
+    pub fn new(path: impl Into<PathBuf>, thumbnail_path: Option<PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            thumbnail_path,
+        }
     }
 }

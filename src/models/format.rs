@@ -351,9 +351,8 @@ impl<'a> TryFrom<&'a str> for AudioCodec<'a> {
     }
 }
 
-#[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
-pub struct VideoFormat<'a> {
+pub struct Video<'a> {
     pub id: &'a str,
     pub codec: VideoCodec<'a>,
     pub container: Container,
@@ -363,7 +362,7 @@ pub struct VideoFormat<'a> {
     pub filesize_approx: Option<f64>,
 }
 
-impl<'a> VideoFormat<'a> {
+impl<'a> Video<'a> {
     pub fn new(
         id: &'a str,
         codec: VideoCodec<'a>,
@@ -397,16 +396,15 @@ impl<'a> VideoFormat<'a> {
     }
 }
 
-#[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
-pub struct AudioFormat<'a> {
+pub struct Audio<'a> {
     pub id: &'a str,
     pub codec: AudioCodec<'a>,
     pub filesize: Option<f64>,
     pub filesize_approx: Option<f64>,
 }
 
-impl<'a> AudioFormat<'a> {
+impl<'a> Audio<'a> {
     pub fn new(id: &'a str, codec: AudioCodec<'a>, filesize: Option<f64>, filesize_approx: Option<f64>) -> Self {
         Self {
             id,
@@ -429,17 +427,16 @@ impl<'a> AudioFormat<'a> {
     }
 }
 
-#[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
-pub enum FormatKind<'a> {
-    Audio(AudioFormat<'a>),
-    Video(VideoFormat<'a>),
-    CombinedFormat(AudioFormat<'a>, VideoFormat<'a>),
+pub enum Kind<'a> {
+    Audio(Audio<'a>),
+    Video(Video<'a>),
+    Combined(Audio<'a>, Video<'a>),
 }
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
-pub struct AnyFormat {
+pub struct Any {
     pub id: String,
     pub acodec: Option<String>,
     pub vcodec: Option<String>,
@@ -450,13 +447,13 @@ pub struct AnyFormat {
     pub filesize_approx: Option<f64>,
 }
 
-impl<'de> Deserialize<'de> for AnyFormat {
+impl<'de> Deserialize<'de> for Any {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
-        struct AnyFormatRaw {
+        struct Raw {
             format_id: String,
             acodec: Option<String>,
             vcodec: Option<String>,
@@ -467,7 +464,7 @@ impl<'de> Deserialize<'de> for AnyFormat {
             filesize_approx: Option<f64>,
         }
 
-        let raw = AnyFormatRaw::deserialize(deserializer)?;
+        let raw = Raw::deserialize(deserializer)?;
 
         Ok(Self {
             id: raw.format_id,
@@ -482,9 +479,9 @@ impl<'de> Deserialize<'de> for AnyFormat {
     }
 }
 
-impl AnyFormat {
+impl Any {
     #[allow(clippy::similar_names)]
-    pub fn kind(&self) -> Result<FormatKind<'_>, FormatError<'_>> {
+    pub fn kind(&self) -> Result<Kind<'_>, FormatError<'_>> {
         let acodec = self.acodec.as_ref();
         let vcodec = self.vcodec.as_ref();
 
@@ -503,9 +500,9 @@ impl AnyFormat {
                 });
             }
 
-            let audio_format = AudioFormat::new(self.id.as_str(), acodec, self.filesize, self.filesize_approx);
+            let audio_format = Audio::new(self.id.as_str(), acodec, self.filesize, self.filesize_approx);
 
-            let video_format = VideoFormat::new(
+            let video_format = Video::new(
                 self.id.as_str(),
                 vcodec,
                 container,
@@ -515,14 +512,14 @@ impl AnyFormat {
                 self.filesize_approx,
             );
 
-            return Ok(FormatKind::CombinedFormat(audio_format, video_format));
+            return Ok(Kind::Combined(audio_format, video_format));
         }
 
         if let Some(acodec) = acodec {
             let acodec = AudioCodec::try_from(acodec.as_str())?;
-            let audio_format = AudioFormat::new(self.id.as_str(), acodec, self.filesize, self.filesize_approx);
+            let audio_format = Audio::new(self.id.as_str(), acodec, self.filesize, self.filesize_approx);
 
-            Ok(FormatKind::Audio(audio_format))
+            Ok(Kind::Audio(audio_format))
         } else if let Some(vcodec) = vcodec {
             let Some(container) = self.container.as_ref() else {
                 return Err(FormatError::VideoContainerEmpty);
@@ -538,7 +535,7 @@ impl AnyFormat {
                 });
             }
 
-            let video_format = VideoFormat::new(
+            let video_format = Video::new(
                 self.id.as_str(),
                 vcodec,
                 container,
@@ -548,17 +545,17 @@ impl AnyFormat {
                 self.filesize_approx,
             );
 
-            Ok(FormatKind::Video(video_format))
+            Ok(Kind::Video(video_format))
         } else {
             Err(FormatError::AudioAndVideoCodecsEmpty)
         }
     }
 }
 
-impl<'a> TryFrom<&'a AnyFormat> for FormatKind<'a> {
+impl<'a> TryFrom<&'a Any> for Kind<'a> {
     type Error = FormatError<'a>;
 
-    fn try_from(value: &'a AnyFormat) -> Result<Self, Self::Error> {
+    fn try_from(value: &'a Any) -> Result<Self, Self::Error> {
         value.kind()
     }
 }

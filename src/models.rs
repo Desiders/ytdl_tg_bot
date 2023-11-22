@@ -1,7 +1,7 @@
-mod combined_format;
-mod format;
-mod video;
+pub mod combined_format;
+pub mod format;
+pub mod video;
 
-pub use combined_format::{CombinedFormat, CombinedFormats};
-pub use format::{AnyFormat, AudioFormat, FormatKind, VideoFormat};
-pub use video::{Video, Videos};
+pub use combined_format::{Format as CombinedFormat, Formats as CombinedFormats};
+pub use format::{Audio as AudioFormat, Video as VideoFormat};
+pub use video::{TgVideoInPlaylist, VideoInFS, VideoInYT, VideosInYT};
