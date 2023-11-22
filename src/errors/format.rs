@@ -1,7 +1,6 @@
-#[allow(clippy::module_name_repetitions)]
 #[derive(thiserror::Error, Debug)]
 #[error("Format error: {0}")]
-pub enum FormatError<'a> {
+pub enum Error<'a> {
     #[error("Audio codec `{codec}` is not supported")]
     AudioCodecNotSupported { codec: &'a str },
     #[error("Video codec `{codec}` is not supported")]
