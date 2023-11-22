@@ -8,133 +8,21 @@ mod handlers;
 mod handlers_utils;
 mod middlewares;
 mod models;
+mod utils;
 
-use config::{
-    read_config_from_env, Bot as BotConfig, PhantomAudio as PhantomAudioConfig, PhantomAudioId, PhantomVideo as PhantomVideoConfig,
-    PhantomVideoId, YtDlp as YtDlpConfig,
-};
+use config::read_config_from_env;
 use filters::text_contains_url;
 use handlers::{audio_download, media_download_chosen_inline_result, media_select_inline_query, start, video_download};
 use middlewares::Config as ConfigMiddleware;
 use telers::{
     enums::{ChatType as ChatTypeEnum, ContentType as ContentTypeEnum},
-    errors::{HandlerError, SessionErrorKind},
-    event::{simple, ToServiceProvider as _},
+    event::ToServiceProvider as _,
     filters::{ChatType, Command, ContentType},
-    methods::{DeleteMessage, SendAudio, SendVideo},
-    types::InputFile,
     Bot, Dispatcher, Router,
 };
 use tracing::{event, Level};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
-use youtube_dl::download_yt_dlp;
-
-async fn on_startup(yt_dlp_config: YtDlpConfig) -> simple::HandlerResult {
-    event!(Level::DEBUG, ?yt_dlp_config, "Downloading yt-dlp");
-
-    let file_exists = tokio::fs::metadata(&yt_dlp_config.full_path)
-        .await
-        .map(|metadata| metadata.is_file())
-        .unwrap_or(false);
-
-    if file_exists && !yt_dlp_config.update_on_startup {
-        return Ok(());
-    }
-
-    download_yt_dlp(yt_dlp_config.dir_path).await.map_err(|err| {
-        event!(Level::ERROR, %err, "Error while downloading yt-dlp path");
-
-        HandlerError::new(err)
-    })?;
-
-    Ok(())
-}
-
-async fn on_shutdown(yt_dlp_config: YtDlpConfig) -> simple::HandlerResult {
-    if !yt_dlp_config.remove_on_shutdown {
-        return Ok(());
-    }
-
-    tokio::fs::remove_dir_all(yt_dlp_config.dir_path).await.map_err(|err| {
-        event!(Level::ERROR, %err, "Error while removing yt-dlp path");
-
-        HandlerError::new(err)
-    })?;
-
-    Ok(())
-}
-
-async fn get_phantom_video_id(
-    bot: Bot,
-    bot_config: BotConfig,
-    phantom_video_config: PhantomVideoConfig,
-) -> Result<PhantomVideoId, SessionErrorKind> {
-    match phantom_video_config {
-        PhantomVideoConfig::Id(id) => {
-            event!(Level::DEBUG, ?id, "Got phantom video id from config");
-
-            Ok(id)
-        }
-        PhantomVideoConfig::Path(path) => {
-            event!(Level::DEBUG, ?path, "Got phantom video path from config");
-
-            let phantom_file = InputFile::fs(path);
-
-            event!(Level::DEBUG, ?phantom_file, "Sending phantom video");
-
-            let message = bot
-                .send(SendVideo::new(bot_config.receiver_video_chat_id, phantom_file).disable_notification(true))
-                .await?;
-
-            tokio::spawn(async move {
-                bot.send(DeleteMessage::new(bot_config.receiver_video_chat_id, message.message_id))
-                    .await
-            });
-
-            // `unwrap` is safe because we checked that `message.video` is `Some` in `SendVideo` method
-            Ok(PhantomVideoId(message.video.unwrap().file_id.into_string()))
-        }
-    }
-}
-
-async fn get_phantom_audio_id(
-    bot: Bot,
-    bot_config: BotConfig,
-    phantom_audio_config: PhantomAudioConfig,
-) -> Result<PhantomAudioId, SessionErrorKind> {
-    match phantom_audio_config {
-        PhantomAudioConfig::Id(id) => {
-            event!(Level::DEBUG, ?id, "Got phantom audio id from config");
-
-            Ok(id)
-        }
-        PhantomAudioConfig::Path(path) => {
-            event!(Level::DEBUG, ?path, "Got phantom audio path from config");
-
-            let phantom_file = InputFile::fs(path);
-
-            event!(Level::DEBUG, ?phantom_file, "Sending phantom video");
-
-            let message = bot
-                .send(
-                    SendAudio::new(bot_config.receiver_video_chat_id, phantom_file)
-                        .title("Audio of the video")
-                        .performer("Click to download audio")
-                        .duration(0)
-                        .disable_notification(true),
-                )
-                .await?;
-
-            tokio::spawn(async move {
-                bot.send(DeleteMessage::new(bot_config.receiver_video_chat_id, message.message_id))
-                    .await
-            });
-
-            // `unwrap` is safe because we checked that `message.audio` is `Some` in `SendAudio` method
-            Ok(PhantomAudioId(message.audio.unwrap().file_id.into_string()))
-        }
-    }
-}
+use utils::{get_phantom_audio_id, get_phantom_video_id, on_shutdown, on_startup};
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
