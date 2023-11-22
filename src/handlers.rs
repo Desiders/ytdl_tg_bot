@@ -1,5 +1,5 @@
+mod downloader;
 mod start;
-mod url;
 
-pub use self::url::{url, url_chosen_inline_result, url_inline_query};
+pub use self::downloader::{video_download, video_download_chosen_inline_result, video_select_inline_query};
 pub use start::start;

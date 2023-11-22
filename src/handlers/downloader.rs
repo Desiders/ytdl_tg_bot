@@ -29,7 +29,7 @@ use telers::{
         InlineQueryResultArticle, InlineQueryResultCachedVideo, InputFile, InputMediaVideo, InputTextMessageContent, Message,
     },
     utils::text_decorations::{TextDecoration, HTML_DECORATION},
-    Bot,
+    Bot, Context,
 };
 use tempfile::tempdir;
 use tokio::task::JoinHandle;
@@ -130,8 +130,9 @@ async fn error_occured(
 }
 
 #[instrument(skip_all, fields(message_id, chat_id = chat.id, url))]
-pub async fn url(
+pub async fn video_download(
     bot: Arc<Bot>,
+    context: Arc<Context>,
     Message {
         message_id,
         text: url,
@@ -140,13 +141,18 @@ pub async fn url(
     }: Message,
     YtDlpWrapper(yt_dlp_config): YtDlpWrapper,
 ) -> HandlerResult {
-    // `unwrap` is safe here, because we check that `message.text` is `Some` by filters
-    let url = url.as_ref().unwrap();
+    let url = if let Some(url) = context.get("video_url") {
+        url.downcast_ref::<Box<str>>().expect("Url should be `Box<str>`").clone()
+    } else {
+        event!(Level::WARN, "Url not found in context. `text_contains_url` filter should do this");
+
+        url.unwrap()
+    };
     let chat_id = chat.id;
 
     event!(Level::DEBUG, "Got url");
 
-    let videos = match ytdl::get_video_or_playlist_info(&yt_dlp_config.full_path, url, true).await {
+    let videos = match ytdl::get_video_or_playlist_info(&yt_dlp_config.full_path, url.as_ref(), true).await {
         Ok(videos) => videos,
         Err(err) => {
             event!(Level::ERROR, %err, "Error while getting video/playlist info");
@@ -393,7 +399,7 @@ async fn error_chosen_inline_result(
 
 #[allow(clippy::module_name_repetitions)]
 #[instrument(skip_all, fields(inline_message_id, url, video_id = field::Empty, format_id = field::Empty, file_path = field::Empty))]
-pub async fn url_chosen_inline_result(
+pub async fn video_download_chosen_inline_result(
     bot: Arc<Bot>,
     ChosenInlineResult {
         inline_message_id,
@@ -576,7 +582,7 @@ async fn error_inline_query_occured(bot: &Bot, query_id: &str, text: &str) -> Re
 
 #[allow(clippy::module_name_repetitions)]
 #[instrument(skip_all, fields(query_id, url))]
-pub async fn url_inline_query(
+pub async fn video_select_inline_query(
     bot: Arc<Bot>,
     InlineQuery {
         id: query_id, query: url, ..

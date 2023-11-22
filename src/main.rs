@@ -8,14 +8,14 @@ mod middlewares;
 mod models;
 
 use config::{read_config_from_env, Bot as BotConfig, PhantomVideo as PhantomVideoConfig, PhantomVideoId, YtDlp as YtDlpConfig};
-use filters::is_correct_url;
-use handlers::{start, url, url_chosen_inline_result, url_inline_query};
+use filters::text_contains_url;
+use handlers::{start, video_download, video_download_chosen_inline_result, video_select_inline_query};
 use middlewares::Config as ConfigMiddleware;
 use telers::{
-    enums::ContentType as ContentTypeEnum,
+    enums::{ChatType as ChatTypeEnum, ContentType as ContentTypeEnum},
     errors::{HandlerError, SessionErrorKind},
     event::{simple, ToServiceProvider as _},
-    filters::{Command, ContentType},
+    filters::{ChatType, Command, ContentType},
     methods::{DeleteMessage, SendVideo},
     types::InputFile,
     Bot, Dispatcher, Router,
@@ -77,7 +77,9 @@ async fn get_phantom_video_id(
 
             event!(Level::DEBUG, ?phantom_file, "Sending phantom video");
 
-            let message = bot.send(SendVideo::new(bot_config.receiver_video_chat_id, phantom_file)).await?;
+            let message = bot
+                .send(SendVideo::new(bot_config.receiver_video_chat_id, phantom_file).disable_notification(true))
+                .await?;
 
             tokio::spawn(async move {
                 bot.send(DeleteMessage::new(bot_config.receiver_video_chat_id, message.message_id))
@@ -120,14 +122,21 @@ async fn main() {
     router.message.register(start).filter(Command::many(["start", "help"]));
     router
         .message
-        .register(url)
+        .register(video_download)
         .filter(ContentType::one(ContentTypeEnum::Text))
-        .filter(is_correct_url);
-    router.inline_query.register(url_inline_query).filter(is_correct_url);
+        .filter(ChatType::one(ChatTypeEnum::Private))
+        .filter(text_contains_url);
+    router
+        .message
+        .register(video_download)
+        .filter(ContentType::one(ContentTypeEnum::Text))
+        .filter(Command::many(["d", "download", "vd", "video_download"]))
+        .filter(text_contains_url);
+    router.inline_query.register(video_select_inline_query).filter(text_contains_url);
     router
         .chosen_inline_result
-        .register(url_chosen_inline_result)
-        .filter(is_correct_url);
+        .register(video_download_chosen_inline_result)
+        .filter(text_contains_url);
 
     let phantom_video_id = match get_phantom_video_id(bot.clone(), config.bot.clone(), config.phantom_video).await {
         Ok(id) => id,
