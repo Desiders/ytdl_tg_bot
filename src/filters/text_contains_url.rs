@@ -39,20 +39,17 @@ pub fn text_contains_url(_bot: &Bot, update: &Update, context: &Context) -> impl
                             _ => return,
                         };
 
-                        message.reply_to_message.as_deref().map(|message| {
+                        if let Some(message) = message.reply_to_message.as_deref() {
                             let Some(text) = message.text.as_deref() else {
                                 return;
                             };
 
-                            match get_url_from_text(text) {
-                                Some(url) => {
-                                    url_found = true;
+                            if let Some(url) = get_url_from_text(text) {
+                                url_found = true;
 
-                                    context.insert("video_url", Box::new(url.as_str().to_owned().into_boxed_str()));
-                                }
-                                None => {}
+                                context.insert("video_url", Box::new(url.as_str().to_owned().into_boxed_str()));
                             };
-                        });
+                        };
                     })
                     .expect("Failed to convert `Update` to `UpdateType`");
             }

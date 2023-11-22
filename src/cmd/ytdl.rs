@@ -1,4 +1,4 @@
-use crate::models::Videos;
+use crate::models::VideosInYT;
 
 use futures_util::stream::StreamExt as _;
 use serde_json::{json, Value};
@@ -11,7 +11,7 @@ use tokio_util::codec::{FramedRead, LinesCodec};
 use tracing::{event, Level};
 
 #[derive(Debug, thiserror::Error)]
-pub enum GetInfoError {
+pub enum Error {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("Line codec error: {0}")]
@@ -28,7 +28,7 @@ pub async fn download_video_to_path(
     output_extension: &str,
     allow_playlist: bool,
     download_thumbnails: bool,
-) -> Result<(), GetInfoError> {
+) -> Result<(), Error> {
     let mut args = Vec::from([
         "--no-call-home",
         "--no-check-certificate",
@@ -69,7 +69,7 @@ pub async fn download_video_to_path(
     Ok(())
 }
 
-pub async fn get_video_or_playlist_info(executable_path: &str, id_or_url: &str, allow_playlist: bool) -> Result<Videos, GetInfoError> {
+pub async fn get_video_or_playlist_info(executable_path: &str, id_or_url: &str, allow_playlist: bool) -> Result<VideosInYT, Error> {
     let args = &[
         "--no-call-home",
         "--no-check-certificate",
@@ -98,22 +98,28 @@ pub async fn get_video_or_playlist_info(executable_path: &str, id_or_url: &str, 
     let mut stdout = FramedRead::new(child.stdout.take().unwrap(), LinesCodec::new());
     let mut stderr = FramedRead::new(child.stderr.take().unwrap(), LinesCodec::new());
 
-    let mut is_playlist = false;
-
     while let Some(line) = stdout.next().await {
         let line = line?;
 
         let value: Value = serde_json::from_reader(line.as_bytes())?;
 
-        is_playlist = value["_type"] == json!("playlist");
+        let is_playlist = value["_type"] == json!("playlist");
 
         if is_playlist {
             let Some(entries) = value["entries"].as_array() else {
                 continue;
             };
 
-            for entry in entries {
-                videos.push(serde_json::from_value(entry.clone())?);
+            if !allow_playlist && is_playlist {
+                event!(Level::WARN, "Playlist not allowed, but got playlist");
+
+                if let Some(entry) = entries.iter().next() {
+                    videos.push(serde_json::from_value(entry.clone())?);
+                }
+            } else {
+                for entry in entries {
+                    videos.push(serde_json::from_value(entry.clone())?);
+                }
             }
         } else {
             videos.push(serde_json::from_value(value)?);
@@ -140,5 +146,5 @@ pub async fn get_video_or_playlist_info(executable_path: &str, id_or_url: &str, 
         .into());
     }
 
-    Ok(Videos::new(is_playlist, videos))
+    Ok(VideosInYT::new(videos))
 }
