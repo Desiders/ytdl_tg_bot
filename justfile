@@ -2,14 +2,6 @@ set dotenv-load
 
 host := `uname -a`
 
-# Build cargo
-build:
-    cargo build
-
-# Build release
-build-release:
-    cargo build --release
-
 # Run cargo
 run:
     cargo run
@@ -18,13 +10,13 @@ run:
 run-release:
     cargo run --release
 
-# Build and run cargo
-build-run:
-    cargo run -- --build
+# Run docker compose
+run-docker:
+    docker-compose up
 
-# Build release and run cargo
-build-run-release:
-    cargo run -- --build --release
+# Down docker compose
+down-docker:
+    docker-compose down
 
 # Update dependencies
 update:
@@ -33,3 +25,7 @@ update:
 # Clippy
 clippy:
     cargo clippy --all --all-features -- -W clippy::pedantic
+
+# Format
+format:
+    cargo fmt --all -- --check
