@@ -9,6 +9,8 @@ use std::{
 #[derive(Clone, Debug)]
 pub struct Bot {
     pub token: String,
+    pub username: String,
+    pub source_code_url: String,
     pub receiver_video_chat_id: i64,
 }
 
@@ -77,6 +79,14 @@ pub fn read_config_from_env() -> Result<Config, ErrorKind> {
             token: env::var("BOT_TOKEN").map_err(|err| ErrorKind::Env {
                 source: err,
                 key: "BOT_TOKEN".into(),
+            })?,
+            username: env::var("BOT_USERNAME").map_err(|err| ErrorKind::Env {
+                source: err,
+                key: "BOT_USERNAME".into(),
+            })?,
+            source_code_url: env::var("BOT_SOURCE_CODE_URL").map_err(|err| ErrorKind::Env {
+                source: err,
+                key: "BOT_SOURCE_CODE_URL".into(),
             })?,
             receiver_video_chat_id: env::var("RECEIVER_VIDEO_CHAT_ID")
                 .map_err(|err| ErrorKind::Env {
