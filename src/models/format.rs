@@ -9,6 +9,7 @@ use std::{
 };
 
 const DEFAULT_PRIORITY: u8 = 19;
+const DEFAULT_VIDEO_CODEC_PRIORITY: u8 = 6;
 
 // Source: https://voussoir.net/writing/youtubedl_formats
 lazy_static! {
@@ -273,6 +274,7 @@ pub enum AudioCodec<'a> {
     AAC_OR_ALAC(&'a str),
     FLAC(&'a str),
     Opus(&'a str),
+    MP3(&'a str),
     PCM(&'a str),
 }
 
@@ -282,7 +284,7 @@ fn is_aac_or_alac(codec: &str) -> bool {
         || codec.to_lowercase().starts_with("m4a")
         || codec.to_lowercase().starts_with("m4p")
         || codec.to_lowercase().starts_with("m4b")
-        || codec.to_lowercase().starts_with("mp4")
+        || codec.to_lowercase().starts_with("mp4a")
         || codec.to_lowercase().starts_with("3gp")
 }
 
@@ -294,15 +296,21 @@ fn is_opus(codec: &str) -> bool {
     codec.to_lowercase().starts_with("opus")
 }
 
+fn is_mp3(codec: &str) -> bool {
+    codec.to_lowercase().starts_with("mp3")
+}
+
 fn is_pcm(codec: &str) -> bool {
     codec.to_lowercase().starts_with("pcm")
 }
 
 impl AudioCodec<'_> {
     #[must_use]
-    pub const fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> String {
         match self {
-            Self::AAC_OR_ALAC(codec) | Self::FLAC(codec) | Self::Opus(codec) | Self::PCM(codec) => codec,
+            Self::AAC_OR_ALAC(codec) | Self::FLAC(codec) | Self::Opus(codec) | Self::MP3(codec) | Self::PCM(codec) => {
+                format!("{extension} ({codec})", extension = self.get_extension())
+            }
         }
     }
 
@@ -312,21 +320,22 @@ impl AudioCodec<'_> {
             Self::AAC_OR_ALAC(_) => "m4a",
             Self::FLAC(_) => "flac",
             Self::Opus(_) => "opus",
+            Self::MP3(_) => "mp3",
             Self::PCM(_) => "wav",
         }
     }
 
     #[must_use]
     pub const fn is_support_container_with_vcodec(&self, video_codec: &VideoCodec, container: &Container) -> bool {
-        use AudioCodec::{Opus, AAC_OR_ALAC, FLAC, PCM};
+        use AudioCodec::{Opus, AAC_OR_ALAC, FLAC, MP3, PCM};
         use Container::{MKV, MOV, MP4, TS};
         use VideoCodec::{ProRes, AV1, H264, H265, VP9};
 
         matches!(
             (self, video_codec, container),
-            (AAC_OR_ALAC(_), H264(_), _)
-                | (AAC_OR_ALAC(_), H265(_), MP4 | MOV | MKV | TS)
-                | (AAC_OR_ALAC(_) | FLAC(_) | Opus(_), AV1(_) | VP9(_), MP4 | MKV)
+            (AAC_OR_ALAC(_), H264(_) | H265(_), _)
+                | (MP3(_), H264(_) | H265(_), MP4 | MOV | MKV | TS)
+                | (AAC_OR_ALAC(_) | FLAC(_) | MP3(_) | Opus(_), AV1(_) | VP9(_), MP4 | MKV)
                 | (AAC_OR_ALAC(_) | PCM(_), ProRes(_), MOV | MKV)
                 | (FLAC(_), H264(_) | H265(_), MP4 | MKV)
                 | (FLAC(_) | Opus(_), ProRes(_), MKV)
@@ -338,13 +347,14 @@ impl AudioCodec<'_> {
 
     #[must_use]
     pub const fn get_priority(&self) -> u8 {
-        use AudioCodec::{Opus, AAC_OR_ALAC, FLAC, PCM};
+        use AudioCodec::{Opus, AAC_OR_ALAC, FLAC, MP3, PCM};
 
         match self {
             FLAC(_) => 1,
             AAC_OR_ALAC(_) => 2,
             Opus(_) => 3,
-            PCM(_) => 4,
+            MP3(_) => 4,
+            PCM(_) => 5,
         }
     }
 }
@@ -357,6 +367,7 @@ impl<'a> TryFrom<&'a str> for AudioCodec<'a> {
             value if is_aac_or_alac(value) => Ok(Self::AAC_OR_ALAC(value)),
             value if is_flac(value) => Ok(Self::FLAC(value)),
             value if is_opus(value) => Ok(Self::Opus(value)),
+            value if is_mp3(value) => Ok(Self::MP3(value)),
             value if is_pcm(value) => Ok(Self::PCM(value)),
             _ => Err(FormatError::AudioCodecNotSupported { codec: value }),
         }
@@ -372,7 +383,8 @@ impl Display for AudioCodec<'_> {
 #[derive(Debug, Clone)]
 pub struct Video<'a> {
     pub id: &'a str,
-    pub codec: VideoCodec<'a>,
+    pub url: &'a str,
+    pub codec: Option<VideoCodec<'a>>,
     pub container: Container,
     pub height: Option<f64>,
     pub width: Option<f64>,
@@ -381,9 +393,11 @@ pub struct Video<'a> {
 }
 
 impl<'a> Video<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: &'a str,
-        codec: VideoCodec<'a>,
+        url: &'a str,
+        codec: Option<VideoCodec<'a>>,
         container: Container,
         height: Option<f64>,
         width: Option<f64>,
@@ -392,6 +406,7 @@ impl<'a> Video<'a> {
     ) -> Self {
         Self {
             id,
+            url,
             codec,
             container,
             height,
@@ -402,7 +417,9 @@ impl<'a> Video<'a> {
     }
 
     pub fn get_priority(&self) -> u8 {
-        let codec_priority = self.codec.get_priority_by_container(&self.container);
+        let codec_priority = self.codec.as_ref().map_or(DEFAULT_VIDEO_CODEC_PRIORITY, |codec| {
+            codec.get_priority_by_container(&self.container)
+        });
 
         if let Some(priority) = VIDEO_IDS_AND_PRIORITY.get(self.id) {
             codec_priority + priority
@@ -429,10 +446,10 @@ impl Display for Video<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{id}id {container}({codec}, {resolution}) {filesize_kb:.2}KB ({filesize_mb:.2}MB)",
+            "{id} {container}+{codec} {resolution} {filesize_kb:.2}KB ({filesize_mb:.2}MB)",
             id = self.id,
             container = self.container,
-            codec = self.codec,
+            codec = self.codec.as_ref().map_or("unknown", VideoCodec::as_str),
             resolution = self.resolution(),
             filesize_kb = self.filesize_or_approx().map_or(0.0, |filesize| filesize.round() / 1024.0),
             filesize_mb = self.filesize_or_approx().map_or(0.0, |filesize| filesize.round() / 1024.0 / 1024.0),
@@ -443,15 +460,17 @@ impl Display for Video<'_> {
 #[derive(Debug, Clone)]
 pub struct Audio<'a> {
     pub id: &'a str,
+    pub url: &'a str,
     pub codec: AudioCodec<'a>,
     pub filesize: Option<f64>,
     pub filesize_approx: Option<f64>,
 }
 
 impl<'a> Audio<'a> {
-    pub fn new(id: &'a str, codec: AudioCodec<'a>, filesize: Option<f64>, filesize_approx: Option<f64>) -> Self {
+    pub fn new(id: &'a str, url: &'a str, codec: AudioCodec<'a>, filesize: Option<f64>, filesize_approx: Option<f64>) -> Self {
         Self {
             id,
+            url,
             codec,
             filesize,
             filesize_approx,
@@ -479,7 +498,7 @@ impl Display for Audio<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{id}id ({codec}) {filesize_kb:.2}KB ({filesize_mb:.2}MB)",
+            "{id} {codec} {filesize_kb:.2}KB ({filesize_mb:.2}MB)",
             id = self.id,
             codec = self.codec,
             filesize_kb = self.filesize_or_approx().map_or(0.0, |filesize| filesize.round() / 1024.0),
@@ -540,27 +559,64 @@ pub enum Kind<'a> {
     Combined(Audio<'a>, Video<'a>),
 }
 
+#[derive(Debug, Clone)]
+enum Codec {
+    None,
+    Unknown,
+    Inner(String),
+}
+
+impl Codec {
+    #[must_use]
+    pub const fn is_none(&self) -> bool {
+        matches!(self, Self::None)
+    }
+
+    #[must_use]
+    pub const fn is_known(&self) -> bool {
+        matches!(self, Self::Inner(_))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::None | Self::Unknown => None,
+            Self::Inner(codec) => Some(codec.as_str()),
+        }
+    }
+}
+
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone)]
 pub struct Any {
     pub id: String,
-    pub acodec: Option<String>,
-    pub vcodec: Option<String>,
+    pub url: String,
+    pub format: Option<String>,
+    pub format_note: Option<String>,
+    pub ext: String,
     pub container: Option<String>,
     pub height: Option<f64>,
     pub width: Option<f64>,
     pub filesize: Option<f64>,
     pub filesize_approx: Option<f64>,
+
+    acodec: Codec,
+    vcodec: Codec,
 }
 
+#[allow(clippy::similar_names)]
 impl<'de> Deserialize<'de> for Any {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        #[derive(Deserialize)]
+        #[derive(Debug, Deserialize)]
         struct Raw {
             format_id: String,
+            format: Option<String>,
+            format_note: Option<String>,
+            url: String,
+            ext: String,
             acodec: Option<String>,
             vcodec: Option<String>,
             container: Option<String>,
@@ -572,10 +628,30 @@ impl<'de> Deserialize<'de> for Any {
 
         let raw = Raw::deserialize(deserializer)?;
 
+        let acodec = match raw.acodec {
+            Some(acodec) => match acodec.as_str() {
+                "none" => Codec::Unknown,
+                acodec => Codec::Inner(acodec.to_string()),
+            },
+            None => Codec::None,
+        };
+
+        let vcodec = match raw.vcodec {
+            Some(vcodec) => match vcodec.as_str() {
+                "none" => Codec::Unknown,
+                vcodec => Codec::Inner(vcodec.to_string()),
+            },
+            None => Codec::None,
+        };
+
         Ok(Self {
             id: raw.format_id,
-            acodec: raw.acodec.filter(|acodec| acodec != "none"),
-            vcodec: raw.vcodec.filter(|vcodec| vcodec != "none"),
+            format: raw.format,
+            format_note: raw.format_note,
+            url: raw.url,
+            ext: raw.ext,
+            acodec,
+            vcodec,
             container: raw.container,
             height: raw.height,
             width: raw.width,
@@ -588,14 +664,12 @@ impl<'de> Deserialize<'de> for Any {
 impl Any {
     #[allow(clippy::similar_names)]
     pub fn kind(&self) -> Result<Kind<'_>, FormatError<'_>> {
-        let acodec = self.acodec.as_ref();
-        let vcodec = self.vcodec.as_ref();
+        let acodec = &self.acodec;
+        let vcodec = &self.vcodec;
 
-        let is_combined = acodec.is_some() && vcodec.is_some();
-
-        if is_combined {
-            let acodec = AudioCodec::try_from(acodec.unwrap().as_str())?;
-            let vcodec = VideoCodec::try_from(vcodec.unwrap().as_str())?;
+        if acodec.is_known() && vcodec.is_known() {
+            let acodec = AudioCodec::try_from(acodec.as_str().unwrap())?;
+            let vcodec = VideoCodec::try_from(vcodec.as_str().unwrap())?;
 
             let container = Container::try_from((&acodec, &vcodec))?;
 
@@ -606,11 +680,12 @@ impl Any {
                 });
             }
 
-            let audio_format = Audio::new(self.id.as_str(), acodec, self.filesize, self.filesize_approx);
+            let audio_format = Audio::new(self.id.as_str(), self.url.as_str(), acodec, self.filesize, self.filesize_approx);
 
             let video_format = Video::new(
                 self.id.as_str(),
-                vcodec,
+                self.url.as_str(),
+                Some(vcodec),
                 container,
                 self.height,
                 self.width,
@@ -618,20 +693,41 @@ impl Any {
                 self.filesize_approx,
             );
 
-            return Ok(Kind::Combined(audio_format, video_format));
-        }
+            Ok(Kind::Combined(audio_format, video_format))
+        } else if acodec.is_none() && vcodec.is_none() {
+            let container = Container::try_from(self.ext.as_str())?;
 
-        if let Some(acodec) = acodec {
-            let acodec = AudioCodec::try_from(acodec.as_str())?;
-            let audio_format = Audio::new(self.id.as_str(), acodec, self.filesize, self.filesize_approx);
+            let audio_format = Audio::new(
+                self.id.as_str(),
+                self.url.as_str(),
+                AudioCodec::try_from("mp3")?,
+                self.filesize,
+                self.filesize_approx,
+            );
+
+            let video_format = Video::new(
+                self.id.as_str(),
+                self.url.as_str(),
+                None,
+                container,
+                self.height,
+                self.width,
+                self.filesize,
+                self.filesize_approx,
+            );
+
+            Ok(Kind::Combined(audio_format, video_format))
+        } else if acodec.is_known() {
+            let acodec = AudioCodec::try_from(acodec.as_str().unwrap())?;
+            let audio_format = Audio::new(self.id.as_str(), self.url.as_str(), acodec, self.filesize, self.filesize_approx);
 
             Ok(Kind::Audio(audio_format))
-        } else if let Some(vcodec) = vcodec {
+        } else if vcodec.is_known() {
             let Some(container) = self.container.as_ref() else {
                 return Err(FormatError::VideoContainerEmpty);
             };
 
-            let vcodec = VideoCodec::try_from(vcodec.as_str())?;
+            let vcodec = VideoCodec::try_from(vcodec.as_str().unwrap())?;
             let container = Container::try_from(container.as_str())?;
 
             if !vcodec.is_support_container(&container) {
@@ -643,7 +739,25 @@ impl Any {
 
             let video_format = Video::new(
                 self.id.as_str(),
-                vcodec,
+                self.url.as_str(),
+                Some(vcodec),
+                container,
+                self.height,
+                self.width,
+                self.filesize,
+                self.filesize_approx,
+            );
+
+            Ok(Kind::Video(video_format))
+        } else if let Ok(acodec) = AudioCodec::try_from(self.ext.as_str()) {
+            let audio_format = Audio::new(self.id.as_str(), self.url.as_str(), acodec, self.filesize, self.filesize_approx);
+
+            Ok(Kind::Audio(audio_format))
+        } else if let Ok(container) = Container::try_from(self.ext.as_str()) {
+            let video_format = Video::new(
+                self.id.as_str(),
+                self.url.as_str(),
+                None,
                 container,
                 self.height,
                 self.width,
@@ -653,7 +767,7 @@ impl Any {
 
             Ok(Kind::Video(video_format))
         } else {
-            Err(FormatError::AudioAndVideoCodecsEmpty)
+            Err(FormatError::UnknownFormat)
         }
     }
 }

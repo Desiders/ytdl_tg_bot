@@ -96,14 +96,14 @@ impl Deref for VideosInYT {
 #[derive(Debug)]
 pub struct TgVideoInPlaylist {
     pub file_id: Box<str>,
-    pub index_in_playlist: usize,
+    pub index: usize,
 }
 
 impl TgVideoInPlaylist {
-    pub fn new(file_id: impl Into<Box<str>>, index_in_playlist: usize) -> Self {
+    pub fn new(file_id: impl Into<Box<str>>, index: usize) -> Self {
         Self {
             file_id: file_id.into(),
-            index_in_playlist,
+            index,
         }
     }
 }

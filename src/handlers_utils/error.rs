@@ -2,7 +2,7 @@ use telers::{
     enums::ParseMode,
     errors::SessionErrorKind,
     methods::{AnswerInlineQuery, EditMessageCaption, SendMessage},
-    types::{InlineQueryResultArticle, InputTextMessageContent, Message},
+    types::{InlineKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent, Message},
     Bot,
 };
 
@@ -31,7 +31,8 @@ pub async fn occured_in_chosen_inline_result(
     bot.send(
         EditMessageCaption::new(text)
             .inline_message_id(inline_message_id)
-            .parse_mode_option(parse_mode),
+            .parse_mode_option(parse_mode)
+            .reply_markup(InlineKeyboardMarkup::new([[]])),
     )
     .await
     .map(|_| ())
@@ -42,4 +43,22 @@ pub async fn occured_in_inline_query_occured(bot: &Bot, query_id: &str, text: &s
     let results = [result];
 
     bot.send(AnswerInlineQuery::new(query_id, results)).await.map(|_| ())
+}
+
+pub async fn download_videos_in_message(
+    bot: &Bot,
+    count: usize,
+    chat_id: i64,
+    reply_to_message_id: i64,
+    parse_mode: Option<ParseMode>,
+) -> Result<(), SessionErrorKind> {
+    let text = if count == 1 {
+        "Sorry, an error occurred while downloading the video. Try again later.".to_owned()
+    } else {
+        format!("Sorry, an error occurred while downloading {count} videos from the playlist. Try again later.")
+    };
+
+    occured_in_message(bot, chat_id, reply_to_message_id, &text, parse_mode)
+        .await
+        .map(|_| ())
 }

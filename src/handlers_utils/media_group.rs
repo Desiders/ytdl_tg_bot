@@ -14,6 +14,11 @@ pub async fn send_from_input_media_list(
 ) -> Result<Box<[Message]>, SessionErrorKind> {
     let chat_id = chat_id.into();
     let input_media_len = input_media_list.len();
+
+    if input_media_len == 0 {
+        return Ok(Box::new([]));
+    }
+
     let cap = if input_media_len > 10 { 10 } else { input_media_len };
 
     let mut messages = Vec::with_capacity(input_media_len);

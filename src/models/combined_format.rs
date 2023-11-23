@@ -12,6 +12,7 @@ pub struct Format<'a> {
 }
 
 impl<'a> Format<'a> {
+    #[must_use]
     pub fn new(video_format: format::Video<'a>, audio_format: format::Audio<'a>) -> Self {
         Self {
             video_format,
@@ -19,12 +20,14 @@ impl<'a> Format<'a> {
         }
     }
 
+    #[must_use]
     pub fn filesize(&self) -> Option<f64> {
         self.video_format
             .filesize
             .and_then(|video_filesize| self.audio_format.filesize.map(|audio_filesize| video_filesize + audio_filesize))
     }
 
+    #[must_use]
     pub fn filesize_approx(&self) -> Option<f64> {
         self.video_format.filesize_approx.and_then(|video_filesize_approx| {
             self.audio_format
@@ -33,10 +36,12 @@ impl<'a> Format<'a> {
         })
     }
 
+    #[must_use]
     pub fn filesize_or_approx(&self) -> Option<f64> {
         self.filesize().or(self.filesize_approx())
     }
 
+    #[must_use]
     pub fn format_id(&self) -> Box<str> {
         let video_format_id = self.video_format.id;
         let audio_format_id = self.audio_format.id;
@@ -44,10 +49,12 @@ impl<'a> Format<'a> {
         format!("{video_format_id}+{audio_format_id}").into_boxed_str()
     }
 
+    #[must_use]
     pub const fn get_extension(&self) -> &str {
         self.video_format.container.as_str()
     }
 
+    #[must_use]
     pub fn get_priority(&self) -> u8 {
         self.video_format.get_priority() + self.audio_format.get_priority()
     }
@@ -127,11 +134,10 @@ impl<'a> From<Vec<format::Kind<'a>>> for Formats<'a> {
 
         for audio_format in &audio_formats {
             for video_format in &video_formats {
-                if !audio_format
-                    .codec
-                    .is_support_container_with_vcodec(&video_format.codec, &video_format.container)
-                {
-                    continue;
+                if let Some(vcodec) = &video_format.codec {
+                    if !audio_format.codec.is_support_container_with_vcodec(vcodec, &video_format.container) {
+                        continue;
+                    }
                 }
 
                 let combined_format = Format::new(video_format.clone(), audio_format.clone());
@@ -150,5 +156,19 @@ impl<'a> From<Option<Vec<format::Kind<'a>>>> for Formats<'a> {
             Some(formats) => Formats::from(formats),
             None => Formats::default(),
         }
+    }
+}
+
+impl Display for Formats<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for (i, combined_format) in self.0.iter().enumerate() {
+            if i != 0 {
+                write!(f, ", ")?;
+            }
+
+            write!(f, "{combined_format}")?;
+        }
+
+        Ok(())
     }
 }

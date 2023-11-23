@@ -7,8 +7,8 @@ use std::io;
 pub enum Error {
     #[error("No format found for video {video_id}")]
     NoFormatFound { video_id: Box<str> },
-    #[error("Failed to download video")]
+    #[error("Failed to download video: {0}")]
     DownloadFailed(#[from] ytdl::Error),
-    #[error("Failed to get best thumbnail path in dir")]
+    #[error("Failed to get best thumbnail path in dir: {0}")]
     ThumbnailPathFailed(io::Error),
 }

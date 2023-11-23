@@ -9,8 +9,8 @@ pub enum Error<'a> {
     ContainerNotSupported { container: &'a str },
     #[error("Container `{container}` is not supported by video codec `{codec}`")]
     ContainerNotSupportedByVideoCodec { container: Box<str>, codec: Box<str> },
-    #[error("Audio and video codecs are empty")]
-    AudioAndVideoCodecsEmpty,
     #[error("Video container is empty")]
     VideoContainerEmpty,
+    #[error("Unknown format")]
+    UnknownFormat,
 }

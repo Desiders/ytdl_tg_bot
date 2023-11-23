@@ -47,11 +47,11 @@ pub async fn download_video_to_path(
         "-P",
         dir_path,
         "-J",
-        id_or_url,
         "-f",
         format,
         "--merge-output-format",
         output_extension,
+        id_or_url,
     ]);
 
     if download_thumbnails {
@@ -97,9 +97,9 @@ pub async fn download_audio_to_path(
         "-P",
         dir_path,
         "-J",
-        id_or_url,
         "-f",
         format,
+        id_or_url,
     ]);
 
     if download_thumbnails {
