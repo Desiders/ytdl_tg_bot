@@ -3,7 +3,7 @@ use crate::extractors::{BotConfigWrapper, YtDlpWrapper};
 use telers::{
     enums::ParseMode,
     event::{telegram::HandlerResult, EventReturn},
-    methods::SendMessage,
+    methods::{GetMe, SendMessage},
     types::Message,
     utils::text_decorations::{TextDecoration as _, HTML_DECORATION},
     Bot,
@@ -15,6 +15,7 @@ pub async fn start(
     YtDlpWrapper(yt_dlp_config): YtDlpWrapper,
     BotConfigWrapper(bot_config): BotConfigWrapper,
 ) -> HandlerResult {
+    let my_info = bot.send(GetMe {}).await?;
     let text = format!(
         "Hi, {first_name}. I'm a bot that can help you download videos from YouTube.\n\n\
         In a private chat, send me a video link and I will reply with a video or playlist.\n\
@@ -29,7 +30,7 @@ pub async fn start(
             .from
             .as_ref()
             .map_or("Anonymous".to_owned(), |user| HTML_DECORATION.quote(user.first_name.as_ref())),
-        bot_username = bot_config.username,
+        bot_username = my_info.username.expect("Bots always have a username"),
         max_file_size_in_mb = yt_dlp_config.max_files_size_in_bytes / 1024 / 1024,
         source_code_href = HTML_DECORATION.link("here", HTML_DECORATION.quote(bot_config.source_code_url.as_str()).as_str()),
     );
