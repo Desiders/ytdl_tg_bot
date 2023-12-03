@@ -1,11 +1,23 @@
 use crate::config::YtDlp;
 
-use telers::{errors::HandlerError, event::simple::HandlerResult};
+use telers::{errors::HandlerError, event::simple::HandlerResult, methods::SetMyCommands, types::BotCommand, Bot};
 use tracing::{event, Level};
 use youtube_dl::download_yt_dlp;
 
+async fn set_my_commands(bot: Bot) -> HandlerResult {
+    let commands = [
+        BotCommand::new("start", "Start the bot"),
+        BotCommand::new("vd", "Download a video"),
+        BotCommand::new("ad", "Download an audio"),
+    ];
+
+    bot.send(SetMyCommands::new(commands)).await?;
+
+    Ok(())
+}
+
 #[allow(clippy::module_name_repetitions)]
-pub async fn on_startup(yt_dlp_config: YtDlp) -> HandlerResult {
+pub async fn on_startup(bot: Bot, yt_dlp_config: YtDlp) -> HandlerResult {
     let file_exists = tokio::fs::metadata(&yt_dlp_config.full_path)
         .await
         .map(|metadata| metadata.is_file())
@@ -23,5 +35,5 @@ pub async fn on_startup(yt_dlp_config: YtDlp) -> HandlerResult {
         HandlerError::new(err)
     })?;
 
-    Ok(())
+    set_my_commands(bot).await
 }

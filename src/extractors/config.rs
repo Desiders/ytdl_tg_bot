@@ -2,8 +2,7 @@ use crate::config::{Bot as BotConfig, PhantomAudioId, PhantomVideoId, YtDlp};
 
 use std::sync::Arc;
 use telers::{
-    client::Bot, context::Context, errors::ExtractionError, extractors::FromEventAndContext, from_context_impl, from_context_into_impl,
-    types::Update,
+    client::Bot, context::Context, errors::ExtractionError, extractors::FromEventAndContext, from_context, from_context_into, types::Update,
 };
 
 pub struct YtDlpWrapper(pub Arc<YtDlp>);
@@ -22,7 +21,7 @@ impl From<Arc<BotConfig>> for BotConfigWrapper {
     }
 }
 
-from_context_into_impl!([Client], Arc<YtDlp> => YtDlpWrapper, "yt_dlp_config");
-from_context_into_impl!([Client], Arc<BotConfig> => BotConfigWrapper, "bot_config");
-from_context_impl!([Client], PhantomVideoId, "phantom_video_id");
-from_context_impl!([Client], PhantomAudioId, "phantom_audio_id");
+from_context_into!([Client], Arc<YtDlp> => YtDlpWrapper, "yt_dlp_config");
+from_context_into!([Client], Arc<BotConfig> => BotConfigWrapper, "bot_config");
+from_context!([Client], PhantomVideoId, "phantom_video_id");
+from_context!([Client], PhantomAudioId, "phantom_audio_id");

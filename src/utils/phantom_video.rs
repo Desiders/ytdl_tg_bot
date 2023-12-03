@@ -30,13 +30,14 @@ pub async fn get_phantom_video_id(
                 .send(SendVideo::new(bot_config.receiver_video_chat_id, phantom_file).disable_notification(true))
                 .await?;
 
-            tokio::spawn(async move {
-                bot.send(DeleteMessage::new(bot_config.receiver_video_chat_id, message.message_id))
-                    .await
+            tokio::spawn({
+                let message_id = message.id();
+
+                async move { bot.send(DeleteMessage::new(bot_config.receiver_video_chat_id, message_id)).await }
             });
 
             // `unwrap` is safe because we checked that `message.video` is `Some` in `SendVideo` method
-            Ok(PhantomVideoId(message.video.unwrap().file_id.into_string()))
+            Ok(PhantomVideoId(message.video().unwrap().file_id.clone().into_string()))
         }
     }
 }

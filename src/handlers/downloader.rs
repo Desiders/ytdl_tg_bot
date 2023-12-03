@@ -17,22 +17,22 @@ use telers::{
         ChosenInlineResult, InlineKeyboardButton, InlineKeyboardMarkup, InlineQuery, InlineQueryResult, InlineQueryResultCachedAudio,
         InlineQueryResultCachedVideo, InputFile, InputMediaVideo, Message,
     },
-    utils::text_decorations::{TextDecoration, HTML_DECORATION},
+    utils::text::{html_code, html_quote},
     Bot, Context,
 };
 use tempfile::tempdir;
-use tracing::{event, field, instrument, Level, Span};
+use tracing::{event, instrument, Level, Span};
 use uuid::Uuid;
 
 const SEND_VIDEO_TIMEOUT: f32 = 120.0; // 2 minutes
-const SEND_AUDIO_TIMEOUT: f32 = 120.0; // 2 minute
+const SEND_AUDIO_TIMEOUT: f32 = 120.0; // 2 minutes
 const SELECT_INLINE_QUERY_CACHE_TIME: i32 = 1; // 10 minutes
 
-#[instrument(skip_all, fields(message_id, chat_id = chat.id, url = field::Empty))]
+#[instrument(skip_all, fields(message_id, chat_id, url))]
 pub async fn video_download(
     bot: Arc<Bot>,
     context: Arc<Context>,
-    Message { message_id, chat, .. }: Message,
+    message: Message,
     YtDlpWrapper(yt_dlp_config): YtDlpWrapper,
     BotConfigWrapper(bot_config): BotConfigWrapper,
 ) -> HandlerResult {
@@ -43,9 +43,13 @@ pub async fn video_download(
         .expect("Url should be `Box<str>`")
         .clone()
         .into_string();
-    let chat_id = chat.id;
+    let message_id = message.id();
+    let chat_id = message.chat().id();
 
-    Span::current().record("url", url.as_str());
+    Span::current()
+        .record("chat_id", chat_id)
+        .record("message_id", message_id)
+        .record("url", url.as_str());
 
     event!(Level::DEBUG, "Got url");
 
@@ -125,7 +129,7 @@ pub async fn video_download(
             )
             .await?;
 
-            let Message { video, .. } = bot
+            let message = bot
                 .send_with_timeout(
                     SendVideo::new(receiver_video_chat_id, InputFile::fs(file_path))
                         .disable_notification(true)
@@ -138,7 +142,7 @@ pub async fn video_download(
                 )
                 .await?;
 
-            Ok::<_, DownloadOrSendError>(video.unwrap().file_id)
+            Ok::<_, DownloadOrSendError>(message.video().unwrap().file_id.clone())
         }));
     }
 
@@ -182,11 +186,11 @@ pub async fn video_download(
     Ok(EventReturn::Finish)
 }
 
-#[instrument(skip_all, fields(message_id, chat_id = chat.id, url = field::Empty))]
+#[instrument(skip_all, fields(message_id, chat_id, url))]
 pub async fn audio_download(
     bot: Arc<Bot>,
     context: Arc<Context>,
-    Message { message_id, chat, .. }: Message,
+    message: Message,
     YtDlpWrapper(yt_dlp_config): YtDlpWrapper,
     BotConfigWrapper(bot_config): BotConfigWrapper,
 ) -> HandlerResult {
@@ -197,9 +201,13 @@ pub async fn audio_download(
         .expect("Url should be `Box<str>`")
         .clone()
         .into_string();
-    let chat_id = chat.id;
+    let message_id = message.id();
+    let chat_id = message.chat().id();
 
-    Span::current().record("url", url.as_str());
+    Span::current()
+        .record("url", url.as_str())
+        .record("chat_id", chat_id)
+        .record("message_id", message_id);
 
     event!(Level::DEBUG, "Got url");
 
@@ -278,7 +286,7 @@ pub async fn audio_download(
             )
             .await?;
 
-            let Message { audio, .. } = bot
+            let message = bot
                 .send_with_timeout(
                     SendAudio::new(receiver_video_chat_id, InputFile::fs(file_path))
                         .disable_notification(true)
@@ -288,7 +296,15 @@ pub async fn audio_download(
                 )
                 .await?;
 
-            Ok::<_, DownloadOrSendError>(audio.unwrap().file_id)
+            let audio_or_voice_file_id = if let Some(audio) = message.audio() {
+                audio.file_id.as_ref()
+            } else if let Some(voice) = message.voice() {
+                voice.file_id.as_ref()
+            } else {
+                unreachable!("Message should have audio or voice")
+            };
+
+            Ok::<_, DownloadOrSendError>(audio_or_voice_file_id.to_owned())
         }));
     }
 
@@ -332,7 +348,7 @@ pub async fn audio_download(
     Ok(EventReturn::Finish)
 }
 
-#[instrument(skip_all, fields(result_id = field::Empty, inline_message_id = field::Empty, video_id_or_url = field::Empty))]
+#[instrument(skip_all, fields(result_id, inline_message_id, video_id_or_url))]
 pub async fn media_download_chosen_inline_result(
     bot: Arc<Bot>,
     ChosenInlineResult {
@@ -404,7 +420,7 @@ pub async fn media_download_chosen_inline_result(
             .await
             .map_err(HandlerError::new)?;
 
-            let Message { video, .. } = bot
+            let message = bot
                 .send_with_timeout(
                     SendVideo::new(bot_config.receiver_video_chat_id, InputFile::fs(file_path))
                         .disable_notification(true)
@@ -420,7 +436,7 @@ pub async fn media_download_chosen_inline_result(
             drop(temp_dir);
 
             bot.send_with_timeout(
-                EditMessageMedia::new(InputMediaVideo::new(InputFile::id(video.unwrap().file_id.as_ref())))
+                EditMessageMedia::new(InputMediaVideo::new(InputFile::id(message.video().unwrap().file_id.as_ref())))
                     .inline_message_id(inline_message_id)
                     .reply_markup(InlineKeyboardMarkup::new([[]])),
                 SEND_VIDEO_TIMEOUT,
@@ -444,7 +460,7 @@ pub async fn media_download_chosen_inline_result(
             .await
             .map_err(HandlerError::new)?;
 
-            let Message { audio, .. } = bot
+            let message = bot
                 .send_with_timeout(
                     SendAudio::new(bot_config.receiver_video_chat_id, InputFile::fs(file_path))
                         .disable_notification(true)
@@ -456,8 +472,16 @@ pub async fn media_download_chosen_inline_result(
 
             drop(temp_dir);
 
+            let audio_or_voice_file_id = if let Some(audio) = message.audio() {
+                audio.file_id.as_ref()
+            } else if let Some(voice) = message.voice() {
+                voice.file_id.as_ref()
+            } else {
+                unreachable!("Message should have audio or voice")
+            };
+
             bot.send_with_timeout(
-                EditMessageMedia::new(InputMediaVideo::new(InputFile::id(audio.unwrap().file_id.as_ref())))
+                EditMessageMedia::new(InputMediaVideo::new(InputFile::id(audio_or_voice_file_id)))
                     .inline_message_id(inline_message_id)
                     .reply_markup(InlineKeyboardMarkup::new([[]])),
                 SEND_AUDIO_TIMEOUT,
@@ -484,7 +508,7 @@ pub async fn media_download_chosen_inline_result(
     Ok(EventReturn::Finish)
 }
 
-#[instrument(skip_all, fields(query_id = field::Empty, url = field::Empty))]
+#[instrument(skip_all, fields(query_id, url))]
 pub async fn media_select_inline_query(
     bot: Arc<Bot>,
     InlineQuery {
@@ -527,13 +551,14 @@ pub async fn media_select_inline_query(
 
     for video in videos {
         let video_title = video.title.as_deref().unwrap_or("Untitled");
+        let caption = html_code(html_quote(video_title));
 
         let result_id = Uuid::new_v4();
         let video_result_id = format!("video_{result_id}");
         let audio_result_id = format!("audio_{result_id}");
 
         let video_result = InlineQueryResultCachedVideo::new(video_result_id, video_title, phantom_video_id.clone())
-            .caption(HTML_DECORATION.code(HTML_DECORATION.quote(video_title).as_str()))
+            .caption(caption.as_str())
             .description("Click to download video")
             .reply_markup(InlineKeyboardMarkup::new([[
                 InlineKeyboardButton::new("Video downloading...").callback_data("video_downloading")
@@ -544,7 +569,7 @@ pub async fn media_select_inline_query(
         results.push(video_result);
 
         let audio_result = InlineQueryResultCachedAudio::new(audio_result_id, phantom_audio_id.clone())
-            .caption(HTML_DECORATION.code(HTML_DECORATION.quote(video_title).as_str()))
+            .caption(caption.as_str())
             .reply_markup(InlineKeyboardMarkup::new([[
                 InlineKeyboardButton::new("Audio downloading...").callback_data("audio_downloading")
             ]]))
