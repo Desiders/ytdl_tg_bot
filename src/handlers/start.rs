@@ -5,7 +5,7 @@ use telers::{
     event::{telegram::HandlerResult, EventReturn},
     methods::{GetMe, SendMessage},
     types::Message,
-    utils::text_decorations::{TextDecoration as _, HTML_DECORATION},
+    utils::text::{html_quote, html_text_link},
     Bot,
 };
 
@@ -15,7 +15,7 @@ pub async fn start(
     YtDlpWrapper(yt_dlp_config): YtDlpWrapper,
     BotConfigWrapper(bot_config): BotConfigWrapper,
 ) -> HandlerResult {
-    let my_info = bot.send(GetMe {}).await?;
+    let bot_info = bot.send(GetMe {}).await?;
     let text = format!(
         "Hi, {first_name}. I'm a bot that can help you download videos from YouTube.\n\n\
         In a private chat, send me a video link and I will reply with a video or playlist.\n\
@@ -27,18 +27,18 @@ pub async fn start(
         * I'm download videos and audios in the best quality that less than {max_file_size_in_mb}MB.\n\
         * The bot is open source, and you can find the source code {source_code_href}.",
         first_name = message
-            .from
+            .from()
             .as_ref()
-            .map_or("Anonymous".to_owned(), |user| HTML_DECORATION.quote(user.first_name.as_ref())),
-        bot_username = my_info.username.expect("Bots always have a username"),
+            .map_or("Anonymous".to_owned(), |user| html_quote(user.first_name.as_str())),
+        bot_username = bot_info.username.expect("Bots always have a username"),
         max_file_size_in_mb = yt_dlp_config.max_files_size_in_bytes / 1024 / 1024,
-        source_code_href = HTML_DECORATION.link("here", HTML_DECORATION.quote(bot_config.source_code_url.as_str()).as_str()),
+        source_code_href = html_text_link("here", html_quote(bot_config.source_code_url.as_str())),
     );
 
     bot.send(
-        SendMessage::new(message.chat_id(), text)
+        SendMessage::new(message.chat().id(), text)
             .parse_mode(ParseMode::HTML)
-            .reply_to_message_id_option(message.reply_to_message.as_ref().map(|message| message.message_id))
+            .reply_to_message_id_option(message.reply_to_message().as_ref().map(|message| message.id()))
             .allow_sending_without_reply(true)
             .disable_web_page_preview(true),
     )

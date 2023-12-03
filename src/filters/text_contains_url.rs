@@ -1,5 +1,8 @@
 use std::future::Future;
-use telers::{enums::UpdateType, types::Update, Bot, Context};
+use telers::{
+    types::{Update, UpdateKind},
+    Bot, Context,
+};
 use tracing::{event, Level};
 use url::Url;
 
@@ -30,29 +33,20 @@ pub fn text_contains_url(_bot: &Bot, update: &Update, context: &Context) -> impl
 
                 context.insert("video_url", Box::new(url.as_str().to_owned().into_boxed_str()));
             }
-            None => {
-                UpdateType::try_from(update)
-                    .map(|update_type| {
-                        let message = match update_type {
-                            UpdateType::Message => update.message.as_ref().unwrap(),
-                            UpdateType::EditedMessage => update.edited_message.as_ref().unwrap(),
-                            _ => return,
-                        };
-
-                        if let Some(message) = message.reply_to_message.as_deref() {
-                            let Some(text) = message.text.as_deref() else {
-                                return;
-                            };
-
+            None => match update.kind() {
+                UpdateKind::Message(message) | UpdateKind::EditedMessage(message) => {
+                    if let Some(message) = message.reply_to_message() {
+                        if let Some(text) = message.text() {
                             if let Some(url) = get_url_from_text(text) {
                                 url_found = true;
 
                                 context.insert("video_url", Box::new(url.as_str().to_owned().into_boxed_str()));
                             };
                         };
-                    })
-                    .expect("Failed to convert `Update` to `UpdateType`");
-            }
+                    }
+                }
+                _ => {}
+            },
         }
 
         url_found

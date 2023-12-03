@@ -101,7 +101,7 @@ async fn main() {
         phantom_audio_id,
     ));
 
-    router.startup.register(on_startup, (config.yt_dlp.clone(),));
+    router.startup.register(on_startup, (bot.clone(), config.yt_dlp.clone()));
     router.shutdown.register(on_shutdown, (config.yt_dlp,));
 
     let dispatcher = Dispatcher::builder()

@@ -36,13 +36,14 @@ pub async fn get_phantom_audio_id(
                 )
                 .await?;
 
-            tokio::spawn(async move {
-                bot.send(DeleteMessage::new(bot_config.receiver_video_chat_id, message.message_id))
-                    .await
+            tokio::spawn({
+                let message_id = message.id();
+
+                async move { bot.send(DeleteMessage::new(bot_config.receiver_video_chat_id, message_id)).await }
             });
 
             // `unwrap` is safe because we checked that `message.audio` is `Some` in `SendAudio` method
-            Ok(PhantomAudioId(message.audio.unwrap().file_id.into_string()))
+            Ok(PhantomAudioId(message.audio().unwrap().file_id.clone().into_string()))
         }
     }
 }
