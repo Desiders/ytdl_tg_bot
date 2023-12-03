@@ -12,11 +12,11 @@ run-release:
 
 # Run docker compose
 run-docker:
-    docker-compose up
+    docker compose up --build
 
 # Down docker compose
 down-docker:
-    docker-compose down
+    docker compose down
 
 # Update dependencies
 update:
