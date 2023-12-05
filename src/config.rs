@@ -54,8 +54,6 @@ pub struct YtDlp {
     pub update_on_startup: bool,
     pub remove_on_shutdown: bool,
     pub max_files_size_in_bytes: u64,
-    pub python_path: String,
-    pub ffmpeg_path: String,
 }
 
 #[derive(Clone, Debug)]
@@ -159,14 +157,6 @@ pub fn read_config_from_env() -> Result<Config, ErrorKind> {
                 })?
                 .parse()
                 .map_err(ErrorKind::ParseInt)?,
-            python_path: env::var("PYTHON_PATH").map_err(|err| ErrorKind::Env {
-                source: err,
-                key: "PYTHON_PATH".into(),
-            })?,
-            ffmpeg_path: env::var("FFMPEG_PATH").map_err(|err| ErrorKind::Env {
-                source: err,
-                key: "FFMPEG_PATH".into(),
-            })?,
         },
     })
 }
