@@ -1,29 +1,17 @@
-FROM debian:buster-slim AS base
+FROM python:3.11.6-slim-bullseye AS base
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
     && apt-get install -y --no-install-recommends ffmpeg \
-    && apt-get install -y --no-install-recommends \
-        libpq5 build-essential zlib1g-dev libncurses5-dev libgdbm-dev libssl-dev libreadline-dev libffi-dev libbz2-dev libsqlite3-dev \
-        wget \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false
 WORKDIR /app
 COPY . .
 
-ENV PYTHON_VERSION 3.11.6
-
-RUN mkdir -p /usr/src/python
-RUN wget -O python.tar.xz "https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz"
-RUN tar --extract --directory /usr/src/python --strip-components=1 --file python.tar.xz \
-    && rm python.tar.xz
-RUN cd /usr/src/python \
-    && ./configure \
-    && make -j8 python \
-    && make install \
-    && cd / \
-    && rm -rf /usr/src/python \
+FROM rust:1.74.0-slim-bullseye AS build
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libssl-dev \
+    && apt-get install -y --no-install-recommends pkg-config \
+    && rm -rf /var/lib/apt/lists/* \
     && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false
-
-FROM rust:1.71-buster AS build
 WORKDIR /usr/src/app
 RUN USER=root cargo init
 COPY ./Cargo.toml .
