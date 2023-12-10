@@ -216,7 +216,7 @@ pub async fn audio_download(
                 &bot,
                 chat_id,
                 message_id,
-                "Sorry, an error occurred while getting video/playlist info. Try again later.",
+                "Sorry, an error occurred while getting audio/playlist info. Try again later.",
                 None,
             )
             .await?;
@@ -228,9 +228,9 @@ pub async fn audio_download(
     let videos_len = videos.len();
 
     if videos_len == 0 {
-        event!(Level::WARN, "Playlist doesn't have videos");
+        event!(Level::WARN, "Playlist doesn't have audios");
 
-        error::occured_in_message(&bot, chat_id, message_id, "Playlist doesn't have videos.", None).await?;
+        error::occured_in_message(&bot, chat_id, message_id, "Playlist doesn't have audios.", None).await?;
 
         return Ok(EventReturn::Finish);
     }
@@ -307,7 +307,7 @@ pub async fn audio_download(
         match handle.await {
             Ok(Ok(file_id)) => audios_in_playlist.push(TgAudioInPlaylist::new(file_id, index)),
             Ok(Err(err)) => {
-                event!(Level::ERROR, %err, "Error while downloading video");
+                event!(Level::ERROR, %err, "Error while downloading audio");
 
                 failed_downloads_count += 1;
             }
@@ -324,7 +324,7 @@ pub async fn audio_download(
     if failed_downloads_count > 0 {
         event!(Level::ERROR, "Failed downloads count is {failed_downloads_count}");
 
-        error::download_videos_in_message(&bot, failed_downloads_count, chat_id, message_id, Some(ParseMode::HTML)).await?;
+        error::download_audios_in_message(&bot, failed_downloads_count, chat_id, message_id, Some(ParseMode::HTML)).await?;
     }
 
     let input_media_list = {
