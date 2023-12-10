@@ -515,7 +515,7 @@ impl<'a> Audios<'a> {
     pub fn skip_with_size_less_than(&mut self, size: u64) {
         self.0.retain(|audio| {
             let Some(filesize) = audio.filesize else {
-                return false;
+                return true;
             };
 
             filesize.round() as u64 <= size
