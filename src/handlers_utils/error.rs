@@ -62,3 +62,21 @@ pub async fn download_videos_in_message(
         .await
         .map(|_| ())
 }
+
+pub async fn download_audios_in_message(
+    bot: &Bot,
+    count: usize,
+    chat_id: i64,
+    reply_to_message_id: i64,
+    parse_mode: Option<ParseMode>,
+) -> Result<(), SessionErrorKind> {
+    let text = if count == 1 {
+        "Sorry, an error occurred while downloading the audio. Try again later.".to_owned()
+    } else {
+        format!("Sorry, an error occurred while downloading {count} audios from the playlist. Try again later.")
+    };
+
+    occured_in_message(bot, chat_id, reply_to_message_id, &text, parse_mode)
+        .await
+        .map(|_| ())
+}
