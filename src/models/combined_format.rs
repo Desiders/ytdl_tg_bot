@@ -22,18 +22,28 @@ impl<'a> Format<'a> {
 
     #[must_use]
     pub fn filesize(&self) -> Option<f64> {
-        self.video_format
-            .filesize
-            .and_then(|video_filesize| self.audio_format.filesize.map(|audio_filesize| video_filesize + audio_filesize))
+        let video_filesize = self.video_format.filesize;
+        let audio_filesize = self.audio_format.filesize;
+
+        match (video_filesize, audio_filesize) {
+            (Some(video_filesize), Some(audio_filesize)) => Some(video_filesize + audio_filesize),
+            (Some(video_filesize), None) => Some(video_filesize),
+            (None, Some(audio_filesize)) => Some(audio_filesize),
+            (None, None) => None,
+        }
     }
 
     #[must_use]
     pub fn filesize_approx(&self) -> Option<f64> {
-        self.video_format.filesize_approx.and_then(|video_filesize_approx| {
-            self.audio_format
-                .filesize_approx
-                .map(|audio_filesize_approx| video_filesize_approx + audio_filesize_approx)
-        })
+        let video_filesize_approx = self.video_format.filesize_approx;
+        let audio_filesize_approx = self.audio_format.filesize_approx;
+
+        match (video_filesize_approx, audio_filesize_approx) {
+            (Some(video_filesize_approx), Some(audio_filesize_approx)) => Some(video_filesize_approx + audio_filesize_approx),
+            (Some(video_filesize_approx), None) => Some(video_filesize_approx),
+            (None, Some(audio_filesize_approx)) => Some(audio_filesize_approx),
+            (None, None) => None,
+        }
     }
 
     #[must_use]
