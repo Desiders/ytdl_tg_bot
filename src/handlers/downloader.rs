@@ -26,7 +26,7 @@ use uuid::Uuid;
 
 const SEND_VIDEO_TIMEOUT: f32 = 120.0; // 2 minutes
 const SEND_AUDIO_TIMEOUT: f32 = 120.0; // 2 minutes
-const SELECT_INLINE_QUERY_CACHE_TIME: i32 = 1; // 10 minutes
+const SELECT_INLINE_QUERY_CACHE_TIME: i32 = 3600; // 60 minutes
 
 #[instrument(skip_all, fields(message_id, chat_id, url))]
 pub async fn video_download(
