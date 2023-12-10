@@ -210,7 +210,7 @@ pub async fn audio_download(
     let videos = match ytdl::get_video_or_playlist_info(&yt_dlp_config.full_path, url.as_ref(), true).await {
         Ok(videos) => videos,
         Err(err) => {
-            event!(Level::ERROR, %err, "Error while getting video/playlist info");
+            event!(Level::ERROR, %err, "Error while getting audio/playlist info");
 
             error::occured_in_message(
                 &bot,
