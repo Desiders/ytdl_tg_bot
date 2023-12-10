@@ -53,18 +53,10 @@ pub async fn video_download(
 
     event!(Level::DEBUG, "Got url");
 
-    let upload_action_task = tokio::spawn({
-        let bot = bot.clone();
-
-        async move { chat_action::upload_video_action_in_loop(&bot, chat_id).await }
-    });
-
     let videos = match ytdl::get_video_or_playlist_info(&yt_dlp_config.full_path, url.as_ref(), true).await {
         Ok(videos) => videos,
         Err(err) => {
             event!(Level::ERROR, %err, "Error while getting video/playlist info");
-
-            upload_action_task.abort();
 
             error::occured_in_message(
                 &bot,
@@ -84,12 +76,16 @@ pub async fn video_download(
     if videos_len == 0 {
         event!(Level::WARN, "Playlist doesn't have videos");
 
-        upload_action_task.abort();
-
         error::occured_in_message(&bot, chat_id, message_id, "Playlist doesn't have videos.", None).await?;
 
         return Ok(EventReturn::Finish);
     }
+
+    let upload_action_task = tokio::spawn({
+        let bot = bot.clone();
+
+        async move { chat_action::upload_video_action_in_loop(&bot, chat_id).await }
+    });
 
     let mut handles = Vec::with_capacity(videos_len);
 
@@ -211,18 +207,10 @@ pub async fn audio_download(
 
     event!(Level::DEBUG, "Got url");
 
-    let upload_action_task = tokio::spawn({
-        let bot = bot.clone();
-
-        async move { chat_action::upload_voice_action_in_loop(&bot, chat_id).await }
-    });
-
     let videos = match ytdl::get_video_or_playlist_info(&yt_dlp_config.full_path, url.as_ref(), true).await {
         Ok(videos) => videos,
         Err(err) => {
             event!(Level::ERROR, %err, "Error while getting video/playlist info");
-
-            upload_action_task.abort();
 
             error::occured_in_message(
                 &bot,
@@ -242,12 +230,16 @@ pub async fn audio_download(
     if videos_len == 0 {
         event!(Level::WARN, "Playlist doesn't have videos");
 
-        upload_action_task.abort();
-
         error::occured_in_message(&bot, chat_id, message_id, "Playlist doesn't have videos.", None).await?;
 
         return Ok(EventReturn::Finish);
     }
+
+    let upload_action_task = tokio::spawn({
+        let bot = bot.clone();
+
+        async move { chat_action::upload_voice_action_in_loop(&bot, chat_id).await }
+    });
 
     let mut handles = Vec::with_capacity(videos_len);
 
