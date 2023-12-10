@@ -79,8 +79,8 @@ pub async fn download_video_to_path(
 
             Ok(())
         },
-        _ = timeout_task => {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out").into());
+        () = timeout_task => {
+            Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out").into())
         }
     }
 }
@@ -137,8 +137,8 @@ pub async fn download_audio_to_path(
 
             Ok(())
         },
-        _ = timeout_task => {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out").into());
+        () = timeout_task => {
+            Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out").into())
         }
     }
 }
@@ -229,8 +229,8 @@ pub async fn get_video_or_playlist_info(executable_path: &str, id_or_url: &str, 
         result = command_task => {
             result
         },
-        _ = timeout_task => {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out").into());
+        () = timeout_task => {
+            Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out").into())
         }
     }
 }
