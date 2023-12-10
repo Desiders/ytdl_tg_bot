@@ -573,6 +573,11 @@ impl Codec {
     }
 
     #[must_use]
+    pub const fn is_unknown(&self) -> bool {
+        matches!(self, Self::Unknown)
+    }
+
+    #[must_use]
     pub const fn is_known(&self) -> bool {
         matches!(self, Self::Inner(_))
     }
@@ -630,18 +635,18 @@ impl<'de> Deserialize<'de> for Any {
 
         let acodec = match raw.acodec {
             Some(acodec) => match acodec.as_str() {
-                "none" => Codec::Unknown,
+                "none" => Codec::None,
                 acodec => Codec::Inner(acodec.to_string()),
             },
-            None => Codec::None,
+            None => Codec::Unknown,
         };
 
         let vcodec = match raw.vcodec {
             Some(vcodec) => match vcodec.as_str() {
-                "none" => Codec::Unknown,
+                "none" => Codec::None,
                 vcodec => Codec::Inner(vcodec.to_string()),
             },
-            None => Codec::None,
+            None => Codec::Unknown,
         };
 
         Ok(Self {
@@ -694,7 +699,7 @@ impl Any {
             );
 
             Ok(Kind::Combined(audio_format, video_format))
-        } else if acodec.is_none() && vcodec.is_none() {
+        } else if (acodec.is_unknown() && vcodec.is_unknown()) | (acodec.is_none() && vcodec.is_none()) {
             let container = Container::try_from(self.ext.as_str())?;
 
             let audio_format = Audio::new(
@@ -749,23 +754,33 @@ impl Any {
             );
 
             Ok(Kind::Video(video_format))
-        } else if let Ok(acodec) = AudioCodec::try_from(self.ext.as_str()) {
-            let audio_format = Audio::new(self.id.as_str(), self.url.as_str(), acodec, self.filesize, self.filesize_approx);
+        } else if acodec.is_unknown() {
+            match AudioCodec::try_from(self.ext.as_str()) {
+                Ok(acodec) => {
+                    let audio_format = Audio::new(self.id.as_str(), self.url.as_str(), acodec, self.filesize, self.filesize_approx);
 
-            Ok(Kind::Audio(audio_format))
-        } else if let Ok(container) = Container::try_from(self.ext.as_str()) {
-            let video_format = Video::new(
-                self.id.as_str(),
-                self.url.as_str(),
-                None,
-                container,
-                self.height,
-                self.width,
-                self.filesize,
-                self.filesize_approx,
-            );
+                    Ok(Kind::Audio(audio_format))
+                }
+                Err(error) => Err(error),
+            }
+        } else if vcodec.is_unknown() {
+            match Container::try_from(self.ext.as_str()) {
+                Ok(container) => {
+                    let video_format = Video::new(
+                        self.id.as_str(),
+                        self.url.as_str(),
+                        None,
+                        container,
+                        self.height,
+                        self.width,
+                        self.filesize,
+                        self.filesize_approx,
+                    );
 
-            Ok(Kind::Video(video_format))
+                    Ok(Kind::Video(video_format))
+                }
+                Err(error) => Err(error),
+            }
         } else {
             Err(FormatError::UnknownFormat)
         }
