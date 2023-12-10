@@ -486,11 +486,11 @@ pub async fn media_download_chosen_inline_result(
     .await;
 
     if let Err(err) = handle {
-        event!(Level::ERROR, %err, "Error while downloading video");
+        event!(Level::ERROR, %err, "Error while downloading media");
 
         error::occured_in_chosen_inline_result(
             &bot,
-            "Sorry, an error occurred while downloading video. Try again later.",
+            "Sorry, an error occurred while downloading media. Try again later.",
             inline_message_id,
             None,
         )
