@@ -2,7 +2,7 @@ use telers::{
     enums::ParseMode,
     errors::SessionErrorKind,
     methods::{AnswerInlineQuery, EditMessageCaption, SendMessage},
-    types::{InlineKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent, Message},
+    types::{InlineKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent, LinkPreviewOptions, Message, ReplyParameters},
     Bot,
 };
 
@@ -15,8 +15,8 @@ pub async fn occured_in_message(
 ) -> Result<Message, SessionErrorKind> {
     bot.send(
         SendMessage::new(chat_id, text)
-            .reply_to_message_id(reply_to_message_id)
-            .allow_sending_without_reply(true)
+            .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
+            .reply_parameters(ReplyParameters::new(reply_to_message_id).allow_sending_without_reply(true))
             .parse_mode_option(parse_mode),
     )
     .await

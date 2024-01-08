@@ -4,7 +4,7 @@ use telers::{
     enums::ParseMode,
     event::{telegram::HandlerResult, EventReturn},
     methods::{GetMe, SendMessage},
-    types::Message,
+    types::{LinkPreviewOptions, Message, ReplyParameters},
     utils::text::{html_quote, html_text_link},
     Bot,
 };
@@ -38,9 +38,13 @@ pub async fn start(
     bot.send(
         SendMessage::new(message.chat().id(), text)
             .parse_mode(ParseMode::HTML)
-            .reply_to_message_id_option(message.reply_to_message().as_ref().map(|message| message.id()))
-            .allow_sending_without_reply(true)
-            .disable_web_page_preview(true),
+            .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
+            .reply_parameters_option(
+                message
+                    .reply_to_message()
+                    .as_ref()
+                    .map(|message| ReplyParameters::new(message.id()).allow_sending_without_reply(true)),
+            ),
     )
     .await?;
 

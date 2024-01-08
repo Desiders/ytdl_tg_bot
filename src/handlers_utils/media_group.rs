@@ -2,7 +2,7 @@ use std::mem;
 use telers::{
     errors::SessionErrorKind,
     methods::SendMediaGroup,
-    types::{ChatIdKind, InputMedia, Message},
+    types::{ChatIdKind, InputMedia, Message, ReplyParameters},
     Bot,
 };
 
@@ -37,9 +37,10 @@ pub async fn send_from_input_media_list(
 
             messages.extend(
                 bot.send(
-                    SendMediaGroup::new(chat_id.clone(), media_group)
-                        .reply_to_message_id_option(reply_to_message_id)
-                        .allow_sending_without_reply(true),
+                    SendMediaGroup::new(chat_id.clone(), media_group).reply_parameters_option(
+                        reply_to_message_id
+                            .map(|reply_to_message_id| ReplyParameters::new(reply_to_message_id).allow_sending_without_reply(true)),
+                    ),
                 )
                 .await?,
             );
@@ -50,11 +51,9 @@ pub async fn send_from_input_media_list(
 
     if cur_media_group_len != 0 {
         messages.extend(
-            bot.send(
-                SendMediaGroup::new(chat_id.clone(), cur_media_group)
-                    .reply_to_message_id_option(reply_to_message_id)
-                    .allow_sending_without_reply(true),
-            )
+            bot.send(SendMediaGroup::new(chat_id.clone(), cur_media_group).reply_parameters_option(
+                reply_to_message_id.map(|reply_to_message_id| ReplyParameters::new(reply_to_message_id).allow_sending_without_reply(true)),
+            ))
             .await?,
         );
     }
