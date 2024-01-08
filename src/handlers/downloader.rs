@@ -99,10 +99,10 @@ pub async fn video_download(
         // It also doesn't support uploading videos by direct URL, so we can only transmit the user's URL.
         // If URL represents playlist, we get an error because unacceptable use one URL one more time for different videos.
         // This should be fixed by direct download video without `ytdl`.
-        let video_id_or_url = if videos_len == 1 { url.clone() } else { video.id.clone() };
+        let id_or_url = if videos_len == 1 { url.clone() } else { video.id.clone() };
 
         #[allow(clippy::cast_possible_truncation)]
-        let (height, width, video_duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
+        let (height, width, duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
 
         let temp_dir = tempdir().map_err(|err| {
             upload_action_task.abort();
@@ -111,12 +111,9 @@ pub async fn video_download(
         })?;
 
         handles.push(tokio::spawn(async move {
-            let VideoInFS {
-                path: file_path,
-                thumbnail_path,
-            } = download::video_to_temp_dir(
+            let VideoInFS { path, thumbnail_path } = download::video_to_temp_dir(
                 video,
-                video_id_or_url.as_str(),
+                id_or_url.as_str(),
                 &temp_dir,
                 max_files_size_in_bytes,
                 yt_dlp_full_path.as_str(),
@@ -127,11 +124,11 @@ pub async fn video_download(
 
             let message = send::with_retries(
                 &bot,
-                SendVideo::new(receiver_video_chat_id, InputFile::fs(file_path))
+                SendVideo::new(receiver_video_chat_id, InputFile::fs(path))
                     .disable_notification(true)
                     .width_option(width)
                     .height_option(height)
-                    .duration_option(video_duration)
+                    .duration_option(duration)
                     .thumbnail_option(thumbnail_path.map(InputFile::fs))
                     .supports_streaming(true),
                 Some(SEND_VIDEO_TIMEOUT),
@@ -250,13 +247,13 @@ pub async fn audio_download(
         let receiver_video_chat_id = bot_config.receiver_video_chat_id;
 
         // This hack is needed because `ytdl` doesn't support downloading videos by ID from other sources, for example `coub.com `.
-        // It also doesn't support uploading videos by direct URL, so we can only transmit the user's URL.
+        // It also doesn't support uploading videos by direct URL, so we can only transmit the passeds URL.
         // If URL represents playlist, we get an error because unacceptable use one URL one more time for different videos.
         // This should be fixed by direct download video without `ytdl`.
-        let video_id_or_url = if videos_len == 1 { url.clone() } else { video.id.clone() };
+        let id_or_url = if videos_len == 1 { url.clone() } else { video.id.clone() };
 
         #[allow(clippy::cast_possible_truncation)]
-        let video_duration = video.duration.map(|duration| duration as i64);
+        let duration = video.duration.map(|duration| duration as i64);
 
         let temp_dir = tempdir().map_err(|err| {
             upload_action_task.abort();
@@ -265,12 +262,11 @@ pub async fn audio_download(
         })?;
 
         handles.push(tokio::spawn(async move {
-            let AudioInFS {
-                path: file_path,
-                thumbnail_path,
-            } = download::audio_to_temp_dir(
+            let title = video.title.clone();
+
+            let AudioInFS { path, thumbnail_path } = download::audio_to_temp_dir(
                 video,
-                video_id_or_url.as_str(),
+                id_or_url.as_str(),
                 &temp_dir,
                 max_files_size_in_bytes,
                 yt_dlp_full_path.as_str(),
@@ -280,15 +276,16 @@ pub async fn audio_download(
 
             let message = send::with_retries(
                 &bot,
-                SendAudio::new(receiver_video_chat_id, InputFile::fs(file_path))
+                SendAudio::new(receiver_video_chat_id, InputFile::fs(path))
                     .disable_notification(true)
-                    .duration_option(video_duration)
+                    .title_option(title)
+                    .duration_option(duration)
                     .thumbnail_option(thumbnail_path.map(InputFile::fs)),
                 Some(SEND_AUDIO_TIMEOUT),
             )
             .await?;
 
-            let audio_or_voice_file_id = if let Some(audio) = message.audio() {
+            let file_id = if let Some(audio) = message.audio() {
                 audio.file_id.as_ref()
             } else if let Some(voice) = message.voice() {
                 voice.file_id.as_ref()
@@ -296,7 +293,7 @@ pub async fn audio_download(
                 unreachable!("Message should have audio or voice")
             };
 
-            Ok::<_, DownloadOrSendError>(audio_or_voice_file_id.to_owned())
+            Ok::<_, DownloadOrSendError>(file_id.to_owned())
         }));
     }
 
@@ -395,12 +392,9 @@ pub async fn media_download_chosen_inline_result(
 
         if download_video {
             #[allow(clippy::cast_possible_truncation)]
-            let (height, width, video_duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
+            let (height, width, duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
 
-            let VideoInFS {
-                path: file_path,
-                thumbnail_path,
-            } = download::video_to_temp_dir(
+            let VideoInFS { path, thumbnail_path } = download::video_to_temp_dir(
                 video,
                 url.as_ref(),
                 &temp_dir,
@@ -414,11 +408,11 @@ pub async fn media_download_chosen_inline_result(
 
             let message = send::with_retries(
                 &bot,
-                SendVideo::new(bot_config.receiver_video_chat_id, InputFile::fs(file_path))
+                SendVideo::new(bot_config.receiver_video_chat_id, InputFile::fs(path))
                     .disable_notification(true)
                     .width_option(width)
                     .height_option(height)
-                    .duration_option(video_duration)
+                    .duration_option(duration)
                     .thumbnail_option(thumbnail_path.map(InputFile::fs))
                     .supports_streaming(true),
                 Some(SEND_VIDEO_TIMEOUT),
@@ -436,13 +430,12 @@ pub async fn media_download_chosen_inline_result(
             )
             .await?;
         } else {
-            #[allow(clippy::cast_possible_truncation)]
-            let video_duration = video.duration.map(|duration| duration as i64);
+            let title = video.title.clone();
 
-            let AudioInFS {
-                path: file_path,
-                thumbnail_path,
-            } = download::audio_to_temp_dir(
+            #[allow(clippy::cast_possible_truncation)]
+            let duration = video.duration.map(|duration| duration as i64);
+
+            let AudioInFS { path, thumbnail_path } = download::audio_to_temp_dir(
                 video,
                 url.as_ref(),
                 &temp_dir,
@@ -455,9 +448,10 @@ pub async fn media_download_chosen_inline_result(
 
             let message = send::with_retries(
                 &bot,
-                SendAudio::new(bot_config.receiver_video_chat_id, InputFile::fs(file_path))
+                SendAudio::new(bot_config.receiver_video_chat_id, InputFile::fs(path))
                     .disable_notification(true)
-                    .duration_option(video_duration)
+                    .title_option(title)
+                    .duration_option(duration)
                     .thumbnail_option(thumbnail_path.map(InputFile::fs)),
                 Some(SEND_AUDIO_TIMEOUT),
             )
@@ -465,7 +459,7 @@ pub async fn media_download_chosen_inline_result(
 
             drop(temp_dir);
 
-            let audio_or_voice_file_id = if let Some(audio) = message.audio() {
+            let file_id = if let Some(audio) = message.audio() {
                 audio.file_id.as_ref()
             } else if let Some(voice) = message.voice() {
                 voice.file_id.as_ref()
@@ -475,7 +469,7 @@ pub async fn media_download_chosen_inline_result(
 
             send::with_retries(
                 &bot,
-                EditMessageMedia::new(InputMediaVideo::new(InputFile::id(audio_or_voice_file_id)))
+                EditMessageMedia::new(InputMediaVideo::new(InputFile::id(file_id)))
                     .inline_message_id(inline_message_id)
                     .reply_markup(InlineKeyboardMarkup::new([[]])),
                 Some(SEND_AUDIO_TIMEOUT),
@@ -544,33 +538,31 @@ pub async fn media_select_inline_query(
     let mut results: Vec<InlineQueryResult> = Vec::with_capacity(videos.len());
 
     for video in videos {
-        let video_title = video.title.as_deref().unwrap_or("Untitled");
-        let caption = html_code(html_quote(video_title));
+        let title = video.title.as_deref().unwrap_or("Untitled");
+        let caption = html_code(html_quote(title));
 
         let result_id = Uuid::new_v4();
-        let video_result_id = format!("video_{result_id}");
-        let audio_result_id = format!("audio_{result_id}");
 
-        let video_result = InlineQueryResultCachedVideo::new(video_result_id, video_title, phantom_video_id.clone())
-            .caption(caption.as_str())
-            .description("Click to download video")
-            .reply_markup(InlineKeyboardMarkup::new([[
-                InlineKeyboardButton::new("Video downloading...").callback_data("video_downloading")
-            ]]))
-            .parse_mode(ParseMode::HTML)
-            .into();
+        results.push(
+            InlineQueryResultCachedVideo::new(format!("video_{result_id}"), title, phantom_video_id.clone())
+                .caption(caption.as_str())
+                .description("Click to download video")
+                .reply_markup(InlineKeyboardMarkup::new([[
+                    InlineKeyboardButton::new("Video downloading...").callback_data("video_downloading")
+                ]]))
+                .parse_mode(ParseMode::HTML)
+                .into(),
+        );
 
-        results.push(video_result);
-
-        let audio_result = InlineQueryResultCachedAudio::new(audio_result_id, phantom_audio_id.clone())
-            .caption(caption.as_str())
-            .reply_markup(InlineKeyboardMarkup::new([[
-                InlineKeyboardButton::new("Audio downloading...").callback_data("audio_downloading")
-            ]]))
-            .parse_mode(ParseMode::HTML)
-            .into();
-
-        results.push(audio_result);
+        results.push(
+            InlineQueryResultCachedAudio::new(format!("audio_{result_id}"), phantom_audio_id.clone())
+                .caption(caption.as_str())
+                .reply_markup(InlineKeyboardMarkup::new([[
+                    InlineKeyboardButton::new("Audio downloading...").callback_data("audio_downloading")
+                ]]))
+                .parse_mode(ParseMode::HTML)
+                .into(),
+        );
     }
 
     bot.send(
