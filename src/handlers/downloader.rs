@@ -3,7 +3,7 @@ use crate::{
     config::{PhantomAudioId, PhantomVideoId},
     errors::DownloadOrSendError,
     extractors::{BotConfigWrapper, YtDlpWrapper},
-    handlers_utils::{chat_action, download, error, media_group},
+    handlers_utils::{chat_action, download, error, send},
     models::{AudioInFS, TgAudioInPlaylist, TgVideoInPlaylist, VideoInFS},
 };
 
@@ -125,18 +125,18 @@ pub async fn video_download(
             )
             .await?;
 
-            let message = bot
-                .send_with_timeout(
-                    SendVideo::new(receiver_video_chat_id, InputFile::fs(file_path))
-                        .disable_notification(true)
-                        .width_option(width)
-                        .height_option(height)
-                        .duration_option(video_duration)
-                        .thumbnail_option(thumbnail_path.map(InputFile::fs))
-                        .supports_streaming(true),
-                    SEND_VIDEO_TIMEOUT,
-                )
-                .await?;
+            let message = send::with_retries(
+                &bot,
+                SendVideo::new(receiver_video_chat_id, InputFile::fs(file_path))
+                    .disable_notification(true)
+                    .width_option(width)
+                    .height_option(height)
+                    .duration_option(video_duration)
+                    .thumbnail_option(thumbnail_path.map(InputFile::fs))
+                    .supports_streaming(true),
+                Some(SEND_VIDEO_TIMEOUT),
+            )
+            .await?;
 
             Ok::<_, DownloadOrSendError>(message.video().unwrap().file_id.clone())
         }));
@@ -177,7 +177,7 @@ pub async fn video_download(
             .collect()
     };
 
-    media_group::send_from_input_media_list(&bot, chat_id, input_media_list, Some(message_id)).await?;
+    send::media_groups(&bot, chat_id, input_media_list, Some(message_id), Some(SEND_AUDIO_TIMEOUT)).await?;
 
     Ok(EventReturn::Finish)
 }
@@ -278,15 +278,15 @@ pub async fn audio_download(
             )
             .await?;
 
-            let message = bot
-                .send_with_timeout(
-                    SendAudio::new(receiver_video_chat_id, InputFile::fs(file_path))
-                        .disable_notification(true)
-                        .duration_option(video_duration)
-                        .thumbnail_option(thumbnail_path.map(InputFile::fs)),
-                    SEND_AUDIO_TIMEOUT,
-                )
-                .await?;
+            let message = send::with_retries(
+                &bot,
+                SendAudio::new(receiver_video_chat_id, InputFile::fs(file_path))
+                    .disable_notification(true)
+                    .duration_option(video_duration)
+                    .thumbnail_option(thumbnail_path.map(InputFile::fs)),
+                Some(SEND_AUDIO_TIMEOUT),
+            )
+            .await?;
 
             let audio_or_voice_file_id = if let Some(audio) = message.audio() {
                 audio.file_id.as_ref()
@@ -335,7 +335,7 @@ pub async fn audio_download(
             .collect()
     };
 
-    media_group::send_from_input_media_list(&bot, chat_id, input_media_list, Some(message_id)).await?;
+    send::media_groups(&bot, chat_id, input_media_list, Some(message_id), Some(SEND_AUDIO_TIMEOUT)).await?;
 
     Ok(EventReturn::Finish)
 }
@@ -412,26 +412,27 @@ pub async fn media_download_chosen_inline_result(
             .await
             .map_err(HandlerError::new)?;
 
-            let message = bot
-                .send_with_timeout(
-                    SendVideo::new(bot_config.receiver_video_chat_id, InputFile::fs(file_path))
-                        .disable_notification(true)
-                        .width_option(width)
-                        .height_option(height)
-                        .duration_option(video_duration)
-                        .thumbnail_option(thumbnail_path.map(InputFile::fs))
-                        .supports_streaming(true),
-                    SEND_VIDEO_TIMEOUT,
-                )
-                .await?;
+            let message = send::with_retries(
+                &bot,
+                SendVideo::new(bot_config.receiver_video_chat_id, InputFile::fs(file_path))
+                    .disable_notification(true)
+                    .width_option(width)
+                    .height_option(height)
+                    .duration_option(video_duration)
+                    .thumbnail_option(thumbnail_path.map(InputFile::fs))
+                    .supports_streaming(true),
+                Some(SEND_VIDEO_TIMEOUT),
+            )
+            .await?;
 
             drop(temp_dir);
 
-            bot.send_with_timeout(
+            send::with_retries(
+                &bot,
                 EditMessageMedia::new(InputMediaVideo::new(InputFile::id(message.video().unwrap().file_id.as_ref())))
                     .inline_message_id(inline_message_id)
                     .reply_markup(InlineKeyboardMarkup::new([[]])),
-                SEND_VIDEO_TIMEOUT,
+                Some(SEND_VIDEO_TIMEOUT),
             )
             .await?;
         } else {
@@ -452,15 +453,15 @@ pub async fn media_download_chosen_inline_result(
             .await
             .map_err(HandlerError::new)?;
 
-            let message = bot
-                .send_with_timeout(
-                    SendAudio::new(bot_config.receiver_video_chat_id, InputFile::fs(file_path))
-                        .disable_notification(true)
-                        .duration_option(video_duration)
-                        .thumbnail_option(thumbnail_path.map(InputFile::fs)),
-                    SEND_AUDIO_TIMEOUT,
-                )
-                .await?;
+            let message = send::with_retries(
+                &bot,
+                SendAudio::new(bot_config.receiver_video_chat_id, InputFile::fs(file_path))
+                    .disable_notification(true)
+                    .duration_option(video_duration)
+                    .thumbnail_option(thumbnail_path.map(InputFile::fs)),
+                Some(SEND_AUDIO_TIMEOUT),
+            )
+            .await?;
 
             drop(temp_dir);
 
@@ -472,11 +473,12 @@ pub async fn media_download_chosen_inline_result(
                 unreachable!("Message should have audio or voice")
             };
 
-            bot.send_with_timeout(
+            send::with_retries(
+                &bot,
                 EditMessageMedia::new(InputMediaVideo::new(InputFile::id(audio_or_voice_file_id)))
                     .inline_message_id(inline_message_id)
                     .reply_markup(InlineKeyboardMarkup::new([[]])),
-                SEND_AUDIO_TIMEOUT,
+                Some(SEND_AUDIO_TIMEOUT),
             )
             .await?;
         }
