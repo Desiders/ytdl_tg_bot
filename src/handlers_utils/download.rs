@@ -13,13 +13,13 @@ pub async fn video_to_temp_dir(
     video: VideoInYT,
     video_id_or_url: &str,
     temp_dir: &TempDir,
-    max_files_size_in_bytes: u64,
+    max_file_size: u64,
     executable_ytdl_path: &str,
     allow_playlist: bool,
     download_thumbnails: bool,
 ) -> Result<VideoInFS, DownloadError> {
     let mut combined_formats = video.get_combined_formats();
-    combined_formats.sort_by_priority_and_skip_by_size(max_files_size_in_bytes);
+    combined_formats.sort_by_priority_and_skip_by_size(max_file_size);
 
     let Some(combined_format) = combined_formats.first().cloned() else {
         event!(Level::ERROR, %combined_formats, "No format found for video");
@@ -74,12 +74,12 @@ pub async fn audio_to_temp_dir(
     video: VideoInYT,
     video_id_or_url: &str,
     temp_dir: &TempDir,
-    max_files_size_in_bytes: u64,
+    max_file_size: u64,
     executable_ytdl_path: &str,
     download_thumbnails: bool,
 ) -> Result<AudioInFS, DownloadError> {
     let mut audio_formats = video.get_audio_formats();
-    audio_formats.sort_by_priority_and_skip_by_size(max_files_size_in_bytes);
+    audio_formats.sort_by_priority_and_skip_by_size(max_file_size);
 
     let Some(audio_format) = audio_formats.first().cloned() else {
         event!(Level::ERROR, ?audio_formats, "No format found for audio");

@@ -446,7 +446,7 @@ impl Display for Video<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{id} {container}+{codec} {resolution} {filesize_kb:.2}KB ({filesize_mb:.2}MB)",
+            "{id} {container}+{codec} {resolution} {filesize_kb:.2}KiB ({filesize_mb:.2}MiB)",
             id = self.id,
             container = self.container,
             codec = self.codec.as_ref().map_or("unknown", VideoCodec::as_str),
@@ -511,14 +511,14 @@ impl Display for Audio<'_> {
 pub struct Audios<'a>(pub Vec<Audio<'a>>);
 
 impl<'a> Audios<'a> {
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[allow(clippy::cast_precision_loss)]
     pub fn skip_with_size_less_than(&mut self, size: u64) {
         self.0.retain(|audio| {
             let Some(filesize) = audio.filesize else {
                 return true;
             };
 
-            filesize.round() as u64 <= size
+            filesize <= (size as f64)
         });
     }
 
