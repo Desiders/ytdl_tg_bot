@@ -31,7 +31,7 @@ pub async fn start(
             .as_ref()
             .map_or("Anonymous".to_owned(), |user| html_quote(user.first_name.as_str())),
         bot_username = bot_info.username.expect("Bots always have a username"),
-        max_file_size_in_mb = yt_dlp_config.max_files_size_in_bytes / 1024 / 1024,
+        max_file_size_in_mb = yt_dlp_config.max_file_size / 1000 / 1000,
         source_code_href = html_text_link("here", html_quote(bot_config.source_code_url.as_str())),
     );
 

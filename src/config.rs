@@ -53,7 +53,7 @@ pub struct YtDlp {
     pub full_path: String,
     pub update_on_startup: bool,
     pub remove_on_shutdown: bool,
-    pub max_files_size_in_bytes: u64,
+    pub max_file_size: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -150,10 +150,10 @@ pub fn read_config_from_env() -> Result<Config, ErrorKind> {
                 })?
                 .parse()
                 .map_err(ErrorKind::ParseBool)?,
-            max_files_size_in_bytes: env::var("YT_DLP_MAX_FILES_SIZE_IN_BYTES")
+            max_file_size: env::var("YT_DLP_MAX_FILE_SIZE")
                 .map_err(|err| ErrorKind::Env {
                     source: err,
-                    key: "YT_DLP_MAX_FILES_SIZE_IN_BYTES".into(),
+                    key: "YT_DLP_MAX_FILE_SIZE".into(),
                 })?
                 .parse()
                 .map_err(ErrorKind::ParseInt)?,

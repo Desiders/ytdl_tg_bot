@@ -91,7 +91,7 @@ pub async fn video_download(
 
     for video in videos {
         let bot = bot.clone();
-        let max_files_size_in_bytes = yt_dlp_config.max_files_size_in_bytes;
+        let max_file_size = yt_dlp_config.max_file_size;
         let yt_dlp_full_path = yt_dlp_config.as_ref().full_path.clone();
         let receiver_video_chat_id = bot_config.receiver_video_chat_id;
 
@@ -115,7 +115,7 @@ pub async fn video_download(
                 video,
                 id_or_url.as_str(),
                 &temp_dir,
-                max_files_size_in_bytes,
+                max_file_size,
                 yt_dlp_full_path.as_str(),
                 false,
                 true,
@@ -242,7 +242,7 @@ pub async fn audio_download(
 
     for video in videos {
         let bot = bot.clone();
-        let max_files_size_in_bytes = yt_dlp_config.max_files_size_in_bytes;
+        let max_file_size = yt_dlp_config.max_file_size;
         let yt_dlp_full_path = yt_dlp_config.as_ref().full_path.clone();
         let receiver_video_chat_id = bot_config.receiver_video_chat_id;
 
@@ -264,15 +264,8 @@ pub async fn audio_download(
         handles.push(tokio::spawn(async move {
             let title = video.title.clone();
 
-            let AudioInFS { path, thumbnail_path } = download::audio_to_temp_dir(
-                video,
-                id_or_url.as_str(),
-                &temp_dir,
-                max_files_size_in_bytes,
-                yt_dlp_full_path.as_str(),
-                true,
-            )
-            .await?;
+            let AudioInFS { path, thumbnail_path } =
+                download::audio_to_temp_dir(video, id_or_url.as_str(), &temp_dir, max_file_size, yt_dlp_full_path.as_str(), true).await?;
 
             let message = send::with_retries(
                 &bot,
@@ -398,7 +391,7 @@ pub async fn media_download_chosen_inline_result(
                 video,
                 url.as_ref(),
                 &temp_dir,
-                yt_dlp_config.max_files_size_in_bytes,
+                yt_dlp_config.max_file_size,
                 yt_dlp_config.full_path.as_str(),
                 false,
                 true,
@@ -439,7 +432,7 @@ pub async fn media_download_chosen_inline_result(
                 video,
                 url.as_ref(),
                 &temp_dir,
-                yt_dlp_config.max_files_size_in_bytes,
+                yt_dlp_config.max_file_size,
                 yt_dlp_config.full_path.as_str(),
                 true,
             )
