@@ -26,6 +26,7 @@ const MAX_RETRIES: usize = 3;
 /// - `Ok(T::Return)` - If the request was successful
 /// - `Err(SessionErrorKind)` - If the request was unsuccessful and the maximum number of retries was exceeded
 #[instrument(skip_all)]
+#[allow(clippy::cast_sign_loss)]
 pub async fn with_retries<T, TRef>(bot: &Bot, method: TRef, request_timeout: Option<f32>) -> Result<T::Return, SessionErrorKind>
 where
     T: TelegramMethod + Send + Sync,
@@ -49,8 +50,6 @@ where
                     event!(Level::ERROR, "Max retries exceeded");
 
                     break Err(err);
-                } else {
-                    event!(Level::WARN, "Retrying request {}/{}", cur_retry_count, MAX_RETRIES);
                 }
 
                 if let Some(duration) = backoff.next_backoff() {
@@ -60,11 +59,21 @@ where
                 }
 
                 match err {
+                    SessionErrorKind::Telegram(TelegramErrorKind::RetryAfter { retry_after, .. }) => {
+                        if retry_after > 0 {
+                            event!(Level::DEBUG, "Sleeping for {retry_after:?} seconds");
+
+                            backoff.reset();
+
+                            tokio::time::sleep(tokio::time::Duration::from_secs(retry_after as u64)).await;
+                        }
+                    }
                     SessionErrorKind::Client(_)
-                    | SessionErrorKind::Telegram(TelegramErrorKind::NetworkError { .. })
-                    | SessionErrorKind::Telegram(TelegramErrorKind::RetryAfter { .. })
-                    | SessionErrorKind::Telegram(TelegramErrorKind::ServerError { .. })
-                    | SessionErrorKind::Telegram(TelegramErrorKind::RestartingTelegram { .. }) => {}
+                    | SessionErrorKind::Telegram(
+                        TelegramErrorKind::NetworkError { .. }
+                        | TelegramErrorKind::ServerError { .. }
+                        | TelegramErrorKind::RestartingTelegram { .. },
+                    ) => {}
                     // We don't want to retry on these errors
                     _ => {
                         event!(Level::ERROR, "Unexpected error: {err:?}");
@@ -72,6 +81,8 @@ where
                         break Err(err);
                     }
                 }
+
+                event!(Level::WARN, "Retrying request {}/{}", cur_retry_count, MAX_RETRIES);
             }
         }
     }
