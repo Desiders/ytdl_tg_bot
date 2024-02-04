@@ -1,5 +1,5 @@
 use backoff::{backoff::Backoff as _, ExponentialBackoff};
-use std::mem;
+use std::{mem, time::Duration};
 use telers::{
     errors::{SessionErrorKind, TelegramErrorKind},
     methods::{SendMediaGroup, TelegramMethod},
@@ -7,8 +7,6 @@ use telers::{
     Bot,
 };
 use tracing::{event, instrument, Level};
-
-const MAX_RETRIES: usize = 3;
 
 /// Sends a request to the Telegram Bot API with limited retries.
 /// # Arguments
@@ -27,7 +25,12 @@ const MAX_RETRIES: usize = 3;
 /// - `Err(SessionErrorKind)` - If the request was unsuccessful and the maximum number of retries was exceeded
 #[instrument(skip_all)]
 #[allow(clippy::cast_sign_loss)]
-pub async fn with_retries<T, TRef>(bot: &Bot, method: TRef, request_timeout: Option<f32>) -> Result<T::Return, SessionErrorKind>
+pub async fn with_retries<T, TRef>(
+    bot: &Bot,
+    method: TRef,
+    max_retries: u8,
+    request_timeout: Option<f32>,
+) -> Result<T::Return, SessionErrorKind>
 where
     T: TelegramMethod + Send + Sync,
     T::Method: Send + Sync,
@@ -46,16 +49,10 @@ where
             Err(err) => {
                 cur_retry_count += 1;
 
-                if cur_retry_count > MAX_RETRIES {
+                if cur_retry_count > max_retries {
                     event!(Level::ERROR, "Max retries exceeded");
 
                     break Err(err);
-                }
-
-                if let Some(duration) = backoff.next_backoff() {
-                    event!(Level::DEBUG, "Sleeping for {duration:?} seconds");
-
-                    tokio::time::sleep(duration).await;
                 }
 
                 match err {
@@ -65,7 +62,7 @@ where
 
                             backoff.reset();
 
-                            tokio::time::sleep(tokio::time::Duration::from_secs(retry_after as u64)).await;
+                            tokio::time::sleep(Duration::from_secs(retry_after as u64)).await;
                         }
                     }
                     SessionErrorKind::Client(_)
@@ -82,7 +79,13 @@ where
                     }
                 }
 
-                event!(Level::WARN, "Retrying request {}/{}", cur_retry_count, MAX_RETRIES);
+                if let Some(duration) = backoff.next_backoff() {
+                    event!(Level::DEBUG, "Sleeping for {duration:?} seconds");
+
+                    tokio::time::sleep(duration).await;
+                }
+
+                event!(Level::WARN, "Retrying request {cur_retry_count}/{max_retries}");
             }
         }
     }
@@ -138,6 +141,7 @@ pub async fn media_groups(
                         reply_to_message_id
                             .map(|reply_to_message_id| ReplyParameters::new(reply_to_message_id).allow_sending_without_reply(true)),
                     ),
+                    2,
                     request_timeout,
                 )
                 .await?,
@@ -155,6 +159,7 @@ pub async fn media_groups(
                     reply_to_message_id
                         .map(|reply_to_message_id| ReplyParameters::new(reply_to_message_id).allow_sending_without_reply(true)),
                 ),
+                2,
                 request_timeout,
             )
             .await?,
