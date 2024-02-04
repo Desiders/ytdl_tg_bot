@@ -1,27 +1,24 @@
-use crate::config::{Bot as BotConfig, PhantomAudioId, PhantomVideoId, YtDlp};
+use crate::config;
 
 use std::sync::Arc;
-use telers::{
-    client::Bot, context::Context, errors::ExtractionError, extractors::FromEventAndContext, from_context, from_context_into, types::Update,
-};
+use telers::extractors::FromContext;
 
-pub struct YtDlpWrapper(pub Arc<YtDlp>);
+#[derive(FromContext)]
+#[context(key = "yt_dlp_config", from = Arc<config::YtDlp>)]
+pub struct YtDlpWrapper(pub Arc<config::YtDlp>);
 
-impl From<Arc<YtDlp>> for YtDlpWrapper {
-    fn from(sources: Arc<YtDlp>) -> Self {
+impl From<Arc<config::YtDlp>> for YtDlpWrapper {
+    fn from(sources: Arc<config::YtDlp>) -> Self {
         Self(sources)
     }
 }
 
-pub struct BotConfigWrapper(pub Arc<BotConfig>);
+#[derive(FromContext)]
+#[context(key = "bot_config", from = Arc<config::Bot>)]
+pub struct BotConfigWrapper(pub Arc<config::Bot>);
 
-impl From<Arc<BotConfig>> for BotConfigWrapper {
-    fn from(sources: Arc<BotConfig>) -> Self {
+impl From<Arc<config::Bot>> for BotConfigWrapper {
+    fn from(sources: Arc<config::Bot>) -> Self {
         Self(sources)
     }
 }
-
-from_context_into!([Client], Arc<YtDlp> => YtDlpWrapper, "yt_dlp_config");
-from_context_into!([Client], Arc<BotConfig> => BotConfigWrapper, "bot_config");
-from_context!([Client], PhantomVideoId, "phantom_video_id");
-from_context!([Client], PhantomAudioId, "phantom_audio_id");

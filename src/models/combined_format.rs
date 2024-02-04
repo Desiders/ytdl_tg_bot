@@ -60,6 +60,11 @@ impl<'a> Format<'a> {
     }
 
     #[must_use]
+    pub fn format_ids_are_equal(&self) -> bool {
+        self.video_format.id == self.audio_format.id
+    }
+
+    #[must_use]
     pub const fn get_extension(&self) -> &str {
         self.video_format.container.as_str()
     }

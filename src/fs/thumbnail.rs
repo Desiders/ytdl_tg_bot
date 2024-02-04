@@ -3,13 +3,15 @@ use std::{
     io,
     path::{Path, PathBuf},
 };
-use tracing::{event, Level};
+use tracing::{event, instrument, Level};
 
 const MAX_THUMBNAIL_SIZE_IN_BYTES: u64 = 1024 * 200; // 200 KB
 const ACCEPTABLE_THUMBNAIL_EXTENSIONS: [&str; 2] = ["jpg", "jpeg"];
 
-pub async fn get_best_thumbnail_path_in_dir(path_dir: impl AsRef<Path>, name: &str) -> Result<Option<PathBuf>, io::Error> {
+#[instrument(skip_all, fields(path_dir = ?path_dir.as_ref(), name = %name.as_ref()))]
+pub async fn get_best_thumbnail_path_in_dir(path_dir: impl AsRef<Path>, name: impl AsRef<str>) -> Result<Option<PathBuf>, io::Error> {
     let path_dir = path_dir.as_ref();
+    let name = name.as_ref();
 
     let mut read_dir = tokio::fs::read_dir(path_dir).await?;
 
@@ -52,6 +54,8 @@ pub async fn get_best_thumbnail_path_in_dir(path_dir: impl AsRef<Path>, name: &s
             best_thumbnail = Some((entry.path(), entry.metadata().await?));
         }
     }
+
+    event!(Level::TRACE, "Best thumbnail: {best_thumbnail:?}");
 
     Ok(best_thumbnail.map(|(path, _)| path))
 }

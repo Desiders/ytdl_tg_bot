@@ -552,6 +552,20 @@ impl<'a> From<Vec<Audio<'a>>> for Audios<'a> {
     }
 }
 
+impl Display for Audios<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for (i, audio_format) in self.0.iter().enumerate() {
+            if i != 0 {
+                write!(f, ", ")?;
+            }
+
+            write!(f, "{audio_format}")?;
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Kind<'a> {
     Audio(Audio<'a>),
