@@ -5,6 +5,7 @@ use std::{
     ops::Deref,
     str::ParseBoolError,
 };
+use telers::extractors::FromContext;
 
 #[derive(Clone, Debug)]
 pub struct Bot {
@@ -13,7 +14,8 @@ pub struct Bot {
     pub receiver_video_chat_id: i64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, FromContext)]
+#[context(key = "phantom_video_id")]
 pub struct PhantomVideoId(pub String);
 
 impl Deref for PhantomVideoId {
@@ -24,7 +26,8 @@ impl Deref for PhantomVideoId {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, FromContext)]
+#[context(key = "phantom_audio_id")]
 pub struct PhantomAudioId(pub String);
 
 impl Deref for PhantomAudioId {
