@@ -1,19 +1,14 @@
 use crate::models::VideosInYT;
 
 use futures_util::StreamExt as _;
-use nix::{
-    libc::{self, _exit, O_WRONLY, STDERR_FILENO, STDOUT_FILENO},
-    unistd::{close, dup2, execv, fork, write, ForkResult, Pid},
-};
 use serde_json::{json, Value};
 use std::{
-    ffi::CString,
     io,
-    os::fd::RawFd,
+    os::fd::OwnedFd,
     path::Path,
-    process::{Output, Stdio},
+    process::{Command, Output, Stdio},
 };
-use tokio::process::Command;
+use tokio::process::Command as TokioCommand;
 use tokio_util::codec::{FramedRead, LinesCodec};
 use tracing::{event, instrument, Level};
 
@@ -28,79 +23,39 @@ pub enum Error {
 }
 
 #[cfg(not(target_family = "unix"))]
-fn download_to_pipe(_fd: RawFd, _executable_path: impl AsRef<str>, _dir_path: impl AsRef<Path>, _args: &[&str]) -> Result<Pid, io::Error> {
+fn download_to_pipe(
+    _fd: OwnedFd,
+    _executable_path: impl AsRef<str>,
+    _dir_path: impl AsRef<Path>,
+    _args: &[&str],
+) -> Result<u32, io::Error> {
     unimplemented!("This function is only implemented for Unix systems");
 }
 
 /// Download video or audio stream to a pipe.
 /// This function forks a child process and executes `yt-dl` in it.
 /// The child process redirects its stdout to the pipe.
-/// # Warning
-/// The child process will `close` the fd, so you should not use it after calling this function.
 /// # Errors
-/// Returns [`io::Error`] if the `fork` fails.
+/// Returns [`io::Error`] if the spawn child process fails.
 /// # Returns
 /// Returns the PID of the child process.
 #[cfg(target_family = "unix")]
-#[instrument(skip_all, fields(fd = %fd))]
-fn download_to_pipe(fd: RawFd, executable_path: impl AsRef<str>, args: &[&str]) -> Result<Pid, io::Error> {
+#[instrument(skip_all, fields(fd = ?fd))]
+fn download_to_pipe(fd: OwnedFd, executable_path: impl AsRef<str>, args: &[&str]) -> Result<u32, io::Error> {
     event!(Level::TRACE, "Starting youtube-dl");
 
-    let child = match unsafe { fork() } {
-        Ok(ForkResult::Child) => unsafe {
-            // Redirect `stderr` to `/dev/null`, because `ytdl` don't allow to disable logging level.
-            let _ = dup2(libc::open("/dev/null\0".as_ptr().cast(), O_WRONLY), STDERR_FILENO);
-
-            // Redirect `stdout` to the pipe.
-            // Be aware and don't use `dup3` with `O_CLOEXEC` flag here.
-            if let Err(errno) = dup2(fd, STDOUT_FILENO) {
-                let _ = write(STDERR_FILENO, b"Error redirecting child process stdout to video write pipe");
-
-                _exit(errno as i32);
-            }
-
-            match execv(
-                &CString::new(executable_path.as_ref()).unwrap(),
-                &args.iter().map(|arg| CString::new(*arg).unwrap()).collect::<Vec<_>>(),
-            ) {
-                Ok(_) => {
-                    if let Err(errno) = close(fd) {
-                        let _ = write(STDERR_FILENO, b"Error closing video write pipe");
-
-                        _exit(errno as i32);
-                    }
-
-                    _exit(0);
-                }
-                Err(errno) => {
-                    if let Err(errno) = close(fd) {
-                        let _ = write(STDERR_FILENO, b"Error closing video write pipe");
-
-                        _exit(errno as i32);
-                    }
-
-                    let _ = write(STDERR_FILENO, b"Error executing youtube-dl");
-
-                    _exit(errno as i32);
-                }
-            }
-        },
-        Ok(ForkResult::Parent { child }) => child,
-        Err(errno) => {
-            event!(Level::ERROR, "Error forking process");
-
-            return Err(errno.into());
-        }
-    };
-
-    event!(Level::TRACE, %child, "Parent process spawned child process");
-
-    Ok(child)
+    Command::new(executable_path.as_ref())
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(fd))
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|child| child.id())
 }
 
 #[cfg(not(target_family = "unix"))]
 pub fn download_video_to_pipe(
-    _fd: RawFd,
+    _fd: OwnedFd,
     _executable_path: impl AsRef<str>,
     _id_or_url: impl AsRef<str>,
     _format: impl AsRef<str>,
@@ -111,19 +66,17 @@ pub fn download_video_to_pipe(
 /// Download video stream to a pipe.
 /// This function forks a child process and executes `yt-dl` in it.
 /// The child process redirects its stdout to the pipe.
-/// # Warning
-/// The child process will `close` the fd, so you should not use it after calling this function.
 /// # Errors
-/// Returns [`io::Error`] if the `fork` fails.
+/// Returns [`io::Error`] if the spawn child process fails.
 /// # Returns
 /// Returns the PID of the child process.
 #[cfg(target_family = "unix")]
 pub fn download_video_to_pipe(
-    fd: RawFd,
+    fd: OwnedFd,
     executable_path: impl AsRef<str>,
     id_or_url: impl AsRef<str>,
     format: impl AsRef<str>,
-) -> Result<Pid, io::Error> {
+) -> Result<u32, io::Error> {
     let args = [
         "--no-update",
         "--ignore-config",
@@ -167,30 +120,28 @@ pub fn download_video_to_pipe(
 
 #[cfg(not(target_family = "unix"))]
 pub fn download_audio_stream_to_pipe(
-    _fd: RawFd,
+    _fd: OwnedFd,
     _executable_path: impl AsRef<str>,
     _id_or_url: impl AsRef<str>,
     _format: impl AsRef<str>,
-) -> Result<Pid, io::Error> {
+) -> Result<u32, io::Error> {
     unimplemented!("This function is only implemented for Unix systems");
 }
 
 /// Download audio stream to a pipe.
 /// This function forks a child process and executes `yt-dl` in it.
 /// The child process redirects its stdout to the pipe.
-/// # Warning
-/// The child process will `close` the fd, so you should not use it after calling this function.
-/// # Errors
-/// Returns [`io::Error`] if the `fork` fails.
+/// # Errorss
+/// Returns [`io::Error`] if the spawn child process fails.
 /// # Returns
 /// Returns the PID of the child process.
 #[cfg(target_family = "unix")]
 pub fn download_audio_stream_to_pipe(
-    fd: RawFd,
+    fd: OwnedFd,
     executable_path: impl AsRef<str>,
     id_or_url: impl AsRef<str>,
     format: impl AsRef<str>,
-) -> Result<Pid, io::Error> {
+) -> Result<u32, io::Error> {
     let args = [
         "--no-update",
         "--ignore-config",
@@ -287,7 +238,7 @@ pub async fn download_audio_to_path(
         id_or_url.as_ref(),
     ];
 
-    let Output { status, .. } = Command::new(executable_path.as_ref())
+    let Output { status, .. } = TokioCommand::new(executable_path.as_ref())
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -343,7 +294,7 @@ pub async fn get_media_or_playlist_info(
         id_or_url.as_ref(),
     ];
 
-    let mut child = Command::new(executable_path.as_ref())
+    let mut child = TokioCommand::new(executable_path.as_ref())
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

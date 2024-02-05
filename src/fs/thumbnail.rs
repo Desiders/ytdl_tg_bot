@@ -51,7 +51,7 @@ pub async fn get_best_thumbnail_path_in_dir(path_dir: impl AsRef<Path>, name: im
         } else {
             event!(Level::TRACE, path = ?entry.path(), "Got first thumbnail");
 
-            best_thumbnail = Some((entry.path(), entry.metadata().await?));
+            best_thumbnail = Some((path, entry_metadata));
         }
     }
 

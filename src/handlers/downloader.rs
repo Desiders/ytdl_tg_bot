@@ -42,6 +42,8 @@ pub enum DownloadErrorKind {
     Temp(#[from] ToTempDirErrorKind),
     #[error(transparent)]
     Session(#[from] SessionErrorKind),
+    #[error(transparent)]
+    Join(#[from] tokio::task::JoinError),
     #[error("Download timeout")]
     Timeout,
 }
@@ -131,10 +133,14 @@ pub async fn video_download(
         handles.push(tokio::spawn(async move {
             let VideoInFS { path, thumbnail_path } = timeout(
                 Duration::from_secs(DOWNLOAD_VIDEO_TIMEOUT),
-                download::video(video, id_or_url, max_file_size, yt_dlp_full_path, &temp_dir),
+                tokio::task::spawn_blocking({
+                    let temp_dir_path = temp_dir.path().to_owned();
+
+                    move || download::video(video, id_or_url, max_file_size, yt_dlp_full_path, temp_dir_path)
+                }),
             )
             .await
-            .map_err(|_| DownloadErrorKind::Timeout)??;
+            .map_err(|_| DownloadErrorKind::Timeout)???;
 
             let message = send::with_retries(
                 &bot,
@@ -408,10 +414,14 @@ pub async fn media_download_chosen_inline_result(
 
             let VideoInFS { path, thumbnail_path } = timeout(
                 Duration::from_secs(DOWNLOAD_VIDEO_TIMEOUT),
-                download::video(video, url, yt_dlp_config.max_file_size, &yt_dlp_config.full_path, &temp_dir),
+                tokio::task::spawn_blocking({
+                    let temp_dir_path = temp_dir.path().to_owned();
+
+                    move || download::video(video, url, yt_dlp_config.max_file_size, &yt_dlp_config.full_path, temp_dir_path)
+                }),
             )
             .await
-            .map_err(|_| DownloadErrorKind::Timeout)??;
+            .map_err(|_| DownloadErrorKind::Timeout)???;
 
             let message = send::with_retries(
                 &bot,
