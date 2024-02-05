@@ -6,23 +6,12 @@ use std::{
 };
 use tracing::{event, instrument, Level};
 
-#[cfg(not(target_family = "unix"))]
-pub fn merge_streams(
-    _video_fd: RawFd,
-    _audio_fd: RawFd,
-    _extension: impl AsRef<str>,
-    _output_path: impl AsRef<Path>,
-) -> Result<Pid, io::Error> {
-    unimplemented!("This function is only implemented for Unix systems");
-}
-
 /// Merge the video and audio streams into a single file.
 /// This function forks a child process and executes `ffmpeg` in it.
 /// # Errors
 /// Returns [`io::Error`] if the spawn child process fails.
 /// # Returns
 /// Returns the PID of the child process.
-#[cfg(target_family = "unix")]
 #[instrument(skip_all, fields(%video_fd, %audio_fd, output_path = %output_path.as_ref().as_os_str().to_string_lossy()))]
 pub fn merge_streams(
     video_fd: RawFd,

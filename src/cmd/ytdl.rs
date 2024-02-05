@@ -22,16 +22,6 @@ pub enum Error {
     Json(#[from] serde_json::Error),
 }
 
-#[cfg(not(target_family = "unix"))]
-fn download_to_pipe(
-    _fd: OwnedFd,
-    _executable_path: impl AsRef<str>,
-    _dir_path: impl AsRef<Path>,
-    _args: &[&str],
-) -> Result<u32, io::Error> {
-    unimplemented!("This function is only implemented for Unix systems");
-}
-
 /// Download video or audio stream to a pipe.
 /// This function forks a child process and executes `yt-dl` in it.
 /// The child process redirects its stdout to the pipe.
@@ -39,7 +29,6 @@ fn download_to_pipe(
 /// Returns [`io::Error`] if the spawn child process fails.
 /// # Returns
 /// Returns the PID of the child process.
-#[cfg(target_family = "unix")]
 #[instrument(skip_all, fields(fd = ?fd))]
 fn download_to_pipe(fd: OwnedFd, executable_path: impl AsRef<str>, args: &[&str]) -> Result<u32, io::Error> {
     event!(Level::TRACE, "Starting youtube-dl");
@@ -53,16 +42,6 @@ fn download_to_pipe(fd: OwnedFd, executable_path: impl AsRef<str>, args: &[&str]
         .map(|child| child.id())
 }
 
-#[cfg(not(target_family = "unix"))]
-pub fn download_video_to_pipe(
-    _fd: OwnedFd,
-    _executable_path: impl AsRef<str>,
-    _id_or_url: impl AsRef<str>,
-    _format: impl AsRef<str>,
-) -> Result<Pid, io::Error> {
-    unimplemented!("This function is only implemented for Unix systems");
-}
-
 /// Download video stream to a pipe.
 /// This function forks a child process and executes `yt-dl` in it.
 /// The child process redirects its stdout to the pipe.
@@ -70,7 +49,6 @@ pub fn download_video_to_pipe(
 /// Returns [`io::Error`] if the spawn child process fails.
 /// # Returns
 /// Returns the PID of the child process.
-#[cfg(target_family = "unix")]
 pub fn download_video_to_pipe(
     fd: OwnedFd,
     executable_path: impl AsRef<str>,
@@ -118,16 +96,6 @@ pub fn download_video_to_pipe(
     download_to_pipe(fd, executable_path, &args)
 }
 
-#[cfg(not(target_family = "unix"))]
-pub fn download_audio_stream_to_pipe(
-    _fd: OwnedFd,
-    _executable_path: impl AsRef<str>,
-    _id_or_url: impl AsRef<str>,
-    _format: impl AsRef<str>,
-) -> Result<u32, io::Error> {
-    unimplemented!("This function is only implemented for Unix systems");
-}
-
 /// Download audio stream to a pipe.
 /// This function forks a child process and executes `yt-dl` in it.
 /// The child process redirects its stdout to the pipe.
@@ -135,7 +103,6 @@ pub fn download_audio_stream_to_pipe(
 /// Returns [`io::Error`] if the spawn child process fails.
 /// # Returns
 /// Returns the PID of the child process.
-#[cfg(target_family = "unix")]
 pub fn download_audio_stream_to_pipe(
     fd: OwnedFd,
     executable_path: impl AsRef<str>,
