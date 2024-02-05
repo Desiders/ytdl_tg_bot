@@ -1,5 +1,6 @@
 mod cmd;
 mod config;
+mod download;
 mod errors;
 mod extractors;
 mod filters;
