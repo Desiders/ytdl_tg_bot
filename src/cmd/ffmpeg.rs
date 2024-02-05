@@ -7,7 +7,6 @@ use std::{
 use tracing::{event, instrument, Level};
 
 /// Merge the video and audio streams into a single file.
-/// This function forks a child process and executes `ffmpeg` in it.
 /// # Errors
 /// Returns [`io::Error`] if the spawn child process fails.
 /// # Returns
@@ -50,4 +49,30 @@ pub fn merge_streams(
         .stderr(Stdio::inherit())
         .spawn()
         .map(|child| child.id())
+}
+
+/// Convert image to `jpg` format.
+/// # Errors
+/// Returns [`io::Error`] if the spawn child process fails.
+pub fn convert_to_jpg(input_url: impl AsRef<str>, output_path: impl AsRef<Path>) -> Result<(), io::Error> {
+    event!(Level::TRACE, "Starting ffmpeg");
+
+    let input_url = input_url.as_ref();
+
+    Command::new("/usr/bin/ffmpeg")
+        .args([
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            input_url,
+            output_path.as_ref().to_string_lossy().as_ref(),
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
+        .spawn()?
+        .wait()
+        .map(|_| ())
 }

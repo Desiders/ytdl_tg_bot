@@ -18,6 +18,8 @@ pub struct Thumbnail {
 pub struct VideoInYT {
     pub id: String,
     pub title: Option<String>,
+    pub description: Option<String>,
+    pub thumbnail: Option<String>,
     pub url: Option<String>,
     pub duration: Option<f64>,
     pub width: Option<i64>,

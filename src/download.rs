@@ -1,5 +1,5 @@
 use crate::{
-    cmd::{download_audio_stream_to_pipe, download_audio_to_path, download_video_to_pipe, merge_streams, ytdl},
+    cmd::{convert_to_jpg, download_audio_stream_to_pipe, download_audio_to_path, download_video_to_pipe, merge_streams, ytdl},
     fs::get_best_thumbnail_path_in_dir,
     models::{AudioInFS, VideoInFS, VideoInYT},
 };
@@ -100,6 +100,30 @@ pub fn video(
         event!(Level::WARN, %errno, "Error closing audio read pipe");
     }
 
+    let thumbnail_path = if let Some(thumbnail_url) = video.thumbnail {
+        event!(Level::TRACE, %thumbnail_url, "Got thumbnail URL");
+
+        let path = temp_dir_path.as_ref().join(format!("{}.jpg", video.id));
+
+        match convert_to_jpg(thumbnail_url, &path) {
+            Ok(()) => {
+                event!(Level::TRACE, ?path, "Thumbnail downloaded");
+
+                Some(path)
+            }
+            Err(err) => {
+                event!(Level::ERROR, %err, "Error downloading thumbnail");
+
+                // We don't want to fail the whole process if the thumbnail download fails
+                None
+            }
+        }
+    } else {
+        event!(Level::TRACE, "No thumbnail URL found");
+
+        None
+    };
+
     match waitpid(
         Pid::from_raw(
             merge_pid
@@ -118,7 +142,7 @@ pub fn video(
         }
     }
 
-    Ok(VideoInFS::new(output_path, None))
+    Ok(VideoInFS::new(output_path, thumbnail_path))
 }
 
 #[derive(thiserror::Error, Debug)]
