@@ -1,23 +1,21 @@
-use crate::models::VideosInYT;
+use crate::models::{VideoInYT, VideosInYT};
 
-use futures_util::StreamExt as _;
+use serde::de::Error as _;
 use serde_json::{json, Value};
 use std::{
-    io,
+    io::{self, Read},
     os::fd::OwnedFd,
     path::Path,
-    process::{Command, Output, Stdio},
+    process::{Child, Command, Stdio},
+    time::Duration,
 };
-use tokio::process::Command as TokioCommand;
-use tokio_util::codec::{FramedRead, LinesCodec};
 use tracing::{event, instrument, Level};
+use wait_timeout::ChildExt as _;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
-    #[error("Line codec error: {0}")]
-    Line(#[from] tokio_util::codec::LinesCodecError),
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 }
@@ -28,9 +26,9 @@ pub enum Error {
 /// # Errors
 /// Returns [`io::Error`] if the spawn child process fails.
 /// # Returns
-/// Returns the PID of the child process.
+/// Returns the child process.
 #[instrument(skip_all, fields(fd = ?fd))]
-fn download_to_pipe(fd: OwnedFd, executable_path: impl AsRef<str>, args: &[&str]) -> Result<u32, io::Error> {
+fn download_to_pipe(fd: OwnedFd, executable_path: impl AsRef<str>, args: &[&str]) -> Result<Child, io::Error> {
     event!(Level::TRACE, "Starting youtube-dl");
 
     Command::new(executable_path.as_ref())
@@ -39,7 +37,6 @@ fn download_to_pipe(fd: OwnedFd, executable_path: impl AsRef<str>, args: &[&str]
         .stdout(Stdio::from(fd))
         .stderr(Stdio::null())
         .spawn()
-        .map(|child| child.id())
 }
 
 /// Download video stream to a pipe.
@@ -48,13 +45,13 @@ fn download_to_pipe(fd: OwnedFd, executable_path: impl AsRef<str>, args: &[&str]
 /// # Errors
 /// Returns [`io::Error`] if the spawn child process fails.
 /// # Returns
-/// Returns the PID of the child process.
+/// Returns the child process.
 pub fn download_video_to_pipe(
     fd: OwnedFd,
     executable_path: impl AsRef<str>,
     id_or_url: impl AsRef<str>,
     format: impl AsRef<str>,
-) -> Result<u32, io::Error> {
+) -> Result<Child, io::Error> {
     let args = [
         "--no-update",
         "--ignore-config",
@@ -102,13 +99,13 @@ pub fn download_video_to_pipe(
 /// # Errorss
 /// Returns [`io::Error`] if the spawn child process fails.
 /// # Returns
-/// Returns the PID of the child process.
+/// Returns the child process.
 pub fn download_audio_stream_to_pipe(
     fd: OwnedFd,
     executable_path: impl AsRef<str>,
     id_or_url: impl AsRef<str>,
     format: impl AsRef<str>,
-) -> Result<u32, io::Error> {
+) -> Result<Child, io::Error> {
     let args = [
         "--no-update",
         "--ignore-config",
@@ -150,13 +147,91 @@ pub fn download_audio_stream_to_pipe(
     download_to_pipe(fd, executable_path, &args)
 }
 
-pub async fn download_audio_to_path(
+pub fn download_video_to_path(
+    executable_path: impl AsRef<str>,
+    id_or_url: impl AsRef<str>,
+    format: impl AsRef<str>,
+    output_dir_path: impl AsRef<Path>,
+    timeout: u64,
+) -> Result<(), io::Error> {
+    let output_dir_path = output_dir_path.as_ref().to_string_lossy();
+
+    let args = [
+        "--no-update",
+        "--ignore-config",
+        "--no-config-locations",
+        "--abort-on-error",
+        "--color",
+        "never",
+        "--no-match-filters",
+        "--no-download-archive",
+        "--socket-timeout",
+        "5",
+        "--concurrent-fragments",
+        "4",
+        "--resize-buffer",
+        "--no-batch-file",
+        "--paths",
+        output_dir_path.as_ref(),
+        "--output",
+        "%(id)s.%(ext)s",
+        "--no-playlist",
+        "--write-all-thumbnail",
+        "--no-mtime",
+        "--no-write-description",
+        "--no-write-info-json",
+        "--no-write-comments",
+        "--no-cookies",
+        "--no-cookies-from-browser",
+        "--quiet",
+        "--no-ignore-no-formats-error",
+        "--no-simulate",
+        "--no-progress",
+        "--no-check-certificate",
+        "--no-video-multistreams",
+        "--no-check-formats",
+        "--no-write-subs",
+        "--no-write-auto-subs",
+        "-f",
+        format.as_ref(),
+        id_or_url.as_ref(),
+    ];
+
+    let mut child = Command::new(executable_path.as_ref())
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
+        .spawn()?;
+
+    let Some(exit_code) = child.wait_timeout(Duration::from_secs(timeout))? else {
+        event!(Level::ERROR, "Child process timed out");
+
+        child.kill()?;
+
+        return Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out"));
+    };
+
+    if !exit_code.success() {
+        event!(Level::ERROR, "Child process exited with error status: {exit_code}");
+
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Youtube-dl exited with status `{exit_code}`"),
+        ));
+    }
+
+    Ok(())
+}
+
+pub fn download_audio_to_path(
     executable_path: impl AsRef<str>,
     id_or_url: impl AsRef<str>,
     format: impl AsRef<str>,
     output_extension: impl AsRef<str>,
     output_dir_path: impl AsRef<Path>,
-) -> Result<(), Error> {
+    timeout: u64,
+) -> Result<(), io::Error> {
     let output_dir_path = output_dir_path.as_ref().to_string_lossy();
 
     let args = [
@@ -205,25 +280,38 @@ pub async fn download_audio_to_path(
         id_or_url.as_ref(),
     ];
 
-    let Output { status, .. } = TokioCommand::new(executable_path.as_ref())
+    let mut child = Command::new(executable_path.as_ref())
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
-        .output()
-        .await?;
+        .spawn()?;
 
-    if !status.success() {
-        return Err(io::Error::new(io::ErrorKind::Other, format!("Youtube-dl exited with status `{status}`")).into());
+    let Some(exit_code) = child.wait_timeout(Duration::from_secs(timeout))? else {
+        event!(Level::ERROR, "Child process timed out");
+
+        child.kill()?;
+
+        return Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out"));
+    };
+
+    if !exit_code.success() {
+        event!(Level::ERROR, "Child process exited with error status: {exit_code}");
+
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Youtube-dl exited with status `{exit_code}`"),
+        ));
     }
 
     Ok(())
 }
 
-pub async fn get_media_or_playlist_info(
+pub fn get_media_or_playlist_info(
     executable_path: impl AsRef<str>,
     id_or_url: impl AsRef<str>,
     allow_playlist: bool,
+    timeout: u64,
 ) -> Result<VideosInYT, Error> {
     let args = [
         "--no-update",
@@ -261,51 +349,51 @@ pub async fn get_media_or_playlist_info(
         id_or_url.as_ref(),
     ];
 
-    let mut child = TokioCommand::new(executable_path.as_ref())
+    let mut child = Command::new(executable_path.as_ref())
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()?;
 
-    let mut videos = vec![];
-    let mut stdout = FramedRead::new(child.stdout.take().unwrap(), LinesCodec::new());
+    let mut stdout = vec![];
+    let child_stdout = child.stdout.take();
+    io::copy(&mut child_stdout.unwrap(), &mut stdout)?;
 
-    while let Some(line) = stdout.next().await {
-        let line = line?;
+    let Some(exit_code) = child.wait_timeout(Duration::from_secs(timeout))? else {
+        event!(Level::ERROR, "Child process timed out");
 
-        let value: Value = serde_json::from_reader(line.as_bytes())?;
+        child.kill()?;
 
-        let is_playlist = value["_type"] == json!("playlist");
+        return Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out").into());
+    };
 
-        if is_playlist {
-            let Some(entries) = value["entries"].as_array() else {
-                continue;
-            };
+    if !exit_code.success() {
+        event!(Level::ERROR, "Child process exited with error status: {exit_code}");
 
-            if !allow_playlist && is_playlist {
-                event!(Level::WARN, "Playlist not allowed, but got playlist");
+        return Err(io::Error::new(io::ErrorKind::Other, format!("Youtube-dl exited with status `{exit_code}`")).into());
+    }
 
-                if let Some(entry) = entries.iter().next() {
-                    videos.push(serde_json::from_value(entry.clone())?);
-                }
-            } else {
-                for entry in entries {
-                    videos.push(serde_json::from_value(entry.clone())?);
-                }
-            }
-        } else {
-            videos.push(serde_json::from_value(value)?);
+    let mut stderr = vec![];
+    if let Some(mut reader) = child.stderr {
+        reader.read_to_end(&mut stderr)?;
+    }
+
+    let value: Value = serde_json::from_slice(&stdout)?;
+
+    if value["_type"] == json!("playlist") {
+        let mut videos = vec![];
+
+        let entries = value["entries"].as_array().ok_or(serde_json::Error::custom("No entries found"))?;
+
+        for entry in entries {
+            videos.push(serde_json::from_value(entry.clone())?);
         }
+
+        Ok(VideosInYT::new(videos))
+    } else {
+        let video: VideoInYT = serde_json::from_value(value)?;
+
+        Ok(VideosInYT::new(vec![video]))
     }
-
-    let status = child.wait().await?;
-
-    if !status.success() {
-        event!(Level::ERROR, "Child process exited with error status: {status}");
-
-        return Err(io::Error::new(io::ErrorKind::Other, format!("Youtube-dl exited with status `{status}`")).into());
-    }
-
-    Ok(VideosInYT::new(videos))
 }

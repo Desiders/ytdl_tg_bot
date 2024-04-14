@@ -1,5 +1,5 @@
 use std::{
-    fs::Metadata,
+    fs::{self, Metadata},
     io,
     path::{Path, PathBuf},
 };
@@ -9,15 +9,15 @@ const MAX_THUMBNAIL_SIZE_IN_BYTES: u64 = 1024 * 200; // 200 KB
 const ACCEPTABLE_THUMBNAIL_EXTENSIONS: [&str; 2] = ["jpg", "jpeg"];
 
 #[instrument(skip_all, fields(path_dir = ?path_dir.as_ref(), name = %name.as_ref()))]
-pub async fn get_best_thumbnail_path_in_dir(path_dir: impl AsRef<Path>, name: impl AsRef<str>) -> Result<Option<PathBuf>, io::Error> {
+pub fn get_best_thumbnail_path_in_dir(path_dir: impl AsRef<Path>, name: impl AsRef<str>) -> Result<Option<PathBuf>, io::Error> {
     let path_dir = path_dir.as_ref();
     let name = name.as_ref();
 
-    let mut read_dir = tokio::fs::read_dir(path_dir).await?;
-
     let mut best_thumbnail: Option<(PathBuf, Metadata)> = None;
 
-    while let Some(entry) = read_dir.next_entry().await? {
+    for entry in fs::read_dir(path_dir)? {
+        let entry = entry?;
+
         let entry_name = entry.file_name();
 
         // If names are equal, then it's video file, not thumbnail
@@ -35,7 +35,7 @@ pub async fn get_best_thumbnail_path_in_dir(path_dir: impl AsRef<Path>, name: im
             continue;
         }
 
-        let entry_metadata = entry.metadata().await?;
+        let entry_metadata = entry.metadata()?;
         let entry_size = entry_metadata.len();
 
         if entry_size > MAX_THUMBNAIL_SIZE_IN_BYTES {
