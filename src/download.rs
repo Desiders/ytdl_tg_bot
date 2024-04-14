@@ -6,15 +6,15 @@ use crate::{
 
 use nix::{
     fcntl::{fcntl, FcntlArg::F_SETFD, FdFlag},
-    sys::wait::waitpid,
-    unistd::{close, pipe, Pid},
+    unistd::{close, pipe},
 };
 use std::{
     io,
     os::fd::{FromRawFd as _, OwnedFd},
-    path::Path,
+    path::{Path, PathBuf},
 };
 use tracing::{event, field, instrument, Level, Span};
+use wait_timeout::ChildExt as _;
 
 #[derive(thiserror::Error, Debug)]
 pub enum StreamErrorKind {
@@ -35,6 +35,24 @@ pub fn video(
     unimplemented!("This function is only implemented for Unix systems");
 }
 
+fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_path: impl AsRef<Path>) -> Option<PathBuf> {
+    let path = temp_dir_path.as_ref().join(format!("{}.jpg", id.as_ref()));
+
+    match convert_to_jpg(url, &path) {
+        Ok(()) => {
+            event!(Level::TRACE, ?path, "Thumbnail downloaded");
+
+            Some(path)
+        }
+        Err(err) => {
+            event!(Level::ERROR, %err, "Error downloading thumbnail");
+
+            // We don't want to fail the whole process if the thumbnail download fails
+            None
+        }
+    }
+}
+
 #[cfg(target_family = "unix")]
 #[instrument(skip_all, fields(video = %video_id_or_url.as_ref(), format_id, file_path))]
 pub fn video(
@@ -43,7 +61,12 @@ pub fn video(
     max_file_size: u64,
     executable_ytdl_path: impl AsRef<str>,
     temp_dir_path: impl AsRef<Path>,
+    timeout: u64,
 ) -> Result<VideoInFS, StreamErrorKind> {
+    use std::time::Duration;
+
+    use crate::cmd::ytdl::download_video_to_path;
+
     let mut combined_formats = video.get_combined_formats();
     combined_formats.sort_by_priority_and_skip_by_size(max_file_size);
 
@@ -61,6 +84,34 @@ pub fn video(
 
     event!(Level::DEBUG, %combined_format, "Got combined format");
 
+    if combined_format.format_ids_are_equal() {
+        event!(Level::TRACE, "Video and audio formats are the same");
+
+        let output_path = temp_dir_path.as_ref().join(format!("video.{}", combined_format.get_extension()));
+
+        download_video_to_path(
+            &executable_ytdl_path,
+            &video_id_or_url,
+            combined_format.video_format.id,
+            &output_path,
+            timeout,
+        )?;
+
+        let thumbnail_path = if let Some(thumbnail_url) = video.thumbnail {
+            event!(Level::TRACE, %thumbnail_url, "Thumbnail URL found");
+
+            get_thumbnail_path(thumbnail_url, video.id, temp_dir_path)
+        } else {
+            event!(Level::TRACE, "No thumbnail URL found");
+
+            None
+        };
+
+        return Ok(VideoInFS::new(output_path, thumbnail_path));
+    }
+
+    event!(Level::TRACE, "Video and audio formats are different");
+
     // Create pipes to communicate between the yt-dl process and the ffmpeg process
     let (video_read_fd, video_write_fd) = pipe().map_err(io::Error::from)?;
     let (audio_read_fd, audio_write_fd) = pipe().map_err(io::Error::from)?;
@@ -71,20 +122,20 @@ pub fn video(
 
     let output_path = temp_dir_path.as_ref().join(format!("merged.{}", combined_format.get_extension()));
 
-    let merge_pid = merge_streams(video_read_fd, audio_read_fd, combined_format.get_extension(), &output_path)?;
+    let mut merge_child = merge_streams(video_read_fd, audio_read_fd, combined_format.get_extension(), &output_path)?;
 
     // Set the close-on-exec flag for the read ends of the pipes.
     // We use this after `merge_streams` because we want to keep the pipes open in the ffmpeg process
     fcntl(video_read_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
     fcntl(audio_read_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
 
-    download_video_to_pipe(
+    let mut video_child = download_video_to_pipe(
         unsafe { OwnedFd::from_raw_fd(video_write_fd) },
         &executable_ytdl_path,
         &video_id_or_url,
         combined_format.video_format.id,
     )?;
-    download_audio_stream_to_pipe(
+    let mut audio_child = download_audio_stream_to_pipe(
         unsafe { OwnedFd::from_raw_fd(audio_write_fd) },
         executable_ytdl_path,
         video_id_or_url,
@@ -101,45 +152,29 @@ pub fn video(
     }
 
     let thumbnail_path = if let Some(thumbnail_url) = video.thumbnail {
-        event!(Level::TRACE, %thumbnail_url, "Got thumbnail URL");
+        event!(Level::TRACE, %thumbnail_url, "Thumbnail URL found");
 
-        let path = temp_dir_path.as_ref().join(format!("{}.jpg", video.id));
-
-        match convert_to_jpg(thumbnail_url, &path) {
-            Ok(()) => {
-                event!(Level::TRACE, ?path, "Thumbnail downloaded");
-
-                Some(path)
-            }
-            Err(err) => {
-                event!(Level::ERROR, %err, "Error downloading thumbnail");
-
-                // We don't want to fail the whole process if the thumbnail download fails
-                None
-            }
-        }
+        get_thumbnail_path(thumbnail_url, video.id, temp_dir_path)
     } else {
         event!(Level::TRACE, "No thumbnail URL found");
 
         None
     };
 
-    match waitpid(
-        Pid::from_raw(
-            merge_pid
-                .try_into()
-                .expect("The merge child process ID is not representable as a `nix::unistd::Pid"),
-        ),
-        None,
-    ) {
-        Ok(status) => {
-            event!(Level::TRACE, ?status, "Merge process exited");
-        }
-        Err(errno) => {
-            event!(Level::ERROR, %errno, "Error waiting for merge process");
+    let Some(exit_code) = merge_child.wait_timeout(Duration::from_secs(timeout))? else {
+        event!(Level::ERROR, "FFmpeg process timed out");
 
-            return Err(io::Error::from(errno).into());
-        }
+        merge_child.kill()?;
+        video_child.kill()?;
+        audio_child.kill()?;
+
+        return Err(io::Error::new(io::ErrorKind::TimedOut, "FFmpeg process timed out").into());
+    };
+
+    if !exit_code.success() {
+        event!(Level::ERROR, "FFmpeg exited with status `{exit_code}`");
+
+        return Err(io::Error::new(io::ErrorKind::Other, format!("FFmpeg exited with status `{exit_code}`")).into());
     }
 
     Ok(VideoInFS::new(output_path, thumbnail_path))
@@ -156,12 +191,13 @@ pub enum ToTempDirErrorKind {
 }
 
 #[instrument(skip_all, fields(video = video.id, format_id = field::Empty, file_path = field::Empty))]
-pub async fn audio_to_temp_dir(
+pub fn audio_to_temp_dir(
     video: VideoInYT,
     video_id_or_url: impl AsRef<str>,
     max_file_size: u64,
     executable_ytdl_path: impl AsRef<str>,
     temp_dir_path: impl AsRef<Path>,
+    timeout: u64,
 ) -> Result<AudioInFS, ToTempDirErrorKind> {
     let mut audio_formats = video.get_audio_formats();
     audio_formats.sort_by_priority_and_skip_by_size(max_file_size);
@@ -188,11 +224,18 @@ pub async fn audio_to_temp_dir(
 
     event!(Level::DEBUG, ?file_path, "Got file path");
 
-    download_audio_to_path(executable_ytdl_path, video_id_or_url, audio_format.id, extension, &temp_dir_path).await?;
+    download_audio_to_path(
+        executable_ytdl_path,
+        video_id_or_url,
+        audio_format.id,
+        extension,
+        &temp_dir_path,
+        timeout,
+    )?;
 
     event!(Level::DEBUG, "Audio downloaded");
 
-    let thumbnail_path = get_best_thumbnail_path_in_dir(temp_dir_path, video.id).await?;
+    let thumbnail_path = get_best_thumbnail_path_in_dir(temp_dir_path, video.id)?;
 
     Ok(AudioInFS::new(file_path, thumbnail_path))
 }

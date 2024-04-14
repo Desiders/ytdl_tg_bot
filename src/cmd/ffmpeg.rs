@@ -2,7 +2,7 @@ use std::{
     io,
     os::fd::RawFd,
     path::Path,
-    process::{Command, Stdio},
+    process::{Child, Command, Stdio},
 };
 use tracing::{event, instrument, Level};
 
@@ -10,14 +10,14 @@ use tracing::{event, instrument, Level};
 /// # Errors
 /// Returns [`io::Error`] if the spawn child process fails.
 /// # Returns
-/// Returns the PID of the child process.
+/// Returns the child process
 #[instrument(skip_all, fields(%video_fd, %audio_fd, output_path = %output_path.as_ref().as_os_str().to_string_lossy()))]
 pub fn merge_streams(
     video_fd: RawFd,
     audio_fd: RawFd,
     extension: impl AsRef<str>,
     output_path: impl AsRef<Path>,
-) -> Result<u32, io::Error> {
+) -> Result<Child, io::Error> {
     event!(Level::TRACE, "Starting ffmpeg");
 
     Command::new("/usr/bin/ffmpeg")
@@ -48,7 +48,6 @@ pub fn merge_streams(
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
         .spawn()
-        .map(|child| child.id())
 }
 
 /// Convert image to `jpg` format.

@@ -7,7 +7,7 @@ use crate::{
     models::{AudioInFS, TgAudioInPlaylist, TgVideoInPlaylist, VideoInFS},
 };
 
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 use telers::{
     enums::ParseMode,
     errors::{HandlerError, SessionErrorKind},
@@ -21,14 +21,15 @@ use telers::{
     Bot, Context,
 };
 use tempfile::tempdir;
-use tokio::{task::JoinHandle, time::timeout};
+use tokio::task::{spawn_blocking, JoinError, JoinHandle};
 use tracing::{event, instrument, Level, Span};
 use uuid::Uuid;
 
-const DOWNLOAD_VIDEO_TIMEOUT: u64 = 120;
-const DOWNLOAD_AUDIO_TIMEOUT: u64 = 120;
+const GET_INFO_TIMEOUT: u64 = 30;
+const DOWNLOAD_MEDIA_TIMEOUT: u64 = 45;
 const SEND_VIDEO_TIMEOUT: f32 = 30.0;
 const SEND_AUDIO_TIMEOUT: f32 = 30.0;
+const GET_MEDIA_OR_PLAYLIST_INFO_INLINE_QUERY_TIMEOUT: u64 = 12;
 const SELECT_INLINE_QUERY_CACHE_TIME: i64 = 3600; // 60 minutes
 
 #[derive(thiserror::Error, Debug)]
@@ -40,9 +41,7 @@ pub enum DownloadErrorKind {
     #[error(transparent)]
     Session(#[from] SessionErrorKind),
     #[error(transparent)]
-    Join(#[from] tokio::task::JoinError),
-    #[error("Download timeout")]
-    Timeout,
+    Join(#[from] JoinError),
 }
 
 #[instrument(skip_all, fields(message_id, chat_id, url))]
@@ -70,10 +69,21 @@ pub async fn video_download(
 
     event!(Level::DEBUG, "Got url");
 
-    let videos = match get_media_or_playlist_info(&yt_dlp_config.full_path, &url, true).await {
+    let videos = match spawn_blocking({
+        let full_path = yt_dlp_config.full_path.clone();
+        let url = url.clone();
+
+        move || get_media_or_playlist_info(full_path, url, true, GET_INFO_TIMEOUT)
+    })
+    .await
+    .map_err(|err| {
+        event!(Level::ERROR, %err, "Error while getting video/playlist info");
+
+        HandlerError::new(err)
+    })? {
         Ok(videos) => videos,
         Err(err) => {
-            event!(Level::ERROR, %err, "Error while getting video/playlist info");
+            event!(Level::ERROR, %err, "Getting video/playlist info error");
 
             error::occured_in_message(
                 &bot,
@@ -128,16 +138,21 @@ pub async fn video_download(
         })?;
 
         handles.push(tokio::spawn(async move {
-            let VideoInFS { path, thumbnail_path } = timeout(
-                Duration::from_secs(DOWNLOAD_VIDEO_TIMEOUT),
-                tokio::task::spawn_blocking({
-                    let temp_dir_path = temp_dir.path().to_owned();
+            let VideoInFS { path, thumbnail_path } = spawn_blocking({
+                let temp_dir_path = temp_dir.path().to_owned();
 
-                    move || download::video(video, id_or_url, max_file_size, yt_dlp_full_path, temp_dir_path)
-                }),
-            )
-            .await
-            .map_err(|_| DownloadErrorKind::Timeout)???;
+                move || {
+                    download::video(
+                        video,
+                        id_or_url,
+                        max_file_size,
+                        yt_dlp_full_path,
+                        temp_dir_path,
+                        DOWNLOAD_MEDIA_TIMEOUT,
+                    )
+                }
+            })
+            .await??;
 
             let message = send::with_retries(
                 &bot,
@@ -222,10 +237,18 @@ pub async fn audio_download(
 
     event!(Level::DEBUG, "Got url");
 
-    let videos = match get_media_or_playlist_info(&yt_dlp_config.full_path, &url, true).await {
+    let videos = match spawn_blocking({
+        let full_path = yt_dlp_config.full_path.clone();
+        let url = url.clone();
+
+        move || get_media_or_playlist_info(full_path, url, true, GET_INFO_TIMEOUT)
+    })
+    .await
+    .map_err(HandlerError::new)?
+    {
         Ok(videos) => videos,
         Err(err) => {
-            event!(Level::ERROR, %err, "Error while getting audio/playlist info");
+            event!(Level::ERROR, %err, "Getting audio/playlist info error");
 
             error::occured_in_message(
                 &bot,
@@ -281,12 +304,21 @@ pub async fn audio_download(
         })?;
 
         handles.push(tokio::spawn(async move {
-            let AudioInFS { path, thumbnail_path } = timeout(
-                Duration::from_secs(DOWNLOAD_AUDIO_TIMEOUT),
-                download::audio_to_temp_dir(video, id_or_url, max_file_size, yt_dlp_full_path, temp_dir.path()),
-            )
-            .await
-            .map_err(|_| DownloadErrorKind::Timeout)??;
+            let AudioInFS { path, thumbnail_path } = spawn_blocking({
+                let temp_dir_path = temp_dir.path().to_owned();
+
+                move || {
+                    download::audio_to_temp_dir(
+                        video,
+                        id_or_url,
+                        max_file_size,
+                        yt_dlp_full_path,
+                        temp_dir_path,
+                        DOWNLOAD_MEDIA_TIMEOUT,
+                    )
+                }
+            })
+            .await??;
 
             let message = send::with_retries(
                 &bot,
@@ -375,10 +407,18 @@ pub async fn media_download_chosen_inline_result(
 
     event!(Level::DEBUG, "Got url");
 
-    let videos = match get_media_or_playlist_info(&yt_dlp_config.full_path, &url, false).await {
+    let videos = match spawn_blocking({
+        let full_path = yt_dlp_config.full_path.clone();
+        let url = url.clone();
+
+        move || get_media_or_playlist_info(full_path, url, false, GET_INFO_TIMEOUT)
+    })
+    .await
+    .map_err(HandlerError::new)?
+    {
         Ok(videos) => videos,
         Err(err) => {
-            event!(Level::ERROR, %err, "Error while getting video/playlist info");
+            event!(Level::ERROR, %err, "Getting video/playlist info error");
 
             error::occured_in_chosen_inline_result(
                 &bot,
@@ -409,16 +449,21 @@ pub async fn media_download_chosen_inline_result(
             #[allow(clippy::cast_possible_truncation)]
             let (height, width, duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
 
-            let VideoInFS { path, thumbnail_path } = timeout(
-                Duration::from_secs(DOWNLOAD_VIDEO_TIMEOUT),
-                tokio::task::spawn_blocking({
-                    let temp_dir_path = temp_dir.path().to_owned();
+            let VideoInFS { path, thumbnail_path } = spawn_blocking({
+                let temp_dir_path = temp_dir.path().to_owned();
 
-                    move || download::video(video, url, yt_dlp_config.max_file_size, &yt_dlp_config.full_path, temp_dir_path)
-                }),
-            )
-            .await
-            .map_err(|_| DownloadErrorKind::Timeout)???;
+                move || {
+                    download::video(
+                        video,
+                        url,
+                        yt_dlp_config.max_file_size,
+                        &yt_dlp_config.full_path,
+                        temp_dir_path,
+                        DOWNLOAD_MEDIA_TIMEOUT,
+                    )
+                }
+            })
+            .await??;
 
             let message = send::with_retries(
                 &bot,
@@ -451,12 +496,21 @@ pub async fn media_download_chosen_inline_result(
             #[allow(clippy::cast_possible_truncation)]
             let duration = video.duration.map(|duration| duration as i64);
 
-            let AudioInFS { path, thumbnail_path } = timeout(
-                Duration::from_secs(DOWNLOAD_AUDIO_TIMEOUT),
-                download::audio_to_temp_dir(video, url, yt_dlp_config.max_file_size, &yt_dlp_config.full_path, temp_dir.path()),
-            )
-            .await
-            .map_err(|_| DownloadErrorKind::Timeout)??;
+            let AudioInFS { path, thumbnail_path } = spawn_blocking({
+                let temp_dir_path = temp_dir.path().to_owned();
+
+                move || {
+                    download::audio_to_temp_dir(
+                        video,
+                        url,
+                        yt_dlp_config.max_file_size,
+                        &yt_dlp_config.full_path,
+                        temp_dir_path,
+                        DOWNLOAD_MEDIA_TIMEOUT,
+                    )
+                }
+            })
+            .await??;
 
             let message = send::with_retries(
                 &bot,
@@ -525,15 +579,21 @@ pub async fn media_select_inline_query(
 
     event!(Level::DEBUG, "Got url");
 
-    let videos = match get_media_or_playlist_info(&yt_dlp_config.full_path, &url, true).await {
+    let videos = match spawn_blocking(move || {
+        get_media_or_playlist_info(&yt_dlp_config.full_path, url, true, GET_MEDIA_OR_PLAYLIST_INFO_INLINE_QUERY_TIMEOUT)
+    })
+    .await
+    .map_err(HandlerError::new)?
+    {
         Ok(videos) => videos,
         Err(err) => {
-            event!(Level::ERROR, %err, "Error while getting video/playlist info");
+            event!(Level::ERROR, %err, "Getting media/playlist info error");
 
-            error::occured_in_inline_query_occured(
+            error::occured_in_chosen_inline_result(
                 &bot,
+                "Sorry, an error occurred while getting media/playlist info.",
                 query_id.as_ref(),
-                "Sorry, an error occurred while getting video/playlist info. Try again later.",
+                None,
             )
             .await?;
 
