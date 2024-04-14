@@ -22,6 +22,7 @@ lazy_static = "1.4"
 futures-util = "0.3"
 backoff = "0.4"
 bytes = "1.5"
+wait-timeout = "0.2.0"
 
 [profile.dev]
 # Disabling debug info speeds up builds a bunch and we don't rely on it for debugging that much.
