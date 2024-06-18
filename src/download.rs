@@ -1,9 +1,11 @@
 use crate::{
-    cmd::{convert_to_jpg, download_audio_stream_to_pipe, download_audio_to_path, download_video_to_pipe, merge_streams, ytdl},
+    cmd::{
+        convert_to_jpg, download_audio_stream_to_pipe, download_audio_to_path, download_video_to_pipe, merge_streams,
+        ytdl::{self, download_video_to_path},
+    },
     fs::get_best_thumbnail_path_in_dir,
     models::{AudioInFS, VideoInFS, VideoInYT},
 };
-
 use nix::{
     fcntl::{fcntl, FcntlArg::F_SETFD, FdFlag},
     unistd::{close, pipe},
@@ -12,6 +14,7 @@ use std::{
     io,
     os::fd::{FromRawFd as _, OwnedFd},
     path::{Path, PathBuf},
+    time::Duration,
 };
 use tracing::{event, field, instrument, Level, Span};
 use wait_timeout::ChildExt as _;
@@ -39,11 +42,7 @@ fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_path: 
     let path = temp_dir_path.as_ref().join(format!("{}.jpg", id.as_ref()));
 
     match convert_to_jpg(url, &path) {
-        Ok(()) => {
-            event!(Level::TRACE, ?path, "Thumbnail downloaded");
-
-            Some(path)
-        }
+        Ok(()) => Some(path),
         Err(err) => {
             event!(Level::ERROR, %err, "Error downloading thumbnail");
 
@@ -54,7 +53,7 @@ fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_path: 
 }
 
 #[cfg(target_family = "unix")]
-#[instrument(skip_all, fields(video = %video_id_or_url.as_ref(), format_id, file_path))]
+#[instrument(skip_all, fields(video = %video_id_or_url.as_ref(), format_id, file_path, extension))]
 pub fn video(
     video: VideoInYT,
     video_id_or_url: impl AsRef<str>,
@@ -63,10 +62,6 @@ pub fn video(
     temp_dir_path: impl AsRef<Path>,
     timeout: u64,
 ) -> Result<VideoInFS, StreamErrorKind> {
-    use std::time::Duration;
-
-    use crate::cmd::ytdl::download_video_to_path;
-
     let mut combined_formats = video.get_combined_formats();
     combined_formats.sort_by_priority_and_skip_by_size(max_file_size);
 
@@ -80,14 +75,17 @@ pub fn video(
 
     drop(combined_formats);
 
+    let extension = combined_format.get_extension();
+
     Span::current().record("format_id", &combined_format.format_id());
+    Span::current().record("extension", extension);
 
     event!(Level::DEBUG, %combined_format, "Got combined format");
 
     if combined_format.format_ids_are_equal() {
         event!(Level::TRACE, "Video and audio formats are the same");
 
-        let output_path = temp_dir_path.as_ref().join(format!("video.{}", combined_format.get_extension()));
+        let output_path = temp_dir_path.as_ref().join(format!("video.{extension}"));
 
         download_video_to_path(
             &executable_ytdl_path,
@@ -120,9 +118,9 @@ pub fn video(
     fcntl(video_write_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
     fcntl(audio_write_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
 
-    let output_path = temp_dir_path.as_ref().join(format!("merged.{}", combined_format.get_extension()));
+    let output_path = temp_dir_path.as_ref().join(format!("merged.{extension}"));
 
-    let mut merge_child = merge_streams(video_read_fd, audio_read_fd, combined_format.get_extension(), &output_path)?;
+    let mut merge_child = merge_streams(video_read_fd, audio_read_fd, extension, &output_path)?;
 
     // Set the close-on-exec flag for the read ends of the pipes.
     // We use this after `merge_streams` because we want to keep the pipes open in the ffmpeg process
@@ -176,6 +174,8 @@ pub fn video(
 
         return Err(io::Error::new(io::ErrorKind::Other, format!("FFmpeg exited with status `{exit_code}`")).into());
     }
+
+    event!(Level::DEBUG, "Video and audio merged");
 
     Ok(VideoInFS::new(output_path, thumbnail_path))
 }
