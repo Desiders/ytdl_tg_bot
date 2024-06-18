@@ -33,3 +33,5 @@ clippy:
 # Format
 format:
     cargo fmt --all -- --check
+
+fmt: format

@@ -52,10 +52,7 @@ pub enum PhantomAudio {
 
 #[derive(Clone, Debug)]
 pub struct YtDlp {
-    pub dir_path: String,
     pub full_path: String,
-    pub update_on_startup: bool,
-    pub remove_on_shutdown: bool,
     pub max_file_size: u64,
 }
 
@@ -131,28 +128,10 @@ pub fn read_config_from_env() -> Result<Config, ErrorKind> {
         phantom_video,
         phantom_audio,
         yt_dlp: YtDlp {
-            dir_path: env::var("YT_DLP_DIR_PATH").map_err(|err| ErrorKind::Env {
-                source: err,
-                key: "YT_DLP_PATH".into(),
-            })?,
             full_path: env::var("YT_DLP_FULL_PATH").map_err(|err| ErrorKind::Env {
                 source: err,
                 key: "YT_DLP_FULL_PATH".into(),
             })?,
-            update_on_startup: env::var("YT_DLP_UPDATE_ON_STARTUP")
-                .map_err(|err| ErrorKind::Env {
-                    source: err,
-                    key: "YT_DLP_UPDATE_ON_STARTUP".into(),
-                })?
-                .parse()
-                .map_err(ErrorKind::ParseBool)?,
-            remove_on_shutdown: env::var("YT_DLP_REMOVE_ON_SHUTDOWN")
-                .map_err(|err| ErrorKind::Env {
-                    source: err,
-                    key: "YT_DLP_REMOVE_ON_SHUTDOWN".into(),
-                })?
-                .parse()
-                .map_err(ErrorKind::ParseBool)?,
             max_file_size: env::var("YT_DLP_MAX_FILE_SIZE")
                 .map_err(|err| ErrorKind::Env {
                     source: err,

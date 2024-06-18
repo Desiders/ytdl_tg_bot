@@ -154,6 +154,8 @@ pub async fn video_download(
             })
             .await??;
 
+            event!(Level::TRACE, "Send video");
+
             let message = send::with_retries(
                 &bot,
                 SendVideo::new(receiver_video_chat_id, InputFile::fs(path))
@@ -167,6 +169,8 @@ pub async fn video_download(
                 Some(SEND_VIDEO_TIMEOUT),
             )
             .await?;
+
+            event!(Level::TRACE, "Video sended");
 
             Ok(message.video().unwrap().file_id.clone())
         }));
