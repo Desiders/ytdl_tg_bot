@@ -1,8 +1,5 @@
 use crate::{
-    cmd::{
-        convert_to_jpg, download_audio_stream_to_pipe, download_audio_to_path, download_video_to_pipe, merge_streams,
-        ytdl::{self, download_video_to_path},
-    },
+    cmd::{convert_to_jpg, download_audio_to_path, download_to_pipe, download_video_to_path, merge_streams, ytdl},
     fs::get_best_thumbnail_path_in_dir,
     models::{AudioInFS, VideoInFS, VideoInYT},
 };
@@ -66,7 +63,7 @@ pub fn video(
     combined_formats.sort_by_priority_and_skip_by_size(max_file_size);
 
     let Some(combined_format) = combined_formats.first().cloned() else {
-        event!(Level::ERROR, %combined_formats, "No video format found");
+        event!(Level::WARN, %combined_formats, "No video format found");
 
         return Err(StreamErrorKind::NoFormatFound {
             video_id: video.id.into_boxed_str(),
@@ -82,8 +79,9 @@ pub fn video(
 
     event!(Level::DEBUG, %combined_format, "Got combined format");
 
+    // If formats are the same, we need to download it directly without merge audio and video using FFmpeg
     if combined_format.format_ids_are_equal() {
-        event!(Level::TRACE, "Video and audio formats are the same");
+        event!(Level::DEBUG, "Video and audio formats are the same");
 
         let file_path = temp_dir_path.as_ref().join(format!("{video_id}.{extension}", video_id = video.id));
 
@@ -91,7 +89,7 @@ pub fn video(
 
         download_video_to_path(&executable_ytdl_path, &video_id_or_url, extension, &temp_dir_path, timeout)?;
 
-        let thumbnail_path = match get_best_thumbnail_path_in_dir(&temp_dir_path, &video.id)? {
+        let thumbnail_path = match get_best_thumbnail_path_in_dir(&temp_dir_path)? {
             Some(path) => Some(path),
             None => video
                 .thumbnail
@@ -102,7 +100,7 @@ pub fn video(
         return Ok(VideoInFS::new(file_path, thumbnail_path));
     }
 
-    event!(Level::TRACE, "Video and audio formats are different");
+    event!(Level::DEBUG, "Video and audio formats are different");
 
     // Create pipes to communicate between the yt-dl process and the ffmpeg process
     let (video_read_fd, video_write_fd) = pipe().map_err(io::Error::from)?;
@@ -121,13 +119,13 @@ pub fn video(
     fcntl(video_read_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
     fcntl(audio_read_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
 
-    let mut video_child = download_video_to_pipe(
+    let mut video_child = download_to_pipe(
         unsafe { OwnedFd::from_raw_fd(video_write_fd) },
         &executable_ytdl_path,
         &video_id_or_url,
         combined_format.video_format.id,
     )?;
-    let mut audio_child = download_audio_stream_to_pipe(
+    let mut audio_child = download_to_pipe(
         unsafe { OwnedFd::from_raw_fd(audio_write_fd) },
         executable_ytdl_path,
         video_id_or_url,
@@ -224,7 +222,7 @@ pub fn audio_to_temp_dir(
 
     event!(Level::DEBUG, "Audio downloaded");
 
-    let thumbnail_path = get_best_thumbnail_path_in_dir(temp_dir_path, video.id)?;
+    let thumbnail_path = get_best_thumbnail_path_in_dir(temp_dir_path)?;
 
     Ok(AudioInFS::new(file_path, thumbnail_path))
 }
