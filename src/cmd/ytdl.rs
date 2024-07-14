@@ -20,7 +20,7 @@ pub enum Error {
     Json(#[from] serde_json::Error),
 }
 
-/// Download video or audio stream to a pipe.
+/// Download stream to a pipe.
 /// This function forks a child process and executes `yt-dl` in it.
 /// The child process redirects its stdout to the pipe.
 /// # Errors
@@ -28,8 +28,32 @@ pub enum Error {
 /// # Returns
 /// Returns the child process.
 #[instrument(skip_all, fields(fd = ?fd))]
-fn download_to_pipe(fd: OwnedFd, executable_path: impl AsRef<str>, args: &[&str]) -> Result<Child, io::Error> {
-    event!(Level::TRACE, "Starting youtube-dl");
+pub fn download_to_pipe(
+    fd: OwnedFd,
+    executable_path: impl AsRef<str>,
+    id_or_url: impl AsRef<str>,
+    format: impl AsRef<str>,
+) -> Result<Child, io::Error> {
+    let args = [
+        "--ignore-config",
+        "--abort-on-error",
+        "--no-colors",
+        "--socket-timeout",
+        "5",
+        "--concurrent-fragments",
+        "4",
+        "--output",
+        "-",
+        "--no-playlist",
+        "--no-mtime",
+        "--no-write-comments",
+        "--no-simulate",
+        "--no-progress",
+        "--no-check-formats",
+        "-f",
+        format.as_ref(),
+        id_or_url.as_ref(),
+    ];
 
     Command::new(executable_path.as_ref())
         .args(args)
@@ -37,114 +61,6 @@ fn download_to_pipe(fd: OwnedFd, executable_path: impl AsRef<str>, args: &[&str]
         .stdout(Stdio::from(fd))
         .stderr(Stdio::null())
         .spawn()
-}
-
-/// Download video stream to a pipe.
-/// This function forks a child process and executes `yt-dl` in it.
-/// The child process redirects its stdout to the pipe.
-/// # Errors
-/// Returns [`io::Error`] if the spawn child process fails.
-/// # Returns
-/// Returns the child process.
-pub fn download_video_to_pipe(
-    fd: OwnedFd,
-    executable_path: impl AsRef<str>,
-    id_or_url: impl AsRef<str>,
-    format: impl AsRef<str>,
-) -> Result<Child, io::Error> {
-    let args = [
-        "--no-update",
-        "--ignore-config",
-        "--no-config-locations",
-        "--abort-on-error",
-        "--color",
-        "never",
-        "--no-match-filters",
-        "--no-download-archive",
-        "--socket-timeout",
-        "5",
-        "--concurrent-fragments",
-        "4",
-        "--resize-buffer",
-        "--no-batch-file",
-        "--output",
-        "-",
-        "--no-playlist",
-        "--no-mtime",
-        "--no-write-description",
-        "--no-write-info-json",
-        "--no-write-comments",
-        "--no-cookies",
-        "--no-cookies-from-browser",
-        "--no-write-thumbnail",
-        "--no-ignore-no-formats-error",
-        "--no-simulate",
-        "--no-progress",
-        "--no-check-certificate",
-        "--no-video-multistreams",
-        "--no-check-formats",
-        "--no-write-subs",
-        "--no-write-auto-subs",
-        "-f",
-        format.as_ref(),
-        id_or_url.as_ref(),
-    ];
-
-    download_to_pipe(fd, executable_path, &args)
-}
-
-/// Download audio stream to a pipe.
-/// This function forks a child process and executes `yt-dl` in it.
-/// The child process redirects its stdout to the pipe.
-/// # Errorss
-/// Returns [`io::Error`] if the spawn child process fails.
-/// # Returns
-/// Returns the child process.
-pub fn download_audio_stream_to_pipe(
-    fd: OwnedFd,
-    executable_path: impl AsRef<str>,
-    id_or_url: impl AsRef<str>,
-    format: impl AsRef<str>,
-) -> Result<Child, io::Error> {
-    let args = [
-        "--no-update",
-        "--ignore-config",
-        "--no-config-locations",
-        "--abort-on-error",
-        "--color",
-        "never",
-        "--no-match-filters",
-        "--no-download-archive",
-        "--socket-timeout",
-        "5",
-        "--concurrent-fragments",
-        "4",
-        "--resize-buffer",
-        "--no-batch-file",
-        "--output",
-        "-",
-        "--no-playlist",
-        "--no-mtime",
-        "--no-write-description",
-        "--no-write-info-json",
-        "--no-write-comments",
-        "--no-cookies",
-        "--no-cookies-from-browser",
-        "--no-write-thumbnail",
-        "--no-ignore-no-formats-error",
-        "--no-simulate",
-        "--no-progress",
-        "--no-check-certificate",
-        "--no-video-multistreams",
-        "--no-check-formats",
-        "--no-write-subs",
-        "--no-write-auto-subs",
-        "-f",
-        format.as_ref(),
-        id_or_url.as_ref(),
-    ];
-
-    download_to_pipe(fd, executable_path, &args)
 }
 
 pub fn download_video_to_path(
