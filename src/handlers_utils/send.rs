@@ -47,14 +47,6 @@ where
         } {
             Ok(result) => break Ok(result),
             Err(err) => {
-                cur_retry_count += 1;
-
-                if cur_retry_count > max_retries {
-                    event!(Level::ERROR, "Max retries exceeded");
-
-                    break Err(err);
-                }
-
                 match err {
                     SessionErrorKind::Telegram(TelegramErrorKind::RetryAfter { retry_after, .. }) => {
                         if retry_after > 0 {
@@ -63,6 +55,9 @@ where
                             backoff.reset();
 
                             tokio::time::sleep(Duration::from_secs(retry_after as u64)).await;
+
+                            // Don't use retry count limiter
+                            continue;
                         }
                     }
                     SessionErrorKind::Client(_)
@@ -79,13 +74,19 @@ where
                     }
                 }
 
+                cur_retry_count += 1;
+
+                if cur_retry_count > max_retries {
+                    event!(Level::ERROR, "Max retries exceeded");
+
+                    break Err(err);
+                }
+
                 if let Some(duration) = backoff.next_backoff() {
                     event!(Level::DEBUG, "Sleeping for {duration:?} seconds");
 
                     tokio::time::sleep(duration).await;
                 }
-
-                event!(Level::WARN, "Retrying request {cur_retry_count}/{max_retries}");
             }
         }
     }
