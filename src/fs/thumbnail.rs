@@ -3,7 +3,7 @@ use std::{
     io,
     path::{Path, PathBuf},
 };
-use tracing::{event, instrument, Level};
+use tracing::instrument;
 
 const MAX_THUMBNAIL_SIZE_IN_BYTES: u64 = 1024 * 200; // 200 KB
 const ACCEPTABLE_THUMBNAIL_EXTENSIONS: [&str; 2] = ["jpg", "jpeg"];
@@ -44,18 +44,12 @@ pub fn get_best_thumbnail_path_in_dir(path_dir: impl AsRef<Path>, name: impl AsR
 
         if let Some((_, best_thumbnail_metadata)) = best_thumbnail.as_ref() {
             if entry_size > best_thumbnail_metadata.len() {
-                event!(Level::TRACE, path = ?entry.path(), "Got better thumbnail");
-
                 best_thumbnail = Some((path, entry_metadata));
             }
         } else {
-            event!(Level::TRACE, path = ?entry.path(), "Got first thumbnail");
-
             best_thumbnail = Some((path, entry_metadata));
         }
     }
-
-    event!(Level::TRACE, "Best thumbnail: {best_thumbnail:?}");
 
     Ok(best_thumbnail.map(|(path, _)| path))
 }
