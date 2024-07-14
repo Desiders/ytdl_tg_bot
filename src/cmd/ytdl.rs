@@ -9,7 +9,7 @@ use std::{
     process::{Child, Command, Stdio},
     time::Duration,
 };
-use tracing::{event, instrument, Level};
+use tracing::{event, Level};
 use wait_timeout::ChildExt as _;
 
 #[derive(Debug, thiserror::Error)]
@@ -39,8 +39,6 @@ pub fn download_to_pipe(
         "--no-colors",
         "--socket-timeout",
         "5",
-        "--concurrent-fragments",
-        "4",
         "--output",
         "-",
         "--no-playlist",
@@ -79,8 +77,6 @@ pub fn download_video_to_path(
         "--no-colors",
         "--socket-timeout",
         "5",
-        "--concurrent-fragments",
-        "4",
         "--paths",
         output_dir_path.as_ref(),
         "--output",
@@ -142,8 +138,6 @@ pub fn download_audio_to_path(
         "--no-color",
         "--socket-timeout",
         "5",
-        "--concurrent-fragments",
-        "4",
         "--paths",
         output_dir_path.as_ref(),
         "--output",

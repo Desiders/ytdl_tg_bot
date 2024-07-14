@@ -95,7 +95,7 @@ impl<'a> Formats<'a> {
     pub fn skip_with_size_less_than(&mut self, size: u64) {
         self.0.retain(|combined_format| {
             let Some(filesize_or_approx) = combined_format.filesize_or_approx() else {
-                return true;
+                return false;
             };
 
             filesize_or_approx.round() as u64 <= size
