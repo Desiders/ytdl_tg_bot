@@ -85,27 +85,21 @@ pub fn video(
     if combined_format.format_ids_are_equal() {
         event!(Level::TRACE, "Video and audio formats are the same");
 
-        let output_path = temp_dir_path.as_ref().join(format!("video.{extension}"));
+        let file_path = temp_dir_path.as_ref().join(format!("{video_id}.{extension}", video_id = video.id));
 
-        download_video_to_path(
-            &executable_ytdl_path,
-            &video_id_or_url,
-            combined_format.video_format.id,
-            &output_path,
-            timeout,
-        )?;
+        Span::current().record("file_path", file_path.display().to_string());
 
-        let thumbnail_path = if let Some(thumbnail_url) = video.thumbnail {
-            event!(Level::TRACE, %thumbnail_url, "Thumbnail URL found");
+        download_video_to_path(&executable_ytdl_path, &video_id_or_url, extension, &temp_dir_path, timeout)?;
 
-            get_thumbnail_path(thumbnail_url, video.id, temp_dir_path)
-        } else {
-            event!(Level::TRACE, "No thumbnail URL found");
-
-            None
+        let thumbnail_path = match get_best_thumbnail_path_in_dir(&temp_dir_path, &video.id)? {
+            Some(path) => Some(path),
+            None => video
+                .thumbnail
+                .map(|url| get_thumbnail_path(url, video.id, temp_dir_path))
+                .flatten(),
         };
 
-        return Ok(VideoInFS::new(output_path, thumbnail_path));
+        return Ok(VideoInFS::new(file_path, thumbnail_path));
     }
 
     event!(Level::TRACE, "Video and audio formats are different");
@@ -149,15 +143,10 @@ pub fn video(
         event!(Level::WARN, %errno, "Error closing audio read pipe");
     }
 
-    let thumbnail_path = if let Some(thumbnail_url) = video.thumbnail {
-        event!(Level::TRACE, %thumbnail_url, "Thumbnail URL found");
-
-        get_thumbnail_path(thumbnail_url, video.id, temp_dir_path)
-    } else {
-        event!(Level::TRACE, "No thumbnail URL found");
-
-        None
-    };
+    let thumbnail_path = video
+        .thumbnail
+        .map(|url| get_thumbnail_path(url, video.id, temp_dir_path))
+        .flatten();
 
     let Some(exit_code) = merge_child.wait_timeout(Duration::from_secs(timeout))? else {
         event!(Level::ERROR, "FFmpeg process timed out");

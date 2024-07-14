@@ -60,7 +60,7 @@ lazy_static! {
     ]);
     static ref AUDIO_IDS_AND_PRIORITY: HashMap<&'static str, u8> =
         HashMap::from([("258", 1), ("256", 2), ("251", 3), ("140", 4), ("250", 5), ("249", 6)]);
-    static ref COMBINED_IDS_AND_PRIORITY: HashMap<&'static str, u8> = HashMap::from([("22", 14), ("18", 18)]);
+    static ref COMBINED_IDS_AND_PRIORITY: HashMap<&'static str, u8> = HashMap::from([("38", 2), ("37", 7), ("22", 14), ("18", 18)]);
 }
 
 #[allow(clippy::upper_case_acronyms)]
@@ -232,11 +232,10 @@ impl VideoCodec<'_> {
         use VideoCodec::{ProRes, AV1, H264, H265, VP9};
 
         match self {
-            AV1(_) => 1,
-            H265(_) => 2,
-            VP9(_) => 3,
-            H264(_) => 4,
-            ProRes(_) => 5,
+            H264(_) | H265(_) => 1,
+            VP9(_) => 2,
+            ProRes(_) => 4,
+            AV1(_) => 5,
         }
     }
 
