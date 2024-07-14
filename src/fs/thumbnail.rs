@@ -8,22 +8,14 @@ use tracing::instrument;
 const MAX_THUMBNAIL_SIZE_IN_BYTES: u64 = 1024 * 200; // 200 KB
 const ACCEPTABLE_THUMBNAIL_EXTENSIONS: [&str; 2] = ["jpg", "jpeg"];
 
-#[instrument(skip_all, fields(path_dir = ?path_dir.as_ref(), name = %name.as_ref()))]
-pub fn get_best_thumbnail_path_in_dir(path_dir: impl AsRef<Path>, name: impl AsRef<str>) -> Result<Option<PathBuf>, io::Error> {
+#[instrument(skip_all, fields(path_dir = ?path_dir.as_ref()))]
+pub fn get_best_thumbnail_path_in_dir(path_dir: impl AsRef<Path>) -> Result<Option<PathBuf>, io::Error> {
     let path_dir = path_dir.as_ref();
-    let name = name.as_ref();
 
     let mut best_thumbnail: Option<(PathBuf, Metadata)> = None;
 
     for entry in fs::read_dir(path_dir)? {
         let entry = entry?;
-
-        let entry_name = entry.file_name();
-
-        // If names are equal, then it's video file, not thumbnail
-        if entry_name == name {
-            continue;
-        }
 
         let path = entry.path();
 
