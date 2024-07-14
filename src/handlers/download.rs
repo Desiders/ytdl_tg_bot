@@ -30,7 +30,7 @@ const DOWNLOAD_MEDIA_TIMEOUT: u64 = 45;
 const SEND_VIDEO_TIMEOUT: f32 = 30.0;
 const SEND_AUDIO_TIMEOUT: f32 = 30.0;
 const GET_MEDIA_OR_PLAYLIST_INFO_INLINE_QUERY_TIMEOUT: u64 = 12;
-const SELECT_INLINE_QUERY_CACHE_TIME: i64 = 3600; // 60 minutes
+const SELECT_INLINE_QUERY_CACHE_TIME: i64 = 86400; // 24 hours
 
 #[derive(thiserror::Error, Debug)]
 pub enum DownloadErrorKind {
