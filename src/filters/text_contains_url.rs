@@ -3,7 +3,6 @@ use telers::{
     types::{Update, UpdateKind},
     Bot, Context,
 };
-use tracing::{event, Level};
 use url::Url;
 
 fn get_url_from_text(text: &str) -> Option<Url> {
@@ -12,9 +11,7 @@ fn get_url_from_text(text: &str) -> Option<Url> {
             Ok(url) => {
                 return Some(url);
             }
-            Err(err) => {
-                event!(Level::TRACE, %err, "Error while parsing url");
-
+            Err(_) => {
                 continue;
             }
         };
@@ -24,6 +21,27 @@ fn get_url_from_text(text: &str) -> Option<Url> {
 }
 
 pub fn text_contains_url(_bot: &Bot, update: &Update, context: &Context) -> impl Future<Output = bool> {
+    let result = if let Some(text) = update.text() {
+        let mut url_found = false;
+
+        match get_url_from_text(text) {
+            Some(url) => {
+                url_found = true;
+
+                context.insert("video_url", Box::new(url.as_str().to_owned().into_boxed_str()));
+            }
+            None => {}
+        }
+
+        url_found
+    } else {
+        false
+    };
+
+    async move { result }
+}
+
+pub fn text_contains_url_with_reply(_bot: &Bot, update: &Update, context: &Context) -> impl Future<Output = bool> {
     let result = if let Some(text) = update.text() {
         let mut url_found = false;
 
