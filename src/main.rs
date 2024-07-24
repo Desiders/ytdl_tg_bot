@@ -12,8 +12,10 @@ mod models;
 mod utils;
 
 use config::read_config_from_env;
-use filters::text_contains_url;
-use handlers::{audio_download, media_download_chosen_inline_result, media_select_inline_query, start, video_download};
+use filters::{text_contains_url, text_contains_url_with_reply};
+use handlers::{
+    audio_download, media_download_chosen_inline_result, media_select_inline_query, start, video_download, video_download_quite,
+};
 use middlewares::Config as ConfigMiddleware;
 use telers::{
     enums::{ChatType as ChatTypeEnum, ContentType as ContentTypeEnum},
@@ -67,19 +69,19 @@ async fn main() {
         .register(video_download)
         .filter(ContentType::one(ContentTypeEnum::Text))
         .filter(Command::many(["vd", "video_download"]))
-        .filter(text_contains_url);
+        .filter(text_contains_url_with_reply);
     router
         .message
         .register(audio_download)
         .filter(ContentType::one(ContentTypeEnum::Text))
         .filter(Command::many(["ad", "audio_download"]))
-        .filter(text_contains_url);
+        .filter(text_contains_url_with_reply);
     router
         .message
         .register(video_download)
-        .filter(ContentType::one(ContentTypeEnum::Text))
         .filter(ChatType::one(ChatTypeEnum::Private))
-        .filter(text_contains_url);
+        .filter(text_contains_url_with_reply);
+    router.message.register(video_download_quite).filter(text_contains_url);
     router.inline_query.register(media_select_inline_query).filter(text_contains_url);
     router
         .chosen_inline_result

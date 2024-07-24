@@ -142,7 +142,7 @@ pub async fn media_groups(
                         reply_to_message_id
                             .map(|reply_to_message_id| ReplyParameters::new(reply_to_message_id).allow_sending_without_reply(true)),
                     ),
-                    2,
+                    4,
                     request_timeout,
                 )
                 .await?,
@@ -160,7 +160,7 @@ pub async fn media_groups(
                     reply_to_message_id
                         .map(|reply_to_message_id| ReplyParameters::new(reply_to_message_id).allow_sending_without_reply(true)),
                 ),
-                2,
+                4,
                 request_timeout,
             )
             .await?,
