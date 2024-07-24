@@ -3,7 +3,10 @@ use crate::{
     config::{PhantomAudioId, PhantomVideoId},
     download::{self, StreamErrorKind, ToTempDirErrorKind},
     extractors::{BotConfigWrapper, YtDlpWrapper},
-    handlers_utils::{chat_action, error, send},
+    handlers_utils::{
+        chat_action::{upload_video_action_in_loop, upload_voice_action_in_loop},
+        error, send,
+    },
     models::{AudioInFS, TgAudioInPlaylist, TgVideoInPlaylist, VideoInFS},
 };
 
@@ -12,7 +15,7 @@ use telers::{
     enums::ParseMode,
     errors::{HandlerError, SessionErrorKind},
     event::{telegram::HandlerResult, EventReturn},
-    methods::{AnswerInlineQuery, EditMessageMedia, SendAudio, SendVideo},
+    methods::{AnswerInlineQuery, DeleteMessage, EditMessageMedia, SendAudio, SendVideo},
     types::{
         ChosenInlineResult, InlineKeyboardButton, InlineKeyboardMarkup, InlineQuery, InlineQueryResult, InlineQueryResultCachedAudio,
         InlineQueryResultCachedVideo, InputFile, InputMediaVideo, Message,
@@ -108,10 +111,12 @@ pub async fn video_download(
         return Ok(EventReturn::Finish);
     }
 
+    event!(Level::DEBUG, videos_len, "Got video/playlist info");
+
     let upload_action_task = tokio::spawn({
         let bot = bot.clone();
 
-        async move { chat_action::upload_video_action_in_loop(&bot, chat_id).await }
+        async move { upload_video_action_in_loop(&bot, chat_id).await }
     });
 
     let mut handles: Vec<JoinHandle<Result<_, DownloadErrorKind>>> = Vec::with_capacity(videos_len);
@@ -171,6 +176,14 @@ pub async fn video_download(
             .await?;
 
             event!(Level::TRACE, "Video sended");
+
+            tokio::spawn({
+                let message_id = message.id().clone();
+
+                async move {
+                    let _ = bot.send(DeleteMessage::new(receiver_video_chat_id, message_id)).await;
+                }
+            });
 
             Ok(message.video().unwrap().file_id.clone())
         }));
@@ -277,10 +290,12 @@ pub async fn audio_download(
         return Ok(EventReturn::Finish);
     }
 
+    event!(Level::DEBUG, videos_len, "Got video/playlist info");
+
     let upload_action_task = tokio::spawn({
         let bot = bot.clone();
 
-        async move { chat_action::upload_voice_action_in_loop(&bot, chat_id).await }
+        async move { upload_voice_action_in_loop(&bot, chat_id).await }
     });
 
     let mut handles: Vec<JoinHandle<Result<Box<str>, DownloadErrorKind>>> = Vec::with_capacity(videos_len);
@@ -444,6 +459,8 @@ pub async fn media_download_chosen_inline_result(
         return Ok(EventReturn::Finish);
     };
 
+    event!(Level::DEBUG, "Got video/audio info");
+
     drop(videos);
 
     let temp_dir = tempdir().map_err(HandlerError::new)?;
@@ -605,7 +622,9 @@ pub async fn media_select_inline_query(
         }
     };
 
-    if videos.is_empty() {
+    let videos_len = videos.len();
+
+    if videos_len == 0 {
         event!(Level::WARN, "Playlist doesn't have videos");
 
         error::occured_in_inline_query_occured(&bot, query_id.as_ref(), "Playlist doesn't have videos.").await?;
@@ -613,7 +632,9 @@ pub async fn media_select_inline_query(
         return Ok(EventReturn::Finish);
     }
 
-    let mut results: Vec<InlineQueryResult> = Vec::with_capacity(videos.len());
+    event!(Level::DEBUG, videos_len, "Got video/playlist info");
+
+    let mut results: Vec<InlineQueryResult> = Vec::with_capacity(videos_len);
 
     for video in videos {
         let title = video.title.as_deref().unwrap_or("Untitled");
