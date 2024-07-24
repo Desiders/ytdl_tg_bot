@@ -1,5 +1,6 @@
 use super::format;
 
+use std::cmp::Reverse;
 use std::{
     fmt::{self, Display, Formatter},
     ops::Deref,
@@ -95,7 +96,8 @@ impl<'a> Formats<'a> {
     pub fn skip_with_size_less_than(&mut self, size: u64) {
         self.0.retain(|combined_format| {
             let Some(filesize_or_approx) = combined_format.filesize_or_approx() else {
-                return false;
+                // For cases when filesize `unknown`
+                return true;
             };
 
             filesize_or_approx.round() as u64 <= size
@@ -106,8 +108,13 @@ impl<'a> Formats<'a> {
         self.0.sort_by_key(Format::get_priority);
     }
 
+    pub fn sort_by_filesize(&mut self) {
+        self.0.sort_by_key(|format| Reverse(format.filesize_or_approx().is_some()));
+    }
+
     pub fn sort_by_priority_and_skip_by_size(&mut self, size: u64) {
         self.skip_with_size_less_than(size);
+        self.sort_by_filesize();
         self.sort_by_format_id_priority();
     }
 }
