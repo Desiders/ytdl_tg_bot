@@ -4,7 +4,7 @@ use std::{
     path::Path,
     process::{Child, Command, Stdio},
 };
-use tracing::{event, instrument, Level};
+use tracing::instrument;
 
 /// Merge the video and audio streams into a single file.
 /// # Errors
@@ -18,8 +18,6 @@ pub fn merge_streams(
     extension: impl AsRef<str>,
     output_path: impl AsRef<Path>,
 ) -> Result<Child, io::Error> {
-    event!(Level::TRACE, "Starting ffmpeg");
-
     Command::new("/usr/bin/ffmpeg")
         .args([
             "-y",
@@ -38,6 +36,12 @@ pub fn merge_streams(
             "copy",
             "-c:a",
             "copy",
+            "-shortest",
+            "-bufsize:v",
+            "1m",
+            "-bufsize:a",
+            "1m",
+            "-nostats",
             "-preset",
             "ultrafast",
             "-f",
@@ -54,8 +58,6 @@ pub fn merge_streams(
 /// # Errors
 /// Returns [`io::Error`] if the spawn child process fails.
 pub fn convert_to_jpg(input_url: impl AsRef<str>, output_path: impl AsRef<Path>) -> Result<(), io::Error> {
-    event!(Level::TRACE, "Starting ffmpeg");
-
     let input_url = input_url.as_ref();
 
     Command::new("/usr/bin/ffmpeg")

@@ -89,13 +89,11 @@ pub fn video(
 
         download_video_to_path(&executable_ytdl_path, &video_id_or_url, extension, &temp_dir_path, timeout)?;
 
-        let thumbnail_path = match get_best_thumbnail_path_in_dir(&temp_dir_path)? {
-            Some(path) => Some(path),
-            None => video
-                .thumbnail
-                .map(|url| get_thumbnail_path(url, video.id, temp_dir_path))
-                .flatten(),
-        };
+        let thumbnail_path = video
+            .thumbnail
+            .map(|url| get_thumbnail_path(url, video.id, &temp_dir_path))
+            .flatten()
+            .or_else(|| get_best_thumbnail_path_in_dir(&temp_dir_path).ok().flatten());
 
         return Ok(VideoInFS::new(file_path, thumbnail_path));
     }
@@ -162,7 +160,7 @@ pub fn video(
         return Err(io::Error::new(io::ErrorKind::Other, format!("FFmpeg exited with status `{exit_code}`")).into());
     }
 
-    event!(Level::DEBUG, "Video and audio merged");
+    event!(Level::DEBUG, "Streams merged");
 
     Ok(VideoInFS::new(output_path, thumbnail_path))
 }
