@@ -50,10 +50,9 @@ fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_path: 
 }
 
 #[cfg(target_family = "unix")]
-#[instrument(skip_all, fields(video = %video_id_or_url.as_ref(), format_id, file_path, extension))]
+#[instrument(skip_all, fields(url = %video.original_url, format_id, file_path, extension))]
 pub fn video(
     video: VideoInYT,
-    video_id_or_url: impl AsRef<str>,
     max_file_size: u64,
     executable_ytdl_path: impl AsRef<str>,
     temp_dir_path: impl AsRef<Path>,
@@ -87,11 +86,11 @@ pub fn video(
 
         Span::current().record("file_path", file_path.display().to_string());
 
-        download_video_to_path(&executable_ytdl_path, &video_id_or_url, extension, &temp_dir_path, timeout)?;
+        download_video_to_path(&executable_ytdl_path, &video.original_url, extension, &temp_dir_path, timeout)?;
 
         let thumbnail_path = video
-            .thumbnail
-            .map(|url| get_thumbnail_path(url, video.id, &temp_dir_path))
+            .thumbnail()
+            .map(|url| get_thumbnail_path(url, &video.id, &temp_dir_path))
             .flatten()
             .or_else(|| get_best_thumbnail_path_in_dir(&temp_dir_path).ok().flatten());
 
@@ -120,13 +119,13 @@ pub fn video(
     let mut video_child = download_to_pipe(
         unsafe { OwnedFd::from_raw_fd(video_write_fd) },
         &executable_ytdl_path,
-        &video_id_or_url,
+        &video.original_url,
         combined_format.video_format.id,
     )?;
     let mut audio_child = download_to_pipe(
         unsafe { OwnedFd::from_raw_fd(audio_write_fd) },
         executable_ytdl_path,
-        video_id_or_url,
+        &video.original_url,
         combined_format.audio_format.id,
     )?;
 
@@ -140,8 +139,8 @@ pub fn video(
     }
 
     let thumbnail_path = video
-        .thumbnail
-        .map(|url| get_thumbnail_path(url, video.id, temp_dir_path))
+        .thumbnail()
+        .map(|url| get_thumbnail_path(url, &video.id, temp_dir_path))
         .flatten();
 
     let Some(exit_code) = merge_child.wait_timeout(Duration::from_secs(timeout))? else {
