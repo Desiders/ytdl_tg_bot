@@ -5,12 +5,11 @@ use std::{collections::VecDeque, ops::Deref, path::PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Thumbnail {
-    pub filesize: Option<i64>,
-    pub height: Option<f64>,
     pub id: Option<String>,
-    pub preference: Option<i64>,
-    pub url: Option<String>,
     pub width: Option<f64>,
+    pub height: Option<f64>,
+    pub url: Option<String>,
+    pub filesize: Option<i64>,
 }
 
 #[allow(clippy::module_name_repetitions)]
@@ -20,7 +19,8 @@ pub struct VideoInYT {
     pub title: Option<String>,
     pub description: Option<String>,
     pub thumbnail: Option<String>,
-    pub url: Option<String>,
+    pub thumbnails: Option<Vec<Thumbnail>>,
+    pub original_url: String,
     pub duration: Option<f64>,
     pub width: Option<i64>,
     pub height: Option<i64>,
@@ -58,6 +58,31 @@ impl VideoInYT {
 
         format::Audios::from(formats)
     }
+
+    pub fn thumbnail(&self) -> Option<&str> {
+        match self
+            .thumbnails
+            .as_deref()
+            .map(|thumbnails| {
+                for thumbnail in thumbnails {
+                    match (thumbnail.width, thumbnail.height) {
+                        (Some(width), Some(height)) => {
+                            if width == 405.0 && height == 720.0 {
+                                return thumbnail.url.as_deref();
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                self.thumbnail.as_deref().or(thumbnails[thumbnails.len() - 1].url.as_deref())
+            })
+            .flatten()
+        {
+            Some(thumbnail) => Some(thumbnail),
+            None => self.thumbnail.as_deref(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -66,10 +91,6 @@ pub struct VideosInYT(VecDeque<VideoInYT>);
 impl VideosInYT {
     pub fn new(videos: impl Into<VecDeque<VideoInYT>>) -> Self {
         Self(videos.into())
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
     }
 }
 

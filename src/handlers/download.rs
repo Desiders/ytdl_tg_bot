@@ -127,12 +127,6 @@ pub async fn video_download(
         let yt_dlp_full_path = yt_dlp_config.as_ref().full_path.clone();
         let receiver_video_chat_id = bot_config.receiver_video_chat_id;
 
-        // This hack is needed because `ytdl` doesn't support downloading videos by ID from other sources, for example `coub.com `.
-        // It also doesn't support uploading videos by direct URL, so we can only transmit the user's URL.
-        // If URL represents playlist, we get an error because unacceptable use one URL one more time for different videos.
-        // This should be fixed by direct download video without `ytdl`.
-        let id_or_url = if videos_len == 1 { url.clone() } else { video.id.clone() };
-
         #[allow(clippy::cast_possible_truncation)]
         let (height, width, duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
 
@@ -146,16 +140,7 @@ pub async fn video_download(
             let VideoInFS { path, thumbnail_path } = spawn_blocking({
                 let temp_dir_path = temp_dir.path().to_owned();
 
-                move || {
-                    download::video(
-                        video,
-                        id_or_url,
-                        max_file_size,
-                        yt_dlp_full_path,
-                        temp_dir_path,
-                        DOWNLOAD_MEDIA_TIMEOUT,
-                    )
-                }
+                move || download::video(video, max_file_size, yt_dlp_full_path, temp_dir_path, DOWNLOAD_MEDIA_TIMEOUT)
             })
             .await??;
 
@@ -298,12 +283,6 @@ pub async fn video_download_quite(
         let yt_dlp_full_path = yt_dlp_config.as_ref().full_path.clone();
         let receiver_video_chat_id = bot_config.receiver_video_chat_id;
 
-        // This hack is needed because `ytdl` doesn't support downloading videos by ID from other sources, for example `coub.com `.
-        // It also doesn't support uploading videos by direct URL, so we can only transmit the user's URL.
-        // If URL represents playlist, we get an error because unacceptable use one URL one more time for different videos.
-        // This should be fixed by direct download video without `ytdl`.
-        let id_or_url = if videos_len == 1 { url.clone() } else { video.id.clone() };
-
         #[allow(clippy::cast_possible_truncation)]
         let (height, width, duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
 
@@ -317,16 +296,7 @@ pub async fn video_download_quite(
             let VideoInFS { path, thumbnail_path } = spawn_blocking({
                 let temp_dir_path = temp_dir.path().to_owned();
 
-                move || {
-                    download::video(
-                        video,
-                        id_or_url,
-                        max_file_size,
-                        yt_dlp_full_path,
-                        temp_dir_path,
-                        DOWNLOAD_MEDIA_TIMEOUT,
-                    )
-                }
+                move || download::video(video, max_file_size, yt_dlp_full_path, temp_dir_path, DOWNLOAD_MEDIA_TIMEOUT)
             })
             .await??;
 
@@ -653,7 +623,6 @@ pub async fn media_download_chosen_inline_result(
                 move || {
                     download::video(
                         video,
-                        url,
                         yt_dlp_config.max_file_size,
                         &yt_dlp_config.full_path,
                         temp_dir_path,
