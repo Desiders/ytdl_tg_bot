@@ -30,7 +30,7 @@ pub enum Error {
 pub fn download_to_pipe(
     fd: OwnedFd,
     executable_path: impl AsRef<str>,
-    id_or_url: impl AsRef<str>,
+    url: impl AsRef<str>,
     format: impl AsRef<str>,
 ) -> Result<Child, io::Error> {
     let args = [
@@ -52,7 +52,7 @@ pub fn download_to_pipe(
         "10M",
         "-f",
         format.as_ref(),
-        id_or_url.as_ref(),
+        url.as_ref(),
     ];
 
     Command::new(executable_path.as_ref())
@@ -65,7 +65,7 @@ pub fn download_to_pipe(
 
 pub fn download_video_to_path(
     executable_path: impl AsRef<str>,
-    id_or_url: impl AsRef<str>,
+    url: impl AsRef<str>,
     format: impl AsRef<str>,
     output_dir_path: impl AsRef<Path>,
     timeout: u64,
@@ -95,7 +95,7 @@ pub fn download_video_to_path(
         "10M",
         "-f",
         format.as_ref(),
-        id_or_url.as_ref(),
+        url.as_ref(),
     ];
 
     let mut child = Command::new(executable_path.as_ref())
@@ -127,7 +127,7 @@ pub fn download_video_to_path(
 
 pub fn download_audio_to_path(
     executable_path: impl AsRef<str>,
-    id_or_url: impl AsRef<str>,
+    url: impl AsRef<str>,
     format: impl AsRef<str>,
     output_extension: impl AsRef<str>,
     output_dir_path: impl AsRef<Path>,
@@ -161,7 +161,7 @@ pub fn download_audio_to_path(
         "--no-check-formats",
         "-f",
         format.as_ref(),
-        id_or_url.as_ref(),
+        url.as_ref(),
     ];
 
     let mut child = Command::new(executable_path.as_ref())
@@ -193,7 +193,7 @@ pub fn download_audio_to_path(
 
 pub fn get_media_or_playlist_info(
     executable_path: impl AsRef<str>,
-    id_or_url: impl AsRef<str>,
+    url: impl AsRef<str>,
     allow_playlist: bool,
     timeout: u64,
 ) -> Result<VideosInYT, Error> {
@@ -216,7 +216,7 @@ pub fn get_media_or_playlist_info(
         "--no-progress",
         "--no-check-formats",
         "-J",
-        id_or_url.as_ref(),
+        url.as_ref(),
     ];
 
     let mut child = Command::new(executable_path.as_ref())
