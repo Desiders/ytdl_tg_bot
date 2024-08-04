@@ -7,14 +7,24 @@ use nix::{
     fcntl::{fcntl, FcntlArg::F_SETFD, FdFlag},
     unistd::{close, pipe},
 };
+use reqwest::blocking::Client;
 use std::{
-    io,
+    io::{self, Write},
     os::fd::{FromRawFd as _, OwnedFd},
     path::{Path, PathBuf},
+    thread,
     time::Duration,
 };
 use tracing::{event, field, instrument, Level, Span};
 use wait_timeout::ChildExt as _;
+
+#[derive(thiserror::Error, Debug)]
+pub enum RangeDownloadKind {
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error(transparent)]
+    Reqwest(#[from] reqwest::Error),
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum StreamErrorKind {
@@ -22,6 +32,8 @@ pub enum StreamErrorKind {
     NoFormatFound { video_id: Box<str> },
     #[error(transparent)]
     Io(#[from] io::Error),
+    #[error(transparent)]
+    RangeDownload(#[from] RangeDownloadKind),
 }
 
 #[cfg(not(target_family = "unix"))]
@@ -49,6 +61,44 @@ fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_path: 
     }
 }
 
+const RANGE_CHUNK_SIZE: i32 = 1024 * 1024 * 10;
+
+fn range_download_to_write<W: Write>(client: Client, url: impl AsRef<str>, filesize: f64, write: &mut W) -> Result<(), RangeDownloadKind> {
+    let url = url.as_ref();
+
+    let mut start: i32 = 0;
+    let mut end = RANGE_CHUNK_SIZE;
+
+    loop {
+        event!(Level::TRACE, start, end, "Download chunk");
+
+        if end >= filesize as i32 {
+            let buf = client.get(format!("{url}&range={start}-")).send()?.bytes()?;
+
+            if buf.is_empty() {
+                break;
+            }
+
+            write.write_all(&buf)?;
+
+            break;
+        }
+
+        let buf = client.get(format!("{url}&range={start}-{end}")).send()?.bytes()?;
+
+        if buf.is_empty() {
+            break;
+        }
+
+        write.write_all(&buf)?;
+
+        start = end + 1;
+        end += RANGE_CHUNK_SIZE;
+    }
+
+    Ok(())
+}
+
 #[cfg(target_family = "unix")]
 #[instrument(skip_all, fields(url = %video.original_url, format_id, file_path, extension))]
 pub fn video(
@@ -58,6 +108,8 @@ pub fn video(
     temp_dir_path: impl AsRef<Path>,
     timeout: u64,
 ) -> Result<VideoInFS, StreamErrorKind> {
+    use std::fs::File;
+
     let mut combined_formats = video.get_combined_formats();
     combined_formats.sort_by_priority_and_skip_by_size(max_file_size);
 
@@ -111,32 +163,61 @@ pub fn video(
 
     let mut merge_child = merge_streams(video_read_fd, audio_read_fd, extension, &output_path)?;
 
-    // Set the close-on-exec flag for the read ends of the pipes.
-    // We use this after `merge_streams` because we want to keep the pipes open in the ffmpeg process
-    fcntl(video_read_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
-    fcntl(audio_read_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
+    let client = Client::new();
 
-    let mut video_child = download_to_pipe(
-        unsafe { OwnedFd::from_raw_fd(video_write_fd) },
-        &executable_ytdl_path,
-        &video.original_url,
-        combined_format.video_format.id,
-    )?;
-    let mut audio_child = download_to_pipe(
-        unsafe { OwnedFd::from_raw_fd(audio_write_fd) },
-        executable_ytdl_path,
-        &video.original_url,
-        combined_format.audio_format.id,
-    )?;
+    if let Some(filesize) = combined_format.video_format.filesize_or_approx() {
+        event!(Level::DEBUG, filesize, "Video filesize known");
 
-    // In multithreaded context, we need to close the pipes in the parent process for all threads
-    // with the close-on-exec flag set, otherwise, we may get a deadlock.
-    if let Err(errno) = close(video_read_fd) {
-        event!(Level::WARN, %errno, "Error closing video read pipe");
-    }
-    if let Err(errno) = close(audio_read_fd) {
-        event!(Level::WARN, %errno, "Error closing audio read pipe");
-    }
+        if let Err(errno) = close(video_read_fd) {
+            event!(Level::WARN, %errno, "Error closing video read pipe");
+        }
+
+        thread::spawn({
+            let client = client.clone();
+            let url = combined_format.video_format.url.to_owned();
+            let mut write = unsafe { File::from_raw_fd(video_write_fd) };
+
+            move || range_download_to_write(client, url, filesize, &mut write)
+        });
+    } else {
+        event!(Level::DEBUG, "Video filesize unknown");
+
+        fcntl(video_read_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
+
+        download_to_pipe(
+            unsafe { OwnedFd::from_raw_fd(video_write_fd) },
+            &executable_ytdl_path,
+            &video.original_url,
+            combined_format.video_format.id,
+        )?;
+    };
+
+    if let Some(filesize) = combined_format.audio_format.filesize_or_approx() {
+        event!(Level::DEBUG, filesize, "Audio filesize known");
+
+        if let Err(errno) = close(audio_read_fd) {
+            event!(Level::WARN, %errno, "Error closing audio read pipe");
+        }
+
+        thread::spawn({
+            let client = client.clone();
+            let url = combined_format.audio_format.url.to_owned();
+            let mut write = unsafe { File::from_raw_fd(audio_write_fd) };
+
+            move || range_download_to_write(client, url, filesize, &mut write)
+        });
+    } else {
+        event!(Level::DEBUG, "Audio filesize unknown");
+
+        fcntl(audio_read_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
+
+        download_to_pipe(
+            unsafe { OwnedFd::from_raw_fd(audio_write_fd) },
+            &executable_ytdl_path,
+            &video.original_url,
+            combined_format.audio_format.id,
+        )?;
+    };
 
     let thumbnail_path = video
         .thumbnail()
@@ -145,10 +226,6 @@ pub fn video(
 
     let Some(exit_code) = merge_child.wait_timeout(Duration::from_secs(timeout))? else {
         event!(Level::ERROR, "FFmpeg process timed out");
-
-        merge_child.kill()?;
-        video_child.kill()?;
-        audio_child.kill()?;
 
         return Err(io::Error::new(io::ErrorKind::TimedOut, "FFmpeg process timed out").into());
     };
