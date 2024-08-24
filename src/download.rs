@@ -63,7 +63,7 @@ fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_path: 
 
 const RANGE_CHUNK_SIZE: i32 = 1024 * 1024 * 10;
 
-fn range_download_to_write<W: Write>(client: Client, url: impl AsRef<str>, filesize: f64, write: &mut W) -> Result<(), RangeDownloadKind> {
+fn range_download_to_write<W: Write>(client: &Client, url: impl AsRef<str>, filesize: f64, write: &mut W) -> Result<(), RangeDownloadKind> {
     let url = url.as_ref();
 
     let mut start: i32 = 0;
@@ -142,8 +142,7 @@ pub fn video(
 
         let thumbnail_path = video
             .thumbnail()
-            .map(|url| get_thumbnail_path(url, &video.id, &temp_dir_path))
-            .flatten()
+            .and_then(|url| get_thumbnail_path(url, &video.id, &temp_dir_path))
             .or_else(|| get_best_thumbnail_path_in_dir(&temp_dir_path).ok().flatten());
 
         return Ok(VideoInFS::new(file_path, thumbnail_path));
@@ -177,7 +176,7 @@ pub fn video(
             let url = combined_format.video_format.url.to_owned();
             let mut write = unsafe { File::from_raw_fd(video_write_fd) };
 
-            move || range_download_to_write(client, url, filesize, &mut write)
+            move || range_download_to_write(&client, url, filesize, &mut write)
         });
     } else {
         event!(Level::DEBUG, "Video filesize unknown");
@@ -204,7 +203,7 @@ pub fn video(
             let url = combined_format.audio_format.url.to_owned();
             let mut write = unsafe { File::from_raw_fd(audio_write_fd) };
 
-            move || range_download_to_write(client, url, filesize, &mut write)
+            move || range_download_to_write(&client, url, filesize, &mut write)
         });
     } else {
         event!(Level::DEBUG, "Audio filesize unknown");
@@ -219,10 +218,7 @@ pub fn video(
         )?;
     };
 
-    let thumbnail_path = video
-        .thumbnail()
-        .map(|url| get_thumbnail_path(url, &video.id, temp_dir_path))
-        .flatten();
+    let thumbnail_path = video.thumbnail().and_then(|url| get_thumbnail_path(url, &video.id, temp_dir_path));
 
     let Some(exit_code) = merge_child.wait_timeout(Duration::from_secs(timeout))? else {
         event!(Level::ERROR, "FFmpeg process timed out");

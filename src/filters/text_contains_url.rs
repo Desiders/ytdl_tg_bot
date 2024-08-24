@@ -24,13 +24,10 @@ pub fn text_contains_url(_bot: &Bot, update: &Update, context: &Context) -> impl
     let result = if let Some(text) = update.text() {
         let mut url_found = false;
 
-        match get_url_from_text(text) {
-            Some(url) => {
-                url_found = true;
+        if let Some(url) = get_url_from_text(text) {
+            url_found = true;
 
-                context.insert("video_url", Box::new(url.as_str().to_owned().into_boxed_str()));
-            }
-            None => {}
+            context.insert("video_url", Box::new(url.as_str().to_owned().into_boxed_str()));
         }
 
         url_found
@@ -41,6 +38,7 @@ pub fn text_contains_url(_bot: &Bot, update: &Update, context: &Context) -> impl
     async move { result }
 }
 
+#[allow(clippy::module_name_repetitions)]
 pub fn text_contains_url_with_reply(_bot: &Bot, update: &Update, context: &Context) -> impl Future<Output = bool> {
     let result = if let Some(text) = update.text() {
         let mut url_found = false;
