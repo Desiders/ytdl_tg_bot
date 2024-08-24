@@ -35,6 +35,7 @@ const SEND_AUDIO_TIMEOUT: f32 = 60.0;
 const GET_MEDIA_OR_PLAYLIST_INFO_INLINE_QUERY_TIMEOUT: u64 = 12;
 const SELECT_INLINE_QUERY_CACHE_TIME: i64 = 86400; // 24 hours
 
+#[allow(clippy::module_name_repetitions)]
 #[derive(thiserror::Error, Debug)]
 pub enum DownloadErrorKind {
     #[error(transparent)]
@@ -163,7 +164,7 @@ pub async fn video_download(
             event!(Level::TRACE, "Video sended");
 
             tokio::spawn({
-                let message_id = message.id().clone();
+                let message_id = message.id();
 
                 async move {
                     let _ = bot.send(DeleteMessage::new(receiver_video_chat_id, message_id)).await;
@@ -319,7 +320,7 @@ pub async fn video_download_quite(
             event!(Level::TRACE, "Video sended");
 
             tokio::spawn({
-                let message_id = message.id().clone();
+                let message_id = message.id();
 
                 async move {
                     let _ = bot.send(DeleteMessage::new(receiver_video_chat_id, message_id)).await;
@@ -491,7 +492,7 @@ pub async fn audio_download(
             .await?;
 
             tokio::spawn({
-                let message_id = message.id().clone();
+                let message_id = message.id();
 
                 async move {
                     let _ = bot.send(DeleteMessage::new(receiver_video_chat_id, message_id)).await;
@@ -649,7 +650,7 @@ pub async fn media_download_chosen_inline_result(
             drop(temp_dir);
 
             tokio::spawn({
-                let message_id = message.id().clone();
+                let message_id = message.id();
                 let bot = bot.clone();
 
                 async move {
@@ -703,7 +704,7 @@ pub async fn media_download_chosen_inline_result(
             drop(temp_dir);
 
             tokio::spawn({
-                let message_id = message.id().clone();
+                let message_id = message.id();
                 let bot = bot.clone();
 
                 async move {

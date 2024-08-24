@@ -60,25 +60,17 @@ impl VideoInYT {
     }
 
     pub fn thumbnail(&self) -> Option<&str> {
-        match self
-            .thumbnails
-            .as_deref()
-            .map(|thumbnails| {
-                for thumbnail in thumbnails {
-                    match (thumbnail.width, thumbnail.height) {
-                        (Some(width), Some(height)) => {
-                            if width == 405.0 && height == 720.0 {
-                                return thumbnail.url.as_deref();
-                            }
-                        }
-                        _ => {}
+        match self.thumbnails.as_deref().and_then(|thumbnails| {
+            for thumbnail in thumbnails {
+                if let (Some(width), Some(height)) = (thumbnail.width, thumbnail.height) {
+                    if width == 405.0 && height == 720.0 {
+                        return thumbnail.url.as_deref();
                     }
                 }
+            }
 
-                self.thumbnail.as_deref().or(thumbnails[thumbnails.len() - 1].url.as_deref())
-            })
-            .flatten()
-        {
+            self.thumbnail.as_deref().or(thumbnails[thumbnails.len() - 1].url.as_deref())
+        }) {
             Some(thumbnail) => Some(thumbnail),
             None => self.thumbnail.as_deref(),
         }
