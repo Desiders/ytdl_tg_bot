@@ -1,4 +1,4 @@
-FROM python:3.11.6-slim-bullseye AS base
+FROM python:3.12.5-slim-bullseye AS base
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
@@ -6,7 +6,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY . .
 
-FROM rust:1.74.0-slim-bullseye AS build
+FROM rust:1.80.1-slim-bullseye AS build
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libssl-dev \
     && apt-get install -y --no-install-recommends pkg-config \
