@@ -1,6 +1,5 @@
 use crate::{
     cmd::get_media_or_playlist_info,
-    config::{PhantomAudioId, PhantomVideoId},
     download::{self, StreamErrorKind, ToTempDirErrorKind},
     extractors::{BotConfigWrapper, YtDlpWrapper},
     handlers_utils::{
@@ -17,8 +16,8 @@ use telers::{
     event::{telegram::HandlerResult, EventReturn},
     methods::{AnswerInlineQuery, DeleteMessage, EditMessageMedia, SendAudio, SendVideo},
     types::{
-        ChosenInlineResult, InlineKeyboardButton, InlineKeyboardMarkup, InlineQuery, InlineQueryResult, InlineQueryResultCachedAudio,
-        InlineQueryResultCachedVideo, InputFile, InputMediaVideo, Message,
+        ChosenInlineResult, InlineKeyboardButton, InlineKeyboardMarkup, InlineQuery, InlineQueryResult, InlineQueryResultArticle,
+        InputFile, InputMediaVideo, InputTextMessageContent, Message,
     },
     utils::text::{html_code, html_quote},
     Bot, Context,
@@ -551,7 +550,7 @@ pub async fn audio_download(
     Ok(EventReturn::Finish)
 }
 
-#[instrument(skip_all, fields(result_id, inline_message_id, video_id_or_url))]
+#[instrument(skip_all, fields(result_id, inline_message_id))]
 pub async fn media_download_chosen_inline_result(
     bot: Arc<Bot>,
     ChosenInlineResult {
@@ -569,7 +568,6 @@ pub async fn media_download_chosen_inline_result(
 
     // If `result_id` starts with `audio_` then it's audio, else it's video
     let download_video = result_id.starts_with("video_");
-
     let inline_message_id = inline_message_id.as_deref().unwrap();
 
     event!(Level::DEBUG, "Got url");
@@ -722,9 +720,7 @@ pub async fn media_download_chosen_inline_result(
 
             send::with_retries(
                 &bot,
-                EditMessageMedia::new(InputMediaVideo::new(InputFile::id(file_id)))
-                    .inline_message_id(inline_message_id)
-                    .reply_markup(InlineKeyboardMarkup::new([[]])),
+                EditMessageMedia::new(InputMediaVideo::new(InputFile::id(file_id))).inline_message_id(inline_message_id),
                 2,
                 Some(SEND_AUDIO_TIMEOUT),
             )
@@ -757,8 +753,6 @@ pub async fn media_select_inline_query(
         id: query_id, query: url, ..
     }: InlineQuery,
     YtDlpWrapper(yt_dlp_config): YtDlpWrapper,
-    PhantomVideoId(phantom_video_id): PhantomVideoId,
-    PhantomAudioId(phantom_audio_id): PhantomAudioId,
 ) -> HandlerResult {
     Span::current().record("query_id", query_id.as_ref());
     Span::current().record("url", url.as_ref());
@@ -803,29 +797,35 @@ pub async fn media_select_inline_query(
 
     for video in videos {
         let title = video.title.as_deref().unwrap_or("Untitled");
-        let caption = html_code(html_quote(title));
+        let title_html = html_code(html_quote(title));
 
         let result_id = Uuid::new_v4();
 
         results.push(
-            InlineQueryResultCachedVideo::new(format!("video_{result_id}"), title, phantom_video_id.clone())
-                .caption(caption.as_str())
-                .description("Click to download video")
-                .reply_markup(InlineKeyboardMarkup::new([[
-                    InlineKeyboardButton::new("Video downloading...").callback_data("video_downloading")
-                ]]))
-                .parse_mode(ParseMode::HTML)
-                .into(),
+            InlineQueryResultArticle::new(
+                format!("video_{result_id}"),
+                title,
+                InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
+            )
+            .title(title)
+            .description("Click to download video")
+            .reply_markup(InlineKeyboardMarkup::new([[
+                InlineKeyboardButton::new("Video downloading...").callback_data("video_download")
+            ]]))
+            .into(),
         );
-
         results.push(
-            InlineQueryResultCachedAudio::new(format!("audio_{result_id}"), phantom_audio_id.clone())
-                .caption(caption.as_str())
-                .reply_markup(InlineKeyboardMarkup::new([[
-                    InlineKeyboardButton::new("Audio downloading...").callback_data("audio_downloading")
-                ]]))
-                .parse_mode(ParseMode::HTML)
-                .into(),
+            InlineQueryResultArticle::new(
+                format!("audio_{result_id}"),
+                title,
+                InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
+            )
+            .title(title)
+            .description("Click to download audio")
+            .reply_markup(InlineKeyboardMarkup::new([[
+                InlineKeyboardButton::new("Audio downloading...").callback_data("audio_download")
+            ]]))
+            .into(),
         );
     }
 

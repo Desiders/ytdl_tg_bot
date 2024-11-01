@@ -1,7 +1,7 @@
 use telers::{
     enums::ParseMode,
     errors::SessionErrorKind,
-    methods::{AnswerInlineQuery, EditMessageCaption, SendMessage},
+    methods::{AnswerInlineQuery, EditMessageText, SendMessage},
     types::{InlineKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent, LinkPreviewOptions, Message, ReplyParameters},
     Bot,
 };
@@ -29,10 +29,10 @@ pub async fn occured_in_chosen_inline_result(
     parse_mode: Option<ParseMode>,
 ) -> Result<(), SessionErrorKind> {
     bot.send(
-        EditMessageCaption::new(text)
+        EditMessageText::new(text)
             .inline_message_id(inline_message_id)
-            .parse_mode_option(parse_mode)
-            .reply_markup(InlineKeyboardMarkup::new([[]])),
+            .reply_markup(InlineKeyboardMarkup::new([[]]))
+            .parse_mode_option(parse_mode),
     )
     .await
     .map(|_| ())
