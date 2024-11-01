@@ -385,6 +385,7 @@ pub struct Video<'a> {
     pub url: &'a str,
     pub codec: Option<VideoCodec<'a>>,
     pub container: Container,
+    pub vbr: Option<f64>,
     pub height: Option<f64>,
     pub width: Option<f64>,
     pub filesize: Option<f64>,
@@ -398,6 +399,7 @@ impl<'a> Video<'a> {
         url: &'a str,
         codec: Option<VideoCodec<'a>>,
         container: Container,
+        vbr: Option<f64>,
         height: Option<f64>,
         width: Option<f64>,
         filesize: Option<f64>,
@@ -408,6 +410,7 @@ impl<'a> Video<'a> {
             url,
             codec,
             container,
+            vbr,
             height,
             width,
             filesize,
@@ -461,16 +464,25 @@ pub struct Audio<'a> {
     pub id: &'a str,
     pub url: &'a str,
     pub codec: AudioCodec<'a>,
+    pub abr: Option<f64>,
     pub filesize: Option<f64>,
     pub filesize_approx: Option<f64>,
 }
 
 impl<'a> Audio<'a> {
-    pub fn new(id: &'a str, url: &'a str, codec: AudioCodec<'a>, filesize: Option<f64>, filesize_approx: Option<f64>) -> Self {
+    pub fn new(
+        id: &'a str,
+        url: &'a str,
+        codec: AudioCodec<'a>,
+        abr: Option<f64>,
+        filesize: Option<f64>,
+        filesize_approx: Option<f64>,
+    ) -> Self {
         Self {
             id,
             url,
             codec,
+            abr,
             filesize,
             filesize_approx,
         }
@@ -511,7 +523,7 @@ pub struct Audios<'a>(pub Vec<Audio<'a>>);
 
 impl<'a> Audios<'a> {
     #[allow(clippy::cast_precision_loss)]
-    pub fn skip_with_size_less_than(&mut self, size: u64) {
+    pub fn skip_with_size_greater_than(&mut self, size: u64) {
         self.0.retain(|audio| {
             let Some(filesize) = audio.filesize else {
                 return true;
@@ -527,7 +539,7 @@ impl<'a> Audios<'a> {
 
     pub fn sort_by_priority_and_skip_by_size(&mut self, size: u64) {
         self.sort_by_format_id_priority();
-        self.skip_with_size_less_than(size);
+        self.skip_with_size_greater_than(size);
     }
 }
 
@@ -613,6 +625,8 @@ pub struct Any {
     pub format_note: Option<String>,
     pub ext: String,
     pub container: Option<String>,
+    pub abr: Option<f64>,
+    pub vbr: Option<f64>,
     pub height: Option<f64>,
     pub width: Option<f64>,
     pub filesize: Option<f64>,
@@ -638,6 +652,8 @@ impl<'de> Deserialize<'de> for Any {
             acodec: Option<String>,
             vcodec: Option<String>,
             container: Option<String>,
+            abr: Option<f64>,
+            vbr: Option<f64>,
             height: Option<f64>,
             width: Option<f64>,
             filesize: Option<f64>,
@@ -671,6 +687,8 @@ impl<'de> Deserialize<'de> for Any {
             acodec,
             vcodec,
             container: raw.container,
+            abr: raw.abr,
+            vbr: raw.vbr,
             height: raw.height,
             width: raw.width,
             filesize: raw.filesize,
@@ -698,13 +716,21 @@ impl Any {
                 });
             }
 
-            let audio_format = Audio::new(self.id.as_str(), self.url.as_str(), acodec, self.filesize, self.filesize_approx);
+            let audio_format = Audio::new(
+                self.id.as_str(),
+                self.url.as_str(),
+                acodec,
+                self.abr,
+                self.filesize,
+                self.filesize_approx,
+            );
 
             let video_format = Video::new(
                 self.id.as_str(),
                 self.url.as_str(),
                 Some(vcodec),
                 container,
+                self.vbr,
                 self.height,
                 self.width,
                 self.filesize,
@@ -719,6 +745,7 @@ impl Any {
                 self.id.as_str(),
                 self.url.as_str(),
                 AudioCodec::try_from("mp3")?,
+                self.abr,
                 self.filesize,
                 self.filesize_approx,
             );
@@ -729,6 +756,7 @@ impl Any {
                 None,
                 container,
                 self.height,
+                self.vbr,
                 self.width,
                 self.filesize,
                 self.filesize_approx,
@@ -737,7 +765,14 @@ impl Any {
             Ok(Kind::Combined(audio_format, video_format))
         } else if acodec.is_known() {
             let acodec = AudioCodec::try_from(acodec.as_str().unwrap())?;
-            let audio_format = Audio::new(self.id.as_str(), self.url.as_str(), acodec, self.filesize, self.filesize_approx);
+            let audio_format = Audio::new(
+                self.id.as_str(),
+                self.url.as_str(),
+                acodec,
+                self.abr,
+                self.filesize,
+                self.filesize_approx,
+            );
 
             Ok(Kind::Audio(audio_format))
         } else if vcodec.is_known() {
@@ -760,6 +795,7 @@ impl Any {
                 self.url.as_str(),
                 Some(vcodec),
                 container,
+                self.vbr,
                 self.height,
                 self.width,
                 self.filesize,
@@ -770,7 +806,14 @@ impl Any {
         } else if acodec.is_unknown() {
             match AudioCodec::try_from(self.ext.as_str()) {
                 Ok(acodec) => {
-                    let audio_format = Audio::new(self.id.as_str(), self.url.as_str(), acodec, self.filesize, self.filesize_approx);
+                    let audio_format = Audio::new(
+                        self.id.as_str(),
+                        self.url.as_str(),
+                        acodec,
+                        self.abr,
+                        self.filesize,
+                        self.filesize_approx,
+                    );
 
                     Ok(Kind::Audio(audio_format))
                 }
@@ -784,6 +827,7 @@ impl Any {
                         self.url.as_str(),
                         None,
                         container,
+                        self.vbr,
                         self.height,
                         self.width,
                         self.filesize,
