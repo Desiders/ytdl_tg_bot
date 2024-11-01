@@ -7,8 +7,10 @@ use nix::{
     fcntl::{fcntl, FcntlArg::F_SETFD, FdFlag},
     unistd::{close, pipe},
 };
+
 use reqwest::blocking::Client;
 use std::{
+    fs::File,
     io::{self, Write},
     os::fd::{FromRawFd as _, OwnedFd},
     path::{Path, PathBuf},
@@ -108,8 +110,6 @@ pub fn video(
     temp_dir_path: impl AsRef<Path>,
     timeout: u64,
 ) -> Result<VideoInFS, StreamErrorKind> {
-    use std::fs::File;
-
     let mut combined_formats = video.get_combined_formats();
     combined_formats.sort_by_priority_and_skip_by_size(max_file_size);
 
@@ -165,8 +165,6 @@ pub fn video(
     let client = Client::new();
 
     if let Some(filesize) = combined_format.video_format.filesize_or_approx() {
-        event!(Level::DEBUG, filesize, "Video filesize known");
-
         if let Err(errno) = close(video_read_fd) {
             event!(Level::WARN, %errno, "Error closing video read pipe");
         }
@@ -179,8 +177,6 @@ pub fn video(
             move || range_download_to_write(&client, url, filesize, &mut write)
         });
     } else {
-        event!(Level::DEBUG, "Video filesize unknown");
-
         fcntl(video_read_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
 
         download_to_pipe(
@@ -192,8 +188,6 @@ pub fn video(
     };
 
     if let Some(filesize) = combined_format.audio_format.filesize_or_approx() {
-        event!(Level::DEBUG, filesize, "Audio filesize known");
-
         if let Err(errno) = close(audio_read_fd) {
             event!(Level::WARN, %errno, "Error closing audio read pipe");
         }
@@ -206,8 +200,6 @@ pub fn video(
             move || range_download_to_write(&client, url, filesize, &mut write)
         });
     } else {
-        event!(Level::DEBUG, "Audio filesize unknown");
-
         fcntl(audio_read_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
 
         download_to_pipe(

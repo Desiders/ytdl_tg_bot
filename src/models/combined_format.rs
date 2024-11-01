@@ -74,6 +74,10 @@ impl<'a> Format<'a> {
     pub fn get_priority(&self) -> u8 {
         self.video_format.get_priority() + self.audio_format.get_priority()
     }
+
+    pub fn get_vbr_plus_abr(&self) -> f64 {
+        self.video_format.vbr.unwrap_or(0.0) + self.audio_format.abr.unwrap_or(0.0)
+    }
 }
 
 impl Display for Format<'_> {
@@ -93,7 +97,7 @@ impl<'a> Formats<'a> {
 
 impl<'a> Formats<'a> {
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    pub fn skip_with_size_less_than(&mut self, size: u64) {
+    pub fn skip_with_size_greater_than(&mut self, size: u64) {
         self.0.retain(|combined_format| {
             let Some(filesize_or_approx) = combined_format.filesize_or_approx() else {
                 // For cases when filesize `unknown`
@@ -104,18 +108,35 @@ impl<'a> Formats<'a> {
         });
     }
 
-    pub fn sort_by_format_id_priority(&mut self) {
+    pub fn skip_with_priority_greater_than(&mut self, priority: u8) {
+        self.0.retain(|combined_format| combined_format.get_priority() <= priority);
+    }
+
+    pub fn sort_by_priority(&mut self) {
         self.0.sort_by_key(Format::get_priority);
     }
 
     pub fn sort_by_filesize(&mut self) {
-        self.0.sort_by_key(|format| Reverse(format.filesize_or_approx().is_some()));
+        self.0
+            .sort_by_key(|format| Reverse(format.filesize_or_approx().unwrap_or(0.0) as i64));
+    }
+
+    pub fn sort_by_vbr_plus_abr(&mut self) {
+        self.0.sort_by_key(|format| Reverse(format.get_vbr_plus_abr() as i64));
     }
 
     pub fn sort_by_priority_and_skip_by_size(&mut self, size: u64) {
-        self.skip_with_size_less_than(size);
+        self.skip_with_size_greater_than(size);
+        self.sort_by_priority();
+
+        match self.0.first() {
+            Some(format) => self.skip_with_priority_greater_than(format.get_priority()),
+            None => {}
+        }
+
         self.sort_by_filesize();
-        self.sort_by_format_id_priority();
+        self.sort_by_vbr_plus_abr();
+        self.sort_by_priority();
     }
 }
 
