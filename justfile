@@ -10,9 +10,13 @@ run:
 run-release:
     cargo run --release
 
+# Run docker compose with build
+run-docker-build:
+    docker compose up --build
+
 # Run docker compose
 run-docker:
-    docker compose up --build
+    docker compose up
 
 # Down docker compose
 down-docker:
