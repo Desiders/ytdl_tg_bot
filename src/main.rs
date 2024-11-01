@@ -12,7 +12,7 @@ mod models;
 mod utils;
 
 use config::read_config_from_env;
-use filters::{text_contains_url, text_contains_url_with_reply};
+use filters::{is_via_bot, text_contains_url, text_contains_url_with_reply};
 use handlers::{
     audio_download, media_download_chosen_inline_result, media_select_inline_query, start, video_download, video_download_quite,
 };
@@ -20,7 +20,7 @@ use middlewares::Config as ConfigMiddleware;
 use telers::{
     enums::{ChatType as ChatTypeEnum, ContentType as ContentTypeEnum},
     event::ToServiceProvider as _,
-    filters::{ChatType, Command, ContentType},
+    filters::{ChatType, Command, ContentType, Filter as _},
     Bot, Dispatcher, Router,
 };
 use tracing::{event, Level};
@@ -80,8 +80,13 @@ async fn main() {
         .message
         .register(video_download)
         .filter(ChatType::one(ChatTypeEnum::Private))
-        .filter(text_contains_url_with_reply);
-    router.message.register(video_download_quite).filter(text_contains_url);
+        .filter(text_contains_url_with_reply)
+        .filter(is_via_bot.invert());
+    router
+        .message
+        .register(video_download_quite)
+        .filter(text_contains_url)
+        .filter(is_via_bot.invert());
     router.inline_query.register(media_select_inline_query).filter(text_contains_url);
     router
         .chosen_inline_result
