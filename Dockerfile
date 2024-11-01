@@ -17,8 +17,6 @@ RUN USER=root cargo init
 COPY ./Cargo.toml .
 RUN cargo build --release
 COPY ./src ./src
-COPY phantom.mp3 .
-COPY phantom.mp4 .
 # https://users.rust-lang.org/t/dockerfile-with-cached-dependencies-does-not-recompile-the-main-rs-file/21577
 RUN touch src/main.rs && cargo build --release
 
