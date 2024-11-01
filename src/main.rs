@@ -25,7 +25,7 @@ use telers::{
 };
 use tracing::{event, Level};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
-use utils::{get_phantom_audio_id, get_phantom_video_id, on_shutdown, on_startup};
+use utils::{on_shutdown, on_startup};
 
 #[cfg(not(target_family = "unix"))]
 fn main() {
@@ -93,30 +93,10 @@ async fn main() {
         .register(media_download_chosen_inline_result)
         .filter(text_contains_url);
 
-    let phantom_video_id = match get_phantom_video_id(bot.clone(), config.bot.clone(), config.phantom_video).await {
-        Ok(id) => id,
-        Err(err) => {
-            event!(Level::ERROR, %err, "Error while getting phantom video id");
-
-            std::process::exit(1);
-        }
-    };
-
-    let phantom_audio_id = match get_phantom_audio_id(bot.clone(), config.bot.clone(), config.phantom_audio).await {
-        Ok(id) => id,
-        Err(err) => {
-            event!(Level::ERROR, %err, "Error while getting phantom audio id");
-
-            std::process::exit(1);
-        }
-    };
-
-    router.update.outer_middlewares.register(ConfigMiddleware::new(
-        config.yt_dlp.clone(),
-        config.bot,
-        phantom_video_id,
-        phantom_audio_id,
-    ));
+    router
+        .update
+        .outer_middlewares
+        .register(ConfigMiddleware::new(config.yt_dlp.clone(), config.bot));
 
     router.startup.register(on_startup, (bot.clone(),));
     router.shutdown.register(on_shutdown, ());
