@@ -164,7 +164,6 @@ impl Display for Container {
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone)]
 pub enum VideoCodec<'a> {
-    AV1(&'a str),
     H265(&'a str),
     VP9(&'a str),
     H264(&'a str),
@@ -183,14 +182,6 @@ fn is_h265(codec: &str) -> bool {
         || codec.to_lowercase().starts_with("h265")
         || codec.to_lowercase().starts_with("hev1")
         || codec.to_lowercase().starts_with("hvc1")
-}
-
-fn is_av1(codec: &str) -> bool {
-    codec.to_lowercase().starts_with("av1")
-        || codec.to_lowercase().starts_with("aom")
-        || codec.to_lowercase().starts_with("av01")
-        || codec.to_lowercase().starts_with("avo1")
-        || codec.to_lowercase().starts_with("av1x")
 }
 
 fn is_vp9(codec: &str) -> bool {
@@ -212,30 +203,29 @@ impl VideoCodec<'_> {
     #[must_use]
     pub const fn as_str(&self) -> &str {
         match self {
-            Self::H264(codec) | Self::H265(codec) | Self::AV1(codec) | Self::VP9(codec) | Self::ProRes(codec) => codec,
+            Self::H264(codec) | Self::H265(codec) | Self::VP9(codec) | Self::ProRes(codec) => codec,
         }
     }
 
     #[must_use]
     pub const fn is_support_container(&self, container: &Container) -> bool {
         use Container::{MKV, MOV, MP4, TS};
-        use VideoCodec::{ProRes, AV1, H264, H265, VP9};
+        use VideoCodec::{ProRes, H264, H265, VP9};
 
         matches!(
             (self, container),
-            (H264(_) | H265(_), MP4 | MOV | MKV | TS) | (AV1(_) | VP9(_), MP4 | MKV) | (ProRes(_), MOV | MKV)
+            (H264(_) | H265(_), MP4 | MOV | MKV | TS) | (VP9(_), MP4 | MKV) | (ProRes(_), MOV | MKV)
         )
     }
 
     #[must_use]
     pub const fn get_priority(&self) -> u8 {
-        use VideoCodec::{ProRes, AV1, H264, H265, VP9};
+        use VideoCodec::{ProRes, H264, H265, VP9};
 
         match self {
             H264(_) | H265(_) => 1,
             VP9(_) => 2,
             ProRes(_) => 4,
-            AV1(_) => 5,
         }
     }
 
@@ -252,7 +242,6 @@ impl<'a> TryFrom<&'a str> for VideoCodec<'a> {
         match value {
             value if is_h264(value) => Ok(Self::H264(value)),
             value if is_h265(value) => Ok(Self::H265(value)),
-            value if is_av1(value) => Ok(Self::AV1(value)),
             value if is_vp9(value) => Ok(Self::VP9(value)),
             value if is_prores(value) => Ok(Self::ProRes(value)),
             _ => Err(FormatError::VideoCodecNotSupported { codec: value }),
@@ -328,19 +317,19 @@ impl AudioCodec<'_> {
     pub const fn is_support_container_with_vcodec(&self, video_codec: &VideoCodec, container: &Container) -> bool {
         use AudioCodec::{Opus, AAC_OR_ALAC, FLAC, MP3, PCM};
         use Container::{MKV, MOV, MP4, TS};
-        use VideoCodec::{ProRes, AV1, H264, H265, VP9};
+        use VideoCodec::{ProRes, H264, H265, VP9};
 
         matches!(
             (self, video_codec, container),
             (AAC_OR_ALAC(_), H264(_) | H265(_), _)
                 | (MP3(_), H264(_) | H265(_), MP4 | MOV | MKV | TS)
-                | (AAC_OR_ALAC(_) | FLAC(_) | MP3(_) | Opus(_), AV1(_) | VP9(_), MP4 | MKV)
+                | (AAC_OR_ALAC(_) | FLAC(_) | MP3(_) | Opus(_), VP9(_), MP4 | MKV)
                 | (AAC_OR_ALAC(_) | PCM(_), ProRes(_), MOV | MKV)
                 | (FLAC(_), H264(_) | H265(_), MP4 | MKV)
                 | (FLAC(_) | Opus(_), ProRes(_), MKV)
                 | (Opus(_), H264(_) | H265(_), MP4 | MKV | TS)
                 | (PCM(_), H264(_) | H265(_), MOV | MKV)
-                | (PCM(_), AV1(_) | VP9(_), MKV)
+                | (PCM(_), VP9(_), MKV)
         )
     }
 
