@@ -27,8 +27,8 @@ use tokio::task::{spawn_blocking, JoinError, JoinHandle};
 use tracing::{event, instrument, Level, Span};
 use uuid::Uuid;
 
-const GET_INFO_TIMEOUT: u64 = 30;
-const DOWNLOAD_MEDIA_TIMEOUT: u64 = 90;
+const GET_INFO_TIMEOUT: u64 = 45;
+const DOWNLOAD_MEDIA_TIMEOUT: u64 = 180;
 const SEND_VIDEO_TIMEOUT: f32 = 60.0;
 const SEND_AUDIO_TIMEOUT: f32 = 60.0;
 const GET_MEDIA_OR_PLAYLIST_INFO_INLINE_QUERY_TIMEOUT: u64 = 12;
