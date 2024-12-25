@@ -1,4 +1,4 @@
-use crate::extractors::{BotConfigWrapper, YtDlpWrapper};
+use crate::config::{Bot as BotConfig, YtDlp};
 
 use telers::{
     enums::ParseMode,
@@ -6,14 +6,14 @@ use telers::{
     methods::{GetMe, SendMessage},
     types::{LinkPreviewOptions, Message, ReplyParameters},
     utils::text::{html_quote, html_text_link},
-    Bot,
+    Bot, Extension,
 };
 
 pub async fn start(
     bot: Bot,
     message: Message,
-    YtDlpWrapper(yt_dlp_config): YtDlpWrapper,
-    BotConfigWrapper(bot_config): BotConfigWrapper,
+    Extension(yt_dlp_config): Extension<YtDlp>,
+    Extension(bot_config): Extension<BotConfig>,
 ) -> HandlerResult {
     let bot_info = bot.send(GetMe {}).await?;
     let text = format!(

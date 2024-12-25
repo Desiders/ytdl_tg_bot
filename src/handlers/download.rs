@@ -1,7 +1,7 @@
 use crate::{
     cmd::get_media_or_playlist_info,
+    config::{Bot as BotConfig, YtDlp},
     download::{self, StreamErrorKind, ToTempDirErrorKind},
-    extractors::{BotConfigWrapper, YtDlpWrapper},
     handlers_utils::{
         chat_action::{upload_video_action_in_loop, upload_voice_action_in_loop},
         error, send,
@@ -20,7 +20,7 @@ use telers::{
         InputFile, InputMediaVideo, InputTextMessageContent, Message,
     },
     utils::text::{html_code, html_quote},
-    Bot, Context,
+    Bot, Context, Extension,
 };
 use tempfile::tempdir;
 use tokio::task::{spawn_blocking, JoinError, JoinHandle};
@@ -50,25 +50,21 @@ pub enum DownloadErrorKind {
 #[instrument(skip_all, fields(message_id, chat_id, url))]
 pub async fn video_download(
     bot: Arc<Bot>,
-    context: Arc<Context>,
+    mut context: Context,
     message: Message,
-    YtDlpWrapper(yt_dlp_config): YtDlpWrapper,
-    BotConfigWrapper(bot_config): BotConfigWrapper,
+    Extension(yt_dlp_config): Extension<YtDlp>,
+    Extension(bot_config): Extension<BotConfig>,
 ) -> HandlerResult {
     let url = context
-        .get("video_url")
-        .expect("Url should be in context because `text_contains_url` filter should do this")
-        .downcast_ref::<Box<str>>()
-        .expect("Url should be `Box<str>`")
-        .clone()
-        .into_string();
+        .remove::<Box<str>>("video_url")
+        .expect("Url should be in context because `text_contains_url` filter should do this");
     let message_id = message.id();
     let chat_id = message.chat().id();
 
     Span::current()
         .record("chat_id", chat_id)
         .record("message_id", message_id)
-        .record("url", url.as_str());
+        .record("url", &*url);
 
     event!(Level::DEBUG, "Got url");
 
@@ -124,7 +120,7 @@ pub async fn video_download(
     for video in videos {
         let bot = bot.clone();
         let max_file_size = yt_dlp_config.max_file_size;
-        let yt_dlp_full_path = yt_dlp_config.as_ref().full_path.clone();
+        let yt_dlp_full_path = yt_dlp_config.full_path.clone();
         let receiver_video_chat_id = bot_config.receiver_video_chat_id;
 
         #[allow(clippy::cast_possible_truncation)]
@@ -217,25 +213,21 @@ pub async fn video_download(
 #[instrument(skip_all, fields(message_id, chat_id, url))]
 pub async fn video_download_quite(
     bot: Arc<Bot>,
-    context: Arc<Context>,
+    mut context: Context,
     message: Message,
-    YtDlpWrapper(yt_dlp_config): YtDlpWrapper,
-    BotConfigWrapper(bot_config): BotConfigWrapper,
+    Extension(yt_dlp_config): Extension<YtDlp>,
+    Extension(bot_config): Extension<BotConfig>,
 ) -> HandlerResult {
     let url = context
-        .get("video_url")
-        .expect("Url should be in context because `text_contains_url` filter should do this")
-        .downcast_ref::<Box<str>>()
-        .expect("Url should be `Box<str>`")
-        .clone()
-        .into_string();
+        .remove::<Box<str>>("video_url")
+        .expect("Url should be in context because `text_contains_url` filter should do this");
     let message_id = message.id();
     let chat_id = message.chat().id();
 
     Span::current()
         .record("chat_id", chat_id)
         .record("message_id", message_id)
-        .record("url", url.as_str());
+        .record("url", &*url);
 
     event!(Level::DEBUG, "Got url");
 
@@ -280,7 +272,7 @@ pub async fn video_download_quite(
     for video in videos {
         let bot = bot.clone();
         let max_file_size = yt_dlp_config.max_file_size;
-        let yt_dlp_full_path = yt_dlp_config.as_ref().full_path.clone();
+        let yt_dlp_full_path = yt_dlp_config.full_path.clone();
         let receiver_video_chat_id = bot_config.receiver_video_chat_id;
 
         #[allow(clippy::cast_possible_truncation)]
@@ -371,23 +363,19 @@ pub async fn video_download_quite(
 #[instrument(skip_all, fields(message_id, chat_id, url))]
 pub async fn audio_download(
     bot: Arc<Bot>,
-    context: Arc<Context>,
+    mut context: Context,
     message: Message,
-    YtDlpWrapper(yt_dlp_config): YtDlpWrapper,
-    BotConfigWrapper(bot_config): BotConfigWrapper,
+    Extension(yt_dlp_config): Extension<YtDlp>,
+    Extension(bot_config): Extension<BotConfig>,
 ) -> HandlerResult {
     let url = context
-        .get("video_url")
-        .expect("Url should be in context because `text_contains_url` filter should do this")
-        .downcast_ref::<Box<str>>()
-        .expect("Url should be `Box<str>`")
-        .clone()
-        .into_string();
+        .remove::<Box<str>>("video_url")
+        .expect("Url should be in context because `text_contains_url` filter should do this");
     let message_id = message.id();
     let chat_id = message.chat().id();
 
     Span::current()
-        .record("url", url.as_str())
+        .record("url", &*url)
         .record("chat_id", chat_id)
         .record("message_id", message_id);
 
@@ -442,7 +430,7 @@ pub async fn audio_download(
     for video in videos {
         let bot = bot.clone();
         let max_file_size = yt_dlp_config.max_file_size;
-        let yt_dlp_full_path = yt_dlp_config.as_ref().full_path.clone();
+        let yt_dlp_full_path = yt_dlp_config.full_path.clone();
         let receiver_video_chat_id = bot_config.receiver_video_chat_id;
         let title = video.title.clone();
 
@@ -450,7 +438,11 @@ pub async fn audio_download(
         // It also doesn't support uploading videos by direct URL, so we can only transmit the passeds URL.
         // If URL represents playlist, we get an error because unacceptable use one URL one more time for different videos.
         // This should be fixed by direct download video without `ytdl`.
-        let id_or_url = if videos_len == 1 { url.clone() } else { video.id.clone() };
+        let id_or_url = if videos_len == 1 {
+            url.clone()
+        } else {
+            video.id.clone().into_boxed_str()
+        };
 
         #[allow(clippy::cast_possible_truncation)]
         let duration = video.duration.map(|duration| duration as i64);
@@ -559,8 +551,8 @@ pub async fn media_download_chosen_inline_result(
         query: url,
         ..
     }: ChosenInlineResult,
-    YtDlpWrapper(yt_dlp_config): YtDlpWrapper,
-    BotConfigWrapper(bot_config): BotConfigWrapper,
+    Extension(yt_dlp_config): Extension<YtDlp>,
+    Extension(bot_config): Extension<BotConfig>,
 ) -> HandlerResult {
     Span::current().record("result_id", result_id.as_ref());
     Span::current().record("inline_message_id", inline_message_id.as_deref());
@@ -752,7 +744,7 @@ pub async fn media_select_inline_query(
     InlineQuery {
         id: query_id, query: url, ..
     }: InlineQuery,
-    YtDlpWrapper(yt_dlp_config): YtDlpWrapper,
+    Extension(yt_dlp_config): Extension<YtDlp>,
 ) -> HandlerResult {
     Span::current().record("query_id", query_id.as_ref());
     Span::current().record("url", url.as_ref());

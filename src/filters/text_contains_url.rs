@@ -1,8 +1,5 @@
 use std::future::Future;
-use telers::{
-    types::{Update, UpdateKind},
-    Bot, Context,
-};
+use telers::{types::UpdateKind, Request};
 use url::Url;
 
 fn get_url_from_text(text: &str) -> Option<Url> {
@@ -20,14 +17,14 @@ fn get_url_from_text(text: &str) -> Option<Url> {
     None
 }
 
-pub fn text_contains_url(_bot: &Bot, update: &Update, context: &Context) -> impl Future<Output = bool> {
-    let result = if let Some(text) = update.text() {
+pub fn text_contains_url(request: &mut Request) -> impl Future<Output = bool> {
+    let result = if let Some(text) = request.update.text() {
         let mut url_found = false;
 
         if let Some(url) = get_url_from_text(text) {
             url_found = true;
 
-            context.insert("video_url", Box::new(url.as_str().to_owned().into_boxed_str()));
+            request.context.insert("video_url", url.as_str().to_owned().into_boxed_str());
         }
 
         url_found
@@ -39,24 +36,24 @@ pub fn text_contains_url(_bot: &Bot, update: &Update, context: &Context) -> impl
 }
 
 #[allow(clippy::module_name_repetitions)]
-pub fn text_contains_url_with_reply(_bot: &Bot, update: &Update, context: &Context) -> impl Future<Output = bool> {
-    let result = if let Some(text) = update.text() {
+pub fn text_contains_url_with_reply(request: &mut Request) -> impl Future<Output = bool> {
+    let result = if let Some(text) = request.update.text() {
         let mut url_found = false;
 
         match get_url_from_text(text) {
             Some(url) => {
                 url_found = true;
 
-                context.insert("video_url", Box::new(url.as_str().to_owned().into_boxed_str()));
+                request.context.insert("video_url", url.as_str().to_owned().into_boxed_str());
             }
-            None => match update.kind() {
+            None => match request.update.kind() {
                 UpdateKind::Message(message) | UpdateKind::EditedMessage(message) => {
                     if let Some(message) = message.reply_to_message() {
                         if let Some(text) = message.text() {
                             if let Some(url) = get_url_from_text(text) {
                                 url_found = true;
 
-                                context.insert("video_url", Box::new(url.as_str().to_owned().into_boxed_str()));
+                                request.context.insert("video_url", url.as_str().to_owned().into_boxed_str());
                             };
                         };
                     }
