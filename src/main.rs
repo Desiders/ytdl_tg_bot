@@ -2,7 +2,6 @@ mod cmd;
 mod config;
 mod download;
 mod errors;
-mod extractors;
 mod filters;
 mod fs;
 mod handlers;
@@ -17,6 +16,7 @@ use handlers::{
     audio_download, media_download_chosen_inline_result, media_select_inline_query, start, video_download, video_download_quite,
 };
 use middlewares::Config as ConfigMiddleware;
+use std::process;
 use telers::{
     enums::{ChatType as ChatTypeEnum, ContentType as ContentTypeEnum},
     event::ToServiceProvider as _,
@@ -52,15 +52,11 @@ async fn main() {
         Err(err) => {
             eprintln!("Error reading config from env: {err}");
 
-            std::process::exit(1);
+            process::exit(1);
         }
     };
 
-    let Ok(bot_token) = std::env::var("BOT_TOKEN") else {
-        panic!("BOT_TOKEN env variable is not set!");
-    };
-
-    let bot = Bot::new(bot_token);
+    let bot = Bot::new(config.bot.token.clone());
 
     let mut router = Router::new("main");
     router.message.register(start).filter(Command::many(["start", "help"]));
