@@ -65,7 +65,7 @@ fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_path: 
 
 const RANGE_CHUNK_SIZE: i32 = 1024 * 1024 * 10;
 
-fn range_download_to_write<W: Write>(client: &Client, url: impl AsRef<str>, filesize: f64, write: &mut W) -> Result<(), RangeDownloadKind> {
+fn range_download_to_write<W: Write>(client: &Client, url: impl AsRef<str>, filesize: f64, mut write: W) -> Result<(), RangeDownloadKind> {
     let url = url.as_ref();
 
     let mut start: i32 = 0;
@@ -75,24 +75,31 @@ fn range_download_to_write<W: Write>(client: &Client, url: impl AsRef<str>, file
         event!(Level::TRACE, start, end, "Download chunk");
 
         if end >= filesize as i32 {
-            let buf = client.get(format!("{url}&range={start}-")).send()?.bytes()?;
-
-            if buf.is_empty() {
-                break;
-            }
-
-            write.write_all(&buf)?;
-
+            client.get(format!("{url}&range={start}-")).send()?.copy_to(&mut write)?;
             break;
         }
 
-        let buf = client.get(format!("{url}&range={start}-{end}")).send()?.bytes()?;
-
-        if buf.is_empty() {
-            break;
+        match client.get(format!("{url}&range={start}-{end}")).send()?.copy_to(&mut write) {
+            Ok(_val @ 0) => break,
+            Ok(_) => {}
+            Err(_) => break,
         }
 
-        write.write_all(&buf)?;
+        // // This code leads to so high RSS:
+        // if end >= filesize as i32 {
+        //     let buf = client.get(format!("{url}&range={start}-")).send()?.bytes()?;
+        //     if buf.is_empty() {
+        //         break;
+        //     }
+        //     write.write_all(&buf)?;
+        //     drop(buf);
+        //     break;
+        // }
+        // let buf = client.get(format!("{url}&range={start}-{end}")).send()?.bytes()?;
+        // if buf.is_empty() {
+        //     break;
+        // }
+        // write.write_all(&buf)?;
 
         start = end + 1;
         end += RANGE_CHUNK_SIZE;
@@ -172,9 +179,8 @@ pub fn video(
         thread::spawn({
             let client = client.clone();
             let url = combined_format.video_format.url.to_owned();
-            let mut write = unsafe { File::from_raw_fd(video_write_fd) };
 
-            move || range_download_to_write(&client, url, filesize, &mut write)
+            move || range_download_to_write(&client, url, filesize, unsafe { File::from_raw_fd(video_write_fd) })
         });
     } else {
         fcntl(video_read_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
@@ -195,9 +201,8 @@ pub fn video(
         thread::spawn({
             let client = client.clone();
             let url = combined_format.audio_format.url.to_owned();
-            let mut write = unsafe { File::from_raw_fd(audio_write_fd) };
 
-            move || range_download_to_write(&client, url, filesize, &mut write)
+            move || range_download_to_write(&client, url, filesize, unsafe { File::from_raw_fd(audio_write_fd) })
         });
     } else {
         fcntl(audio_read_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
