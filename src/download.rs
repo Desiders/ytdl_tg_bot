@@ -49,18 +49,28 @@ pub fn video(
     unimplemented!("This function is only implemented for Unix systems");
 }
 
-fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_path: impl AsRef<Path>) -> Option<PathBuf> {
+#[instrument(skip_all)]
+fn get_thumbnail_path(
+    url: impl AsRef<str>,
+    id: impl AsRef<str>,
+    temp_dir_path: impl AsRef<Path>,
+    timeout: u64,
+) -> Result<PathBuf, io::Error> {
     let path = temp_dir_path.as_ref().join(format!("{}.jpg", id.as_ref()));
 
-    match convert_to_jpg(url, &path) {
-        Ok(()) => Some(path),
-        Err(err) => {
-            event!(Level::ERROR, %err, "Error downloading thumbnail");
+    let Some(exit_code) = convert_to_jpg(url, &path)?.wait_timeout(Duration::from_secs(timeout))? else {
+        event!(Level::ERROR, "FFmpeg process timed out");
 
-            // We don't want to fail the whole process if the thumbnail download fails
-            None
-        }
+        return Err(io::Error::new(io::ErrorKind::TimedOut, "FFmpeg process timed out").into());
+    };
+
+    if !exit_code.success() {
+        event!(Level::ERROR, "FFmpeg exited with status `{exit_code}`");
+
+        return Err(io::Error::new(io::ErrorKind::Other, format!("FFmpeg exited with status `{exit_code}`")).into());
     }
+
+    Ok(path)
 }
 
 const RANGE_CHUNK_SIZE: i32 = 1024 * 1024 * 10;
@@ -115,7 +125,8 @@ pub fn video(
     max_file_size: u64,
     executable_ytdl_path: impl AsRef<str>,
     temp_dir_path: impl AsRef<Path>,
-    timeout: u64,
+    download_and_merge_timeout: u64,
+    thumbnail_timeout: u64,
 ) -> Result<VideoInFS, StreamErrorKind> {
     let mut combined_formats = video.get_combined_formats();
     combined_formats.sort_by_priority_and_skip_by_size(max_file_size);
@@ -145,11 +156,17 @@ pub fn video(
 
         Span::current().record("file_path", file_path.display().to_string());
 
-        download_video_to_path(&executable_ytdl_path, &video.original_url, extension, &temp_dir_path, timeout)?;
+        download_video_to_path(
+            &executable_ytdl_path,
+            &video.original_url,
+            extension,
+            &temp_dir_path,
+            download_and_merge_timeout,
+        )?;
 
         let thumbnail_path = video
             .thumbnail()
-            .and_then(|url| get_thumbnail_path(url, &video.id, &temp_dir_path))
+            .and_then(|url| get_thumbnail_path(url, &video.id, &temp_dir_path, thumbnail_timeout).ok())
             .or_else(|| get_best_thumbnail_path_in_dir(&temp_dir_path).ok().flatten());
 
         return Ok(VideoInFS::new(file_path, thumbnail_path));
@@ -176,12 +193,15 @@ pub fn video(
             event!(Level::WARN, %errno, "Error closing video read pipe");
         }
 
-        thread::spawn({
-            let client = client.clone();
-            let url = combined_format.video_format.url.to_owned();
+        thread::Builder::new()
+            .name("video_write_fd".to_owned())
+            .stack_size(16 * 1024)
+            .spawn({
+                let client = client.clone();
+                let url = combined_format.video_format.url.to_owned();
 
-            move || range_download_to_write(&client, url, filesize, unsafe { File::from_raw_fd(video_write_fd) })
-        });
+                move || range_download_to_write(&client, url, filesize, unsafe { File::from_raw_fd(video_write_fd) })
+            })?;
     } else {
         fcntl(video_read_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
 
@@ -198,12 +218,15 @@ pub fn video(
             event!(Level::WARN, %errno, "Error closing audio read pipe");
         }
 
-        thread::spawn({
-            let client = client.clone();
-            let url = combined_format.audio_format.url.to_owned();
+        thread::Builder::new()
+            .name("audio_write_fd".to_owned())
+            .stack_size(16 * 1024)
+            .spawn({
+                let client = client.clone();
+                let url = combined_format.audio_format.url.to_owned();
 
-            move || range_download_to_write(&client, url, filesize, unsafe { File::from_raw_fd(audio_write_fd) })
-        });
+                move || range_download_to_write(&client, url, filesize, unsafe { File::from_raw_fd(audio_write_fd) })
+            })?;
     } else {
         fcntl(audio_read_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
 
@@ -215,9 +238,11 @@ pub fn video(
         )?;
     };
 
-    let thumbnail_path = video.thumbnail().and_then(|url| get_thumbnail_path(url, &video.id, temp_dir_path));
+    let thumbnail_path = video
+        .thumbnail()
+        .and_then(|url| get_thumbnail_path(url, &video.id, temp_dir_path, thumbnail_timeout).ok());
 
-    let Some(exit_code) = merge_child.wait_timeout(Duration::from_secs(timeout))? else {
+    let Some(exit_code) = merge_child.wait_timeout(Duration::from_secs(download_and_merge_timeout))? else {
         event!(Level::ERROR, "FFmpeg process timed out");
 
         return Err(io::Error::new(io::ErrorKind::TimedOut, "FFmpeg process timed out").into());
@@ -251,7 +276,7 @@ pub fn audio_to_temp_dir(
     max_file_size: u64,
     executable_ytdl_path: impl AsRef<str>,
     temp_dir_path: impl AsRef<Path>,
-    timeout: u64,
+    download_timeout: u64,
 ) -> Result<AudioInFS, ToTempDirErrorKind> {
     let mut audio_formats = video.get_audio_formats();
     audio_formats.sort_by_priority_and_skip_by_size(max_file_size);
@@ -284,7 +309,7 @@ pub fn audio_to_temp_dir(
         audio_format.id,
         extension,
         &temp_dir_path,
-        timeout,
+        download_timeout,
     )?;
 
     event!(Level::DEBUG, "Audio downloaded");
