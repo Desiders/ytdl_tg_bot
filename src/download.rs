@@ -195,7 +195,7 @@ pub fn video(
 
         thread::Builder::new()
             .name("video_write_fd".to_owned())
-            .stack_size(16 * 1024)
+            .stack_size(64 * 1024)
             .spawn({
                 let client = client.clone();
                 let url = combined_format.video_format.url.to_owned();
@@ -220,7 +220,7 @@ pub fn video(
 
         thread::Builder::new()
             .name("audio_write_fd".to_owned())
-            .stack_size(16 * 1024)
+            .stack_size(64 * 1024)
             .spawn({
                 let client = client.clone();
                 let url = combined_format.audio_format.url.to_owned();
