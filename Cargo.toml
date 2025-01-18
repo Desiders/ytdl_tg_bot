@@ -23,7 +23,3 @@ futures-util = "0.3"
 backoff = "0.4"
 bytes = "1.5"
 wait-timeout = "0.2"
-
-[profile.dev]
-# Disabling debug info speeds up builds a bunch and we don't rely on it for debugging that much.
-debug = 0
