@@ -29,6 +29,7 @@ use uuid::Uuid;
 
 const GET_INFO_TIMEOUT: u64 = 45;
 const DOWNLOAD_MEDIA_TIMEOUT: u64 = 180;
+const THUMBNAIL_TIMEOUT: u64 = 10;
 const SEND_VIDEO_TIMEOUT: f32 = 60.0;
 const SEND_AUDIO_TIMEOUT: f32 = 60.0;
 const GET_MEDIA_OR_PLAYLIST_INFO_INLINE_QUERY_TIMEOUT: u64 = 12;
@@ -136,7 +137,16 @@ pub async fn video_download(
             let VideoInFS { path, thumbnail_path } = spawn_blocking({
                 let temp_dir_path = temp_dir.path().to_owned();
 
-                move || download::video(video, max_file_size, yt_dlp_full_path, temp_dir_path, DOWNLOAD_MEDIA_TIMEOUT)
+                move || {
+                    download::video(
+                        video,
+                        max_file_size,
+                        yt_dlp_full_path,
+                        temp_dir_path,
+                        DOWNLOAD_MEDIA_TIMEOUT,
+                        THUMBNAIL_TIMEOUT,
+                    )
+                }
             })
             .await??;
 
@@ -288,7 +298,16 @@ pub async fn video_download_quite(
             let VideoInFS { path, thumbnail_path } = spawn_blocking({
                 let temp_dir_path = temp_dir.path().to_owned();
 
-                move || download::video(video, max_file_size, yt_dlp_full_path, temp_dir_path, DOWNLOAD_MEDIA_TIMEOUT)
+                move || {
+                    download::video(
+                        video,
+                        max_file_size,
+                        yt_dlp_full_path,
+                        temp_dir_path,
+                        DOWNLOAD_MEDIA_TIMEOUT,
+                        THUMBNAIL_TIMEOUT,
+                    )
+                }
             })
             .await??;
 
@@ -618,6 +637,7 @@ pub async fn media_download_chosen_inline_result(
                         &yt_dlp_config.full_path,
                         temp_dir_path,
                         DOWNLOAD_MEDIA_TIMEOUT,
+                        THUMBNAIL_TIMEOUT,
                     )
                 }
             })
