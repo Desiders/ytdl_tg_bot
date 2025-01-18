@@ -29,7 +29,7 @@ down-docker:
     docker compose down
 
 # Build docker compose
-build-docker:
+docker-build:
     docker compose build
 
 # Update dependencies
