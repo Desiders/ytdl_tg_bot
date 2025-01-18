@@ -50,25 +50,10 @@ pub fn video(
 }
 
 #[instrument(skip_all)]
-fn get_thumbnail_path(
-    url: impl AsRef<str>,
-    id: impl AsRef<str>,
-    temp_dir_path: impl AsRef<Path>,
-    timeout: u64,
-) -> Result<PathBuf, io::Error> {
+fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_path: impl AsRef<Path>) -> Result<PathBuf, io::Error> {
     let path = temp_dir_path.as_ref().join(format!("{}.jpg", id.as_ref()));
 
-    let Some(exit_code) = convert_to_jpg(url, &path)?.wait_timeout(Duration::from_secs(timeout))? else {
-        event!(Level::ERROR, "FFmpeg process timed out");
-
-        return Err(io::Error::new(io::ErrorKind::TimedOut, "FFmpeg process timed out").into());
-    };
-
-    if !exit_code.success() {
-        event!(Level::ERROR, "FFmpeg exited with status `{exit_code}`");
-
-        return Err(io::Error::new(io::ErrorKind::Other, format!("FFmpeg exited with status `{exit_code}`")).into());
-    }
+    convert_to_jpg(url, &path)?;
 
     Ok(path)
 }
@@ -126,7 +111,6 @@ pub fn video(
     executable_ytdl_path: impl AsRef<str>,
     temp_dir_path: impl AsRef<Path>,
     download_and_merge_timeout: u64,
-    thumbnail_timeout: u64,
 ) -> Result<VideoInFS, StreamErrorKind> {
     let mut combined_formats = video.get_combined_formats();
     combined_formats.sort_by_priority_and_skip_by_size(max_file_size);
@@ -166,7 +150,7 @@ pub fn video(
 
         let thumbnail_path = video
             .thumbnail()
-            .and_then(|url| get_thumbnail_path(url, &video.id, &temp_dir_path, thumbnail_timeout).ok())
+            .and_then(|url| get_thumbnail_path(url, &video.id, &temp_dir_path).ok())
             .or_else(|| get_best_thumbnail_path_in_dir(&temp_dir_path).ok().flatten());
 
         return Ok(VideoInFS::new(file_path, thumbnail_path));
@@ -240,7 +224,7 @@ pub fn video(
 
     let thumbnail_path = video
         .thumbnail()
-        .and_then(|url| get_thumbnail_path(url, &video.id, temp_dir_path, thumbnail_timeout).ok());
+        .and_then(|url| get_thumbnail_path(url, &video.id, temp_dir_path).ok());
 
     let Some(exit_code) = merge_child.wait_timeout(Duration::from_secs(download_and_merge_timeout))? else {
         event!(Level::ERROR, "FFmpeg process timed out");

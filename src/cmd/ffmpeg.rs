@@ -2,7 +2,7 @@ use std::{
     io,
     os::fd::RawFd,
     path::Path,
-    process::{Child, Command, Stdio},
+    process::{Child, Command, ExitStatus, Stdio},
 };
 use tracing::instrument;
 
@@ -53,7 +53,7 @@ pub fn merge_streams(
 /// Convert image to `jpg` format.
 /// # Errors
 /// Returns [`io::Error`] if the spawn child process fails.
-pub fn convert_to_jpg(input_url: impl AsRef<str>, output_path: impl AsRef<Path>) -> Result<Child, io::Error> {
+pub fn convert_to_jpg(input_url: impl AsRef<str>, output_path: impl AsRef<Path>) -> Result<ExitStatus, io::Error> {
     let input_url = input_url.as_ref();
 
     Command::new("/usr/bin/ffmpeg")
@@ -69,5 +69,6 @@ pub fn convert_to_jpg(input_url: impl AsRef<str>, output_path: impl AsRef<Path>)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
-        .spawn()
+        .spawn()?
+        .wait()
 }

@@ -9,6 +9,7 @@ use crate::{
     models::{AudioInFS, TgAudioInPlaylist, TgVideoInPlaylist, VideoInFS},
 };
 
+use nix::libc;
 use std::sync::Arc;
 use telers::{
     enums::ParseMode,
@@ -29,7 +30,6 @@ use uuid::Uuid;
 
 const GET_INFO_TIMEOUT: u64 = 45;
 const DOWNLOAD_MEDIA_TIMEOUT: u64 = 180;
-const THUMBNAIL_TIMEOUT: u64 = 10;
 const SEND_VIDEO_TIMEOUT: f32 = 60.0;
 const SEND_AUDIO_TIMEOUT: f32 = 60.0;
 const GET_MEDIA_OR_PLAYLIST_INFO_INLINE_QUERY_TIMEOUT: u64 = 12;
@@ -137,16 +137,7 @@ pub async fn video_download(
             let VideoInFS { path, thumbnail_path } = spawn_blocking({
                 let temp_dir_path = temp_dir.path().to_owned();
 
-                move || {
-                    download::video(
-                        video,
-                        max_file_size,
-                        yt_dlp_full_path,
-                        temp_dir_path,
-                        DOWNLOAD_MEDIA_TIMEOUT,
-                        THUMBNAIL_TIMEOUT,
-                    )
-                }
+                move || download::video(video, max_file_size, yt_dlp_full_path, temp_dir_path, DOWNLOAD_MEDIA_TIMEOUT)
             })
             .await??;
 
@@ -216,6 +207,10 @@ pub async fn video_download(
     };
 
     send::media_groups(&bot, chat_id, input_media_list, Some(message_id), Some(SEND_AUDIO_TIMEOUT)).await?;
+
+    unsafe {
+        libc::malloc_trim(0);
+    }
 
     Ok(EventReturn::Finish)
 }
@@ -298,16 +293,7 @@ pub async fn video_download_quite(
             let VideoInFS { path, thumbnail_path } = spawn_blocking({
                 let temp_dir_path = temp_dir.path().to_owned();
 
-                move || {
-                    download::video(
-                        video,
-                        max_file_size,
-                        yt_dlp_full_path,
-                        temp_dir_path,
-                        DOWNLOAD_MEDIA_TIMEOUT,
-                        THUMBNAIL_TIMEOUT,
-                    )
-                }
+                move || download::video(video, max_file_size, yt_dlp_full_path, temp_dir_path, DOWNLOAD_MEDIA_TIMEOUT)
             })
             .await??;
 
@@ -375,6 +361,10 @@ pub async fn video_download_quite(
     };
 
     send::media_groups(&bot, chat_id, input_media_list, Some(message_id), Some(SEND_AUDIO_TIMEOUT)).await?;
+
+    unsafe {
+        libc::malloc_trim(0);
+    }
 
     Ok(EventReturn::Finish)
 }
@@ -558,6 +548,10 @@ pub async fn audio_download(
 
     send::media_groups(&bot, chat_id, input_media_list, Some(message_id), Some(SEND_AUDIO_TIMEOUT)).await?;
 
+    unsafe {
+        libc::malloc_trim(0);
+    }
+
     Ok(EventReturn::Finish)
 }
 
@@ -637,7 +631,6 @@ pub async fn media_download_chosen_inline_result(
                         &yt_dlp_config.full_path,
                         temp_dir_path,
                         DOWNLOAD_MEDIA_TIMEOUT,
-                        THUMBNAIL_TIMEOUT,
                     )
                 }
             })
@@ -753,6 +746,10 @@ pub async fn media_download_chosen_inline_result(
             None,
         )
         .await?;
+    }
+
+    unsafe {
+        libc::malloc_trim(0);
     }
 
     Ok(EventReturn::Finish)
