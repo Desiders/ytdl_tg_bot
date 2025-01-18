@@ -6,9 +6,15 @@ host := `uname -a`
 run:
     cargo run
 
+run-with-pid:
+    cargo run & echo $!
+
 # Run release cargo
 run-release:
     cargo run --release
+
+run-release-with-pid:
+    cargo run --release & echo $!
 
 # Run docker compose with build
 run-docker-build:
