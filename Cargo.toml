@@ -4,7 +4,7 @@ version = "1.1.0"
 edition = "2021"
 
 [dependencies]
-telers = "1.0.0-alpha.23"
+telers = "1.0.0-alpha.24"
 tokio = { version = "1.36", features = ["rt-multi-thread"] }
 tokio-util = "0.7"
 nix = { version = "0.27", features = ["fs", "process"] }
@@ -15,7 +15,7 @@ url = "2.5"
 uuid = "1.7"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-thiserror = "1.0"
+thiserror = "2.0"
 async-trait = "0.1"
 tempfile = "3.9"
 lazy_static = "1.4"
