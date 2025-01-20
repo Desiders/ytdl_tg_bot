@@ -33,7 +33,7 @@ impl VideoInYT {
         let mut format_kinds = vec![];
 
         for format in &self.formats {
-            let Ok(format) = format.kind() else {
+            let Ok(format) = format.kind(self.duration) else {
                 continue;
             };
 
@@ -47,7 +47,7 @@ impl VideoInYT {
         let mut formats = vec![];
 
         for format in &self.formats {
-            let Ok(format) = format.kind() else {
+            let Ok(format) = format.kind(self.duration) else {
                 continue;
             };
 

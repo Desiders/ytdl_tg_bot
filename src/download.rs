@@ -113,7 +113,7 @@ pub fn video(
     download_and_merge_timeout: u64,
 ) -> Result<VideoInFS, StreamErrorKind> {
     let mut combined_formats = video.get_combined_formats();
-    combined_formats.sort_by_priority_and_skip_by_size(max_file_size);
+    combined_formats.sort(max_file_size);
 
     let Some(combined_format) = combined_formats.first().cloned() else {
         event!(Level::WARN, %combined_formats, "No video format found");

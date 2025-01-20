@@ -616,6 +616,7 @@ pub struct Any {
     pub container: Option<String>,
     pub abr: Option<f64>,
     pub vbr: Option<f64>,
+    pub tbr: Option<f64>,
     pub height: Option<f64>,
     pub width: Option<f64>,
     pub filesize: Option<f64>,
@@ -623,6 +624,15 @@ pub struct Any {
 
     acodec: Codec,
     vcodec: Codec,
+}
+
+impl Any {
+    pub const fn filesize_from_tbr(&self, duration: Option<f64>) -> Option<f64> {
+        match (self.tbr, duration) {
+            (Some(tbr), Some(duration)) => Some(duration * tbr * 1000.0 / 8.0),
+            _ => None,
+        }
+    }
 }
 
 #[allow(clippy::similar_names)]
@@ -643,6 +653,7 @@ impl<'de> Deserialize<'de> for Any {
             container: Option<String>,
             abr: Option<f64>,
             vbr: Option<f64>,
+            tbr: Option<f64>,
             height: Option<f64>,
             width: Option<f64>,
             filesize: Option<f64>,
@@ -678,6 +689,7 @@ impl<'de> Deserialize<'de> for Any {
             container: raw.container,
             abr: raw.abr,
             vbr: raw.vbr,
+            tbr: raw.tbr,
             height: raw.height,
             width: raw.width,
             filesize: raw.filesize,
@@ -688,7 +700,7 @@ impl<'de> Deserialize<'de> for Any {
 
 impl Any {
     #[allow(clippy::similar_names)]
-    pub fn kind(&self) -> Result<Kind<'_>, FormatError<'_>> {
+    pub fn kind(&self, duration: Option<f64>) -> Result<Kind<'_>, FormatError<'_>> {
         let acodec = &self.acodec;
         let vcodec = &self.vcodec;
 
@@ -711,7 +723,7 @@ impl Any {
                 acodec,
                 self.abr,
                 self.filesize,
-                self.filesize_approx,
+                self.filesize_approx.or(self.filesize_from_tbr(duration)),
             );
 
             let video_format = Video::new(
@@ -723,7 +735,7 @@ impl Any {
                 self.height,
                 self.width,
                 self.filesize,
-                self.filesize_approx,
+                self.filesize_approx.or(self.filesize_from_tbr(duration)),
             );
 
             Ok(Kind::Combined(audio_format, video_format))
@@ -736,7 +748,7 @@ impl Any {
                 AudioCodec::try_from("mp3")?,
                 self.abr,
                 self.filesize,
-                self.filesize_approx,
+                self.filesize_approx.or(self.filesize_from_tbr(duration)),
             );
 
             let video_format = Video::new(
@@ -748,7 +760,7 @@ impl Any {
                 self.vbr,
                 self.width,
                 self.filesize,
-                self.filesize_approx,
+                self.filesize_approx.or(self.filesize_from_tbr(duration)),
             );
 
             Ok(Kind::Combined(audio_format, video_format))
@@ -760,7 +772,7 @@ impl Any {
                 acodec,
                 self.abr,
                 self.filesize,
-                self.filesize_approx,
+                self.filesize_approx.or(self.filesize_from_tbr(duration)),
             );
 
             Ok(Kind::Audio(audio_format))
@@ -788,7 +800,7 @@ impl Any {
                 self.height,
                 self.width,
                 self.filesize,
-                self.filesize_approx,
+                self.filesize_approx.or(self.filesize_from_tbr(duration)),
             );
 
             Ok(Kind::Video(video_format))
@@ -801,7 +813,7 @@ impl Any {
                         acodec,
                         self.abr,
                         self.filesize,
-                        self.filesize_approx,
+                        self.filesize_approx.or(self.filesize_from_tbr(duration)),
                     );
 
                     Ok(Kind::Audio(audio_format))
@@ -820,7 +832,7 @@ impl Any {
                         self.height,
                         self.width,
                         self.filesize,
-                        self.filesize_approx,
+                        self.filesize_approx.or(self.filesize_from_tbr(duration)),
                     );
 
                     Ok(Kind::Video(video_format))
@@ -830,13 +842,5 @@ impl Any {
         } else {
             Err(FormatError::UnknownFormat)
         }
-    }
-}
-
-impl<'a> TryFrom<&'a Any> for Kind<'a> {
-    type Error = FormatError<'a>;
-
-    fn try_from(value: &'a Any) -> Result<Self, Self::Error> {
-        value.kind()
     }
 }
