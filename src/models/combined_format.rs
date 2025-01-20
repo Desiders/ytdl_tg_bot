@@ -1,6 +1,6 @@
 use super::format;
 
-use std::cmp::Reverse;
+use std::cmp::Ordering;
 use std::{
     fmt::{self, Display, Formatter},
     ops::Deref,
@@ -96,47 +96,62 @@ impl<'a> Formats<'a> {
 }
 
 impl<'a> Formats<'a> {
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    pub fn skip_with_size_greater_than(&mut self, size: u64) {
-        self.0.retain(|combined_format| {
-            let Some(filesize_or_approx) = combined_format.filesize_or_approx() else {
-                // For cases when filesize `unknown`
-                return true;
-            };
-
-            filesize_or_approx.round() as u64 <= size
+    pub fn filter_by_max_size(&mut self, max_size: u64) {
+        self.0.retain(|format| {
+            format
+                .filesize_or_approx()
+                .map(|size| size.round() as u64 <= max_size)
+                .unwrap_or(true)
         });
     }
 
-    pub fn skip_with_priority_greater_than(&mut self, priority: u8) {
-        self.0.retain(|combined_format| combined_format.get_priority() <= priority);
+    pub fn sort_formats(&mut self, max_size: u64) {
+        let max_vbr = self
+            .0
+            .iter()
+            .map(|format| format.get_vbr_plus_abr())
+            .fold(0.0, |max, vbr| (max as f32).max(vbr as f32)) as f64;
+
+        self.0.sort_by(|a, b| {
+            let vbr_weight_a = a.get_vbr_plus_abr() / max_vbr;
+            let vbr_weight_b = b.get_vbr_plus_abr() / max_vbr;
+
+            let size_weight_a = match a.filesize_or_approx() {
+                Some(size) => {
+                    let distance = (max_size as f64 - size).abs();
+                    if distance <= max_size as f64 * 0.2 {
+                        1.0
+                    } else {
+                        0.5
+                    }
+                }
+                None => 0.3,
+            };
+            let size_weight_b = match b.filesize_or_approx() {
+                Some(size) => {
+                    let distance = (max_size as f64 - size).abs();
+                    if distance <= max_size as f64 * 0.2 {
+                        1.0
+                    } else {
+                        0.5
+                    }
+                }
+                None => 0.3,
+            };
+
+            let priority_weight_a = 1.0 / (a.get_priority() as f64 + 1.0);
+            let priority_weight_b = 1.0 / (b.get_priority() as f64 + 1.0);
+
+            let total_weight_a = vbr_weight_a + size_weight_a * 2.0 + priority_weight_a;
+            let total_weight_b = vbr_weight_b + size_weight_b * 2.0 + priority_weight_b;
+
+            total_weight_b.partial_cmp(&total_weight_a).unwrap_or(Ordering::Equal)
+        });
     }
 
-    pub fn sort_by_priority(&mut self) {
-        self.0.sort_by_key(Format::get_priority);
-    }
-
-    pub fn sort_by_filesize(&mut self) {
-        self.0
-            .sort_by_key(|format| Reverse(format.filesize_or_approx().unwrap_or(0.0) as i64));
-    }
-
-    pub fn sort_by_vbr_plus_abr(&mut self) {
-        self.0.sort_by_key(|format| Reverse(format.get_vbr_plus_abr() as i64));
-    }
-
-    pub fn sort_by_priority_and_skip_by_size(&mut self, size: u64) {
-        self.skip_with_size_greater_than(size);
-        self.sort_by_priority();
-
-        match self.0.first() {
-            Some(format) => self.skip_with_priority_greater_than(format.get_priority()),
-            None => {}
-        }
-
-        self.sort_by_filesize();
-        self.sort_by_vbr_plus_abr();
-        self.sort_by_priority();
+    pub fn sort(&mut self, max_size: u64) {
+        self.filter_by_max_size(max_size);
+        self.sort_formats(max_size);
     }
 }
 
