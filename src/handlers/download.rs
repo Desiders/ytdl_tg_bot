@@ -134,12 +134,8 @@ pub async fn video_download(
         })?;
 
         handles.push(tokio::spawn(async move {
-            let VideoInFS { path, thumbnail_path } = spawn_blocking({
-                let temp_dir_path = temp_dir.path().to_owned();
-
-                move || download::video(video, max_file_size, yt_dlp_full_path, temp_dir_path, DOWNLOAD_MEDIA_TIMEOUT)
-            })
-            .await??;
+            let VideoInFS { path, thumbnail_path } =
+                download::video(video, max_file_size, yt_dlp_full_path, temp_dir.path(), DOWNLOAD_MEDIA_TIMEOUT).await?;
 
             event!(Level::TRACE, "Send video");
 
@@ -290,12 +286,8 @@ pub async fn video_download_quite(
         })?;
 
         handles.push(tokio::spawn(async move {
-            let VideoInFS { path, thumbnail_path } = spawn_blocking({
-                let temp_dir_path = temp_dir.path().to_owned();
-
-                move || download::video(video, max_file_size, yt_dlp_full_path, temp_dir_path, DOWNLOAD_MEDIA_TIMEOUT)
-            })
-            .await??;
+            let VideoInFS { path, thumbnail_path } =
+                download::video(video, max_file_size, yt_dlp_full_path, temp_dir.path(), DOWNLOAD_MEDIA_TIMEOUT).await?;
 
             event!(Level::TRACE, "Send video");
 
@@ -621,20 +613,14 @@ pub async fn media_download_chosen_inline_result(
             #[allow(clippy::cast_possible_truncation)]
             let (height, width, duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
 
-            let VideoInFS { path, thumbnail_path } = spawn_blocking({
-                let temp_dir_path = temp_dir.path().to_owned();
-
-                move || {
-                    download::video(
-                        video,
-                        yt_dlp_config.max_file_size,
-                        &yt_dlp_config.full_path,
-                        temp_dir_path,
-                        DOWNLOAD_MEDIA_TIMEOUT,
-                    )
-                }
-            })
-            .await??;
+            let VideoInFS { path, thumbnail_path } = download::video(
+                video,
+                yt_dlp_config.max_file_size,
+                yt_dlp_config.full_path,
+                temp_dir.path(),
+                DOWNLOAD_MEDIA_TIMEOUT,
+            )
+            .await?;
 
             let message = send::with_retries(
                 &bot,
