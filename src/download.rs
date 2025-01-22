@@ -202,7 +202,9 @@ pub async fn video(
         )?;
     };
 
-    let thumbnail_path = None;
+    let thumbnail_path = video
+        .thumbnail()
+        .and_then(|url| get_thumbnail_path(url, &video.id, temp_dir_path).ok());
 
     let exit_code = match timeout(Duration::from_secs(download_and_merge_timeout), merge_child.await??.wait()).await {
         Ok(Ok(exit_code)) => exit_code,

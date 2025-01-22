@@ -57,20 +57,44 @@ impl VideoInYT {
     }
 
     pub fn thumbnail(&self) -> Option<&str> {
-        match self.thumbnails.as_deref().and_then(|thumbnails| {
-            for thumbnail in thumbnails {
-                if let (Some(width), Some(height)) = (thumbnail.width, thumbnail.height) {
-                    if (width - 405.0).abs() < 0.1 && (height - 720.0).abs() < 0.1 {
-                        return thumbnail.url.as_deref();
-                    }
-                }
+        let (video_width, video_height) = match (self.width, self.height) {
+            (Some(w), Some(h)) => (w as f32, h as f32),
+            _ => {
+                return self.thumbnail.as_deref().or(self
+                    .thumbnails
+                    .as_deref()
+                    .and_then(|thumbnails| thumbnails[thumbnails.len() - 1].url.as_deref()))
             }
+        };
+        let video_ratio = video_width / video_height;
 
-            self.thumbnail.as_deref().or(thumbnails[thumbnails.len() - 1].url.as_deref())
-        }) {
-            Some(thumbnail) => Some(thumbnail),
-            None => self.thumbnail.as_deref(),
+        let mut best_thumbnail = None;
+        let mut best_score = f32::MAX;
+
+        for thumb in self.thumbnails.as_deref().unwrap_or_default() {
+            let (thumb_width, thumb_height) = match (thumb.width, thumb.height) {
+                (Some(w), Some(h)) => (w, h),
+                _ => continue,
+            };
+
+            let thumb_ratio = thumb_width as f32 / thumb_height as f32;
+            let ratio_diff = (video_ratio - thumb_ratio).abs();
+            let size_diff = ((video_width as i32 - thumb_width as i32).abs() + (video_height as i32 - thumb_height as i32).abs()) as f32;
+
+            let score = ratio_diff * 10.0 + size_diff;
+
+            if score < best_score {
+                best_score = score;
+                best_thumbnail = Some(thumb);
+            }
         }
+
+        best_thumbnail
+            .and_then(|thumbnail| thumbnail.url.as_deref())
+            .or(self.thumbnail.as_deref().or(self
+                .thumbnails
+                .as_deref()
+                .and_then(|thumbnails| thumbnails[thumbnails.len() - 1].url.as_deref())))
     }
 }
 
