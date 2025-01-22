@@ -1,8 +1,8 @@
 use std::{
     io,
-    os::fd::RawFd,
+    os::fd::{AsRawFd, OwnedFd},
     path::Path,
-    process::{Child, Command, ExitStatus, Stdio},
+    process::{Command, ExitStatus, Stdio},
 };
 use tracing::instrument;
 
@@ -11,23 +11,23 @@ use tracing::instrument;
 /// Returns [`io::Error`] if the spawn child process fails.
 /// # Returns
 /// Returns the child process
-#[instrument(skip_all, fields(%video_fd, %audio_fd, output_path = %output_path.as_ref().as_os_str().to_string_lossy()))]
-pub fn merge_streams(
-    video_fd: RawFd,
-    audio_fd: RawFd,
+#[instrument(skip_all, fields(video_fd = video_fd.as_raw_fd(), audio_fd = audio_fd.as_raw_fd(), output_path = %output_path.as_ref().as_os_str().to_string_lossy()))]
+pub async fn merge_streams(
+    video_fd: OwnedFd,
+    audio_fd: OwnedFd,
     extension: impl AsRef<str>,
     output_path: impl AsRef<Path>,
-) -> Result<Child, io::Error> {
-    Command::new("/usr/bin/ffmpeg")
+) -> Result<tokio::process::Child, io::Error> {
+    tokio::process::Command::new("/usr/bin/ffmpeg")
         .args([
             "-y",
             "-hide_banner",
             "-loglevel",
             "error",
             "-i",
-            &format!("pipe:{video_fd}"),
+            &format!("pipe:{}", video_fd.as_raw_fd()),
             "-i",
-            &format!("pipe:{audio_fd}"),
+            &format!("pipe:{}", audio_fd.as_raw_fd()),
             "-map",
             "0:v",
             "-map",
