@@ -61,6 +61,7 @@ fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_path: 
 
 const RANGE_CHUNK_SIZE: i32 = 1024 * 1024 * 10;
 
+#[allow(clippy::cast_possible_truncation)]
 async fn range_download_to_write<W: AsyncWriteExt + Unpin>(
     url: impl AsRef<str>,
     filesize: f64,
@@ -102,6 +103,7 @@ async fn range_download_to_write<W: AsyncWriteExt + Unpin>(
 
 #[cfg(target_family = "unix")]
 #[instrument(skip_all, fields(url = %video.original_url, format_id, file_path, extension))]
+#[allow(clippy::unnecessary_to_owned)]
 pub async fn video(
     video: VideoInYT,
     max_file_size: u64,
@@ -124,7 +126,7 @@ pub async fn video(
 
     let extension = combined_format.get_extension();
 
-    Span::current().record("format_id", &combined_format.format_id());
+    Span::current().record("format_id", combined_format.format_id());
     Span::current().record("extension", extension);
 
     event!(Level::DEBUG, %combined_format, "Got combined format");

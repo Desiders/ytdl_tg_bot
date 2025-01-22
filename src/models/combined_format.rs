@@ -96,21 +96,20 @@ impl<'a> Formats<'a> {
 }
 
 impl<'a> Formats<'a> {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub fn filter_by_max_size(&mut self, max_size: u64) {
-        self.0.retain(|format| {
-            format
-                .filesize_or_approx()
-                .map(|size| size.round() as u64 <= max_size)
-                .unwrap_or(true)
-        });
+        self.0
+            .retain(|format| format.filesize_or_approx().map_or(true, |size| size.round() as u64 <= max_size));
     }
 
+    #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss, clippy::unnecessary_cast)]
     pub fn sort_formats(&mut self, max_size: u64) {
-        let max_vbr = self
-            .0
-            .iter()
-            .map(|format| format.get_vbr_plus_abr())
-            .fold(0.0, |max, vbr| (max as f32).max(vbr as f32)) as f64;
+        let max_vbr = f64::from(
+            self.0
+                .iter()
+                .map(Format::get_vbr_plus_abr)
+                .fold(0.0, |max, vbr| (max as f32).max(vbr as f32)),
+        );
 
         self.0.sort_by(|a, b| {
             let vbr_weight_a = a.get_vbr_plus_abr() / max_vbr;
@@ -139,8 +138,8 @@ impl<'a> Formats<'a> {
                 None => 0.3,
             };
 
-            let priority_weight_a = 1.0 / (a.get_priority() as f64 + 1.0);
-            let priority_weight_b = 1.0 / (b.get_priority() as f64 + 1.0);
+            let priority_weight_a = 1.0 / (f64::from(a.get_priority()) + 1.0);
+            let priority_weight_b = 1.0 / (f64::from(b.get_priority()) + 1.0);
 
             let total_weight_a = vbr_weight_a + size_weight_a * 2.0 + priority_weight_a;
             let total_weight_b = vbr_weight_b + size_weight_b * 2.0 + priority_weight_b;
