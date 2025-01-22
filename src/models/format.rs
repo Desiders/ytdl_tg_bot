@@ -610,8 +610,6 @@ impl Codec {
 pub struct Any {
     pub id: String,
     pub url: String,
-    pub format: Option<String>,
-    pub format_note: Option<String>,
     pub ext: String,
     pub container: Option<String>,
     pub abr: Option<f64>,
@@ -644,8 +642,6 @@ impl<'de> Deserialize<'de> for Any {
         #[derive(Debug, Deserialize)]
         struct Raw {
             format_id: String,
-            format: Option<String>,
-            format_note: Option<String>,
             url: String,
             ext: String,
             acodec: Option<String>,
@@ -680,8 +676,6 @@ impl<'de> Deserialize<'de> for Any {
 
         Ok(Self {
             id: raw.format_id,
-            format: raw.format,
-            format_note: raw.format_note,
             url: raw.url,
             ext: raw.ext,
             acodec,
@@ -699,7 +693,7 @@ impl<'de> Deserialize<'de> for Any {
 }
 
 impl Any {
-    #[allow(clippy::similar_names)]
+    #[allow(clippy::similar_names, clippy::too_many_lines)]
     pub fn kind(&self, duration: Option<f64>) -> Result<Kind<'_>, FormatError<'_>> {
         let acodec = &self.acodec;
         let vcodec = &self.vcodec;

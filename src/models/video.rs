@@ -5,11 +5,9 @@ use std::{collections::VecDeque, ops::Deref, path::PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Thumbnail {
-    pub id: Option<String>,
     pub width: Option<f64>,
     pub height: Option<f64>,
     pub url: Option<String>,
-    pub filesize: Option<i64>,
 }
 
 #[allow(clippy::module_name_repetitions)]
@@ -17,7 +15,6 @@ pub struct Thumbnail {
 pub struct VideoInYT {
     pub id: String,
     pub title: Option<String>,
-    pub description: Option<String>,
     pub thumbnail: Option<String>,
     pub thumbnails: Option<Vec<Thumbnail>>,
     pub original_url: String,
@@ -63,7 +60,7 @@ impl VideoInYT {
         match self.thumbnails.as_deref().and_then(|thumbnails| {
             for thumbnail in thumbnails {
                 if let (Some(width), Some(height)) = (thumbnail.width, thumbnail.height) {
-                    if width == 405.0 && height == 720.0 {
+                    if (width - 405.0).abs() < 0.1 && (height - 720.0).abs() < 0.1 {
                         return thumbnail.url.as_deref();
                     }
                 }
