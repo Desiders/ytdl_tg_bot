@@ -116,7 +116,7 @@ async fn range_download_to_write<W: AsyncWriteExt + Unpin>(
 #[allow(clippy::unnecessary_to_owned)]
 pub async fn video(
     video: VideoInYT,
-    max_file_size: u64,
+    max_file_size: u32,
     executable_ytdl_path: impl AsRef<str>,
     temp_dir_path: impl AsRef<Path>,
     download_and_merge_timeout: u64,
@@ -255,7 +255,7 @@ pub enum ToTempDirErrorKind {
 pub fn audio_to_temp_dir(
     video: VideoInYT,
     video_id_or_url: impl AsRef<str>,
-    max_file_size: u64,
+    max_file_size: u32,
     executable_ytdl_path: impl AsRef<str>,
     temp_dir_path: impl AsRef<Path>,
     download_timeout: u64,
