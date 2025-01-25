@@ -15,7 +15,7 @@ pub struct Bot {
 #[derive(Clone, Debug)]
 pub struct YtDlp {
     pub full_path: String,
-    pub max_file_size: u64,
+    pub max_file_size: u32,
 }
 
 #[derive(Clone, Debug)]

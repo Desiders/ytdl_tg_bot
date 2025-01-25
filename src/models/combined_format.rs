@@ -75,7 +75,7 @@ impl<'a> Format<'a> {
         self.video_format.get_priority() + self.audio_format.get_priority()
     }
 
-    pub fn get_vbr_plus_abr(&self) -> f64 {
+    pub fn get_vbr_plus_abr(&self) -> f32 {
         self.video_format.vbr.unwrap_or(0.0) + self.audio_format.abr.unwrap_or(0.0)
     }
 }
@@ -87,7 +87,7 @@ impl Display for Format<'_> {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct Formats<'a>(pub Vec<Format<'a>>);
+pub struct Formats<'a>(Vec<Format<'a>>);
 
 impl<'a> Formats<'a> {
     pub fn push(&mut self, combined_format: Format<'a>) {
@@ -96,50 +96,47 @@ impl<'a> Formats<'a> {
 }
 
 impl<'a> Formats<'a> {
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    pub fn filter_by_max_size(&mut self, max_size: u64) {
+    fn filter_by_max_size(&mut self, max_size: f64) {
         self.0
-            .retain(|format| format.filesize_or_approx().map_or(true, |size| size.round() as u64 <= max_size));
+            .retain(|format| format.filesize_or_approx().map_or(true, |size| size <= max_size));
     }
 
-    #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss, clippy::unnecessary_cast)]
-    pub fn sort_formats(&mut self, max_size: u64) {
-        let max_vbr = f64::from(
-            self.0
-                .iter()
-                .map(Format::get_vbr_plus_abr)
-                .fold(0.0, |max, vbr| (max as f32).max(vbr as f32)),
-        );
+    fn sort_formats(&mut self, max_size: f64) {
+        fn calculate_size_weight(format: &Format, max_size: f64) -> f32 {
+            match format.filesize_or_approx() {
+                Some(size) => {
+                    let distance = (max_size - size).abs();
+                    if distance <= max_size * 0.2 {
+                        (1.0 - (distance / (max_size * 0.2)).min(1.0) * 0.2) as f32
+                    } else {
+                        (0.5 - (((distance - max_size * 0.2) / (max_size * 0.8)).min(1.0)) * 0.2) as f32
+                    }
+                }
+                None => 0.3,
+            }
+        }
+
+        let max_vbr = self
+            .0
+            .iter()
+            .map(Format::get_vbr_plus_abr)
+            .fold(0.0, |max, vbr| (max as f32).max(vbr));
 
         self.0.sort_by(|a, b| {
-            let vbr_weight_a = a.get_vbr_plus_abr() / max_vbr;
-            let vbr_weight_b = b.get_vbr_plus_abr() / max_vbr;
+            let mut vbr_weight_a = a.get_vbr_plus_abr() / max_vbr;
+            if vbr_weight_a.is_nan() {
+                vbr_weight_a = 0.0;
+            }
+            let mut vbr_weight_b = b.get_vbr_plus_abr() / max_vbr;
+            if vbr_weight_b.is_nan() {
+                vbr_weight_b = 0.0;
+            }
 
-            let size_weight_a = match a.filesize_or_approx() {
-                Some(size) => {
-                    let distance = (max_size as f64 - size).abs();
-                    if distance <= max_size as f64 * 0.2 {
-                        1.0
-                    } else {
-                        0.5
-                    }
-                }
-                None => 0.3,
-            };
-            let size_weight_b = match b.filesize_or_approx() {
-                Some(size) => {
-                    let distance = (max_size as f64 - size).abs();
-                    if distance <= max_size as f64 * 0.2 {
-                        1.0
-                    } else {
-                        0.5
-                    }
-                }
-                None => 0.3,
-            };
+            let size_weight_a = calculate_size_weight(a, max_size);
+            let size_weight_b = calculate_size_weight(b, max_size);
 
-            let priority_weight_a = 1.0 / (f64::from(a.get_priority()) + 1.0);
-            let priority_weight_b = 1.0 / (f64::from(b.get_priority()) + 1.0);
+            let priority_weight_a = 1.0 / (f32::from(a.get_priority()) + 1.0);
+            let priority_weight_b = 1.0 / (f32::from(b.get_priority()) + 1.0);
 
             let total_weight_a = vbr_weight_a + size_weight_a * 2.0 + priority_weight_a;
             let total_weight_b = vbr_weight_b + size_weight_b * 2.0 + priority_weight_b;
@@ -148,7 +145,9 @@ impl<'a> Formats<'a> {
         });
     }
 
-    pub fn sort(&mut self, max_size: u64) {
+    pub fn sort(&mut self, max_size: u32) {
+        let max_size = f64::from(max_size);
+
         self.filter_by_max_size(max_size);
         self.sort_formats(max_size);
     }

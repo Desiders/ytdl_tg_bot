@@ -374,9 +374,9 @@ pub struct Video<'a> {
     pub url: &'a str,
     pub codec: Option<VideoCodec<'a>>,
     pub container: Container,
-    pub vbr: Option<f64>,
-    pub height: Option<f64>,
-    pub width: Option<f64>,
+    pub vbr: Option<f32>,
+    pub height: Option<f32>,
+    pub width: Option<f32>,
     pub filesize: Option<f64>,
     pub filesize_approx: Option<f64>,
 }
@@ -388,9 +388,9 @@ impl<'a> Video<'a> {
         url: &'a str,
         codec: Option<VideoCodec<'a>>,
         container: Container,
-        vbr: Option<f64>,
-        height: Option<f64>,
-        width: Option<f64>,
+        vbr: Option<f32>,
+        height: Option<f32>,
+        width: Option<f32>,
         filesize: Option<f64>,
         filesize_approx: Option<f64>,
     ) -> Self {
@@ -442,8 +442,8 @@ impl Display for Video<'_> {
             container = self.container,
             codec = self.codec.as_ref().map_or("unknown", VideoCodec::as_str),
             resolution = self.resolution(),
-            filesize_kb = self.filesize_or_approx().map_or(0.0, |filesize| filesize.round() / 1024.0),
-            filesize_mb = self.filesize_or_approx().map_or(0.0, |filesize| filesize.round() / 1024.0 / 1024.0),
+            filesize_kb = self.filesize_or_approx().map_or(0.0, |filesize| filesize / 1024.0),
+            filesize_mb = self.filesize_or_approx().map_or(0.0, |filesize| filesize / 1024.0 / 1024.0),
         )
     }
 }
@@ -453,7 +453,7 @@ pub struct Audio<'a> {
     pub id: &'a str,
     pub url: &'a str,
     pub codec: AudioCodec<'a>,
-    pub abr: Option<f64>,
+    pub abr: Option<f32>,
     pub filesize: Option<f64>,
     pub filesize_approx: Option<f64>,
 }
@@ -463,7 +463,7 @@ impl<'a> Audio<'a> {
         id: &'a str,
         url: &'a str,
         codec: AudioCodec<'a>,
-        abr: Option<f64>,
+        abr: Option<f32>,
         filesize: Option<f64>,
         filesize_approx: Option<f64>,
     ) -> Self {
@@ -501,8 +501,8 @@ impl Display for Audio<'_> {
             "{id} {codec} {filesize_kb:.2}KB ({filesize_mb:.2}MB)",
             id = self.id,
             codec = self.codec,
-            filesize_kb = self.filesize_or_approx().map_or(0.0, |filesize| filesize.round() / 1024.0),
-            filesize_mb = self.filesize_or_approx().map_or(0.0, |filesize| filesize.round() / 1024.0 / 1024.0),
+            filesize_kb = self.filesize_or_approx().map_or(0.0, |filesize| filesize / 1024.0),
+            filesize_mb = self.filesize_or_approx().map_or(0.0, |filesize| filesize / 1024.0 / 1024.0),
         )
     }
 }
@@ -511,24 +511,23 @@ impl Display for Audio<'_> {
 pub struct Audios<'a>(pub Vec<Audio<'a>>);
 
 impl<'a> Audios<'a> {
-    #[allow(clippy::cast_precision_loss)]
-    pub fn skip_with_size_greater_than(&mut self, size: u64) {
+    fn skip_with_size_greater_than(&mut self, size: f64) {
         self.0.retain(|audio| {
             let Some(filesize) = audio.filesize else {
                 return true;
             };
 
-            filesize <= (size as f64)
+            filesize <= size
         });
     }
 
-    pub fn sort_by_format_id_priority(&mut self) {
+    fn sort_by_format_id_priority(&mut self) {
         self.0.sort_by_key(Audio::get_priority);
     }
 
-    pub fn sort_by_priority_and_skip_by_size(&mut self, size: u64) {
+    pub fn sort_by_priority_and_skip_by_size(&mut self, size: u32) {
         self.sort_by_format_id_priority();
-        self.skip_with_size_greater_than(size);
+        self.skip_with_size_greater_than(f64::from(size));
     }
 }
 
@@ -612,11 +611,11 @@ pub struct Any {
     pub url: String,
     pub ext: String,
     pub container: Option<String>,
-    pub abr: Option<f64>,
-    pub vbr: Option<f64>,
-    pub tbr: Option<f64>,
-    pub height: Option<f64>,
-    pub width: Option<f64>,
+    pub abr: Option<f32>,
+    pub vbr: Option<f32>,
+    pub tbr: Option<f32>,
+    pub height: Option<f32>,
+    pub width: Option<f32>,
     pub filesize: Option<f64>,
     pub filesize_approx: Option<f64>,
 
@@ -625,9 +624,9 @@ pub struct Any {
 }
 
 impl Any {
-    pub const fn filesize_from_tbr(&self, duration: Option<f64>) -> Option<f64> {
+    pub fn filesize_from_tbr(&self, duration: Option<f64>) -> Option<f64> {
         match (self.tbr, duration) {
-            (Some(tbr), Some(duration)) => Some(duration * tbr * 1000.0 / 8.0),
+            (Some(tbr), Some(duration)) => Some(duration * f64::from(tbr) * 1000.0 / 8.0),
             _ => None,
         }
     }
@@ -647,11 +646,11 @@ impl<'de> Deserialize<'de> for Any {
             acodec: Option<String>,
             vcodec: Option<String>,
             container: Option<String>,
-            abr: Option<f64>,
-            vbr: Option<f64>,
-            tbr: Option<f64>,
-            height: Option<f64>,
-            width: Option<f64>,
+            abr: Option<f32>,
+            vbr: Option<f32>,
+            tbr: Option<f32>,
+            height: Option<f32>,
+            width: Option<f32>,
             filesize: Option<f64>,
             filesize_approx: Option<f64>,
         }
