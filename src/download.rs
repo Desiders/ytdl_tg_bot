@@ -77,7 +77,12 @@ async fn range_download_to_write<W: AsyncWriteExt + Unpin>(
         event!(Level::TRACE, start, end, "Download chunk");
 
         if end >= filesize as i32 {
-            let mut stream = client.get(format!("{url}&range={start}-")).send().await?.bytes_stream();
+            let mut stream = client
+                .get(url)
+                .header("Range", format!("bytes={start}-"))
+                .send()
+                .await?
+                .bytes_stream();
 
             while let Some(chunk_res) = stream.next().await {
                 let chunk = chunk_res?;
@@ -87,7 +92,12 @@ async fn range_download_to_write<W: AsyncWriteExt + Unpin>(
             break;
         }
 
-        let mut stream = client.get(format!("{url}&range={start}-{end}")).send().await?.bytes_stream();
+        let mut stream = client
+            .get(url)
+            .header("Range", format!("bytes={start}-{end}"))
+            .send()
+            .await?
+            .bytes_stream();
 
         while let Some(chunk_res) = stream.next().await {
             let chunk = chunk_res?;
