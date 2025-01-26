@@ -35,7 +35,6 @@ pub fn download_to_pipe(
 ) -> Result<Child, io::Error> {
     let args = [
         "--ignore-config",
-        "--abort-on-error",
         "--no-colors",
         "--socket-timeout",
         "5",
@@ -80,7 +79,6 @@ pub fn download_video_to_path(
     let args = [
         "--no-update",
         "--ignore-config",
-        "--abort-on-error",
         "--no-colors",
         "--socket-timeout",
         "5",
@@ -148,7 +146,6 @@ pub fn download_audio_to_path(
     let args = [
         "--no-update",
         "--ignore-config",
-        "--abort-on-error",
         "--no-color",
         "--socket-timeout",
         "5",
@@ -215,7 +212,6 @@ pub fn get_media_or_playlist_info(
     let args = [
         "--no-update",
         "--ignore-config",
-        "--abort-on-error",
         "--no-color",
         "--socket-timeout",
         "5",
