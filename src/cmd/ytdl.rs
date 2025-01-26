@@ -231,6 +231,10 @@ pub fn get_media_or_playlist_info(
         youtube:player_client=default;player_skip=configs,js;max_comments=0,0,0,0;\
         youtubetab:skip=webpage;\
         ",
+        "-I",
+        "1:",
+        "-I",
+        ":20",
         "-J",
         url.as_ref(),
     ];
