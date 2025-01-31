@@ -16,8 +16,12 @@ use handlers::{
     audio_download, media_download_chosen_inline_result, media_select_inline_query, start, video_download, video_download_quite,
 };
 use middlewares::Config as ConfigMiddleware;
-use std::process;
+use std::{borrow::Cow, process};
 use telers::{
+    client::{
+        telegram::{APIServer, BareFilesPathWrapper},
+        Reqwest,
+    },
     enums::{ChatType as ChatTypeEnum, ContentType as ContentTypeEnum},
     event::ToServiceProvider as _,
     filters::{ChatType, Command, ContentType, Filter as _},
@@ -56,7 +60,13 @@ async fn main() {
         }
     };
 
-    let bot = Bot::new(config.bot.token.clone());
+    let base_url = format!("{}/bot{{token}}/{{method_name}}", config.bot.telegram_bot_api_url);
+    let files_url = format!("{}/file{{token}}/{{path}}", config.bot.telegram_bot_api_url);
+
+    let bot = Bot::with_client(
+        config.bot.token.clone(),
+        Reqwest::default().with_api_server(Cow::Owned(APIServer::new(&base_url, &files_url, true, BareFilesPathWrapper))),
+    );
 
     let mut router = Router::new("main");
     router.message.register(start).filter(Command::many(["start", "help"]));
