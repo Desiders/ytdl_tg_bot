@@ -11,6 +11,7 @@ services:
       - telegram_bot_api.network
     depends_on:
       - telegram_bot_api
+    mem_limit: $BOT_MEM_LIMIT
 
   telegram_bot_api:
     container_name: ytdl_tg_bot.telegram_bot_api
