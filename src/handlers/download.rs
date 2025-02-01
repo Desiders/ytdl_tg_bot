@@ -262,12 +262,6 @@ pub async fn video_download_quite(
 
     event!(Level::DEBUG, videos_len, "Got video/playlist info");
 
-    let upload_action_task = tokio::spawn({
-        let bot = bot.clone();
-
-        async move { upload_video_action_in_loop(&bot, chat_id).await }
-    });
-
     let mut handles: Vec<JoinHandle<Result<_, DownloadErrorKind>>> = Vec::with_capacity(videos_len);
 
     for video in videos {
@@ -279,11 +273,7 @@ pub async fn video_download_quite(
         #[allow(clippy::cast_possible_truncation)]
         let (height, width, duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
 
-        let temp_dir = tempdir().map_err(|err| {
-            upload_action_task.abort();
-
-            HandlerError::new(err)
-        })?;
+        let temp_dir = tempdir().map_err(HandlerError::new)?;
 
         handles.push(tokio::spawn(async move {
             let VideoInFS { path, thumbnail_path } =
@@ -337,8 +327,6 @@ pub async fn video_download_quite(
             }
         }
     }
-
-    upload_action_task.abort();
 
     if failed_downloads_count > 0 {
         event!(Level::ERROR, "Failed downloads count is {failed_downloads_count}");
