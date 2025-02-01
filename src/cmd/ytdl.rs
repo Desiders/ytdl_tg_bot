@@ -48,10 +48,7 @@ pub fn download_to_pipe(
         "--no-progress",
         "--no-check-formats",
         "--extractor-args",
-        "\
-        youtube:player_client=default;player_skip=configs,js;max_comments=0,0,0,0;\
-        youtubetab:skip=webpage;\
-        ",
+        "youtube:max_comments=0,0,0,0",
         "--http-chunk-size",
         "10M",
         "-f",
@@ -95,10 +92,7 @@ pub fn download_video_to_path(
         "--no-progress",
         "--no-check-formats",
         "--extractor-args",
-        "\
-        youtube:player_client=default;player_skip=configs,js;max_comments=0,0,0,0;\
-        youtubetab:skip=webpage;\
-        ",
+        "youtube:max_comments=0,0,0,0",
         "--http-chunk-size",
         "10M",
         "-f",
@@ -167,10 +161,7 @@ pub fn download_audio_to_path(
         "--no-progress",
         "--no-check-formats",
         "--extractor-args",
-        "\
-        youtube:player_client=default;player_skip=configs,js;max_comments=0,0,0,0;\
-        youtubetab:skip=webpage;\
-        ",
+        "youtube:max_comments=0,0,0,0",
         "-f",
         format.as_ref(),
         url.as_ref(),
@@ -227,10 +218,7 @@ pub fn get_media_or_playlist_info(
         "--no-progress",
         "--no-check-formats",
         "--extractor-args",
-        "\
-        youtube:player_client=default;player_skip=configs,js;max_comments=0,0,0,0;\
-        youtubetab:skip=webpage;\
-        ",
+        "youtube:max_comments=0,0,0,0",
         "-I",
         "1:",
         "-I",
