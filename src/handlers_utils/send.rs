@@ -49,27 +49,24 @@ where
             Err(err) => {
                 match err {
                     SessionErrorKind::Telegram(TelegramErrorKind::RetryAfter { retry_after, .. }) => {
-                        if retry_after > 0 {
+                        if retry_after > 0.0 {
                             event!(Level::DEBUG, "Sleeping for {retry_after:?} seconds");
 
                             backoff.reset();
 
-                            tokio::time::sleep(Duration::from_secs(retry_after as u64)).await;
+                            tokio::time::sleep(Duration::from_secs_f32(retry_after)).await;
 
                             // Don't use retry count limiter
                             continue;
                         }
                     }
-                    SessionErrorKind::Client(_)
-                    | SessionErrorKind::Telegram(
-                        TelegramErrorKind::NetworkError { .. }
-                        | TelegramErrorKind::ServerError { .. }
-                        | TelegramErrorKind::RestartingTelegram { .. },
-                    ) => {}
+                    SessionErrorKind::Telegram(TelegramErrorKind::ServerError { .. } | TelegramErrorKind::MigrateToChat { .. }) => {}
                     // We don't want to retry on these errors
-                    _ => {
-                        event!(Level::ERROR, "Unexpected error: {err:?}");
-
+                    SessionErrorKind::Telegram(_) => {
+                        break Err(err);
+                    }
+                    err => {
+                        event!(Level::ERROR, error = %err);
                         break Err(err);
                     }
                 }
@@ -78,13 +75,11 @@ where
 
                 if cur_retry_count > max_retries {
                     event!(Level::ERROR, "Max retries exceeded");
-
                     break Err(err);
                 }
 
                 if let Some(duration) = backoff.next_backoff() {
                     event!(Level::DEBUG, "Sleeping for {duration:?} seconds");
-
                     tokio::time::sleep(duration).await;
                 }
             }
@@ -134,19 +129,24 @@ pub async fn media_groups(
 
         if cur_media_group_len == 10 {
             let media_group = mem::take(&mut cur_media_group);
+            let media_group_len = media_group.len();
 
-            messages.extend(
-                with_retries(
-                    bot,
-                    SendMediaGroup::new(chat_id.clone(), media_group).reply_parameters_option(
-                        reply_to_message_id
-                            .map(|reply_to_message_id| ReplyParameters::new(reply_to_message_id).allow_sending_without_reply(true)),
-                    ),
-                    4,
-                    request_timeout,
-                )
-                .await?,
-            );
+            match with_retries(
+                bot,
+                SendMediaGroup::new(chat_id.clone(), media_group).reply_parameters_option(
+                    reply_to_message_id
+                        .map(|reply_to_message_id| ReplyParameters::new(reply_to_message_id).allow_sending_without_reply(true)),
+                ),
+                3,
+                request_timeout,
+            )
+            .await
+            {
+                Ok(new_messages) => messages.extend(new_messages),
+                Err(_) => {
+                    event!(Level::WARN, "Skip {media_group_len} media count to send");
+                }
+            };
 
             cur_media_group_len = 0;
         }
@@ -160,7 +160,7 @@ pub async fn media_groups(
                     reply_to_message_id
                         .map(|reply_to_message_id| ReplyParameters::new(reply_to_message_id).allow_sending_without_reply(true)),
                 ),
-                4,
+                3,
                 request_timeout,
             )
             .await?,
