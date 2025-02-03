@@ -7,6 +7,7 @@ use crate::{
         error, send,
     },
     models::{AudioInFS, TgAudioInPlaylist, TgVideoInPlaylist, VideoInFS},
+    utils::format_error_report,
 };
 
 use nix::libc;
@@ -77,22 +78,14 @@ pub async fn video_download(
     })
     .await
     .map_err(|err| {
-        event!(Level::ERROR, %err, "Error while getting video/playlist info");
-
+        event!(Level::ERROR, err = format_error_report(&err), "Error while join");
         HandlerError::new(err)
     })? {
         Ok(videos) => videos,
         Err(err) => {
-            event!(Level::ERROR, %err, "Getting video/playlist info error");
+            event!(Level::ERROR, err = format_error_report(&err), "Error while get info");
 
-            error::occured_in_message(
-                &bot,
-                chat_id,
-                message_id,
-                "Sorry, an error occurred while getting video/playlist info. Try again later.",
-                None,
-            )
-            .await?;
+            error::occured_in_message(&bot, chat_id, message_id, "Sorry, an error occurred while getting media info", None).await?;
 
             return Ok(EventReturn::Finish);
         }
@@ -101,14 +94,14 @@ pub async fn video_download(
     let videos_len = videos.len();
 
     if videos_len == 0 {
-        event!(Level::WARN, "Playlist doesn't have videos");
+        event!(Level::WARN, "Playlist empty");
 
-        error::occured_in_message(&bot, chat_id, message_id, "Playlist doesn't have videos.", None).await?;
+        error::occured_in_message(&bot, chat_id, message_id, "Playlist empty", None).await?;
 
         return Ok(EventReturn::Finish);
     }
 
-    event!(Level::DEBUG, videos_len, "Got video/playlist info");
+    event!(Level::DEBUG, videos_len, "Got media info");
 
     let upload_action_task = tokio::spawn({
         let bot = bot.clone();
@@ -174,12 +167,12 @@ pub async fn video_download(
         match handle.await {
             Ok(Ok(file_id)) => videos_in_playlist.push(TgVideoInPlaylist::new(file_id, index)),
             Ok(Err(err)) => {
-                event!(Level::ERROR, %err, "Error while downloading video");
+                event!(Level::ERROR, err = format_error_report(&err), "Error while download");
 
                 failed_downloads_count += 1;
             }
             Err(err) => {
-                event!(Level::ERROR, %err, "Error while joining handle");
+                event!(Level::ERROR, err = format_error_report(&err), "Error while join");
 
                 failed_downloads_count += 1;
             }
@@ -240,13 +233,13 @@ pub async fn video_download_quite(
     })
     .await
     .map_err(|err| {
-        event!(Level::ERROR, %err, "Error while getting video/playlist info");
+        event!(Level::ERROR, err = format_error_report(&err), "Error while join");
 
         HandlerError::new(err)
     })? {
         Ok(videos) => videos,
         Err(err) => {
-            event!(Level::ERROR, %err, "Getting video/playlist info error");
+            event!(Level::ERROR, err = format_error_report(&err), "Error while get info");
 
             return Ok(EventReturn::Finish);
         }
@@ -255,12 +248,12 @@ pub async fn video_download_quite(
     let videos_len = videos.len();
 
     if videos_len == 0 {
-        event!(Level::WARN, "Playlist doesn't have videos");
+        event!(Level::WARN, "Playlist empty");
 
         return Ok(EventReturn::Finish);
     }
 
-    event!(Level::DEBUG, videos_len, "Got video/playlist info");
+    event!(Level::DEBUG, videos_len, "Got media info");
 
     let mut handles: Vec<JoinHandle<Result<_, DownloadErrorKind>>> = Vec::with_capacity(videos_len);
 
@@ -316,12 +309,12 @@ pub async fn video_download_quite(
         match handle.await {
             Ok(Ok(file_id)) => videos_in_playlist.push(TgVideoInPlaylist::new(file_id, index)),
             Ok(Err(err)) => {
-                event!(Level::ERROR, %err, "Error while downloading video");
+                event!(Level::ERROR, err = format_error_report(&err), "Error while download");
 
                 failed_downloads_count += 1;
             }
             Err(err) => {
-                event!(Level::ERROR, %err, "Error while joining handle");
+                event!(Level::ERROR, err = format_error_report(&err), "Error while join");
 
                 failed_downloads_count += 1;
             }
@@ -381,16 +374,9 @@ pub async fn audio_download(
     {
         Ok(videos) => videos,
         Err(err) => {
-            event!(Level::ERROR, %err, "Getting audio/playlist info error");
+            event!(Level::ERROR, err = format_error_report(&err), "Error while get info");
 
-            error::occured_in_message(
-                &bot,
-                chat_id,
-                message_id,
-                "Sorry, an error occurred while getting audio/playlist info. Try again later.",
-                None,
-            )
-            .await?;
+            error::occured_in_message(&bot, chat_id, message_id, "Sorry, an error occurred while getting media info", None).await?;
 
             return Ok(EventReturn::Finish);
         }
@@ -399,14 +385,14 @@ pub async fn audio_download(
     let videos_len = videos.len();
 
     if videos_len == 0 {
-        event!(Level::WARN, "Playlist doesn't have audios");
+        event!(Level::WARN, "Playlist empty");
 
-        error::occured_in_message(&bot, chat_id, message_id, "Playlist doesn't have audios.", None).await?;
+        error::occured_in_message(&bot, chat_id, message_id, "Playlist empty", None).await?;
 
         return Ok(EventReturn::Finish);
     }
 
-    event!(Level::DEBUG, videos_len, "Got video/playlist info");
+    event!(Level::DEBUG, videos_len, "Got media info");
 
     let upload_action_task = tokio::spawn({
         let bot = bot.clone();
@@ -498,12 +484,12 @@ pub async fn audio_download(
         match handle.await {
             Ok(Ok(file_id)) => audios_in_playlist.push(TgAudioInPlaylist::new(file_id, index)),
             Ok(Err(err)) => {
-                event!(Level::ERROR, %err, "Error while downloading audio");
+                event!(Level::ERROR, err = format_error_report(&err), "Error while download audio");
 
                 failed_downloads_count += 1;
             }
             Err(err) => {
-                event!(Level::ERROR, %err, "Error while joining handle");
+                event!(Level::ERROR, err = format_error_report(&err), "Error while join");
 
                 failed_downloads_count += 1;
             }
@@ -568,15 +554,10 @@ pub async fn media_download_chosen_inline_result(
     {
         Ok(videos) => videos,
         Err(err) => {
-            event!(Level::ERROR, %err, "Getting video/playlist info error");
+            event!(Level::ERROR, err = format_error_report(&err), "Error while get info");
 
-            error::occured_in_chosen_inline_result(
-                &bot,
-                "Sorry, an error occurred while getting video/playlist info. Try again later.",
-                inline_message_id,
-                None,
-            )
-            .await?;
+            error::occured_in_chosen_inline_result(&bot, "Sorry, an error occurred while getting media info", inline_message_id, None)
+                .await?;
 
             return Ok(EventReturn::Finish);
         }
@@ -585,12 +566,12 @@ pub async fn media_download_chosen_inline_result(
     let Some(video) = videos.front().cloned() else {
         event!(Level::ERROR, "Video not found");
 
-        error::occured_in_chosen_inline_result(&bot, "Sorry, video not found.", inline_message_id, None).await?;
+        error::occured_in_chosen_inline_result(&bot, "Sorry, video not found", inline_message_id, None).await?;
 
         return Ok(EventReturn::Finish);
     };
 
-    event!(Level::DEBUG, "Got video/audio info");
+    event!(Level::DEBUG, "Got media info");
 
     drop(videos);
 
@@ -711,15 +692,9 @@ pub async fn media_download_chosen_inline_result(
     .await;
 
     if let Err(err) = handle {
-        event!(Level::ERROR, %err, "Error while downloading media");
+        event!(Level::ERROR, err = format_error_report(&err), "Error while download media");
 
-        error::occured_in_chosen_inline_result(
-            &bot,
-            "Sorry, an error occurred while downloading media. Try again later.",
-            inline_message_id,
-            None,
-        )
-        .await?;
+        error::occured_in_chosen_inline_result(&bot, "Sorry, an error occurred while downloading media", inline_message_id, None).await?;
     }
 
     unsafe {
@@ -750,15 +725,10 @@ pub async fn media_select_inline_query(
     {
         Ok(videos) => videos,
         Err(err) => {
-            event!(Level::ERROR, %err, "Getting media/playlist info error");
+            event!(Level::ERROR, err = format_error_report(&err), "Getting media info error");
 
-            error::occured_in_chosen_inline_result(
-                &bot,
-                "Sorry, an error occurred while getting media/playlist info.",
-                query_id.as_ref(),
-                None,
-            )
-            .await?;
+            error::occured_in_chosen_inline_result(&bot, "Sorry, an error occurred while getting media info", query_id.as_ref(), None)
+                .await?;
 
             return Ok(EventReturn::Finish);
         }
@@ -767,14 +737,14 @@ pub async fn media_select_inline_query(
     let videos_len = videos.len();
 
     if videos_len == 0 {
-        event!(Level::WARN, "Playlist doesn't have videos");
+        event!(Level::WARN, "Playlist empty");
 
-        error::occured_in_inline_query_occured(&bot, query_id.as_ref(), "Playlist doesn't have videos.").await?;
+        error::occured_in_inline_query_occured(&bot, query_id.as_ref(), "Playlist empty").await?;
 
         return Ok(EventReturn::Finish);
     }
 
-    event!(Level::DEBUG, videos_len, "Got video/playlist info");
+    event!(Level::DEBUG, videos_len, "Got media info");
 
     let mut results: Vec<InlineQueryResult> = Vec::with_capacity(videos_len);
 

@@ -2,6 +2,7 @@ use crate::{
     cmd::{convert_to_jpg, download_audio_to_path, download_to_pipe, download_video_to_path, merge_streams, ytdl},
     fs::get_best_thumbnail_path_in_dir,
     models::{AudioInFS, VideoInFS, VideoInYT},
+    utils::format_error_report,
 };
 use futures_util::StreamExt as _;
 use nix::{
@@ -183,11 +184,14 @@ pub async fn video(
     ));
 
     if let Some(filesize) = combined_format.video_format.filesize_or_approx() {
-        tokio::spawn(range_download_to_write(
-            combined_format.video_format.url.to_owned(),
-            filesize,
-            tokio::fs::File::from_std(File::from(video_write_fd)),
-        ));
+        tokio::spawn({
+            let url = combined_format.video_format.url.to_owned();
+            async move {
+                range_download_to_write(url, filesize, tokio::fs::File::from_std(File::from(video_write_fd)))
+                    .await
+                    .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)))
+            }
+        });
     } else {
         download_to_pipe(
             video_write_fd,
@@ -198,11 +202,14 @@ pub async fn video(
     };
 
     if let Some(filesize) = combined_format.audio_format.filesize_or_approx() {
-        tokio::spawn(range_download_to_write(
-            combined_format.audio_format.url.to_owned(),
-            filesize,
-            tokio::fs::File::from_std(File::from(audio_write_fd)),
-        ));
+        tokio::spawn({
+            let url = combined_format.audio_format.url.to_owned();
+            async move {
+                range_download_to_write(url, filesize, tokio::fs::File::from_std(File::from(audio_write_fd)))
+                    .await
+                    .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)))
+            }
+        });
     } else {
         download_to_pipe(
             audio_write_fd,
