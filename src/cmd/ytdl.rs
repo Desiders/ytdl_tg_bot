@@ -48,7 +48,10 @@ pub fn download_to_pipe(
         "--no-progress",
         "--no-check-formats",
         "--extractor-args",
-        "youtube:max_comments=0,0,0,0",
+        "\
+        youtube:player_client=default;player_skip=configs,js;max_comments=0,0,0,0;\
+        youtubetab:skip=webpage;\
+        ",
         "--http-chunk-size",
         "10M",
         "-f",
@@ -64,7 +67,7 @@ pub fn download_to_pipe(
         .spawn()
 }
 
-pub fn download_video_to_path(
+pub async fn download_video_to_path(
     executable_path: impl AsRef<str>,
     url: impl AsRef<str>,
     format: impl AsRef<str>,
@@ -92,7 +95,10 @@ pub fn download_video_to_path(
         "--no-progress",
         "--no-check-formats",
         "--extractor-args",
-        "youtube:max_comments=0,0,0,0",
+        "\
+        youtube:player_client=default;player_skip=configs,js;max_comments=0,0,0,0;\
+        youtubetab:skip=webpage;\
+        ",
         "--http-chunk-size",
         "10M",
         "-f",
@@ -100,34 +106,31 @@ pub fn download_video_to_path(
         url.as_ref(),
     ];
 
-    let mut child = Command::new(executable_path.as_ref())
+    let mut child = tokio::process::Command::new(executable_path.as_ref())
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
+        .kill_on_drop(true)
         .spawn()?;
 
-    let Some(exit_code) = child.wait_timeout(Duration::from_secs(timeout))? else {
-        event!(Level::ERROR, "Child process timed out");
-
-        child.kill()?;
-
-        return Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out"));
-    };
-
-    if !exit_code.success() {
-        event!(Level::ERROR, "Child process exited with error status: {exit_code}");
-
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Youtube-dl exited with status `{exit_code}`"),
-        ));
+    match tokio::time::timeout(Duration::from_secs(timeout), child.wait()).await {
+        Ok(Ok(exit_code)) => {
+            if !exit_code.success() {
+                Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Youtube-dl exited with status `{exit_code}`"),
+                ))
+            } else {
+                Ok(())
+            }
+        }
+        Ok(Err(err)) => Err(err),
+        Err(_) => Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out")),
     }
-
-    Ok(())
 }
 
-pub fn download_audio_to_path(
+pub async fn download_audio_to_path(
     executable_path: impl AsRef<str>,
     url: impl AsRef<str>,
     format: impl AsRef<str>,
@@ -161,37 +164,37 @@ pub fn download_audio_to_path(
         "--no-progress",
         "--no-check-formats",
         "--extractor-args",
-        "youtube:max_comments=0,0,0,0",
+        "\
+        youtube:player_client=default;player_skip=configs,js;max_comments=0,0,0,0;\
+        youtubetab:skip=webpage;\
+        ",
         "-f",
         format.as_ref(),
         url.as_ref(),
     ];
 
-    let mut child = Command::new(executable_path.as_ref())
+    let mut child = tokio::process::Command::new(executable_path.as_ref())
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
+        .kill_on_drop(true)
         .spawn()?;
 
-    let Some(exit_code) = child.wait_timeout(Duration::from_secs(timeout))? else {
-        event!(Level::ERROR, "Child process timed out");
-
-        child.kill()?;
-
-        return Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out"));
-    };
-
-    if !exit_code.success() {
-        event!(Level::ERROR, "Child process exited with error status: {exit_code}");
-
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Youtube-dl exited with status `{exit_code}`"),
-        ));
+    match tokio::time::timeout(Duration::from_secs(timeout), child.wait()).await {
+        Ok(Ok(exit_code)) => {
+            if !exit_code.success() {
+                Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Youtube-dl exited with status `{exit_code}`"),
+                ))
+            } else {
+                Ok(())
+            }
+        }
+        Ok(Err(err)) => Err(err),
+        Err(_) => Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out")),
     }
-
-    Ok(())
 }
 
 pub fn get_media_or_playlist_info(
@@ -218,7 +221,10 @@ pub fn get_media_or_playlist_info(
         "--no-progress",
         "--no-check-formats",
         "--extractor-args",
-        "youtube:max_comments=0,0,0,0",
+        "\
+        youtube:player_client=default;player_skip=configs,js;max_comments=0,0,0,0;\
+        youtubetab:skip=webpage;\
+        ",
         "-I",
         "1:",
         "-I",

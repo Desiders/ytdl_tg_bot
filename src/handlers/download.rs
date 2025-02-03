@@ -31,8 +31,8 @@ use uuid::Uuid;
 
 const GET_INFO_TIMEOUT: u64 = 120;
 const DOWNLOAD_MEDIA_TIMEOUT: u64 = 180;
-const SEND_VIDEO_TIMEOUT: f32 = 90.0;
-const SEND_AUDIO_TIMEOUT: f32 = 90.0;
+const SEND_VIDEO_TIMEOUT: f32 = 180.0;
+const SEND_AUDIO_TIMEOUT: f32 = 180.0;
 const GET_MEDIA_OR_PLAYLIST_INFO_INLINE_QUERY_TIMEOUT: u64 = 12;
 const SELECT_INLINE_QUERY_CACHE_TIME: i64 = 86400; // 24 hours
 
@@ -429,21 +429,15 @@ pub async fn audio_download(
         })?;
 
         handles.push(tokio::spawn(async move {
-            let AudioInFS { path, thumbnail_path } = spawn_blocking({
-                let temp_dir_path = temp_dir.path().to_owned();
-
-                move || {
-                    download::audio_to_temp_dir(
-                        video,
-                        id_or_url,
-                        max_file_size,
-                        yt_dlp_full_path,
-                        temp_dir_path,
-                        DOWNLOAD_MEDIA_TIMEOUT,
-                    )
-                }
-            })
-            .await??;
+            let AudioInFS { path, thumbnail_path } = download::audio_to_temp_dir(
+                video,
+                id_or_url,
+                max_file_size,
+                yt_dlp_full_path,
+                temp_dir.path(),
+                DOWNLOAD_MEDIA_TIMEOUT,
+            )
+            .await?;
 
             let message = send::with_retries(
                 &bot,
@@ -631,21 +625,15 @@ pub async fn media_download_chosen_inline_result(
             #[allow(clippy::cast_possible_truncation)]
             let duration = video.duration.map(|duration| duration as i64);
 
-            let AudioInFS { path, thumbnail_path } = spawn_blocking({
-                let temp_dir_path = temp_dir.path().to_owned();
-
-                move || {
-                    download::audio_to_temp_dir(
-                        video,
-                        url,
-                        yt_dlp_config.max_file_size,
-                        &yt_dlp_config.full_path,
-                        temp_dir_path,
-                        DOWNLOAD_MEDIA_TIMEOUT,
-                    )
-                }
-            })
-            .await??;
+            let AudioInFS { path, thumbnail_path } = download::audio_to_temp_dir(
+                video,
+                url,
+                yt_dlp_config.max_file_size,
+                &yt_dlp_config.full_path,
+                temp_dir.path(),
+                DOWNLOAD_MEDIA_TIMEOUT,
+            )
+            .await?;
 
             let message = send::with_retries(
                 &bot,
@@ -658,8 +646,6 @@ pub async fn media_download_chosen_inline_result(
                 Some(SEND_AUDIO_TIMEOUT),
             )
             .await?;
-
-            drop(temp_dir);
 
             tokio::spawn({
                 let message_id = message.id();
