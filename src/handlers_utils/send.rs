@@ -1,5 +1,9 @@
-use backoff::{backoff::Backoff as _, ExponentialBackoff};
-use std::{mem, time::Duration};
+use backoff::ExponentialBackoff;
+use std::{
+    mem,
+    sync::atomic::{AtomicU8, Ordering::Relaxed},
+    time::Duration,
+};
 use telers::{
     errors::{SessionErrorKind, TelegramErrorKind},
     methods::{SendMediaGroup, TelegramMethod},
@@ -36,51 +40,38 @@ where
     T::Method: Send + Sync,
     TRef: AsRef<T> + Clone,
 {
-    let mut backoff = ExponentialBackoff::default();
-    let mut cur_retry_count = 0;
+    let cur_retry_count = AtomicU8::new(0);
 
-    loop {
+    backoff::future::retry(ExponentialBackoff::default(), || async {
         match if let Some(request_timeout) = request_timeout {
             bot.send_with_timeout(method.clone(), request_timeout).await
         } else {
             bot.send(method.clone()).await
         } {
-            Ok(result) => break Ok(result),
+            Ok(res) => Ok(res),
             Err(err) => {
-                match err {
+                Err(match err {
                     SessionErrorKind::Telegram(TelegramErrorKind::RetryAfter { retry_after, .. }) => {
-                        if retry_after > 0.0 {
-                            event!(Level::DEBUG, "Sleeping for {retry_after:?} seconds");
+                        event!(Level::DEBUG, "Sleeping for {retry_after:?} seconds");
 
-                            backoff.reset();
-
-                            tokio::time::sleep(Duration::from_secs_f32(retry_after)).await;
-
-                            // Don't use retry count limiter
-                            continue;
+                        backoff::Error::retry_after(err, Duration::from_secs_f32(retry_after))
+                    }
+                    SessionErrorKind::Telegram(TelegramErrorKind::ServerError { .. } | TelegramErrorKind::MigrateToChat { .. }) => {
+                        cur_retry_count.fetch_add(1, Relaxed);
+                        if cur_retry_count.load(Relaxed) > max_retries {
+                            event!(Level::ERROR, "Max retries exceeded");
+                            backoff::Error::permanent(err)
+                        } else {
+                            backoff::Error::transient(err)
                         }
                     }
-                    SessionErrorKind::Telegram(TelegramErrorKind::ServerError { .. } | TelegramErrorKind::MigrateToChat { .. }) => {}
                     // We don't want to retry on these errors
-                    _ => {
-                        break Err(err);
-                    }
-                }
-
-                cur_retry_count += 1;
-
-                if cur_retry_count > max_retries {
-                    event!(Level::ERROR, "Max retries exceeded");
-                    break Err(err);
-                }
-
-                if let Some(duration) = backoff.next_backoff() {
-                    event!(Level::DEBUG, "Sleeping for {duration:?} seconds");
-                    tokio::time::sleep(duration).await;
-                }
+                    _ => backoff::Error::permanent(err),
+                })
             }
         }
-    }
+    })
+    .await
 }
 
 /// Sends a media groups to the Telegram Bot API with limited retries for each media group.
