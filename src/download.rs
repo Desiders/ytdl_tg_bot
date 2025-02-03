@@ -67,7 +67,7 @@ async fn range_download_to_write<W: AsyncWriteExt + Unpin>(
     filesize: f64,
     mut write: W,
 ) -> Result<(), RangeDownloadKind> {
-    let client = Client::new();
+    let client = Client::builder().timeout(Duration::from_secs(30)).build().unwrap();
     let url = url.as_ref();
 
     let mut start: i32 = 0;
