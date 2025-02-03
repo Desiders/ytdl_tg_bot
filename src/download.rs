@@ -52,12 +52,26 @@ pub fn video(
 }
 
 #[instrument(skip_all)]
-fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_path: impl AsRef<Path>) -> Result<PathBuf, io::Error> {
+async fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_path: impl AsRef<Path>) -> Option<PathBuf> {
     let path = temp_dir_path.as_ref().join(format!("{}.jpg", id.as_ref()));
 
-    convert_to_jpg(url, &path)?;
-
-    Ok(path)
+    match convert_to_jpg(url, &path) {
+        Ok(mut child) => match timeout(Duration::from_secs(10), child.wait()).await {
+            Ok(Ok(_)) => Some(path),
+            Ok(Err(err)) => {
+                event!(Level::ERROR, err = format_error_report(&err), "Failed to convert thumbnail");
+                None
+            }
+            Err(_) => {
+                event!(Level::WARN, "Convert thumbnail timed out");
+                None
+            }
+        },
+        Err(err) => {
+            event!(Level::ERROR, err = format_error_report(&err), "Failed to convert thumbnail");
+            None
+        }
+    }
 }
 
 const RANGE_CHUNK_SIZE: i32 = 1024 * 1024 * 10;
@@ -68,7 +82,7 @@ async fn range_download_to_write<W: AsyncWriteExt + Unpin>(
     filesize: f64,
     mut write: W,
 ) -> Result<(), RangeDownloadKind> {
-    let client = Client::builder().timeout(Duration::from_secs(30)).build().unwrap();
+    let client = Client::new();
     let url = url.as_ref();
 
     let mut start: i32 = 0;
@@ -156,12 +170,13 @@ pub async fn video(
             extension,
             &temp_dir_path,
             download_and_merge_timeout,
-        )?;
+        )
+        .await?;
 
-        let thumbnail_path = video
-            .thumbnail()
-            .and_then(|url| get_thumbnail_path(url, &video.id, &temp_dir_path).ok())
-            .or_else(|| get_best_thumbnail_path_in_dir(&temp_dir_path).ok().flatten());
+        let thumbnail_path = match video.thumbnail() {
+            Some(url) => get_thumbnail_path(url, &video.id, &temp_dir_path).await,
+            None => get_best_thumbnail_path_in_dir(&temp_dir_path).ok().flatten(),
+        };
 
         return Ok(VideoInFS::new(file_path, thumbnail_path));
     }
@@ -176,12 +191,7 @@ pub async fn video(
 
     let output_path = temp_dir_path.as_ref().join(format!("merged.{extension}"));
 
-    let merge_child = tokio::spawn(merge_streams(
-        video_read_fd,
-        audio_read_fd,
-        extension.to_owned(),
-        output_path.clone(),
-    ));
+    let merge_child = merge_streams(video_read_fd, audio_read_fd, extension.to_owned(), output_path.clone());
 
     if let Some(filesize) = combined_format.video_format.filesize_or_approx() {
         tokio::spawn({
@@ -219,11 +229,12 @@ pub async fn video(
         )?;
     };
 
-    let thumbnail_path = video
-        .thumbnail()
-        .and_then(|url| get_thumbnail_path(url, &video.id, temp_dir_path).ok());
+    let thumbnail_path = match video.thumbnail() {
+        Some(url) => get_thumbnail_path(url, &video.id, &temp_dir_path).await,
+        None => None,
+    };
 
-    let exit_code = match timeout(Duration::from_secs(download_and_merge_timeout), merge_child.await??.wait()).await {
+    let exit_code = match timeout(Duration::from_secs(download_and_merge_timeout), merge_child?.wait()).await {
         Ok(Ok(exit_code)) => exit_code,
         Ok(Err(err)) => {
             event!(Level::ERROR, "FFmpeg process IO error");
@@ -259,7 +270,7 @@ pub enum ToTempDirErrorKind {
 }
 
 #[instrument(skip_all, fields(video = video.id, format_id = field::Empty, file_path = field::Empty))]
-pub fn audio_to_temp_dir(
+pub async fn audio_to_temp_dir(
     video: VideoInYT,
     video_id_or_url: impl AsRef<str>,
     max_file_size: u32,
@@ -299,11 +310,15 @@ pub fn audio_to_temp_dir(
         extension,
         &temp_dir_path,
         download_timeout,
-    )?;
+    )
+    .await?;
 
     event!(Level::DEBUG, "Audio downloaded");
 
-    let thumbnail_path = get_best_thumbnail_path_in_dir(temp_dir_path)?;
+    let thumbnail_path = match video.thumbnail() {
+        Some(url) => get_thumbnail_path(url, &video.id, &temp_dir_path).await,
+        None => get_best_thumbnail_path_in_dir(&temp_dir_path).ok().flatten(),
+    };
 
     Ok(AudioInFS::new(file_path, thumbnail_path))
 }
