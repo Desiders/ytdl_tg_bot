@@ -62,11 +62,7 @@ where
                     }
                     SessionErrorKind::Telegram(TelegramErrorKind::ServerError { .. } | TelegramErrorKind::MigrateToChat { .. }) => {}
                     // We don't want to retry on these errors
-                    SessionErrorKind::Telegram(_) => {
-                        break Err(err);
-                    }
-                    err => {
-                        event!(Level::ERROR, error = %err);
+                    _ => {
                         break Err(err);
                     }
                 }
