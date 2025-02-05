@@ -6,7 +6,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY . .
 
-FROM rust:1.82-slim-bullseye AS build
+FROM rust:1.82-slim-bullseye AS build-dependencies
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libssl-dev \
     && apt-get install -y --no-install-recommends pkg-config \
@@ -16,12 +16,14 @@ WORKDIR /usr/src/app
 RUN USER=root cargo init
 COPY ./Cargo.toml .
 RUN cargo build --release
+
+FROM build-dependencies AS build-source
+WORKDIR /usr/src/app
 COPY ./src ./src
-# https://users.rust-lang.org/t/dockerfile-with-cached-dependencies-does-not-recompile-the-main-rs-file/21577
 RUN touch src/main.rs && cargo build --release
 
 FROM base AS final
 WORKDIR /app
-COPY --from=build /usr/src/app/target/release/ytdl_tg_bot .
+COPY --from=build-source /usr/src/app/target/release/ytdl_tg_bot .
 ENV RUST_BACKTRACE=full
 ENTRYPOINT ["/app/ytdl_tg_bot"]
