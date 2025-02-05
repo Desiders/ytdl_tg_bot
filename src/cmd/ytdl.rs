@@ -73,10 +73,11 @@ pub async fn download_video_to_path(
     format: impl AsRef<str>,
     output_dir_path: impl AsRef<Path>,
     timeout: u64,
+    download_thumbnails: bool,
 ) -> Result<(), io::Error> {
     let output_dir_path = output_dir_path.as_ref().to_string_lossy();
 
-    let args = [
+    let mut args = vec![
         "--no-update",
         "--ignore-config",
         "--no-colors",
@@ -87,7 +88,6 @@ pub async fn download_video_to_path(
         "--output",
         "%(id)s.%(ext)s",
         "--no-playlist",
-        "--write-all-thumbnail",
         "--no-mtime",
         "--no-write-comments",
         "--quiet",
@@ -99,12 +99,18 @@ pub async fn download_video_to_path(
         youtube:player_client=default;player_skip=configs,js;max_comments=0,0,0,0;\
         youtubetab:skip=webpage;\
         ",
+        "--concurrent-fragments",
+        "4",
         "--http-chunk-size",
         "10M",
         "-f",
         format.as_ref(),
         url.as_ref(),
     ];
+
+    if download_thumbnails {
+        args.push("--write-all-thumbnail");
+    }
 
     let mut child = tokio::process::Command::new(executable_path.as_ref())
         .args(args)
@@ -137,10 +143,11 @@ pub async fn download_audio_to_path(
     output_extension: impl AsRef<str>,
     output_dir_path: impl AsRef<Path>,
     timeout: u64,
+    download_thumbnails: bool,
 ) -> Result<(), io::Error> {
     let output_dir_path = output_dir_path.as_ref().to_string_lossy();
 
-    let args = [
+    let mut args = vec![
         "--no-update",
         "--ignore-config",
         "--no-color",
@@ -156,7 +163,6 @@ pub async fn download_audio_to_path(
         "--audio-format",
         output_extension.as_ref(),
         "--no-playlist",
-        "--write-all-thumbnail",
         "--no-mtime",
         "--no-write-comments",
         "--quiet",
@@ -168,10 +174,18 @@ pub async fn download_audio_to_path(
         youtube:player_client=default;player_skip=configs,js;max_comments=0,0,0,0;\
         youtubetab:skip=webpage;\
         ",
+        "--concurrent-fragments",
+        "4",
+        "--http-chunk-size",
+        "10M",
         "-f",
         format.as_ref(),
         url.as_ref(),
     ];
+
+    if download_thumbnails {
+        args.push("--write-all-thumbnail");
+    }
 
     let mut child = tokio::process::Command::new(executable_path.as_ref())
         .args(args)
