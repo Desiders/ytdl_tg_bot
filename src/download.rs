@@ -164,18 +164,30 @@ pub async fn video(
 
         Span::current().record("file_path", file_path.display().to_string());
 
+        let (thumbnail_path, download_thumbnails) = match video.thumbnail() {
+            Some(url) => (get_thumbnail_path(url, &video.id, &temp_dir_path).await, false),
+            None => (None, true),
+        };
+
         download_video_to_path(
             executable_ytdl_path,
             &video.original_url,
             extension,
             &temp_dir_path,
             download_and_merge_timeout,
+            download_thumbnails,
         )
         .await?;
 
-        let thumbnail_path = match video.thumbnail() {
-            Some(url) => get_thumbnail_path(url, &video.id, &temp_dir_path).await,
-            None => get_best_thumbnail_path_in_dir(&temp_dir_path).ok().flatten(),
+        let thumbnail_path = match thumbnail_path {
+            Some(url) => Some(url),
+            None => {
+                if download_thumbnails {
+                    get_best_thumbnail_path_in_dir(&temp_dir_path).ok().flatten()
+                } else {
+                    None
+                }
+            }
         };
 
         return Ok(VideoInFS::new(file_path, thumbnail_path));
@@ -303,6 +315,11 @@ pub async fn audio_to_temp_dir(
 
     event!(Level::DEBUG, ?file_path, "Got file path");
 
+    let (thumbnail_path, download_thumbnails) = match video.thumbnail() {
+        Some(url) => (get_thumbnail_path(url, &video.id, &temp_dir_path).await, false),
+        None => (None, true),
+    };
+
     download_audio_to_path(
         executable_ytdl_path,
         video_id_or_url,
@@ -310,14 +327,21 @@ pub async fn audio_to_temp_dir(
         extension,
         &temp_dir_path,
         download_timeout,
+        download_thumbnails,
     )
     .await?;
 
     event!(Level::DEBUG, "Audio downloaded");
 
-    let thumbnail_path = match video.thumbnail() {
-        Some(url) => get_thumbnail_path(url, &video.id, &temp_dir_path).await,
-        None => get_best_thumbnail_path_in_dir(&temp_dir_path).ok().flatten(),
+    let thumbnail_path = match thumbnail_path {
+        Some(url) => Some(url),
+        None => {
+            if download_thumbnails {
+                get_best_thumbnail_path_in_dir(&temp_dir_path).ok().flatten()
+            } else {
+                None
+            }
+        }
     };
 
     Ok(AudioInFS::new(file_path, thumbnail_path))
