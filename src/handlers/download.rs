@@ -109,59 +109,76 @@ pub async fn video_download(
         async move { upload_video_action_in_loop(&bot, chat_id).await }
     });
 
+    let mut failed_downloads_count = 0;
     let mut handles: Vec<JoinHandle<Result<_, DownloadErrorKind>>> = Vec::with_capacity(videos_len);
 
     for video in videos {
-        let bot = bot.clone();
-        let max_file_size = yt_dlp_config.max_file_size;
-        let yt_dlp_full_path = yt_dlp_config.full_path.clone();
-        let receiver_video_chat_id = bot_config.receiver_video_chat_id;
-
-        #[allow(clippy::cast_possible_truncation)]
-        let (height, width, duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
-
         let temp_dir = tempdir().map_err(|err| {
             upload_action_task.abort();
 
             HandlerError::new(err)
         })?;
 
-        handles.push(tokio::spawn(async move {
-            let VideoInFS { path, thumbnail_path } =
-                download::video(video, max_file_size, yt_dlp_full_path, temp_dir.path(), DOWNLOAD_MEDIA_TIMEOUT).await?;
+        #[allow(clippy::cast_possible_truncation)]
+        let (height, width, duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
 
-            event!(Level::TRACE, "Send video");
+        let VideoInFS { path, thumbnail_path } = match download::video(
+            video,
+            yt_dlp_config.max_file_size,
+            &yt_dlp_config.full_path,
+            temp_dir.path(),
+            DOWNLOAD_MEDIA_TIMEOUT,
+        )
+        .await
+        {
+            Ok(val) => val,
+            Err(err) => {
+                event!(Level::ERROR, err = format_error_report(&err), "Error while download");
+                failed_downloads_count += 1;
+                continue;
+            }
+        };
 
-            let message = send::with_retries(
-                &bot,
-                SendVideo::new(receiver_video_chat_id, InputFile::fs(path))
-                    .disable_notification(true)
-                    .width_option(width)
-                    .height_option(height)
-                    .duration_option(duration)
-                    .thumbnail_option(thumbnail_path.map(InputFile::fs))
-                    .supports_streaming(true),
-                2,
-                Some(SEND_VIDEO_TIMEOUT),
-            )
-            .await?;
+        event!(Level::TRACE, "Send video");
 
-            event!(Level::TRACE, "Video sended");
+        handles.push({
+            let bot = bot.clone();
+            let receiver_video_chat_id = bot_config.receiver_video_chat_id;
 
-            tokio::spawn({
-                let message_id = message.id();
+            tokio::spawn(async move {
+                let message = send::with_retries(
+                    &bot,
+                    SendVideo::new(receiver_video_chat_id, InputFile::fs(path))
+                        .disable_notification(true)
+                        .width_option(width)
+                        .height_option(height)
+                        .duration_option(duration)
+                        .thumbnail_option(thumbnail_path.map(InputFile::fs))
+                        .supports_streaming(true),
+                    2,
+                    Some(SEND_VIDEO_TIMEOUT),
+                )
+                .await?;
 
-                async move {
-                    let _ = bot.send(DeleteMessage::new(receiver_video_chat_id, message_id)).await;
-                }
-            });
+                // Don't delete this line, we need it to avoid drop
+                drop(temp_dir);
 
-            Ok(message.video().unwrap().file_id.clone())
-        }));
+                event!(Level::TRACE, "Video sended");
+
+                tokio::spawn({
+                    let message_id = message.id();
+
+                    async move {
+                        let _ = bot.send(DeleteMessage::new(receiver_video_chat_id, message_id)).await;
+                    }
+                });
+
+                Ok(message.video().unwrap().file_id.clone())
+            })
+        });
     }
 
     let mut videos_in_playlist = Vec::with_capacity(videos_len);
-    let mut failed_downloads_count = 0;
 
     for (index, handle) in handles.into_iter().enumerate() {
         match handle.await {
@@ -255,55 +272,72 @@ pub async fn video_download_quite(
 
     event!(Level::DEBUG, videos_len, "Got media info");
 
+    let mut failed_downloads_count = 0;
     let mut handles: Vec<JoinHandle<Result<_, DownloadErrorKind>>> = Vec::with_capacity(videos_len);
 
     for video in videos {
-        let bot = bot.clone();
-        let max_file_size = yt_dlp_config.max_file_size;
-        let yt_dlp_full_path = yt_dlp_config.full_path.clone();
-        let receiver_video_chat_id = bot_config.receiver_video_chat_id;
+        let temp_dir = tempdir().map_err(HandlerError::new)?;
 
         #[allow(clippy::cast_possible_truncation)]
         let (height, width, duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
 
-        let temp_dir = tempdir().map_err(HandlerError::new)?;
+        let VideoInFS { path, thumbnail_path } = match download::video(
+            video,
+            yt_dlp_config.max_file_size,
+            &yt_dlp_config.full_path,
+            temp_dir.path(),
+            DOWNLOAD_MEDIA_TIMEOUT,
+        )
+        .await
+        {
+            Ok(val) => val,
+            Err(err) => {
+                event!(Level::ERROR, err = format_error_report(&err), "Error while download");
+                failed_downloads_count += 1;
+                continue;
+            }
+        };
 
-        handles.push(tokio::spawn(async move {
-            let VideoInFS { path, thumbnail_path } =
-                download::video(video, max_file_size, yt_dlp_full_path, temp_dir.path(), DOWNLOAD_MEDIA_TIMEOUT).await?;
+        event!(Level::TRACE, "Send video");
 
-            event!(Level::TRACE, "Send video");
+        handles.push({
+            let bot = bot.clone();
+            let receiver_video_chat_id = bot_config.receiver_video_chat_id;
 
-            let message = send::with_retries(
-                &bot,
-                SendVideo::new(receiver_video_chat_id, InputFile::fs(path))
-                    .disable_notification(true)
-                    .width_option(width)
-                    .height_option(height)
-                    .duration_option(duration)
-                    .thumbnail_option(thumbnail_path.map(InputFile::fs))
-                    .supports_streaming(true),
-                2,
-                Some(SEND_VIDEO_TIMEOUT),
-            )
-            .await?;
+            tokio::spawn(async move {
+                let message = send::with_retries(
+                    &bot,
+                    SendVideo::new(receiver_video_chat_id, InputFile::fs(path))
+                        .disable_notification(true)
+                        .width_option(width)
+                        .height_option(height)
+                        .duration_option(duration)
+                        .thumbnail_option(thumbnail_path.map(InputFile::fs))
+                        .supports_streaming(true),
+                    2,
+                    Some(SEND_VIDEO_TIMEOUT),
+                )
+                .await?;
 
-            event!(Level::TRACE, "Video sended");
+                // Don't delete this line, we need it to avoid drop
+                drop(temp_dir);
 
-            tokio::spawn({
-                let message_id = message.id();
+                event!(Level::TRACE, "Video sended");
 
-                async move {
-                    let _ = bot.send(DeleteMessage::new(receiver_video_chat_id, message_id)).await;
-                }
-            });
+                tokio::spawn({
+                    let message_id = message.id();
 
-            Ok(message.video().unwrap().file_id.clone())
-        }));
+                    async move {
+                        let _ = bot.send(DeleteMessage::new(receiver_video_chat_id, message_id)).await;
+                    }
+                });
+
+                Ok(message.video().unwrap().file_id.clone())
+            })
+        });
     }
 
     let mut videos_in_playlist = Vec::with_capacity(videos_len);
-    let mut failed_downloads_count = 0;
 
     for (index, handle) in handles.into_iter().enumerate() {
         match handle.await {
@@ -400,14 +434,15 @@ pub async fn audio_download(
         async move { upload_voice_action_in_loop(&bot, chat_id).await }
     });
 
+    let mut failed_downloads_count = 0;
     let mut handles: Vec<JoinHandle<Result<Box<str>, DownloadErrorKind>>> = Vec::with_capacity(videos_len);
 
     for video in videos {
-        let bot = bot.clone();
-        let max_file_size = yt_dlp_config.max_file_size;
-        let yt_dlp_full_path = yt_dlp_config.full_path.clone();
-        let receiver_video_chat_id = bot_config.receiver_video_chat_id;
-        let title = video.title.clone();
+        let temp_dir = tempdir().map_err(|err| {
+            upload_action_task.abort();
+
+            HandlerError::new(err)
+        })?;
 
         // This hack is needed because `ytdl` doesn't support downloading videos by ID from other sources, for example `coub.com `.
         // It also doesn't support uploading videos by direct URL, so we can only transmit the passeds URL.
@@ -418,61 +453,71 @@ pub async fn audio_download(
         } else {
             video.id.clone().into_boxed_str()
         };
+        let title = video.title.clone();
 
         #[allow(clippy::cast_possible_truncation)]
         let duration = video.duration.map(|duration| duration as i64);
 
-        let temp_dir = tempdir().map_err(|err| {
-            upload_action_task.abort();
+        let AudioInFS { path, thumbnail_path } = match download::audio_to_temp_dir(
+            video,
+            id_or_url,
+            yt_dlp_config.max_file_size,
+            &yt_dlp_config.full_path,
+            temp_dir.path(),
+            DOWNLOAD_MEDIA_TIMEOUT,
+        )
+        .await
+        {
+            Ok(val) => val,
+            Err(err) => {
+                event!(Level::ERROR, err = format_error_report(&err), "Error while download");
+                failed_downloads_count += 1;
+                continue;
+            }
+        };
 
-            HandlerError::new(err)
-        })?;
+        handles.push({
+            let bot = bot.clone();
+            let receiver_video_chat_id = bot_config.receiver_video_chat_id;
 
-        handles.push(tokio::spawn(async move {
-            let AudioInFS { path, thumbnail_path } = download::audio_to_temp_dir(
-                video,
-                id_or_url,
-                max_file_size,
-                yt_dlp_full_path,
-                temp_dir.path(),
-                DOWNLOAD_MEDIA_TIMEOUT,
-            )
-            .await?;
+            tokio::spawn(async move {
+                let message = send::with_retries(
+                    &bot,
+                    SendAudio::new(receiver_video_chat_id, InputFile::fs(path))
+                        .disable_notification(true)
+                        .title_option(title)
+                        .duration_option(duration)
+                        .thumbnail_option(thumbnail_path.map(InputFile::fs)),
+                    2,
+                    Some(SEND_AUDIO_TIMEOUT),
+                )
+                .await?;
 
-            let message = send::with_retries(
-                &bot,
-                SendAudio::new(receiver_video_chat_id, InputFile::fs(path))
-                    .disable_notification(true)
-                    .title_option(title)
-                    .duration_option(duration)
-                    .thumbnail_option(thumbnail_path.map(InputFile::fs)),
-                2,
-                Some(SEND_AUDIO_TIMEOUT),
-            )
-            .await?;
+                // Don't delete this line, we need it to avoid drop
+                drop(temp_dir);
 
-            tokio::spawn({
-                let message_id = message.id();
+                tokio::spawn({
+                    let message_id = message.id();
 
-                async move {
-                    let _ = bot.send(DeleteMessage::new(receiver_video_chat_id, message_id)).await;
-                }
-            });
+                    async move {
+                        let _ = bot.send(DeleteMessage::new(receiver_video_chat_id, message_id)).await;
+                    }
+                });
 
-            let file_id = if let Some(audio) = message.audio() {
-                audio.file_id.as_ref()
-            } else if let Some(voice) = message.voice() {
-                voice.file_id.as_ref()
-            } else {
-                unreachable!("Message should have audio or voice")
-            };
+                let file_id = if let Some(audio) = message.audio() {
+                    audio.file_id.as_ref()
+                } else if let Some(voice) = message.voice() {
+                    voice.file_id.as_ref()
+                } else {
+                    unreachable!("Message should have audio or voice")
+                };
 
-            Ok(file_id.to_owned().into_boxed_str())
-        }));
+                Ok(file_id.to_owned().into_boxed_str())
+            })
+        });
     }
 
     let mut audios_in_playlist = Vec::with_capacity(videos_len);
-    let mut failed_downloads_count = 0;
 
     for (index, handle) in handles.into_iter().enumerate() {
         match handle.await {
@@ -565,9 +610,9 @@ pub async fn media_download_chosen_inline_result(
         return Ok(EventReturn::Finish);
     };
 
-    event!(Level::DEBUG, "Got media info");
-
     drop(videos);
+
+    event!(Level::DEBUG, "Got media info");
 
     let temp_dir = tempdir().map_err(HandlerError::new)?;
 
@@ -601,15 +646,6 @@ pub async fn media_download_chosen_inline_result(
 
             drop(temp_dir);
 
-            tokio::spawn({
-                let message_id = message.id();
-                let bot = bot.clone();
-
-                async move {
-                    let _ = bot.send(DeleteMessage::new(bot_config.receiver_video_chat_id, message_id)).await;
-                }
-            });
-
             send::with_retries(
                 &bot,
                 EditMessageMedia::new(InputMediaVideo::new(InputFile::id(message.video().unwrap().file_id.as_ref())))
@@ -619,6 +655,15 @@ pub async fn media_download_chosen_inline_result(
                 Some(SEND_VIDEO_TIMEOUT),
             )
             .await?;
+
+            tokio::spawn({
+                let message_id = message.id();
+                let bot = bot.clone();
+
+                async move {
+                    let _ = bot.send(DeleteMessage::new(bot_config.receiver_video_chat_id, message_id)).await;
+                }
+            });
         } else {
             let title = video.title.clone();
 
@@ -647,15 +692,6 @@ pub async fn media_download_chosen_inline_result(
             )
             .await?;
 
-            tokio::spawn({
-                let message_id = message.id();
-                let bot = bot.clone();
-
-                async move {
-                    let _ = bot.send(DeleteMessage::new(bot_config.receiver_video_chat_id, message_id)).await;
-                }
-            });
-
             let file_id = if let Some(audio) = message.audio() {
                 audio.file_id.as_ref()
             } else if let Some(voice) = message.voice() {
@@ -671,6 +707,15 @@ pub async fn media_download_chosen_inline_result(
                 Some(SEND_AUDIO_TIMEOUT),
             )
             .await?;
+
+            tokio::spawn({
+                let message_id = message.id();
+                let bot = bot.clone();
+
+                async move {
+                    let _ = bot.send(DeleteMessage::new(bot_config.receiver_video_chat_id, message_id)).await;
+                }
+            });
         }
 
         Ok(())

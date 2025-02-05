@@ -116,13 +116,13 @@ pub async fn download_video_to_path(
 
     match tokio::time::timeout(Duration::from_secs(timeout), child.wait()).await {
         Ok(Ok(exit_code)) => {
-            if !exit_code.success() {
+            if exit_code.success() {
+                Ok(())
+            } else {
                 Err(io::Error::new(
                     io::ErrorKind::Other,
                     format!("Youtube-dl exited with status `{exit_code}`"),
                 ))
-            } else {
-                Ok(())
             }
         }
         Ok(Err(err)) => Err(err),
@@ -183,13 +183,13 @@ pub async fn download_audio_to_path(
 
     match tokio::time::timeout(Duration::from_secs(timeout), child.wait()).await {
         Ok(Ok(exit_code)) => {
-            if !exit_code.success() {
+            if exit_code.success() {
+                Ok(())
+            } else {
                 Err(io::Error::new(
                     io::ErrorKind::Other,
                     format!("Youtube-dl exited with status `{exit_code}`"),
                 ))
-            } else {
-                Ok(())
             }
         }
         Ok(Err(err)) => Err(err),
