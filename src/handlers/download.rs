@@ -803,7 +803,7 @@ pub async fn media_select_inline_query(
             .title(title)
             .description("Click to download video")
             .reply_markup(InlineKeyboardMarkup::new([[
-                InlineKeyboardButton::new("Video downloading...").callback_data("video_download")
+                InlineKeyboardButton::new("Downloading...").callback_data("video_download")
             ]]))
             .into(),
         );
@@ -816,7 +816,7 @@ pub async fn media_select_inline_query(
             .title(title)
             .description("Click to download audio")
             .reply_markup(InlineKeyboardMarkup::new([[
-                InlineKeyboardButton::new("Audio downloading...").callback_data("audio_download")
+                InlineKeyboardButton::new("Downloading...").callback_data("audio_download")
             ]]))
             .into(),
         );
