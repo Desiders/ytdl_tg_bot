@@ -56,6 +56,7 @@ impl VideoInYT {
         format::Audios::from(formats)
     }
 
+    #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
     pub fn thumbnail(&self) -> Option<&str> {
         let (video_width, video_height) = match (self.width, self.height) {
             (Some(w), Some(h)) => (w as f32, h as f32),
@@ -72,9 +73,8 @@ impl VideoInYT {
         let mut best_score = f32::MAX;
 
         for thumb in self.thumbnails.as_deref().unwrap_or_default() {
-            let (thumb_width, thumb_height) = match (thumb.width, thumb.height) {
-                (Some(w), Some(h)) => (w, h),
-                _ => continue,
+            let (Some(thumb_width), Some(thumb_height)) = (thumb.width, thumb.height) else {
+                continue;
             };
 
             let thumb_ratio = thumb_width as f32 / thumb_height as f32;

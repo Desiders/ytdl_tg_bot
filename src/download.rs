@@ -76,7 +76,6 @@ async fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_
 
 const RANGE_CHUNK_SIZE: i32 = 1024 * 1024 * 10;
 
-#[allow(clippy::cast_possible_truncation)]
 async fn range_download_to_write<W: AsyncWriteExt + Unpin>(
     url: impl AsRef<str>,
     filesize: f64,
@@ -85,12 +84,13 @@ async fn range_download_to_write<W: AsyncWriteExt + Unpin>(
     let client = Client::new();
     let url = url.as_ref();
 
-    let mut start: i32 = 0;
+    let mut start = 0;
     let mut end = RANGE_CHUNK_SIZE;
 
     loop {
         event!(Level::TRACE, start, end, "Download chunk");
 
+        #[allow(clippy::cast_possible_truncation)]
         if end >= filesize as i32 {
             let mut stream = client
                 .get(url)

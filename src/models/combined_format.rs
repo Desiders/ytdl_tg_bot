@@ -101,6 +101,7 @@ impl<'a> Formats<'a> {
             .retain(|format| format.filesize_or_approx().map_or(true, |size| size <= max_size));
     }
 
+    #[allow(clippy::unnecessary_cast, clippy::cast_possible_truncation)]
     fn sort_formats(&mut self, max_size: f64) {
         fn calculate_size_weight(format: &Format, max_size: f64) -> f32 {
             match format.filesize_or_approx() {
