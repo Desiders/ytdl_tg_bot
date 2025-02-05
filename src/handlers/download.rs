@@ -21,7 +21,7 @@ use telers::{
         ChosenInlineResult, InlineKeyboardButton, InlineKeyboardMarkup, InlineQuery, InlineQueryResult, InlineQueryResultArticle,
         InputFile, InputMediaVideo, InputTextMessageContent, Message,
     },
-    utils::text::{html_code, html_quote},
+    utils::text::{html_code, html_quote, html_text_link},
     Bot, Context, Extension,
 };
 use tempfile::tempdir;
@@ -648,9 +648,13 @@ pub async fn media_download_chosen_inline_result(
 
             send::with_retries(
                 &bot,
-                EditMessageMedia::new(InputMediaVideo::new(InputFile::id(message.video().unwrap().file_id.as_ref())))
-                    .inline_message_id(inline_message_id)
-                    .reply_markup(InlineKeyboardMarkup::new([[]])),
+                EditMessageMedia::new(
+                    InputMediaVideo::new(InputFile::id(message.video().unwrap().file_id.as_ref()))
+                        .caption(html_text_link("Link", url))
+                        .parse_mode(ParseMode::HTML),
+                )
+                .inline_message_id(inline_message_id)
+                .reply_markup(InlineKeyboardMarkup::new([[]])),
                 2,
                 Some(SEND_VIDEO_TIMEOUT),
             )
@@ -672,7 +676,7 @@ pub async fn media_download_chosen_inline_result(
 
             let AudioInFS { path, thumbnail_path } = download::audio_to_temp_dir(
                 video,
-                url,
+                &url,
                 yt_dlp_config.max_file_size,
                 &yt_dlp_config.full_path,
                 temp_dir.path(),
@@ -702,7 +706,12 @@ pub async fn media_download_chosen_inline_result(
 
             send::with_retries(
                 &bot,
-                EditMessageMedia::new(InputMediaVideo::new(InputFile::id(file_id))).inline_message_id(inline_message_id),
+                EditMessageMedia::new(
+                    InputMediaVideo::new(InputFile::id(file_id))
+                        .caption(html_text_link("Link", url))
+                        .parse_mode(ParseMode::HTML),
+                )
+                .inline_message_id(inline_message_id),
                 2,
                 Some(SEND_AUDIO_TIMEOUT),
             )
