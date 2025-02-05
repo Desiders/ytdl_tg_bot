@@ -49,7 +49,7 @@ pub fn download_to_pipe(
         "--no-check-formats",
         "--extractor-args",
         "\
-        youtube:player_client=default;player_skip=configs,js;max_comments=0,0,0,0;\
+        youtube:player_client=default;player_skip=configs,js;\
         youtubetab:skip=webpage;\
         ",
         "--http-chunk-size",
@@ -96,13 +96,13 @@ pub async fn download_video_to_path(
         "--no-check-formats",
         "--extractor-args",
         "\
-        youtube:player_client=default;player_skip=configs,js;max_comments=0,0,0,0;\
+        youtube:player_client=default;player_skip=configs,js;\
         youtubetab:skip=webpage;\
         ",
         "--concurrent-fragments",
         "4",
         "--http-chunk-size",
-        "10M",
+        "15M",
         "-f",
         format.as_ref(),
         url.as_ref(),
@@ -171,13 +171,13 @@ pub async fn download_audio_to_path(
         "--no-check-formats",
         "--extractor-args",
         "\
-        youtube:player_client=default;player_skip=configs,js;max_comments=0,0,0,0;\
+        youtube:player_client=default;player_skip=configs,js;\
         youtubetab:skip=webpage;\
         ",
         "--concurrent-fragments",
         "4",
         "--http-chunk-size",
-        "10M",
+        "15M",
         "-f",
         format.as_ref(),
         url.as_ref(),
@@ -234,8 +234,8 @@ pub fn get_media_or_playlist_info(
         "--simulate",
         "--no-progress",
         "--no-check-formats",
-        "--extractor-args",
-        "youtube:max_comments=0,0,0,0",
+        "--concurrent-fragments",
+        "4",
         "-I",
         "1:",
         "-I",
