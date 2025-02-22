@@ -22,6 +22,9 @@ pub struct VideoInYT {
     pub width: Option<i64>,
     pub height: Option<i64>,
 
+    #[serde(flatten)]
+    format: Option<format::Any>,
+    #[serde(default)]
     formats: Vec<format::Any>,
 }
 
@@ -35,6 +38,11 @@ impl VideoInYT {
             };
 
             format_kinds.push(format);
+        }
+        if let Some(format) = &self.format {
+            if let Ok(format) = format.kind(self.duration) {
+                format_kinds.push(format);
+            };
         }
 
         combined_format::Formats::from(format_kinds)
@@ -51,6 +59,13 @@ impl VideoInYT {
             if let format::Kind::Audio(format) = format {
                 formats.push(format);
             }
+        }
+        if let Some(format) = &self.format {
+            if let Ok(format) = format.kind(self.duration) {
+                if let format::Kind::Audio(format) = format {
+                    formats.push(format);
+                }
+            };
         }
 
         format::Audios::from(formats)
