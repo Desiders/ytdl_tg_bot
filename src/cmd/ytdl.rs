@@ -94,7 +94,6 @@ pub async fn download_video_to_path(
         "--no-simulate",
         "--no-progress",
         "--no-check-formats",
-        "--extractor-args",
         "--concurrent-fragments",
         "4",
         "--http-chunk-size",

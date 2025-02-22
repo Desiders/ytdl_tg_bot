@@ -139,8 +139,11 @@ impl<'a> Formats<'a> {
             let priority_weight_a = 1.0 / (f32::from(a.get_priority()) + 1.0);
             let priority_weight_b = 1.0 / (f32::from(b.get_priority()) + 1.0);
 
-            let total_weight_a = vbr_weight_a + size_weight_a * 2.0 + priority_weight_a;
-            let total_weight_b = vbr_weight_b + size_weight_b * 2.0 + priority_weight_b;
+            let combined_bonus_a = if a.format_ids_are_equal() { 0.75 } else { 0.0 };
+            let combined_bonus_b = if b.format_ids_are_equal() { 0.75 } else { 0.0 };
+
+            let total_weight_a = vbr_weight_a + size_weight_a * 2.0 + priority_weight_a + combined_bonus_a;
+            let total_weight_b = vbr_weight_b + size_weight_b * 2.0 + priority_weight_b + combined_bonus_b;
 
             total_weight_b.partial_cmp(&total_weight_a).unwrap_or(Ordering::Equal)
         });
