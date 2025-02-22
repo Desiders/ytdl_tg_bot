@@ -52,10 +52,16 @@ pub fn video(
 }
 
 #[instrument(skip_all)]
-async fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_path: impl AsRef<Path>) -> Option<PathBuf> {
+async fn get_thumbnail_path(
+    url: impl AsRef<str>,
+    id: impl AsRef<str>,
+    temp_dir_path: impl AsRef<Path>,
+    width: Option<i64>,
+    height: Option<i64>,
+) -> Option<PathBuf> {
     let path = temp_dir_path.as_ref().join(format!("{}.jpg", id.as_ref()));
 
-    match convert_to_jpg(url, &path) {
+    match convert_to_jpg(url, &path, width, height) {
         Ok(mut child) => match timeout(Duration::from_secs(10), child.wait()).await {
             Ok(Ok(_)) => Some(path),
             Ok(Err(err)) => {
@@ -136,6 +142,13 @@ pub async fn video(
     temp_dir_path: impl AsRef<Path>,
     download_and_merge_timeout: u64,
 ) -> Result<VideoInFS, StreamErrorKind> {
+    use tracing::debug;
+
+    debug!(
+        "vi: {:?} {:?} tH: {:?} tHs: {:?}",
+        video.width, video.height, video.thumbnail, video.thumbnails
+    );
+
     let mut combined_formats = video.get_combined_formats();
     combined_formats.sort(max_file_size);
 
@@ -165,7 +178,10 @@ pub async fn video(
         Span::current().record("file_path", file_path.display().to_string());
 
         let (thumbnail_path, download_thumbnails) = match video.thumbnail() {
-            Some(url) => (get_thumbnail_path(url, &video.id, &temp_dir_path).await, false),
+            Some(url) => (
+                get_thumbnail_path(url, &video.id, &temp_dir_path, video.width, video.height).await,
+                false,
+            ),
             None => (None, true),
         };
 
@@ -242,7 +258,7 @@ pub async fn video(
     };
 
     let thumbnail_path = match video.thumbnail() {
-        Some(url) => get_thumbnail_path(url, &video.id, &temp_dir_path).await,
+        Some(url) => get_thumbnail_path(url, &video.id, &temp_dir_path, video.width, video.height).await,
         None => None,
     };
 
@@ -316,7 +332,10 @@ pub async fn audio_to_temp_dir(
     event!(Level::DEBUG, ?file_path, "Got file path");
 
     let (thumbnail_path, download_thumbnails) = match video.thumbnail() {
-        Some(url) => (get_thumbnail_path(url, &video.id, &temp_dir_path).await, false),
+        Some(url) => (
+            get_thumbnail_path(url, &video.id, &temp_dir_path, video.width, video.height).await,
+            false,
+        ),
         None => (None, true),
     };
 

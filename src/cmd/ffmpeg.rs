@@ -56,7 +56,12 @@ pub fn merge_streams(
 /// Returns [`io::Error`] if the spawn child process fails.
 /// # Returns
 /// Returns the child process
-pub fn convert_to_jpg(input_url: impl AsRef<str>, output_path: impl AsRef<Path>) -> Result<tokio::process::Child, io::Error> {
+pub fn convert_to_jpg(
+    input_url: impl AsRef<str>,
+    output_path: impl AsRef<Path>,
+    width: Option<i64>,
+    height: Option<i64>,
+) -> Result<tokio::process::Child, io::Error> {
     tokio::process::Command::new("/usr/bin/ffmpeg")
         .args([
             "-y",
@@ -65,6 +70,8 @@ pub fn convert_to_jpg(input_url: impl AsRef<str>, output_path: impl AsRef<Path>)
             "error",
             "-i",
             input_url.as_ref(),
+            "-vf",
+            &format!("scale={}:{}", width.unwrap_or(-1), height.unwrap_or(-1)),
             output_path.as_ref().to_string_lossy().as_ref(),
         ])
         .stdin(Stdio::null())
