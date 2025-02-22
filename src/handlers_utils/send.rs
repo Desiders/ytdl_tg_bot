@@ -120,10 +120,12 @@ pub async fn media_groups(
 
             match with_retries(
                 bot,
-                SendMediaGroup::new(chat_id.clone(), media_group).reply_parameters_option(
-                    reply_to_message_id
-                        .map(|reply_to_message_id| ReplyParameters::new(reply_to_message_id).allow_sending_without_reply(true)),
-                ),
+                SendMediaGroup::new(chat_id.clone(), media_group)
+                    .disable_notification(true)
+                    .reply_parameters_option(
+                        reply_to_message_id
+                            .map(|reply_to_message_id| ReplyParameters::new(reply_to_message_id).allow_sending_without_reply(true)),
+                    ),
                 3,
                 request_timeout,
             )
@@ -143,10 +145,12 @@ pub async fn media_groups(
         messages.extend(
             with_retries(
                 bot,
-                SendMediaGroup::new(chat_id.clone(), cur_media_group).reply_parameters_option(
-                    reply_to_message_id
-                        .map(|reply_to_message_id| ReplyParameters::new(reply_to_message_id).allow_sending_without_reply(true)),
-                ),
+                SendMediaGroup::new(chat_id.clone(), cur_media_group)
+                    .disable_notification(true)
+                    .reply_parameters_option(
+                        reply_to_message_id
+                            .map(|reply_to_message_id| ReplyParameters::new(reply_to_message_id).allow_sending_without_reply(true)),
+                    ),
                 3,
                 request_timeout,
             )
