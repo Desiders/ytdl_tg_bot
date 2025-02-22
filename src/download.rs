@@ -142,13 +142,6 @@ pub async fn video(
     temp_dir_path: impl AsRef<Path>,
     download_and_merge_timeout: u64,
 ) -> Result<VideoInFS, StreamErrorKind> {
-    use tracing::debug;
-
-    debug!(
-        "vi: {:?} {:?} tH: {:?} tHs: {:?}",
-        video.width, video.height, video.thumbnail, video.thumbnails
-    );
-
     let mut combined_formats = video.get_combined_formats();
     combined_formats.sort(max_file_size);
 
