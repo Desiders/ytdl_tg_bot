@@ -1,4 +1,7 @@
-use crate::models::{VideoInYT, VideosInYT};
+use crate::{
+    handlers_utils::range::Range,
+    models::{VideoInYT, VideosInYT},
+};
 
 use serde::de::Error as _;
 use serde_json::{json, Value};
@@ -56,6 +59,7 @@ pub fn download_to_pipe(
         "10M",
         "-f",
         format.as_ref(),
+        "--",
         url.as_ref(),
     ];
 
@@ -100,6 +104,7 @@ pub async fn download_video_to_path(
         "15M",
         "-f",
         format.as_ref(),
+        "--",
         url.as_ref(),
     ];
 
@@ -170,6 +175,7 @@ pub async fn download_audio_to_path(
         "15M",
         "-f",
         format.as_ref(),
+        "--",
         url.as_ref(),
     ];
 
@@ -206,6 +212,7 @@ pub fn get_media_or_playlist_info(
     url: impl AsRef<str>,
     allow_playlist: bool,
     timeout: u64,
+    mut range: Range,
 ) -> Result<VideosInYT, Error> {
     let args = [
         "--no-update",
@@ -227,10 +234,9 @@ pub fn get_media_or_playlist_info(
         "--concurrent-fragments",
         "4",
         "-I",
-        "1:",
-        "-I",
-        ":20",
+        &range.to_range_string(),
         "-J",
+        "--",
         url.as_ref(),
     ];
 

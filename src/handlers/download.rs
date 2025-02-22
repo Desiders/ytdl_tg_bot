@@ -4,14 +4,17 @@ use crate::{
     download::{self, StreamErrorKind, ToTempDirErrorKind},
     handlers_utils::{
         chat_action::{upload_video_action_in_loop, upload_voice_action_in_loop},
-        error, send,
+        error,
+        range::Range,
+        send,
+        url::UrlWithParams,
     },
     models::{AudioInFS, TgAudioInPlaylist, TgVideoInPlaylist, VideoInFS},
     utils::format_error_report,
 };
 
 use nix::libc;
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 use telers::{
     enums::ParseMode,
     errors::{HandlerError, SessionErrorKind},
@@ -22,11 +25,11 @@ use telers::{
         InputFile, InputMediaVideo, InputTextMessageContent, Message,
     },
     utils::text::{html_code, html_quote, html_text_link},
-    Bot, Context, Extension,
+    Bot, Extension,
 };
 use tempfile::tempdir;
 use tokio::task::{spawn_blocking, JoinError, JoinHandle};
-use tracing::{event, instrument, Level, Span};
+use tracing::{event, field::debug, instrument, Level, Span};
 use uuid::Uuid;
 
 const GET_INFO_TIMEOUT: u64 = 120;
@@ -49,26 +52,37 @@ pub enum DownloadErrorKind {
     Join(#[from] JoinError),
 }
 
-#[instrument(skip_all, fields(message_id, chat_id, url))]
+#[instrument(skip_all, fields(message_id, chat_id, url = url.as_str(), params))]
 pub async fn video_download(
     bot: Arc<Bot>,
-    mut context: Context,
     message: Message,
+    Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
     Extension(yt_dlp_config): Extension<YtDlp>,
     Extension(bot_config): Extension<BotConfig>,
 ) -> HandlerResult {
-    let url = context
-        .remove::<Box<str>>("video_url")
-        .expect("Url should be in context because `text_contains_url` filter should do this");
     let message_id = message.id();
     let chat_id = message.chat().id();
 
     Span::current()
         .record("chat_id", chat_id)
         .record("message_id", message_id)
-        .record("url", &*url);
+        .record("params", debug(&params));
 
     event!(Level::DEBUG, "Got url");
+
+    let range = match params.get("items") {
+        Some(raw_value) => match Range::from_str(raw_value) {
+            Ok(range) => range,
+            Err(err) => {
+                event!(Level::ERROR, err = format_error_report(&err), "Error while parse range");
+
+                error::occured_in_message(&bot, chat_id, message_id, &err.to_string(), None).await?;
+
+                return Ok(EventReturn::Finish);
+            }
+        },
+        None => Range::default(),
+    };
 
     let upload_action_task = tokio::spawn({
         let bot = bot.clone();
@@ -80,7 +94,7 @@ pub async fn video_download(
         let full_path = yt_dlp_config.full_path.clone();
         let url = url.clone();
 
-        move || get_media_or_playlist_info(full_path, url, true, GET_INFO_TIMEOUT)
+        move || get_media_or_playlist_info(full_path, url, true, GET_INFO_TIMEOUT, range)
     })
     .await
     .map_err(|err| {
@@ -224,32 +238,41 @@ pub async fn video_download(
     Ok(EventReturn::Finish)
 }
 
-#[instrument(skip_all, fields(message_id, chat_id, url))]
+#[instrument(skip_all, fields(message_id, chat_id, url = url.as_str(), params))]
 pub async fn video_download_quite(
     bot: Arc<Bot>,
-    mut context: Context,
     message: Message,
+    Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
     Extension(yt_dlp_config): Extension<YtDlp>,
     Extension(bot_config): Extension<BotConfig>,
 ) -> HandlerResult {
-    let url = context
-        .remove::<Box<str>>("video_url")
-        .expect("Url should be in context because `text_contains_url` filter should do this");
     let message_id = message.id();
     let chat_id = message.chat().id();
 
     Span::current()
         .record("chat_id", chat_id)
         .record("message_id", message_id)
-        .record("url", &*url);
+        .record("params", debug(&params));
 
     event!(Level::DEBUG, "Got url");
+
+    let range = match params.get("items") {
+        Some(raw_value) => match Range::from_str(raw_value) {
+            Ok(range) => range,
+            Err(err) => {
+                event!(Level::ERROR, err = format_error_report(&err), "Error while parse range");
+
+                return Ok(EventReturn::Finish);
+            }
+        },
+        None => Range::default(),
+    };
 
     let videos = match spawn_blocking({
         let full_path = yt_dlp_config.full_path.clone();
         let url = url.clone();
 
-        move || get_media_or_playlist_info(full_path, url, true, GET_INFO_TIMEOUT)
+        move || get_media_or_playlist_info(full_path, url, true, GET_INFO_TIMEOUT, range)
     })
     .await
     .map_err(|err| {
@@ -379,26 +402,37 @@ pub async fn video_download_quite(
     Ok(EventReturn::Finish)
 }
 
-#[instrument(skip_all, fields(message_id, chat_id, url))]
+#[instrument(skip_all, fields(message_id, chat_id, url = url.as_str(), params))]
 pub async fn audio_download(
     bot: Arc<Bot>,
-    mut context: Context,
     message: Message,
+    Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
     Extension(yt_dlp_config): Extension<YtDlp>,
     Extension(bot_config): Extension<BotConfig>,
 ) -> HandlerResult {
-    let url = context
-        .remove::<Box<str>>("video_url")
-        .expect("Url should be in context because `text_contains_url` filter should do this");
     let message_id = message.id();
     let chat_id = message.chat().id();
 
     Span::current()
-        .record("url", &*url)
         .record("chat_id", chat_id)
-        .record("message_id", message_id);
+        .record("message_id", message_id)
+        .record("params", debug(&params));
 
     event!(Level::DEBUG, "Got url");
+
+    let range = match params.get("items") {
+        Some(raw_value) => match Range::from_str(raw_value) {
+            Ok(range) => range,
+            Err(err) => {
+                event!(Level::ERROR, err = format_error_report(&err), "Error while parse range");
+
+                error::occured_in_message(&bot, chat_id, message_id, &err.to_string(), None).await?;
+
+                return Ok(EventReturn::Finish);
+            }
+        },
+        None => Range::default(),
+    };
 
     let upload_action_task = tokio::spawn({
         let bot = bot.clone();
@@ -410,7 +444,7 @@ pub async fn audio_download(
         let full_path = yt_dlp_config.full_path.clone();
         let url = url.clone();
 
-        move || get_media_or_playlist_info(full_path, url, true, GET_INFO_TIMEOUT)
+        move || get_media_or_playlist_info(full_path, url, true, GET_INFO_TIMEOUT, range)
     })
     .await
     .map_err(|err| {
@@ -456,9 +490,9 @@ pub async fn audio_download(
         // If URL represents playlist, we get an error because unacceptable use one URL one more time for different videos.
         // This should be fixed by direct download video without `ytdl`.
         let id_or_url = if videos_len == 1 {
-            url.clone()
+            url.as_str().to_owned()
         } else {
-            video.id.clone().into_boxed_str()
+            video.id.clone()
         };
         let title = video.title.clone();
 
@@ -593,7 +627,7 @@ pub async fn media_download_chosen_inline_result(
         let full_path = yt_dlp_config.full_path.clone();
         let url = url.clone();
 
-        move || get_media_or_playlist_info(full_path, url, false, GET_INFO_TIMEOUT)
+        move || get_media_or_playlist_info(full_path, url, false, GET_INFO_TIMEOUT, Range::new(Some(1), Some(1), Some(1)))
     })
     .await
     .map_err(HandlerError::new)?
@@ -765,7 +799,13 @@ pub async fn media_select_inline_query(
     event!(Level::DEBUG, "Got url");
 
     let videos = match spawn_blocking(move || {
-        get_media_or_playlist_info(&yt_dlp_config.full_path, url, true, GET_MEDIA_OR_PLAYLIST_INFO_INLINE_QUERY_TIMEOUT)
+        get_media_or_playlist_info(
+            &yt_dlp_config.full_path,
+            url,
+            true,
+            GET_MEDIA_OR_PLAYLIST_INFO_INLINE_QUERY_TIMEOUT,
+            Range::new(Some(1), Some(1), Some(1)),
+        )
     })
     .await
     .map_err(HandlerError::new)?
