@@ -70,6 +70,12 @@ pub async fn video_download(
 
     event!(Level::DEBUG, "Got url");
 
+    let upload_action_task = tokio::spawn({
+        let bot = bot.clone();
+
+        async move { upload_video_action_in_loop(&bot, chat_id).await }
+    });
+
     let videos = match spawn_blocking({
         let full_path = yt_dlp_config.full_path.clone();
         let url = url.clone();
@@ -78,11 +84,13 @@ pub async fn video_download(
     })
     .await
     .map_err(|err| {
+        upload_action_task.abort();
         event!(Level::ERROR, err = format_error_report(&err), "Error while join");
         HandlerError::new(err)
     })? {
         Ok(videos) => videos,
         Err(err) => {
+            upload_action_task.abort();
             event!(Level::ERROR, err = format_error_report(&err), "Error while get info");
 
             error::occured_in_message(&bot, chat_id, message_id, "Sorry, an error occurred while getting media info", None).await?;
@@ -94,6 +102,7 @@ pub async fn video_download(
     let videos_len = videos.len();
 
     if videos_len == 0 {
+        upload_action_task.abort();
         event!(Level::WARN, "Playlist empty");
 
         error::occured_in_message(&bot, chat_id, message_id, "Playlist empty", None).await?;
@@ -102,12 +111,6 @@ pub async fn video_download(
     }
 
     event!(Level::DEBUG, videos_len, "Got media info");
-
-    let upload_action_task = tokio::spawn({
-        let bot = bot.clone();
-
-        async move { upload_video_action_in_loop(&bot, chat_id).await }
-    });
 
     let mut failed_downloads_count = 0;
     let mut handles: Vec<JoinHandle<Result<_, DownloadErrorKind>>> = Vec::with_capacity(videos_len);
@@ -397,6 +400,12 @@ pub async fn audio_download(
 
     event!(Level::DEBUG, "Got url");
 
+    let upload_action_task = tokio::spawn({
+        let bot = bot.clone();
+
+        async move { upload_voice_action_in_loop(&bot, chat_id).await }
+    });
+
     let videos = match spawn_blocking({
         let full_path = yt_dlp_config.full_path.clone();
         let url = url.clone();
@@ -404,10 +413,14 @@ pub async fn audio_download(
         move || get_media_or_playlist_info(full_path, url, true, GET_INFO_TIMEOUT)
     })
     .await
-    .map_err(HandlerError::new)?
-    {
+    .map_err(|err| {
+        upload_action_task.abort();
+        event!(Level::ERROR, err = format_error_report(&err), "Error while join");
+        HandlerError::new(err)
+    })? {
         Ok(videos) => videos,
         Err(err) => {
+            upload_action_task.abort();
             event!(Level::ERROR, err = format_error_report(&err), "Error while get info");
 
             error::occured_in_message(&bot, chat_id, message_id, "Sorry, an error occurred while getting media info", None).await?;
@@ -419,6 +432,7 @@ pub async fn audio_download(
     let videos_len = videos.len();
 
     if videos_len == 0 {
+        upload_action_task.abort();
         event!(Level::WARN, "Playlist empty");
 
         error::occured_in_message(&bot, chat_id, message_id, "Playlist empty", None).await?;
@@ -428,19 +442,12 @@ pub async fn audio_download(
 
     event!(Level::DEBUG, videos_len, "Got media info");
 
-    let upload_action_task = tokio::spawn({
-        let bot = bot.clone();
-
-        async move { upload_voice_action_in_loop(&bot, chat_id).await }
-    });
-
     let mut failed_downloads_count = 0;
     let mut handles: Vec<JoinHandle<Result<Box<str>, DownloadErrorKind>>> = Vec::with_capacity(videos_len);
 
     for video in videos {
         let temp_dir = tempdir().map_err(|err| {
             upload_action_task.abort();
-
             HandlerError::new(err)
         })?;
 
