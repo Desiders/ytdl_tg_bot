@@ -95,10 +95,6 @@ pub async fn download_video_to_path(
         "--no-progress",
         "--no-check-formats",
         "--extractor-args",
-        "\
-        youtube:player_client=default;player_skip=configs,js;\
-        youtubetab:skip=webpage;\
-        ",
         "--concurrent-fragments",
         "4",
         "--http-chunk-size",
@@ -169,11 +165,6 @@ pub async fn download_audio_to_path(
         "--no-simulate",
         "--no-progress",
         "--no-check-formats",
-        "--extractor-args",
-        "\
-        youtube:player_client=default;player_skip=configs,js;\
-        youtubetab:skip=webpage;\
-        ",
         "--concurrent-fragments",
         "4",
         "--http-chunk-size",
@@ -190,7 +181,7 @@ pub async fn download_audio_to_path(
     let mut child = tokio::process::Command::new(executable_path.as_ref())
         .args(args)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
+        .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .kill_on_drop(true)
         .spawn()?;
