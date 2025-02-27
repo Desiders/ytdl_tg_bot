@@ -61,10 +61,8 @@ impl VideoInYT {
             }
         }
         if let Some(format) = &self.format {
-            if let Ok(format) = format.kind(self.duration) {
-                if let format::Kind::Audio(format) = format {
-                    formats.push(format);
-                }
+            if let Ok(format::Kind::Audio(format)) = format.kind(self.duration) {
+                formats.push(format);
             };
         }
 
