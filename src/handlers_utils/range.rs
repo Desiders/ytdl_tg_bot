@@ -256,4 +256,17 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn test_parse_no_start_with_non_default_step() {
+        let range: Range = ":10:2".parse().unwrap();
+        assert_eq!(
+            range,
+            Range {
+                start: 1,
+                stop: 10,
+                step: 2
+            }
+        );
+    }
 }
