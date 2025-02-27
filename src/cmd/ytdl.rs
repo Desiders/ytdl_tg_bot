@@ -214,7 +214,7 @@ pub fn get_media_or_playlist_info(
     url: impl AsRef<str>,
     allow_playlist: bool,
     timeout: u64,
-    range: Range,
+    range: &Range,
 ) -> Result<VideosInYT, Error> {
     let args = [
         "--no-update",

@@ -94,7 +94,7 @@ pub async fn video_download(
         let full_path = yt_dlp_config.full_path.clone();
         let url = url.clone();
 
-        move || get_media_or_playlist_info(full_path, url, true, GET_INFO_TIMEOUT, range)
+        move || get_media_or_playlist_info(full_path, url, true, GET_INFO_TIMEOUT, &range)
     })
     .await
     .map_err(|err| {
@@ -272,7 +272,7 @@ pub async fn video_download_quite(
         let full_path = yt_dlp_config.full_path.clone();
         let url = url.clone();
 
-        move || get_media_or_playlist_info(full_path, url, true, GET_INFO_TIMEOUT, range)
+        move || get_media_or_playlist_info(full_path, url, true, GET_INFO_TIMEOUT, &range)
     })
     .await
     .map_err(|err| {
@@ -444,7 +444,7 @@ pub async fn audio_download(
         let full_path = yt_dlp_config.full_path.clone();
         let url = url.clone();
 
-        move || get_media_or_playlist_info(full_path, url, true, GET_INFO_TIMEOUT, range)
+        move || get_media_or_playlist_info(full_path, url, true, GET_INFO_TIMEOUT, &range)
     })
     .await
     .map_err(|err| {
@@ -627,7 +627,7 @@ pub async fn media_download_chosen_inline_result(
         let full_path = yt_dlp_config.full_path.clone();
         let url = url.clone();
 
-        move || get_media_or_playlist_info(full_path, url, false, GET_INFO_TIMEOUT, "1:1:1".parse().unwrap())
+        move || get_media_or_playlist_info(full_path, url, false, GET_INFO_TIMEOUT, &"1:1:1".parse().unwrap())
     })
     .await
     .map_err(HandlerError::new)?
@@ -804,7 +804,7 @@ pub async fn media_select_inline_query(
             url,
             true,
             GET_MEDIA_OR_PLAYLIST_INFO_INLINE_QUERY_TIMEOUT,
-            "1:1:1".parse().unwrap(),
+            &"1:1:1".parse().unwrap(),
         )
     })
     .await

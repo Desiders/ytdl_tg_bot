@@ -62,6 +62,8 @@ fn parse_optional_positive(part: &str, is_step: bool) -> Result<Option<i16>, Par
 
 impl FromStr for Range {
     type Err = ParseRangeError;
+
+    #[allow(clippy::get_first, clippy::similar_names)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.trim().is_empty() {
             return Ok(Range::default());
