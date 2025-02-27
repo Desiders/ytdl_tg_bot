@@ -104,13 +104,14 @@ pub async fn download_video_to_path(
         "15M",
         "-f",
         format.as_ref(),
-        "--",
-        url.as_ref(),
     ];
 
     if download_thumbnails {
         args.push("--write-all-thumbnail");
     }
+
+    args.push("--");
+    args.push(url.as_ref());
 
     let mut child = tokio::process::Command::new(executable_path.as_ref())
         .args(args)
@@ -175,13 +176,14 @@ pub async fn download_audio_to_path(
         "15M",
         "-f",
         format.as_ref(),
-        "--",
-        url.as_ref(),
     ];
 
     if download_thumbnails {
         args.push("--write-all-thumbnail");
     }
+
+    args.push("--");
+    args.push(url.as_ref());
 
     let mut child = tokio::process::Command::new(executable_path.as_ref())
         .args(args)
@@ -212,7 +214,7 @@ pub fn get_media_or_playlist_info(
     url: impl AsRef<str>,
     allow_playlist: bool,
     timeout: u64,
-    mut range: Range,
+    range: Range,
 ) -> Result<VideosInYT, Error> {
     let args = [
         "--no-update",
