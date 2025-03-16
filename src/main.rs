@@ -6,7 +6,6 @@ mod filters;
 mod fs;
 mod handlers;
 mod handlers_utils;
-mod middlewares;
 mod models;
 mod utils;
 
@@ -15,7 +14,6 @@ use filters::{is_via_bot, text_contains_url, text_contains_url_with_reply};
 use handlers::{
     audio_download, media_download_chosen_inline_result, media_select_inline_query, start, video_download, video_download_quite,
 };
-use middlewares::Config as ConfigMiddleware;
 use std::{borrow::Cow, process};
 use telers::{
     client::{
@@ -98,11 +96,6 @@ async fn main() {
         .register(media_download_chosen_inline_result)
         .filter(text_contains_url);
 
-    router
-        .update
-        .outer_middlewares
-        .register(ConfigMiddleware::new(config.yt_dlp.clone(), config.bot));
-
     router.startup.register(on_startup, (bot.clone(),));
     router.shutdown.register(on_shutdown, ());
 
@@ -110,6 +103,8 @@ async fn main() {
         .allowed_updates(router.resolve_used_update_types())
         .main_router(router.configure_default())
         .bot(bot)
+        .extension(config.yt_dlp)
+        .extension(config.bot)
         .build();
 
     match dispatcher.run_polling().await {
