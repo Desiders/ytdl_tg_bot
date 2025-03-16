@@ -25,7 +25,7 @@ impl<Client> OuterMiddleware<Client> for Config
 where
     Client: Send + Sync + 'static,
 {
-    async fn call(&self, mut request: Request<Client>) -> Result<MiddlewareResponse<Client>, EventErrorKind> {
+    async fn call(&mut self, mut request: Request<Client>) -> Result<MiddlewareResponse<Client>, EventErrorKind> {
         request.extensions.insert(self.yt_dlp.clone());
         request.extensions.insert(self.bot.clone());
 
