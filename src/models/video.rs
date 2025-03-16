@@ -69,45 +69,20 @@ impl VideoInYT {
         format::Audios::from(formats)
     }
 
-    #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
     pub fn thumbnail(&self) -> Option<&str> {
-        let (video_width, video_height) = match (self.width, self.height) {
-            (Some(w), Some(h)) => (w as f32, h as f32),
-            _ => {
-                return self.thumbnail.as_deref().or(self
-                    .thumbnails
-                    .as_deref()
-                    .and_then(|thumbnails| thumbnails[thumbnails.len() - 1].url.as_deref()))
-            }
-        };
-        let video_ratio = video_width / video_height;
-
-        let mut best_thumbnail = None;
-        let mut best_score = f32::MAX;
-
-        for thumb in self.thumbnails.as_deref().unwrap_or_default() {
-            let (Some(thumb_width), Some(thumb_height)) = (thumb.width, thumb.height) else {
-                continue;
-            };
-
-            let thumb_ratio = thumb_width as f32 / thumb_height as f32;
-            let ratio_diff = (video_ratio - thumb_ratio).abs();
-            let size_diff = ((video_width as i32 - thumb_width as i32).abs() + (video_height as i32 - thumb_height as i32).abs()) as f32;
-
-            let score = ratio_diff * 10.0 + size_diff;
-
-            if score < best_score {
-                best_score = score;
-                best_thumbnail = Some(thumb);
-            }
+        if let Some(thumbnail) = self.thumbnail.as_deref() {
+            return Some(thumbnail);
         }
+        if let Some(ref thumbnails) = self.thumbnails {
+            let preferred_order = ["maxresdefault", "hq720", "sddefault", "hqdefault", "mqdefault", "default"];
 
-        best_thumbnail
-            .and_then(|thumbnail| thumbnail.url.as_deref())
-            .or(self.thumbnail.as_deref().or(self
-                .thumbnails
-                .as_deref()
-                .and_then(|thumbnails| thumbnails[thumbnails.len() - 1].url.as_deref())))
+            thumbnails
+                .iter()
+                .filter_map(|thumbnail| thumbnail.url.as_deref())
+                .max_by_key(|url| preferred_order.iter().position(|&name| url.contains(name)))
+        } else {
+            None
+        }
     }
 }
 
