@@ -9,11 +9,13 @@ use crate::{
         send,
         url::UrlWithParams,
     },
-    models::{AudioInFS, TgAudioInPlaylist, TgVideoInPlaylist, VideoInFS},
+    models::{AudioInFS, ShortInfo, TgAudioInPlaylist, TgVideoInPlaylist, VideoInFS},
+    services::yt_toolkit::{get_video_info, GetVideoInfoErrorKind},
     utils::format_error_report,
 };
 
 use nix::libc;
+use reqwest::Client;
 use std::str::FromStr;
 use telers::{
     enums::ParseMode,
@@ -792,36 +794,52 @@ pub async fn media_select_inline_query(
         id: query_id, query: url, ..
     }: InlineQuery,
     Extension(yt_dlp_config): Extension<YtDlp>,
+    Extension(bot_config): Extension<BotConfig>,
 ) -> HandlerResult {
     Span::current().record("query_id", query_id.as_ref());
     Span::current().record("url", url.as_ref());
 
     event!(Level::DEBUG, "Got url");
 
-    let videos = match spawn_blocking(move || {
-        get_media_or_playlist_info(
-            &yt_dlp_config.full_path,
-            url,
-            true,
-            GET_MEDIA_OR_PLAYLIST_INFO_INLINE_QUERY_TIMEOUT,
-            &"1:1:1".parse().unwrap(),
-        )
-    })
-    .await
-    .map_err(HandlerError::new)?
-    {
-        Ok(videos) => videos,
+    let videos_titles: Vec<ShortInfo> = match get_video_info(Client::new(), &bot_config.yt_toolkit_api_url, &url).await {
+        Ok(videos_titles) => videos_titles.into_iter().map(Into::into).collect(),
         Err(err) => {
-            event!(Level::ERROR, err = format_error_report(&err), "Getting media info error");
+            match err {
+                GetVideoInfoErrorKind::GetVideoId(err) => event!(Level::ERROR, %err, "Unsupported URL for YT Toolkit"),
+                _ => event!(Level::ERROR, err = format_error_report(&err), "Getting media info YT Toolkit error"),
+            };
 
-            error::occured_in_chosen_inline_result(&bot, "Sorry, an error occurred while getting media info", query_id.as_ref(), None)
-                .await?;
+            match spawn_blocking(move || {
+                get_media_or_playlist_info(
+                    &yt_dlp_config.full_path,
+                    url,
+                    true,
+                    GET_MEDIA_OR_PLAYLIST_INFO_INLINE_QUERY_TIMEOUT,
+                    &"1:1:1".parse().unwrap(),
+                )
+            })
+            .await
+            .map_err(HandlerError::new)?
+            {
+                Ok(videos) => videos.map(Into::into).collect(),
+                Err(err) => {
+                    event!(Level::ERROR, err = format_error_report(&err), "Getting media info error");
 
-            return Ok(EventReturn::Finish);
+                    error::occured_in_chosen_inline_result(
+                        &bot,
+                        "Sorry, an error occurred while getting media info",
+                        query_id.as_ref(),
+                        None,
+                    )
+                    .await?;
+
+                    return Ok(EventReturn::Finish);
+                }
+            }
         }
     };
 
-    let videos_len = videos.len();
+    let videos_len = videos_titles.len();
 
     if videos_len == 0 {
         event!(Level::WARN, "Playlist empty");
@@ -835,10 +853,17 @@ pub async fn media_select_inline_query(
 
     let mut results: Vec<InlineQueryResult> = Vec::with_capacity(videos_len);
 
-    for video in videos {
-        let title = video.title.as_deref().unwrap_or("Untitled");
+    for ShortInfo { title, thumbnails } in videos_titles {
+        let title = title.as_deref().unwrap_or("Untitled");
         let title_html = html_code(html_quote(title));
-
+        let (thumbnail_url, thumbnail_width, thumbnail_height) = if let Some((Some(url), Some(width), Some(height))) = thumbnails
+            .first()
+            .map(|thumbnail| (thumbnail.url.as_deref(), thumbnail.width, thumbnail.height))
+        {
+            (Some(url), Some(width as i64), Some(height as i64))
+        } else {
+            (None, None, None)
+        };
         let result_id = Uuid::new_v4();
 
         results.push(
@@ -848,6 +873,9 @@ pub async fn media_select_inline_query(
                 InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
             )
             .title(title)
+            .thumbnail_url_option(thumbnail_url)
+            .thumbnail_width_option(thumbnail_width)
+            .thumbnail_height_option(thumbnail_height)
             .description("Click to download video")
             .reply_markup(InlineKeyboardMarkup::new([[
                 InlineKeyboardButton::new("Downloading...").callback_data("video_download")
@@ -861,6 +889,9 @@ pub async fn media_select_inline_query(
                 InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
             )
             .title(title)
+            .thumbnail_url_option(thumbnail_url)
+            .thumbnail_width_option(thumbnail_width)
+            .thumbnail_height_option(thumbnail_height)
             .description("Click to download audio")
             .reply_markup(InlineKeyboardMarkup::new([[
                 InlineKeyboardButton::new("Downloading...").callback_data("audio_download")

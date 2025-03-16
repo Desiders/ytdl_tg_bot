@@ -8,10 +8,23 @@ services:
     build:
       context: .
     networks:
+      - yt_toolkit_api.network
       - telegram_bot_api.network
     depends_on:
+      - yt_toolkit_api
       - telegram_bot_api
     mem_limit: $BOT_MEM_LIMIT
+
+  yt_toolkit_api:
+    container_name: ytdl_tg_bot.yt_toolkit_api
+    image: desiders/yt-toolkit-yt-info-api:0.1.0
+    restart: "unless-stopped"
+    networks:
+      - yt_toolkit_api.network
+    expose:
+      - "8080"
+    ports:
+      - "127.0.0.1:8080:8080"
 
   telegram_bot_api:
     container_name: ytdl_tg_bot.telegram_bot_api
@@ -34,4 +47,5 @@ volumes:
   telegram_bot_api.data: {}
 
 networks:
+  yt_toolkit_api.network: {}
   telegram_bot_api.network: {}
