@@ -51,7 +51,7 @@ pub fn merge_streams(
         .spawn()
 }
 
-/// Convert image to `jpg` format.
+/// Convert image to `jpg` with resize.
 /// # Errors
 /// Returns [`io::Error`] if the spawn child process fails.
 /// # Returns
@@ -68,11 +68,9 @@ pub fn convert_to_jpg(
     let video_width = width.unwrap_or(1280);
     let video_height = height.unwrap_or(720);
 
-    // Рассчитываем aspect ratio
     let aspect_ratio = video_width as f64 / video_height as f64;
     let shorts_ratio = 9.0 / 16.0;
 
-    // Выбираем, нужен ли crop
     let crop_filter = if (aspect_ratio - shorts_ratio).abs() < 0.01 {
         "crop=405:720:437:0"
     } else {
