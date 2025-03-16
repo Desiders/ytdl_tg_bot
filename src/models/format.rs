@@ -510,7 +510,7 @@ impl Display for Audio<'_> {
 #[derive(Clone, Debug, Default)]
 pub struct Audios<'a>(pub Vec<Audio<'a>>);
 
-impl<'a> Audios<'a> {
+impl Audios<'_> {
     fn skip_with_size_greater_than(&mut self, size: f64) {
         self.0.retain(|audio| {
             let Some(filesize) = audio.filesize else {

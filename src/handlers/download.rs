@@ -14,7 +14,7 @@ use crate::{
 };
 
 use nix::libc;
-use std::{str::FromStr, sync::Arc};
+use std::str::FromStr;
 use telers::{
     enums::ParseMode,
     errors::{HandlerError, SessionErrorKind},
@@ -54,7 +54,7 @@ pub enum DownloadErrorKind {
 
 #[instrument(skip_all, fields(message_id, chat_id, url = url.as_str(), params))]
 pub async fn video_download(
-    bot: Arc<Bot>,
+    bot: Bot,
     message: Message,
     Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
     Extension(yt_dlp_config): Extension<YtDlp>,
@@ -240,7 +240,7 @@ pub async fn video_download(
 
 #[instrument(skip_all, fields(message_id, chat_id, url = url.as_str(), params))]
 pub async fn video_download_quite(
-    bot: Arc<Bot>,
+    bot: Bot,
     message: Message,
     Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
     Extension(yt_dlp_config): Extension<YtDlp>,
@@ -404,7 +404,7 @@ pub async fn video_download_quite(
 
 #[instrument(skip_all, fields(message_id, chat_id, url = url.as_str(), params))]
 pub async fn audio_download(
-    bot: Arc<Bot>,
+    bot: Bot,
     message: Message,
     Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
     Extension(yt_dlp_config): Extension<YtDlp>,
@@ -603,7 +603,7 @@ pub async fn audio_download(
 
 #[instrument(skip_all, fields(result_id, inline_message_id))]
 pub async fn media_download_chosen_inline_result(
-    bot: Arc<Bot>,
+    bot: Bot,
     ChosenInlineResult {
         result_id,
         inline_message_id,
@@ -787,7 +787,7 @@ pub async fn media_download_chosen_inline_result(
 
 #[instrument(skip_all, fields(query_id, url))]
 pub async fn media_select_inline_query(
-    bot: Arc<Bot>,
+    bot: Bot,
     InlineQuery {
         id: query_id, query: url, ..
     }: InlineQuery,

@@ -95,10 +95,10 @@ impl<'a> Formats<'a> {
     }
 }
 
-impl<'a> Formats<'a> {
+impl Formats<'_> {
     fn filter_by_max_size(&mut self, max_size: f64) {
         self.0
-            .retain(|format| format.filesize_or_approx().map_or(true, |size| size <= max_size));
+            .retain(|format| format.filesize_or_approx().is_none_or(|size| size <= max_size));
     }
 
     #[allow(clippy::unnecessary_cast, clippy::cast_possible_truncation)]

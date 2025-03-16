@@ -23,7 +23,6 @@ use telers::{
         Reqwest,
     },
     enums::{ChatType as ChatTypeEnum, ContentType as ContentTypeEnum},
-    event::ToServiceProvider as _,
     filters::{ChatType, Command, ContentType, Filter as _},
     Bot, Dispatcher, Router,
 };
@@ -109,11 +108,11 @@ async fn main() {
 
     let dispatcher = Dispatcher::builder()
         .allowed_updates(router.resolve_used_update_types())
-        .main_router(router)
+        .main_router(router.configure_default())
         .bot(bot)
         .build();
 
-    match dispatcher.to_service_provider_default().unwrap().run_polling().await {
+    match dispatcher.run_polling().await {
         Ok(()) => {
             event!(Level::INFO, "Bot stopped");
         }
