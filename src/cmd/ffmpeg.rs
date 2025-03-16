@@ -62,6 +62,23 @@ pub fn convert_to_jpg(
     width: Option<i64>,
     height: Option<i64>,
 ) -> Result<tokio::process::Child, io::Error> {
+    let input_url = input_url.as_ref();
+    let output_path = output_path.as_ref();
+
+    let video_width = width.unwrap_or(1280);
+    let video_height = height.unwrap_or(720);
+
+    // Рассчитываем aspect ratio
+    let aspect_ratio = video_width as f64 / video_height as f64;
+    let shorts_ratio = 9.0 / 16.0;
+
+    // Выбираем, нужен ли crop
+    let crop_filter = if (aspect_ratio - shorts_ratio).abs() < 0.01 {
+        "crop=405:720:437:0"
+    } else {
+        "scale=-1:720"
+    };
+
     tokio::process::Command::new("/usr/bin/ffmpeg")
         .args([
             "-y",
@@ -69,10 +86,10 @@ pub fn convert_to_jpg(
             "-loglevel",
             "error",
             "-i",
-            input_url.as_ref(),
+            input_url,
             "-vf",
-            &format!("scale={}:{}", width.unwrap_or(-1), height.unwrap_or(-1)),
-            output_path.as_ref().to_string_lossy().as_ref(),
+            crop_filter,
+            output_path.to_string_lossy().as_ref(),
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
