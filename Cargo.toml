@@ -4,7 +4,7 @@ version = "1.7.0"
 edition = "2021"
 
 [dependencies]
-telers = { git = "https://github.com/Desiders/telers.git", rev = "0abd98769b9a8758bfa018bfd675d9a4b26b9695", features = ["default_signal"] }
+telers = { git = "https://github.com/Desiders/telers.git", rev = "66cce11018f9f3e8b4218697413d90e4c7253825", features = ["default_signal"] }
 tokio = { version = "1.36", features = ["rt-multi-thread", "process"] }
 tokio-util = "0.7"
 nix = { version = "0.29", features = ["fs", "process"] }
@@ -23,3 +23,4 @@ futures-util = "0.3"
 backoff = { version = "0.4", features = ["tokio"] }
 bytes = "1.5"
 wait-timeout = "0.2"
+regex = "1.11"

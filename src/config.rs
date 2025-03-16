@@ -10,6 +10,7 @@ pub struct Bot {
     pub token: String,
     pub source_code_url: String,
     pub receiver_video_chat_id: i64,
+    pub yt_toolkit_api_url: String,
     pub telegram_bot_api_url: String,
 }
 
@@ -53,6 +54,10 @@ pub fn read_config_from_env() -> Result<Config, ErrorKind> {
                 })?
                 .parse()
                 .map_err(ErrorKind::ParseInt)?,
+            yt_toolkit_api_url: env::var("YT_TOOLKIT_API_URL").map_err(|err| ErrorKind::Env {
+                source: err,
+                key: "YT_TOOLKIT_API_URL".into(),
+            })?,
             telegram_bot_api_url: env::var("TELEGRAM_BOT_API_URL").map_err(|err| ErrorKind::Env {
                 source: err,
                 key: "TELEGRAM_BOT_API_URL".into(),

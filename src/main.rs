@@ -7,6 +7,7 @@ mod fs;
 mod handlers;
 mod handlers_utils;
 mod models;
+mod services;
 mod utils;
 
 use config::read_config_from_env;
