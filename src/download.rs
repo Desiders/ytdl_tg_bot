@@ -52,16 +52,10 @@ pub fn video(
 }
 
 #[instrument(skip_all)]
-async fn get_thumbnail_path(
-    url: impl AsRef<str>,
-    id: impl AsRef<str>,
-    temp_dir_path: impl AsRef<Path>,
-    width: Option<i64>,
-    height: Option<i64>,
-) -> Option<PathBuf> {
+async fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_path: impl AsRef<Path>) -> Option<PathBuf> {
     let path = temp_dir_path.as_ref().join(format!("{}.jpg", id.as_ref()));
 
-    match convert_to_jpg(url, &path, width, height) {
+    match convert_to_jpg(url, &path).await {
         Ok(mut child) => match timeout(Duration::from_secs(10), child.wait()).await {
             Ok(Ok(_)) => Some(path),
             Ok(Err(err)) => {
@@ -171,10 +165,7 @@ pub async fn video(
         Span::current().record("file_path", file_path.display().to_string());
 
         let (thumbnail_path, download_thumbnails) = match video.thumbnail() {
-            Some(url) => (
-                get_thumbnail_path(url, &video.id, &temp_dir_path, video.width, video.height).await,
-                false,
-            ),
+            Some(url) => (get_thumbnail_path(url, &video.id, &temp_dir_path).await, false),
             None => (None, true),
         };
 
@@ -251,7 +242,7 @@ pub async fn video(
     };
 
     let thumbnail_path = match video.thumbnail() {
-        Some(url) => get_thumbnail_path(url, &video.id, &temp_dir_path, video.width, video.height).await,
+        Some(url) => get_thumbnail_path(url, &video.id, &temp_dir_path).await,
         None => None,
     };
 
@@ -325,10 +316,7 @@ pub async fn audio_to_temp_dir(
     event!(Level::DEBUG, ?file_path, "Got file path");
 
     let (thumbnail_path, download_thumbnails) = match video.thumbnail() {
-        Some(url) => (
-            get_thumbnail_path(url, &video.id, &temp_dir_path, video.width, video.height).await,
-            false,
-        ),
+        Some(url) => (get_thumbnail_path(url, &video.id, &temp_dir_path).await, false),
         None => (None, true),
     };
 
