@@ -1,10 +1,10 @@
 [package]
 name = "ytdl_tg_bot"
-version = "1.8.0"
+version = "1.9.0"
 edition = "2021"
 
 [dependencies]
-telers = { git = "https://github.com/Desiders/telers.git", rev = "4c03a3fa8276aec85e5ea9e2e56845dc9bfa6a13", default-features = false, features = ["default_signal"] }
+telers = { git = "https://github.com/Desiders/telers.git", rev = "4c03a3fa8276aec85e5ea9e2e56845dc9bfa6a13", features = ["default_signal"] }
 tokio = { version = "1.36", features = ["rt-multi-thread", "process"] }
 tokio-util = "0.7"
 nix = { version = "0.29", features = ["fs", "process"] }
