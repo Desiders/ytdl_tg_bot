@@ -5,14 +5,12 @@ use std::{collections::VecDeque, ops::Deref, path::PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Thumbnail {
-    pub width: Option<f64>,
-    pub height: Option<f64>,
     pub url: Option<String>,
 }
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug, Clone, Deserialize)]
-pub struct VideoInYT {
+pub struct Video {
     pub id: String,
     pub title: Option<String>,
     pub thumbnail: Option<String>,
@@ -28,7 +26,7 @@ pub struct VideoInYT {
     formats: Vec<format::Any>,
 }
 
-impl VideoInYT {
+impl Video {
     pub fn get_combined_formats(&self) -> combined_format::Formats<'_> {
         let mut format_kinds = vec![];
 
@@ -87,30 +85,30 @@ impl VideoInYT {
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub struct VideosInYT(VecDeque<VideoInYT>);
+pub struct VideosInYT(VecDeque<Video>);
 
 impl VideosInYT {
-    pub fn new(videos: impl Into<VecDeque<VideoInYT>>) -> Self {
+    pub fn new(videos: impl Into<VecDeque<Video>>) -> Self {
         Self(videos.into())
     }
 }
 
 impl Iterator for VideosInYT {
-    type Item = VideoInYT;
+    type Item = Video;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.0.pop_front()
     }
 }
 
-impl Extend<VideoInYT> for VideosInYT {
-    fn extend<T: IntoIterator<Item = VideoInYT>>(&mut self, iter: T) {
+impl Extend<Video> for VideosInYT {
+    fn extend<T: IntoIterator<Item = Video>>(&mut self, iter: T) {
         self.0.extend(iter);
     }
 }
 
 impl Deref for VideosInYT {
-    type Target = VecDeque<VideoInYT>;
+    type Target = VecDeque<Video>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

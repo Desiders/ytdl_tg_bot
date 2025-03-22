@@ -145,6 +145,7 @@ pub async fn video_download(
             video,
             yt_dlp_config.max_file_size,
             &yt_dlp_config.full_path,
+            &bot_config.yt_toolkit_api_url,
             temp_dir.path(),
             DOWNLOAD_MEDIA_TIMEOUT,
         )
@@ -313,6 +314,7 @@ pub async fn video_download_quite(
             video,
             yt_dlp_config.max_file_size,
             &yt_dlp_config.full_path,
+            &bot_config.yt_toolkit_api_url,
             temp_dir.path(),
             DOWNLOAD_MEDIA_TIMEOUT,
         )
@@ -506,6 +508,7 @@ pub async fn audio_download(
             id_or_url,
             yt_dlp_config.max_file_size,
             &yt_dlp_config.full_path,
+            &bot_config.yt_toolkit_api_url,
             temp_dir.path(),
             DOWNLOAD_MEDIA_TIMEOUT,
         )
@@ -668,6 +671,7 @@ pub async fn media_download_chosen_inline_result(
                 video,
                 yt_dlp_config.max_file_size,
                 yt_dlp_config.full_path,
+                &bot_config.yt_toolkit_api_url,
                 temp_dir.path(),
                 DOWNLOAD_MEDIA_TIMEOUT,
             )
@@ -722,6 +726,7 @@ pub async fn media_download_chosen_inline_result(
                 &url,
                 yt_dlp_config.max_file_size,
                 &yt_dlp_config.full_path,
+                &bot_config.yt_toolkit_api_url,
                 temp_dir.path(),
                 DOWNLOAD_MEDIA_TIMEOUT,
             )
@@ -856,14 +861,7 @@ pub async fn media_select_inline_query(
     for ShortInfo { title, thumbnails } in videos_titles {
         let title = title.as_deref().unwrap_or("Untitled");
         let title_html = html_code(html_quote(title));
-        let (thumbnail_url, thumbnail_width, thumbnail_height) = if let Some((Some(url), Some(width), Some(height))) = thumbnails
-            .first()
-            .map(|thumbnail| (thumbnail.url.as_deref(), thumbnail.width, thumbnail.height))
-        {
-            (Some(url), Some(width as i64), Some(height as i64))
-        } else {
-            (None, None, None)
-        };
+        let thumbnail_url = thumbnails.first().map(|thumbnail| thumbnail.url.as_deref()).flatten();
         let result_id = Uuid::new_v4();
 
         results.push(
@@ -874,8 +872,6 @@ pub async fn media_select_inline_query(
             )
             .title(title)
             .thumbnail_url_option(thumbnail_url)
-            .thumbnail_width_option(thumbnail_width)
-            .thumbnail_height_option(thumbnail_height)
             .description("Click to download video")
             .reply_markup(InlineKeyboardMarkup::new([[
                 InlineKeyboardButton::new("Downloading...").callback_data("video_download")
@@ -890,8 +886,6 @@ pub async fn media_select_inline_query(
             )
             .title(title)
             .thumbnail_url_option(thumbnail_url)
-            .thumbnail_width_option(thumbnail_width)
-            .thumbnail_height_option(thumbnail_height)
             .description("Click to download audio")
             .reply_markup(InlineKeyboardMarkup::new([[
                 InlineKeyboardButton::new("Downloading...").callback_data("audio_download")

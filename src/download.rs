@@ -1,7 +1,8 @@
 use crate::{
     cmd::{convert_to_jpg, download_audio_to_path, download_to_pipe, download_video_to_path, merge_streams, ytdl},
     fs::get_best_thumbnail_path_in_dir,
-    models::{AudioInFS, VideoInFS, VideoInYT},
+    models::{AudioInFS, Video, VideoInFS},
+    services::yt_toolkit,
     utils::format_error_report,
 };
 use futures_util::StreamExt as _;
@@ -11,6 +12,7 @@ use nix::{
 };
 use reqwest::Client;
 use std::{
+    borrow::Cow,
     fs::File,
     io,
     os::fd::AsRawFd,
@@ -40,15 +42,16 @@ pub enum StreamErrorKind {
     Join(#[from] JoinError),
 }
 
-#[cfg(not(target_family = "unix"))]
-pub fn video(
-    _video: VideoInYT,
-    _video_id_or_url: impl AsRef<str>,
-    _max_file_size: u64,
-    _executable_ytdl_path: impl AsRef<str>,
-    _temp_dir: &TempDir,
-) -> Result<VideoInFS, StreamErrorKind> {
-    unimplemented!("This function is only implemented for Unix systems");
+#[instrument(skip_all)]
+fn get_thumbnail_url<'a>(video: &'a Video, yt_toolkit_api_url: impl AsRef<str>) -> Option<Cow<'a, str>> {
+    match (video.width, video.height) {
+        (Some(width), Some(height)) => match yt_toolkit::get_thumbnail_url(yt_toolkit_api_url.as_ref(), &video.original_url, width, height)
+        {
+            Ok(url) => Some(Cow::Owned(url)),
+            Err(_) => video.thumbnail().map(Cow::Borrowed),
+        },
+        _ => video.thumbnail().map(Cow::Borrowed),
+    }
 }
 
 #[instrument(skip_all)]
@@ -130,9 +133,10 @@ async fn range_download_to_write<W: AsyncWriteExt + Unpin>(
 #[instrument(skip_all, fields(url = %video.original_url, format_id, file_path, extension))]
 #[allow(clippy::unnecessary_to_owned)]
 pub async fn video(
-    video: VideoInYT,
+    video: Video,
     max_file_size: u32,
     executable_ytdl_path: impl AsRef<str>,
+    yt_toolkit_api_url: impl AsRef<str>,
     temp_dir_path: impl AsRef<Path>,
     download_and_merge_timeout: u64,
 ) -> Result<VideoInFS, StreamErrorKind> {
@@ -164,9 +168,11 @@ pub async fn video(
 
         Span::current().record("file_path", file_path.display().to_string());
 
-        let (thumbnail_path, download_thumbnails) = match video.thumbnail() {
-            Some(url) => (get_thumbnail_path(url, &video.id, &temp_dir_path).await, false),
-            None => (None, true),
+        let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = get_thumbnail_url(&video, yt_toolkit_api_url) {
+            let thumbnail_path = get_thumbnail_path(thumbnail_url, &video.id, &temp_dir_path).await;
+            (thumbnail_path, false)
+        } else {
+            (None, true)
         };
 
         download_video_to_path(
@@ -241,9 +247,10 @@ pub async fn video(
         )?;
     };
 
-    let thumbnail_path = match video.thumbnail() {
-        Some(url) => get_thumbnail_path(url, &video.id, &temp_dir_path).await,
-        None => None,
+    let thumbnail_path = if let Some(thumbnail_url) = get_thumbnail_url(&video, yt_toolkit_api_url) {
+        get_thumbnail_path(thumbnail_url, &video.id, &temp_dir_path).await
+    } else {
+        None
     };
 
     let exit_code = match timeout(Duration::from_secs(download_and_merge_timeout), merge_child?.wait()).await {
@@ -283,10 +290,11 @@ pub enum ToTempDirErrorKind {
 
 #[instrument(skip_all, fields(video = video.id, format_id = field::Empty, file_path = field::Empty))]
 pub async fn audio_to_temp_dir(
-    video: VideoInYT,
+    video: Video,
     video_id_or_url: impl AsRef<str>,
     max_file_size: u32,
     executable_ytdl_path: impl AsRef<str>,
+    yt_toolkit_api_url: impl AsRef<str>,
     temp_dir_path: impl AsRef<Path>,
     download_timeout: u64,
 ) -> Result<AudioInFS, ToTempDirErrorKind> {
@@ -315,9 +323,11 @@ pub async fn audio_to_temp_dir(
 
     event!(Level::DEBUG, ?file_path, "Got file path");
 
-    let (thumbnail_path, download_thumbnails) = match video.thumbnail() {
-        Some(url) => (get_thumbnail_path(url, &video.id, &temp_dir_path).await, false),
-        None => (None, true),
+    let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = get_thumbnail_url(&video, yt_toolkit_api_url) {
+        let thumbnail_path = get_thumbnail_path(thumbnail_url, &video.id, &temp_dir_path).await;
+        (thumbnail_path, false)
+    } else {
+        (None, true)
     };
 
     download_audio_to_path(

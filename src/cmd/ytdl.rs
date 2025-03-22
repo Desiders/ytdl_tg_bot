@@ -1,6 +1,6 @@
 use crate::{
     handlers_utils::range::Range,
-    models::{VideoInYT, VideosInYT},
+    models::{Video, VideosInYT},
 };
 
 use serde::de::Error as _;
@@ -285,7 +285,7 @@ pub fn get_media_or_playlist_info(
 
         Ok(VideosInYT::new(videos))
     } else {
-        let video: VideoInYT = serde_json::from_value(value)?;
+        let video: Video = serde_json::from_value(value)?;
 
         Ok(VideosInYT::new(vec![video]))
     }
