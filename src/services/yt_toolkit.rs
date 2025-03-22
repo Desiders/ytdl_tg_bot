@@ -4,6 +4,7 @@ use crate::{
 };
 
 use reqwest::Client;
+use url::Url;
 
 #[derive(thiserror::Error, Debug)]
 pub enum GetVideoInfoErrorKind {
@@ -32,4 +33,15 @@ pub async fn get_video_info(client: Client, api_url: &str, url: &str) -> Result<
         VideoInfoKind::Playable { basic_info } => Ok(vec![basic_info]),
         VideoInfoKind::Unplayable { playability_status } => Err(GetVideoInfoErrorKind::Unplayable(playability_status)),
     }
+}
+
+pub fn get_thumbnail_url(api_url: &str, url: &str, width: i64, height: i64) -> Result<String, GetVideoIdErrorKind> {
+    let id = get_video_id(url)?;
+
+    Ok(Url::parse_with_params(
+        &format!("{api_url}/thumbnail"),
+        &[("id", id), ("width", width.to_string()), ("height", height.to_string())],
+    )
+    .unwrap()
+    .into())
 }

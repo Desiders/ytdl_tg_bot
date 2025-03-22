@@ -1,30 +1,24 @@
 use super::{
-    video::{Thumbnail as YtDlpThumbnail, VideoInYT},
-    yt_toolkit::{BasicInfo, Thumbnail as YtToolkitThumbnail},
+    video::{Thumbnail as YtDlpThumbnail, Video},
+    yt_toolkit::BasicInfo,
 };
 
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct Thumbnail {
-    pub width: Option<f64>,
-    pub height: Option<f64>,
     pub url: Option<String>,
 }
 
-impl From<YtToolkitThumbnail> for Thumbnail {
-    fn from(YtToolkitThumbnail { url, width, height }: YtToolkitThumbnail) -> Self {
-        Self {
-            width: Some(width),
-            height: Some(height),
-            url: Some(url),
-        }
+impl From<String> for Thumbnail {
+    fn from(url: String) -> Self {
+        Self { url: Some(url) }
     }
 }
 
 impl From<YtDlpThumbnail> for Thumbnail {
-    fn from(YtDlpThumbnail { width, height, url }: YtDlpThumbnail) -> Self {
-        Self { width, height, url }
+    fn from(YtDlpThumbnail { url }: YtDlpThumbnail) -> Self {
+        Self { url }
     }
 }
 
@@ -43,27 +37,19 @@ impl From<BasicInfo> for ShortInfo {
     }
 }
 
-impl From<VideoInYT> for ShortInfo {
+impl From<Video> for ShortInfo {
     fn from(
-        VideoInYT {
+        Video {
             title,
             thumbnail,
             thumbnails,
             ..
-        }: VideoInYT,
+        }: Video,
     ) -> Self {
         Self {
             title,
             thumbnails: {
-                let mut all_thumbnails = thumbnail
-                    .map(|url| {
-                        vec![Thumbnail {
-                            width: None,
-                            height: None,
-                            url: Some(url),
-                        }]
-                    })
-                    .unwrap_or_default();
+                let mut all_thumbnails = thumbnail.map(|url| vec![Thumbnail { url: Some(url) }]).unwrap_or_default();
                 all_thumbnails.extend(thumbnails.unwrap_or_default().into_iter().map(Into::into));
                 all_thumbnails
             },

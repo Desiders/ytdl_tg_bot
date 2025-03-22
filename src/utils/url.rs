@@ -6,8 +6,8 @@ pub enum ErrorKind {
     #[error("Invalid URL format")]
     InvalidUrl,
 
-    #[error("No video ID found in: {0}")]
-    NoVideoIdFound(String),
+    #[error("No video ID found")]
+    NoVideoIdFound,
 }
 
 const VIDEO_ID_LENGTH: usize = 11;
@@ -41,7 +41,7 @@ pub fn get_video_id(input: &str) -> Result<String, ErrorKind> {
         }
     }
 
-    Err(ErrorKind::NoVideoIdFound(input.to_owned()))
+    Err(ErrorKind::NoVideoIdFound)
 }
 
 #[cfg(test)]
