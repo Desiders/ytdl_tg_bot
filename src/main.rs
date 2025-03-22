@@ -29,15 +29,6 @@ use tracing::{event, Level};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
 use utils::{on_shutdown, on_startup};
 
-#[cfg(not(target_family = "unix"))]
-fn main() {
-    panic!(
-        "This bot can only be run on Unix systems. \
-        This is because it uses Unix pipes to communicate between the yt-dl process and the ffmpeg process."
-    );
-}
-
-#[cfg(target_family = "unix")]
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let config = match read_config_from_env() {

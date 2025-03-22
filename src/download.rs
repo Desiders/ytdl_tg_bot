@@ -129,7 +129,6 @@ async fn range_download_to_write<W: AsyncWriteExt + Unpin>(
     Ok(())
 }
 
-#[cfg(target_family = "unix")]
 #[instrument(skip_all, fields(url = %video.original_url, format_id, file_path, extension))]
 #[allow(clippy::unnecessary_to_owned)]
 pub async fn video(
