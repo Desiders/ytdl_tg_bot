@@ -1,19 +1,21 @@
 use crate::{
     cmd::get_media_or_playlist_info,
     config::{Bot as BotConfig, YtDlp},
-    download::{self, StreamErrorKind, ToTempDirErrorKind},
+    download::{self, AudioToTempDirErrorKind, VideoErrorKind},
     handlers_utils::{
         chat_action::{upload_video_action_in_loop, upload_voice_action_in_loop},
         error,
         range::Range,
-        send,
+        send::{self, with_retries},
         url::UrlWithParams,
     },
-    models::{AudioInFS, ShortInfo, TgAudioInPlaylist, TgVideoInPlaylist, VideoInFS},
+    interactors::{DownloadInfo, DownloadMedia, SendMedia},
+    models::{AudioInFS, ShortInfo, Video, VideoInFS},
     services::yt_toolkit::{get_video_info, GetVideoInfoErrorKind},
     utils::format_error_report,
 };
 
+use either::Either;
 use nix::libc;
 use reqwest::Client;
 use std::str::FromStr;
@@ -21,16 +23,17 @@ use telers::{
     enums::ParseMode,
     errors::{HandlerError, SessionErrorKind},
     event::{telegram::HandlerResult, EventReturn},
-    methods::{AnswerInlineQuery, DeleteMessage, EditMessageMedia, SendAudio, SendVideo},
+    methods::{AnswerInlineQuery, DeleteMessage, EditMessageMedia, SendAudio, SendMediaGroup, SendVideo},
     types::{
         ChosenInlineResult, InlineKeyboardButton, InlineKeyboardMarkup, InlineQuery, InlineQueryResult, InlineQueryResultArticle,
-        InputFile, InputMediaVideo, InputTextMessageContent, Message,
+        InputFile, InputMediaAudio, InputMediaVideo, InputTextMessageContent, Message, ReplyParameters,
     },
     utils::text::{html_code, html_quote, html_text_link},
     Bot, Extension,
 };
 use tempfile::tempdir;
-use tokio::task::{spawn_blocking, JoinError, JoinHandle};
+use tokio::{sync::mpsc, task::JoinError};
+use tokio_util::task::AbortOnDropHandle;
 use tracing::{event, field::debug, instrument, Level, Span};
 use uuid::Uuid;
 
@@ -45,9 +48,9 @@ const SELECT_INLINE_QUERY_CACHE_TIME: i64 = 86400; // 24 hours
 #[derive(thiserror::Error, Debug)]
 pub enum DownloadErrorKind {
     #[error(transparent)]
-    Stream(#[from] StreamErrorKind),
+    Stream(#[from] VideoErrorKind),
     #[error(transparent)]
-    Temp(#[from] ToTempDirErrorKind),
+    Temp(#[from] AudioToTempDirErrorKind),
     #[error(transparent)]
     Session(#[from] SessionErrorKind),
     #[error(transparent)]
@@ -86,102 +89,66 @@ pub async fn video_download(
         None => Range::default(),
     };
 
-    let upload_action_task = tokio::spawn({
+    let _upload_action_task = AbortOnDropHandle::new(tokio::spawn({
         let bot = bot.clone();
 
         async move { upload_video_action_in_loop(&bot, chat_id).await }
-    });
+    }));
+    let temp_dir = tempdir().map_err(HandlerError::new)?;
+    let (sender, receiver) = mpsc::unbounded_channel::<(_, Either<(VideoInFS, Video), _>)>();
 
-    let videos = match spawn_blocking({
-        let full_path = yt_dlp_config.full_path.clone();
-        let url = url.clone();
-
-        move || get_media_or_playlist_info(full_path, url, true, GET_INFO_TIMEOUT, &range)
-    })
-    .await
-    .map_err(|err| {
-        upload_action_task.abort();
-        event!(Level::ERROR, err = format_error_report(&err), "Error while join");
-        HandlerError::new(err)
-    })? {
-        Ok(videos) => videos,
-        Err(err) => {
-            upload_action_task.abort();
-            event!(Level::ERROR, err = format_error_report(&err), "Error while get info");
-
-            error::occured_in_message(&bot, chat_id, message_id, "Sorry, an error occurred while getting media info", None).await?;
-
-            return Ok(EventReturn::Finish);
-        }
-    };
-
-    let videos_len = videos.len();
-
-    if videos_len == 0 {
-        upload_action_task.abort();
-        event!(Level::WARN, "Playlist empty");
-
-        error::occured_in_message(&bot, chat_id, message_id, "Playlist empty", None).await?;
-
-        return Ok(EventReturn::Finish);
-    }
-
-    event!(Level::DEBUG, videos_len, "Got media info");
-
-    let mut failed_downloads_count = 0;
-    let mut handles: Vec<JoinHandle<Result<_, DownloadErrorKind>>> = Vec::with_capacity(videos_len);
-
-    for video in videos {
-        let temp_dir = tempdir().map_err(|err| {
-            upload_action_task.abort();
-
-            HandlerError::new(err)
-        })?;
-
-        #[allow(clippy::cast_possible_truncation)]
-        let (height, width, duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
-
-        let VideoInFS { path, thumbnail_path } = match download::video(
-            video,
-            yt_dlp_config.max_file_size,
-            &yt_dlp_config.full_path,
-            &bot_config.yt_toolkit_api_url,
-            temp_dir.path(),
-            DOWNLOAD_MEDIA_TIMEOUT,
-        )
-        .await
+    let DownloadInfo { is_playlist, count } =
+        match DownloadMedia::new(url, range, true, temp_dir.path(), sender, &yt_dlp_config, &bot_config)
+            .download()
+            .await
         {
-            Ok(val) => val,
+            Ok(info) => info,
             Err(err) => {
-                event!(Level::ERROR, err = format_error_report(&err), "Error while download");
-                failed_downloads_count += 1;
-                continue;
+                error::occured_in_message(
+                    &bot,
+                    chat_id,
+                    message_id,
+                    &format!("Sorry, an error occurred while getting media info. {err}"),
+                    None,
+                )
+                .await?;
+                return Ok(EventReturn::Finish);
             }
         };
 
-        event!(Level::TRACE, "Send video");
+    if count == 0 {
+        error::occured_in_message(&bot, chat_id, message_id, "Playlist empty", None).await?;
+        return Ok(EventReturn::Finish);
+    }
 
-        handles.push({
+    match SendMedia::new(
+        is_playlist,
+        |(
+            VideoInFS { path, thumbnail_path },
+            Video {
+                duration, width, height, ..
+            },
+        )| {
             let bot = bot.clone();
             let receiver_video_chat_id = bot_config.receiver_video_chat_id;
-
-            tokio::spawn(async move {
-                let message = send::with_retries(
+            async move {
+                let message = match send::with_retries(
                     &bot,
                     SendVideo::new(receiver_video_chat_id, InputFile::fs(path))
                         .disable_notification(true)
                         .width_option(width)
                         .height_option(height)
-                        .duration_option(duration)
+                        .duration_option(duration.map(|duration| duration as i64))
                         .thumbnail_option(thumbnail_path.map(InputFile::fs))
                         .supports_streaming(true),
                     2,
                     Some(SEND_VIDEO_TIMEOUT),
                 )
-                .await?;
-
-                // Don't delete this line, we need it to avoid drop
-                drop(temp_dir);
+                .await
+                {
+                    Ok(message) => message,
+                    Err(err) => return Err(err),
+                };
 
                 event!(Level::TRACE, "Video sended");
 
@@ -193,46 +160,54 @@ pub async fn video_download(
                     }
                 });
 
-                Ok(message.video().unwrap().file_id.clone())
-            })
-        });
-    }
-
-    let mut videos_in_playlist = Vec::with_capacity(videos_len);
-
-    for (index, handle) in handles.into_iter().enumerate() {
-        match handle.await {
-            Ok(Ok(file_id)) => videos_in_playlist.push(TgVideoInPlaylist::new(file_id, index)),
-            Ok(Err(err)) => {
-                event!(Level::ERROR, err = format_error_report(&err), "Error while download");
-
-                failed_downloads_count += 1;
+                Ok(message.video().unwrap().file_id.to_string())
             }
-            Err(err) => {
-                event!(Level::ERROR, err = format_error_report(&err), "Error while join");
+        },
+        {
+            |media_ids| {
+                let bot = bot.clone();
+                async move {
+                    let media_group = {
+                        media_ids
+                            .into_iter()
+                            .map(|media_id| InputMediaVideo::new(InputFile::id(media_id)))
+                            .collect::<Vec<_>>()
+                    };
 
-                failed_downloads_count += 1;
+                    with_retries(
+                        &bot,
+                        SendMediaGroup::new(chat_id.clone(), media_group)
+                            .disable_notification(true)
+                            .reply_parameters(ReplyParameters::new(message_id).allow_sending_without_reply(true)),
+                        3,
+                        Some(SEND_VIDEO_TIMEOUT),
+                    )
+                    .await
+                    .map(|_| ())
+                }
             }
+        },
+        receiver,
+    )
+    .send()
+    .await
+    {
+        Ok(_failed_sends) => {
+            // TODO: Add message about failed sends
         }
-    }
-
-    upload_action_task.abort();
-
-    if failed_downloads_count > 0 {
-        event!(Level::ERROR, "Failed downloads count is {failed_downloads_count}");
-
-        error::download_videos_in_message(&bot, failed_downloads_count, chat_id, message_id, Some(ParseMode::HTML)).await?;
-    }
-
-    let input_media_list = {
-        videos_in_playlist.sort_by(|a, b| a.index.cmp(&b.index));
-        videos_in_playlist
-            .into_iter()
-            .map(|video| InputMediaVideo::new(InputFile::id(video.file_id.into_string())))
-            .collect()
+        Err(err) => {
+            error::occured_in_message(
+                &bot,
+                chat_id,
+                message_id,
+                &format!("Sorry, an error occurred while sending media group. {err}"),
+                None,
+            )
+            .await?;
+        }
     };
 
-    send::media_groups(&bot, chat_id, input_media_list, Some(message_id), Some(SEND_AUDIO_TIMEOUT)).await?;
+    drop(temp_dir);
 
     unsafe {
         libc::malloc_trim(0);
@@ -271,86 +246,49 @@ pub async fn video_download_quite(
         None => Range::default(),
     };
 
-    let videos = match spawn_blocking({
-        let full_path = yt_dlp_config.full_path.clone();
-        let url = url.clone();
+    let temp_dir = tempdir().map_err(HandlerError::new)?;
+    let (sender, receiver) = mpsc::unbounded_channel::<(_, Either<(VideoInFS, Video), _>)>();
 
-        move || get_media_or_playlist_info(full_path, url, true, GET_INFO_TIMEOUT, &range)
-    })
-    .await
-    .map_err(|err| {
-        event!(Level::ERROR, err = format_error_report(&err), "Error while join");
-
-        HandlerError::new(err)
-    })? {
-        Ok(videos) => videos,
-        Err(err) => {
-            event!(Level::ERROR, err = format_error_report(&err), "Error while get info");
-
-            return Ok(EventReturn::Finish);
-        }
+    let Ok(DownloadInfo { is_playlist, count }) =
+        DownloadMedia::new(url, range, true, temp_dir.path(), sender, &yt_dlp_config, &bot_config)
+            .download()
+            .await
+    else {
+        return Ok(EventReturn::Finish);
     };
 
-    let videos_len = videos.len();
-
-    if videos_len == 0 {
-        event!(Level::WARN, "Playlist empty");
-
+    if count == 0 {
         return Ok(EventReturn::Finish);
     }
 
-    event!(Level::DEBUG, videos_len, "Got media info");
-
-    let mut failed_downloads_count = 0;
-    let mut handles: Vec<JoinHandle<Result<_, DownloadErrorKind>>> = Vec::with_capacity(videos_len);
-
-    for video in videos {
-        let temp_dir = tempdir().map_err(HandlerError::new)?;
-
-        #[allow(clippy::cast_possible_truncation)]
-        let (height, width, duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
-
-        let VideoInFS { path, thumbnail_path } = match download::video(
-            video,
-            yt_dlp_config.max_file_size,
-            &yt_dlp_config.full_path,
-            &bot_config.yt_toolkit_api_url,
-            temp_dir.path(),
-            DOWNLOAD_MEDIA_TIMEOUT,
-        )
-        .await
-        {
-            Ok(val) => val,
-            Err(err) => {
-                event!(Level::ERROR, err = format_error_report(&err), "Error while download");
-                failed_downloads_count += 1;
-                continue;
-            }
-        };
-
-        event!(Level::TRACE, "Send video");
-
-        handles.push({
+    match SendMedia::new(
+        is_playlist,
+        |(
+            VideoInFS { path, thumbnail_path },
+            Video {
+                duration, width, height, ..
+            },
+        )| {
             let bot = bot.clone();
             let receiver_video_chat_id = bot_config.receiver_video_chat_id;
-
-            tokio::spawn(async move {
-                let message = send::with_retries(
+            async move {
+                let message = match send::with_retries(
                     &bot,
                     SendVideo::new(receiver_video_chat_id, InputFile::fs(path))
                         .disable_notification(true)
                         .width_option(width)
                         .height_option(height)
-                        .duration_option(duration)
+                        .duration_option(duration.map(|duration| duration as i64))
                         .thumbnail_option(thumbnail_path.map(InputFile::fs))
                         .supports_streaming(true),
                     2,
                     Some(SEND_VIDEO_TIMEOUT),
                 )
-                .await?;
-
-                // Don't delete this line, we need it to avoid drop
-                drop(temp_dir);
+                .await
+                {
+                    Ok(message) => message,
+                    Err(err) => return Err(err),
+                };
 
                 event!(Level::TRACE, "Video sended");
 
@@ -362,42 +300,45 @@ pub async fn video_download_quite(
                     }
                 });
 
-                Ok(message.video().unwrap().file_id.clone())
-            })
-        });
-    }
-
-    let mut videos_in_playlist = Vec::with_capacity(videos_len);
-
-    for (index, handle) in handles.into_iter().enumerate() {
-        match handle.await {
-            Ok(Ok(file_id)) => videos_in_playlist.push(TgVideoInPlaylist::new(file_id, index)),
-            Ok(Err(err)) => {
-                event!(Level::ERROR, err = format_error_report(&err), "Error while download");
-
-                failed_downloads_count += 1;
+                Ok(message.video().unwrap().file_id.to_string())
             }
-            Err(err) => {
-                event!(Level::ERROR, err = format_error_report(&err), "Error while join");
+        },
+        {
+            |media_ids| {
+                let bot = bot.clone();
+                async move {
+                    let media_group = {
+                        media_ids
+                            .into_iter()
+                            .map(|media_id| InputMediaVideo::new(InputFile::id(media_id)))
+                            .collect::<Vec<_>>()
+                    };
 
-                failed_downloads_count += 1;
+                    with_retries(
+                        &bot,
+                        SendMediaGroup::new(chat_id.clone(), media_group)
+                            .disable_notification(true)
+                            .reply_parameters(ReplyParameters::new(message_id).allow_sending_without_reply(true)),
+                        3,
+                        Some(SEND_VIDEO_TIMEOUT),
+                    )
+                    .await
+                    .map(|_| ())
+                }
             }
+        },
+        receiver,
+    )
+    .send()
+    .await
+    {
+        Ok(_failed_sends) => {
+            // TODO: Add message about failed sends
         }
-    }
-
-    if failed_downloads_count > 0 {
-        event!(Level::ERROR, "Failed downloads count is {failed_downloads_count}");
-    }
-
-    let input_media_list = {
-        videos_in_playlist.sort_by(|a, b| a.index.cmp(&b.index));
-        videos_in_playlist
-            .into_iter()
-            .map(|video| InputMediaVideo::new(InputFile::id(video.file_id.into_string())))
-            .collect()
+        Err(_err) => {}
     };
 
-    send::media_groups(&bot, chat_id, input_media_list, Some(message_id), Some(SEND_AUDIO_TIMEOUT)).await?;
+    drop(temp_dir);
 
     unsafe {
         libc::malloc_trim(0);
@@ -438,109 +379,61 @@ pub async fn audio_download(
         None => Range::default(),
     };
 
-    let upload_action_task = tokio::spawn({
+    let _upload_action_task = AbortOnDropHandle::new(tokio::spawn({
         let bot = bot.clone();
 
         async move { upload_voice_action_in_loop(&bot, chat_id).await }
-    });
+    }));
+    let temp_dir = tempdir().map_err(HandlerError::new)?;
+    let (sender, receiver) = mpsc::unbounded_channel::<(_, Either<(AudioInFS, Video), _>)>();
 
-    let videos = match spawn_blocking({
-        let full_path = yt_dlp_config.full_path.clone();
-        let url = url.clone();
-
-        move || get_media_or_playlist_info(full_path, url, true, GET_INFO_TIMEOUT, &range)
-    })
-    .await
-    .map_err(|err| {
-        upload_action_task.abort();
-        event!(Level::ERROR, err = format_error_report(&err), "Error while join");
-        HandlerError::new(err)
-    })? {
-        Ok(videos) => videos,
-        Err(err) => {
-            upload_action_task.abort();
-            event!(Level::ERROR, err = format_error_report(&err), "Error while get info");
-
-            error::occured_in_message(&bot, chat_id, message_id, "Sorry, an error occurred while getting media info", None).await?;
-
-            return Ok(EventReturn::Finish);
-        }
-    };
-
-    let videos_len = videos.len();
-
-    if videos_len == 0 {
-        upload_action_task.abort();
-        event!(Level::WARN, "Playlist empty");
-
-        error::occured_in_message(&bot, chat_id, message_id, "Playlist empty", None).await?;
-
-        return Ok(EventReturn::Finish);
-    }
-
-    event!(Level::DEBUG, videos_len, "Got media info");
-
-    let mut failed_downloads_count = 0;
-    let mut handles: Vec<JoinHandle<Result<Box<str>, DownloadErrorKind>>> = Vec::with_capacity(videos_len);
-
-    for video in videos {
-        let temp_dir = tempdir().map_err(|err| {
-            upload_action_task.abort();
-            HandlerError::new(err)
-        })?;
-
-        // This hack is needed because `ytdl` doesn't support downloading videos by ID from other sources, for example `coub.com `.
-        // It also doesn't support uploading videos by direct URL, so we can only transmit the passeds URL.
-        // If URL represents playlist, we get an error because unacceptable use one URL one more time for different videos.
-        // This should be fixed by direct download video without `ytdl`.
-        let id_or_url = if videos_len == 1 {
-            url.as_str().to_owned()
-        } else {
-            video.id.clone()
-        };
-        let title = video.title.clone();
-
-        #[allow(clippy::cast_possible_truncation)]
-        let duration = video.duration.map(|duration| duration as i64);
-
-        let AudioInFS { path, thumbnail_path } = match download::audio_to_temp_dir(
-            video,
-            id_or_url,
-            yt_dlp_config.max_file_size,
-            &yt_dlp_config.full_path,
-            &bot_config.yt_toolkit_api_url,
-            temp_dir.path(),
-            DOWNLOAD_MEDIA_TIMEOUT,
-        )
-        .await
+    let DownloadInfo { is_playlist, count } =
+        match DownloadMedia::new(url, range, true, temp_dir.path(), sender, &yt_dlp_config, &bot_config)
+            .download()
+            .await
         {
-            Ok(val) => val,
+            Ok(info) => info,
             Err(err) => {
-                event!(Level::ERROR, err = format_error_report(&err), "Error while download");
-                failed_downloads_count += 1;
-                continue;
+                error::occured_in_message(
+                    &bot,
+                    chat_id,
+                    message_id,
+                    &format!("Sorry, an error occurred while getting media info. {err}"),
+                    None,
+                )
+                .await?;
+                return Ok(EventReturn::Finish);
             }
         };
 
-        handles.push({
+    if count == 0 {
+        error::occured_in_message(&bot, chat_id, message_id, "Playlist empty", None).await?;
+        return Ok(EventReturn::Finish);
+    }
+
+    match SendMedia::new(
+        is_playlist,
+        |(AudioInFS { path, thumbnail_path }, Video { duration, title, .. })| {
             let bot = bot.clone();
             let receiver_video_chat_id = bot_config.receiver_video_chat_id;
-
-            tokio::spawn(async move {
-                let message = send::with_retries(
+            async move {
+                let message = match send::with_retries(
                     &bot,
                     SendAudio::new(receiver_video_chat_id, InputFile::fs(path))
                         .disable_notification(true)
                         .title_option(title)
-                        .duration_option(duration)
+                        .duration_option(duration.map(|duration| duration as i64))
                         .thumbnail_option(thumbnail_path.map(InputFile::fs)),
                     2,
-                    Some(SEND_AUDIO_TIMEOUT),
+                    Some(SEND_VIDEO_TIMEOUT),
                 )
-                .await?;
+                .await
+                {
+                    Ok(message) => message,
+                    Err(err) => return Err(err),
+                };
 
-                // Don't delete this line, we need it to avoid drop
-                drop(temp_dir);
+                event!(Level::TRACE, "Audio sended");
 
                 tokio::spawn({
                     let message_id = message.id();
@@ -551,53 +444,60 @@ pub async fn audio_download(
                 });
 
                 let file_id = if let Some(audio) = message.audio() {
-                    audio.file_id.as_ref()
+                    audio.file_id.clone().into_string()
                 } else if let Some(voice) = message.voice() {
-                    voice.file_id.as_ref()
+                    voice.file_id.clone().into_string()
                 } else {
                     unreachable!("Message should have audio or voice")
                 };
-
-                Ok(file_id.to_owned().into_boxed_str())
-            })
-        });
-    }
-
-    let mut audios_in_playlist = Vec::with_capacity(videos_len);
-
-    for (index, handle) in handles.into_iter().enumerate() {
-        match handle.await {
-            Ok(Ok(file_id)) => audios_in_playlist.push(TgAudioInPlaylist::new(file_id, index)),
-            Ok(Err(err)) => {
-                event!(Level::ERROR, err = format_error_report(&err), "Error while download audio");
-
-                failed_downloads_count += 1;
+                Ok(file_id)
             }
-            Err(err) => {
-                event!(Level::ERROR, err = format_error_report(&err), "Error while join");
+        },
+        {
+            |media_ids| {
+                let bot = bot.clone();
+                async move {
+                    let media_group = {
+                        media_ids
+                            .into_iter()
+                            .map(|media_id| InputMediaAudio::new(InputFile::id(media_id)))
+                            .collect::<Vec<_>>()
+                    };
 
-                failed_downloads_count += 1;
+                    with_retries(
+                        &bot,
+                        SendMediaGroup::new(chat_id.clone(), media_group)
+                            .disable_notification(true)
+                            .reply_parameters(ReplyParameters::new(message_id).allow_sending_without_reply(true)),
+                        3,
+                        Some(SEND_VIDEO_TIMEOUT),
+                    )
+                    .await
+                    .map(|_| ())
+                }
             }
+        },
+        receiver,
+    )
+    .send()
+    .await
+    {
+        Ok(_failed_sends) => {
+            // TODO: Add message about failed sends
         }
-    }
-
-    upload_action_task.abort();
-
-    if failed_downloads_count > 0 {
-        event!(Level::ERROR, "Failed downloads count is {failed_downloads_count}");
-
-        error::download_audios_in_message(&bot, failed_downloads_count, chat_id, message_id, Some(ParseMode::HTML)).await?;
-    }
-
-    let input_media_list = {
-        audios_in_playlist.sort_by(|a, b| a.index.cmp(&b.index));
-        audios_in_playlist
-            .into_iter()
-            .map(|video| InputMediaVideo::new(InputFile::id(video.file_id.into_string())))
-            .collect()
+        Err(err) => {
+            error::occured_in_message(
+                &bot,
+                chat_id,
+                message_id,
+                &format!("Sorry, an error occurred while sending media group. {err}"),
+                None,
+            )
+            .await?;
+        }
     };
 
-    send::media_groups(&bot, chat_id, input_media_list, Some(message_id), Some(SEND_AUDIO_TIMEOUT)).await?;
+    drop(temp_dir);
 
     unsafe {
         libc::malloc_trim(0);
@@ -628,21 +528,19 @@ pub async fn media_download_chosen_inline_result(
 
     event!(Level::DEBUG, "Got url");
 
-    let videos = match spawn_blocking({
-        let full_path = yt_dlp_config.full_path.clone();
-        let url = url.clone();
-
-        move || get_media_or_playlist_info(full_path, url, false, GET_INFO_TIMEOUT, &"1:1:1".parse().unwrap())
-    })
-    .await
-    .map_err(HandlerError::new)?
+    let videos = match get_media_or_playlist_info(&yt_dlp_config.full_path, &url, false, GET_INFO_TIMEOUT, &"1:1:1".parse().unwrap()).await
     {
         Ok(videos) => videos,
         Err(err) => {
             event!(Level::ERROR, err = format_error_report(&err), "Error while get info");
 
-            error::occured_in_chosen_inline_result(&bot, "Sorry, an error occurred while getting media info", inline_message_id, None)
-                .await?;
+            error::occured_in_chosen_inline_result(
+                &bot,
+                "Sorry, an error occurred while getting media info. {err}",
+                inline_message_id,
+                None,
+            )
+            .await?;
 
             return Ok(EventReturn::Finish);
         }
@@ -668,7 +566,7 @@ pub async fn media_download_chosen_inline_result(
             let (height, width, duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
 
             let VideoInFS { path, thumbnail_path } = download::video(
-                video,
+                &video,
                 yt_dlp_config.max_file_size,
                 yt_dlp_config.full_path,
                 &bot_config.yt_toolkit_api_url,
@@ -722,7 +620,7 @@ pub async fn media_download_chosen_inline_result(
             let duration = video.duration.map(|duration| duration as i64);
 
             let AudioInFS { path, thumbnail_path } = download::audio_to_temp_dir(
-                video,
+                &video,
                 &url,
                 yt_dlp_config.max_file_size,
                 &yt_dlp_config.full_path,
@@ -814,17 +712,14 @@ pub async fn media_select_inline_query(
                 _ => event!(Level::ERROR, err = format_error_report(&err), "Getting media info YT Toolkit error"),
             };
 
-            match spawn_blocking(move || {
-                get_media_or_playlist_info(
-                    &yt_dlp_config.full_path,
-                    url,
-                    true,
-                    GET_MEDIA_OR_PLAYLIST_INFO_INLINE_QUERY_TIMEOUT,
-                    &"1:1:1".parse().unwrap(),
-                )
-            })
+            match get_media_or_playlist_info(
+                &yt_dlp_config.full_path,
+                url,
+                true,
+                GET_MEDIA_OR_PLAYLIST_INFO_INLINE_QUERY_TIMEOUT,
+                &"1:1:1".parse().unwrap(),
+            )
             .await
-            .map_err(HandlerError::new)?
             {
                 Ok(videos) => videos.map(Into::into).collect(),
                 Err(err) => {

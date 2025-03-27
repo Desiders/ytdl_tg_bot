@@ -22,25 +22,7 @@ use std::{
 use tokio::{io::AsyncWriteExt, task::JoinError, time::timeout};
 use tracing::{event, field, instrument, Level, Span};
 
-#[derive(thiserror::Error, Debug)]
-pub enum RangeDownloadKind {
-    #[error(transparent)]
-    Io(#[from] io::Error),
-    #[error(transparent)]
-    Reqwest(#[from] reqwest::Error),
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum StreamErrorKind {
-    #[error("No format found for video {video_id}")]
-    NoFormatFound { video_id: Box<str> },
-    #[error(transparent)]
-    Io(#[from] io::Error),
-    #[error(transparent)]
-    RangeDownload(#[from] RangeDownloadKind),
-    #[error(transparent)]
-    Join(#[from] JoinError),
-}
+const RANGE_CHUNK_SIZE: i32 = 1024 * 1024 * 10;
 
 #[instrument(skip_all)]
 fn get_thumbnail_url<'a>(video: &'a Video, yt_toolkit_api_url: impl AsRef<str>) -> Option<Cow<'a, str>> {
@@ -77,7 +59,13 @@ async fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_
     }
 }
 
-const RANGE_CHUNK_SIZE: i32 = 1024 * 1024 * 10;
+#[derive(thiserror::Error, Debug)]
+pub enum RangeDownloadKind {
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error(transparent)]
+    Reqwest(#[from] reqwest::Error),
+}
 
 async fn range_download_to_write<W: AsyncWriteExt + Unpin>(
     url: impl AsRef<str>,
@@ -129,24 +117,36 @@ async fn range_download_to_write<W: AsyncWriteExt + Unpin>(
     Ok(())
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum VideoErrorKind {
+    #[error("No format found for video {video_id}")]
+    NoFormatFound { video_id: Box<str> },
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error(transparent)]
+    RangeDownload(#[from] RangeDownloadKind),
+    #[error(transparent)]
+    Join(#[from] JoinError),
+}
+
 #[instrument(skip_all, fields(url = %video.original_url, format_id, file_path, extension))]
 #[allow(clippy::unnecessary_to_owned)]
 pub async fn video(
-    video: Video,
+    video: &Video,
     max_file_size: u32,
     executable_ytdl_path: impl AsRef<str>,
     yt_toolkit_api_url: impl AsRef<str>,
     temp_dir_path: impl AsRef<Path>,
     download_and_merge_timeout: u64,
-) -> Result<VideoInFS, StreamErrorKind> {
+) -> Result<VideoInFS, VideoErrorKind> {
     let mut combined_formats = video.get_combined_formats();
     combined_formats.sort(max_file_size);
 
     let Some(combined_format) = combined_formats.first().cloned() else {
         event!(Level::WARN, %combined_formats, "No video format found");
 
-        return Err(StreamErrorKind::NoFormatFound {
-            video_id: video.id.into_boxed_str(),
+        return Err(VideoErrorKind::NoFormatFound {
+            video_id: video.id.clone().into_boxed_str(),
         });
     };
 
@@ -278,33 +278,33 @@ pub async fn video(
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum ToTempDirErrorKind {
-    #[error("No format found for video {video_id}")]
+pub enum AudioToTempDirErrorKind {
+    #[error("No format found for audio {video_id}")]
     NoFormatFound { video_id: Box<str> },
     #[error(transparent)]
-    Ytdl(#[from] ytdl::Error),
+    Ytdlp(#[from] ytdl::Error),
     #[error("Failed to get best thumbnail path in dir: {0}")]
     ThumbnailPathFailed(#[from] io::Error),
 }
 
 #[instrument(skip_all, fields(video = video.id, format_id = field::Empty, file_path = field::Empty))]
 pub async fn audio_to_temp_dir(
-    video: Video,
+    video: &Video,
     video_id_or_url: impl AsRef<str>,
     max_file_size: u32,
     executable_ytdl_path: impl AsRef<str>,
     yt_toolkit_api_url: impl AsRef<str>,
     temp_dir_path: impl AsRef<Path>,
     download_timeout: u64,
-) -> Result<AudioInFS, ToTempDirErrorKind> {
+) -> Result<AudioInFS, AudioToTempDirErrorKind> {
     let mut audio_formats = video.get_audio_formats();
     audio_formats.sort_by_priority_and_skip_by_size(max_file_size);
 
     let Some(audio_format) = audio_formats.first().cloned() else {
         event!(Level::ERROR, ?audio_formats, "No format found for audio");
 
-        return Err(ToTempDirErrorKind::NoFormatFound {
-            video_id: video.id.into_boxed_str(),
+        return Err(AudioToTempDirErrorKind::NoFormatFound {
+            video_id: video.id.clone().into_boxed_str(),
         });
     };
 

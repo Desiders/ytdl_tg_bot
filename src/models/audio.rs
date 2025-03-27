@@ -1,20 +1,5 @@
 use std::path::PathBuf;
 
-#[derive(Debug)]
-pub struct TgAudioInPlaylist {
-    pub file_id: Box<str>,
-    pub index: usize,
-}
-
-impl TgAudioInPlaylist {
-    pub fn new(file_id: impl Into<Box<str>>, index: usize) -> Self {
-        Self {
-            file_id: file_id.into(),
-            index,
-        }
-    }
-}
-
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct AudioInFS {

@@ -6,14 +6,13 @@ use crate::{
 use serde::de::Error as _;
 use serde_json::{json, Value};
 use std::{
-    io::{self, Read},
+    io,
     os::fd::OwnedFd,
     path::Path,
-    process::{Child, Command, Stdio},
+    process::{Child, Command, Output, Stdio},
     time::Duration,
 };
-use tracing::{event, Level};
-use wait_timeout::ChildExt as _;
+use tokio::time::error::Elapsed;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -209,13 +208,23 @@ pub async fn download_audio_to_path(
     }
 }
 
-pub fn get_media_or_playlist_info(
+#[derive(thiserror::Error, Debug)]
+pub enum GetMediaInfoErrorKind {
+    #[error("Get media info timed out: {0}")]
+    TimedOut(#[from] Elapsed),
+    #[error("Get media info IO error {0}")]
+    Io(#[from] io::Error),
+    #[error("Parse media info error: {0}")]
+    Json(#[from] serde_json::Error),
+}
+
+pub async fn get_media_or_playlist_info(
     executable_path: impl AsRef<str>,
     url: impl AsRef<str>,
     allow_playlist: bool,
     timeout: u64,
     range: &Range,
-) -> Result<VideosInYT, Error> {
+) -> Result<VideosInYT, GetMediaInfoErrorKind> {
     let args = [
         "--no-update",
         "--ignore-config",
@@ -242,38 +251,27 @@ pub fn get_media_or_playlist_info(
         url.as_ref(),
     ];
 
-    let mut child = Command::new(executable_path.as_ref())
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()?;
+    let Output { status, stdout, stderr } = tokio::time::timeout(
+        Duration::from_secs(timeout),
+        tokio::process::Command::new(executable_path.as_ref())
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await??;
 
-    let mut stdout = vec![];
-    let child_stdout = child.stdout.take();
-    io::copy(&mut child_stdout.unwrap(), &mut stdout)?;
-
-    let Some(exit_code) = child.wait_timeout(Duration::from_secs(timeout))? else {
-        event!(Level::ERROR, "Child process timed out");
-
-        child.kill()?;
-
-        return Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out").into());
-    };
-
-    if !exit_code.success() {
-        event!(Level::ERROR, "Child process exited with error status: {exit_code}");
-
-        return Err(io::Error::new(io::ErrorKind::Other, format!("Youtube-dl exited with status `{exit_code}`")).into());
-    }
-
-    let mut stderr = vec![];
-    if let Some(mut reader) = child.stderr {
-        reader.read_to_end(&mut stderr)?;
+    if !status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Get media info status error `{status}`: {}", String::from_utf8_lossy(&stderr),),
+        )
+        .into());
     }
 
     let value: Value = serde_json::from_slice(&stdout)?;
-
     if value["_type"] == json!("playlist") {
         let mut videos = vec![];
 
@@ -287,6 +285,6 @@ pub fn get_media_or_playlist_info(
     } else {
         let video: Video = serde_json::from_value(value)?;
 
-        Ok(VideosInYT::new(vec![video]))
+        Ok(VideosInYT::new(vec![video; 1]))
     }
 }

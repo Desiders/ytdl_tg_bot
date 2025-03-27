@@ -5,6 +5,6 @@ pub mod short_info;
 pub mod video;
 pub mod yt_toolkit;
 
-pub use audio::{AudioInFS, TgAudioInPlaylist};
+pub use audio::AudioInFS;
 pub use short_info::ShortInfo;
-pub use video::{TgVideoInPlaylist, Video, VideoInFS, VideosInYT};
+pub use video::{Video, VideoInFS, VideosInYT};

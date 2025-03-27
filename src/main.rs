@@ -6,6 +6,7 @@ mod filters;
 mod fs;
 mod handlers;
 mod handlers_utils;
+mod interactors;
 mod models;
 mod services;
 mod utils;
