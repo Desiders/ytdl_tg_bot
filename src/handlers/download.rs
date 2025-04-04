@@ -858,10 +858,10 @@ pub async fn media_select_inline_query(
 
     let mut results: Vec<InlineQueryResult> = Vec::with_capacity(videos_len);
 
-    for ShortInfo { title, thumbnails } in videos_titles {
-        let title = title.as_deref().unwrap_or("Untitled");
+    for video in videos_titles {
+        let title = video.title.as_deref().unwrap_or("Untitled");
         let title_html = html_code(html_quote(title));
-        let thumbnail_url = thumbnails.first().map(|thumbnail| thumbnail.url.as_deref()).flatten();
+        let thumbnail_url = download::get_thumbnail_url(&video, &bot_config.yt_toolkit_api_url);
         let result_id = Uuid::new_v4();
 
         results.push(
@@ -871,7 +871,7 @@ pub async fn media_select_inline_query(
                 InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
             )
             .title(title)
-            .thumbnail_url_option(thumbnail_url)
+            .thumbnail_url_option(thumbnail_url.clone())
             .description("Click to download video")
             .reply_markup(InlineKeyboardMarkup::new([[
                 InlineKeyboardButton::new("Downloading...").callback_data("video_download")

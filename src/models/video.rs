@@ -66,22 +66,6 @@ impl Video {
 
         format::Audios::from(formats)
     }
-
-    pub fn thumbnail(&self) -> Option<&str> {
-        if let Some(thumbnail) = self.thumbnail.as_deref() {
-            return Some(thumbnail);
-        }
-        if let Some(ref thumbnails) = self.thumbnails {
-            let preferred_order = ["maxresdefault", "hq720", "sddefault", "hqdefault", "mqdefault", "default"];
-
-            thumbnails
-                .iter()
-                .filter_map(|thumbnail| thumbnail.url.as_deref())
-                .max_by_key(|url| preferred_order.iter().position(|&name| url.contains(name)))
-        } else {
-            None
-        }
-    }
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
