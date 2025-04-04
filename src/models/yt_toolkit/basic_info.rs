@@ -3,8 +3,11 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BasicInfo {
+    pub id: String,
     pub title: String,
     pub thumbnail: Vec<String>,
+    pub width: i64,
+    pub height: i64,
 }
 
 #[derive(Debug, Deserialize)]

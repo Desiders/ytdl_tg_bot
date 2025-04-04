@@ -1,7 +1,7 @@
 use crate::{
     cmd::{convert_to_jpg, download_audio_to_path, download_to_pipe, download_video_to_path, merge_streams, ytdl},
     fs::get_best_thumbnail_path_in_dir,
-    models::{AudioInFS, Video, VideoInFS},
+    models::{AudioInFS, ShortInfo, Video, VideoInFS},
     services::yt_toolkit,
     utils::format_error_report,
 };
@@ -43,10 +43,9 @@ pub enum StreamErrorKind {
 }
 
 #[instrument(skip_all)]
-fn get_thumbnail_url<'a>(video: &'a Video, yt_toolkit_api_url: impl AsRef<str>) -> Option<Cow<'a, str>> {
+pub fn get_thumbnail_url<'a>(video: &'a ShortInfo, yt_toolkit_api_url: impl AsRef<str>) -> Option<Cow<'a, str>> {
     match (video.width, video.height) {
-        (Some(width), Some(height)) => match yt_toolkit::get_thumbnail_url(yt_toolkit_api_url.as_ref(), &video.original_url, width, height)
-        {
+        (Some(width), Some(height)) => match yt_toolkit::get_thumbnail_url(yt_toolkit_api_url.as_ref(), &video.id, width, height) {
             Ok(url) => Some(Cow::Owned(url)),
             Err(_) => video.thumbnail().map(Cow::Borrowed),
         },
@@ -167,12 +166,13 @@ pub async fn video(
 
         Span::current().record("file_path", file_path.display().to_string());
 
-        let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = get_thumbnail_url(&video, yt_toolkit_api_url) {
-            let thumbnail_path = get_thumbnail_path(thumbnail_url, &video.id, &temp_dir_path).await;
-            (thumbnail_path, false)
-        } else {
-            (None, true)
-        };
+        let (thumbnail_path, download_thumbnails) =
+            if let Some(thumbnail_url) = get_thumbnail_url(&video.clone().into(), yt_toolkit_api_url) {
+                let thumbnail_path = get_thumbnail_path(thumbnail_url, &video.id, &temp_dir_path).await;
+                (thumbnail_path, false)
+            } else {
+                (None, true)
+            };
 
         download_video_to_path(
             executable_ytdl_path,
@@ -246,7 +246,7 @@ pub async fn video(
         )?;
     };
 
-    let thumbnail_path = if let Some(thumbnail_url) = get_thumbnail_url(&video, yt_toolkit_api_url) {
+    let thumbnail_path = if let Some(thumbnail_url) = get_thumbnail_url(&video.clone().into(), yt_toolkit_api_url) {
         get_thumbnail_path(thumbnail_url, &video.id, &temp_dir_path).await
     } else {
         None
@@ -322,7 +322,7 @@ pub async fn audio_to_temp_dir(
 
     event!(Level::DEBUG, ?file_path, "Got file path");
 
-    let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = get_thumbnail_url(&video, yt_toolkit_api_url) {
+    let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = get_thumbnail_url(&video.clone().into(), yt_toolkit_api_url) {
         let thumbnail_path = get_thumbnail_path(thumbnail_url, &video.id, &temp_dir_path).await;
         (thumbnail_path, false)
     } else {
