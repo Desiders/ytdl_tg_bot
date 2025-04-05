@@ -810,7 +810,15 @@ pub async fn media_download_search_chosen_inline_result(
         let full_path = yt_dlp_config.full_path.clone();
         let video_id = video_id.to_owned();
 
-        move || get_media_or_playlist_info(full_path, &video_id, false, GET_INFO_TIMEOUT, &"1:1:1".parse().unwrap())
+        move || {
+            get_media_or_playlist_info(
+                full_path,
+                &format!("ytsearch:{video_id}"),
+                false,
+                GET_INFO_TIMEOUT,
+                &"1:1:1".parse().unwrap(),
+            )
+        }
     })
     .await
     .map_err(HandlerError::new)?
