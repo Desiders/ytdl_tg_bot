@@ -206,7 +206,7 @@ pub async fn video(
     fcntl(video_write_fd.as_raw_fd(), F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
     fcntl(audio_write_fd.as_raw_fd(), F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
 
-    let output_path = temp_dir_path.as_ref().join(format!("merged.{extension}"));
+    let output_path = temp_dir_path.as_ref().join(format!("{video_id}.{extension}", video_id = video.id));
 
     let merge_child = merge_streams(video_read_fd, audio_read_fd, extension.to_owned(), output_path.clone());
 
