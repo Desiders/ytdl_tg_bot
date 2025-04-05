@@ -1082,7 +1082,7 @@ pub async fn media_search_inline_query(
             .into_iter()
             .map(Into::into)
             .enumerate()
-            .filter(|(index, _)| *index < 50)
+            .filter(|(index, _)| *index < 25)
             .map(|(_, video)| video)
             .collect(),
         Err(err) => {
