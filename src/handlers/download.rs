@@ -879,7 +879,9 @@ pub async fn media_download_search_chosen_inline_result(
             send::with_retries(
                 &bot,
                 EditMessageMedia::new(
-                    InputMediaVideo::new(InputFile::id(message.video().unwrap().file_id.as_ref())).parse_mode(ParseMode::HTML),
+                    InputMediaVideo::new(InputFile::id(message.video().unwrap().file_id.as_ref()))
+                        .caption(html_text_link("Link", format!("https://youtu.be/{video_id}")))
+                        .parse_mode(ParseMode::HTML),
                 )
                 .inline_message_id(inline_message_id)
                 .reply_markup(InlineKeyboardMarkup::new([[]])),
@@ -935,8 +937,12 @@ pub async fn media_download_search_chosen_inline_result(
 
             send::with_retries(
                 &bot,
-                EditMessageMedia::new(InputMediaVideo::new(InputFile::id(file_id)).parse_mode(ParseMode::HTML))
-                    .inline_message_id(inline_message_id),
+                EditMessageMedia::new(
+                    InputMediaVideo::new(InputFile::id(file_id))
+                        .caption(html_text_link("Link", format!("https://youtu.be/{video_id}")))
+                        .parse_mode(ParseMode::HTML),
+                )
+                .inline_message_id(inline_message_id),
                 2,
                 Some(SEND_AUDIO_TIMEOUT),
             )
