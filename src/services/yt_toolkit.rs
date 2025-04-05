@@ -57,12 +57,10 @@ pub async fn search_video(client: Client, api_url: &str, text: &str) -> Result<V
     Ok(basic_search_info.into_iter().map(Into::into).collect())
 }
 
-pub fn get_thumbnail_url(api_url: &str, url: &str, width: i64, height: i64) -> Result<String, GetVideoIdErrorKind> {
-    let id = get_video_id(url)?;
-
+pub fn get_thumbnail_url(api_url: &str, id: &str, width: i64, height: i64) -> Result<String, GetVideoIdErrorKind> {
     Ok(Url::parse_with_params(
         &format!("{api_url}/thumbnail"),
-        &[("id", id), ("width", width.to_string()), ("height", height.to_string())],
+        &[("id", id), ("width", &width.to_string()), ("height", &height.to_string())],
     )
     .unwrap()
     .into())
