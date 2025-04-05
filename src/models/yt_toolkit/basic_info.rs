@@ -11,6 +11,26 @@ pub struct BasicInfo {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BasicSearchInfo {
+    pub id: String,
+    pub title: String,
+    pub thumbnails: Vec<String>,
+}
+
+impl From<BasicSearchInfo> for BasicInfo {
+    fn from(BasicSearchInfo { id, title, thumbnails }: BasicSearchInfo) -> Self {
+        Self {
+            id,
+            title,
+            thumbnail: thumbnails,
+            width: 1,
+            height: 1,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub struct PlayabilityStatus {
     pub status: String,
     pub reason: Option<String>,

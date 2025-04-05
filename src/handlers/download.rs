@@ -10,7 +10,7 @@ use crate::{
         url::UrlWithParams,
     },
     models::{AudioInFS, ShortInfo, TgAudioInPlaylist, TgVideoInPlaylist, VideoInFS},
-    services::yt_toolkit::{get_video_info, GetVideoInfoErrorKind},
+    services::yt_toolkit::{get_video_info, search_video, GetVideoInfoErrorKind},
     utils::format_error_report,
 };
 
@@ -79,7 +79,6 @@ pub async fn video_download(
                 event!(Level::ERROR, err = format_error_report(&err), "Error while parse range");
 
                 error::occured_in_message(&bot, chat_id, message_id, &err.to_string(), None).await?;
-
                 return Ok(EventReturn::Finish);
             }
         },
@@ -110,7 +109,6 @@ pub async fn video_download(
             event!(Level::ERROR, err = format_error_report(&err), "Error while get info");
 
             error::occured_in_message(&bot, chat_id, message_id, "Sorry, an error occurred while getting media info", None).await?;
-
             return Ok(EventReturn::Finish);
         }
     };
@@ -122,7 +120,6 @@ pub async fn video_download(
         event!(Level::WARN, "Playlist empty");
 
         error::occured_in_message(&bot, chat_id, message_id, "Playlist empty", None).await?;
-
         return Ok(EventReturn::Finish);
     }
 
@@ -431,7 +428,6 @@ pub async fn audio_download(
                 event!(Level::ERROR, err = format_error_report(&err), "Error while parse range");
 
                 error::occured_in_message(&bot, chat_id, message_id, &err.to_string(), None).await?;
-
                 return Ok(EventReturn::Finish);
             }
         },
@@ -462,7 +458,6 @@ pub async fn audio_download(
             event!(Level::ERROR, err = format_error_report(&err), "Error while get info");
 
             error::occured_in_message(&bot, chat_id, message_id, "Sorry, an error occurred while getting media info", None).await?;
-
             return Ok(EventReturn::Finish);
         }
     };
@@ -474,7 +469,6 @@ pub async fn audio_download(
         event!(Level::WARN, "Playlist empty");
 
         error::occured_in_message(&bot, chat_id, message_id, "Playlist empty", None).await?;
-
         return Ok(EventReturn::Finish);
     }
 
@@ -643,7 +637,6 @@ pub async fn media_download_chosen_inline_result(
 
             error::occured_in_chosen_inline_result(&bot, "Sorry, an error occurred while getting media info", inline_message_id, None)
                 .await?;
-
             return Ok(EventReturn::Finish);
         }
     };
@@ -652,7 +645,6 @@ pub async fn media_download_chosen_inline_result(
         event!(Level::ERROR, "Video not found");
 
         error::occured_in_chosen_inline_result(&bot, "Sorry, video not found", inline_message_id, None).await?;
-
         return Ok(EventReturn::Finish);
     };
 
@@ -792,6 +784,184 @@ pub async fn media_download_chosen_inline_result(
     Ok(EventReturn::Finish)
 }
 
+#[instrument(skip_all, fields(result_id, inline_message_id))]
+pub async fn media_download_search_chosen_inline_result(
+    bot: Bot,
+    ChosenInlineResult {
+        result_id,
+        inline_message_id,
+        ..
+    }: ChosenInlineResult,
+    Extension(yt_dlp_config): Extension<YtDlp>,
+    Extension(bot_config): Extension<BotConfig>,
+) -> HandlerResult {
+    Span::current().record("result_id", result_id.as_ref());
+    Span::current().record("inline_message_id", inline_message_id.as_deref());
+
+    let mut result_id_terminator = result_id.split_terminator('_');
+    let (result_prefix, video_id) = (result_id_terminator.next().unwrap(), result_id_terminator.next().unwrap());
+
+    let download_video = result_prefix.starts_with("video");
+    let inline_message_id = inline_message_id.as_deref().unwrap();
+
+    event!(Level::DEBUG, "Got url");
+
+    let videos = match spawn_blocking({
+        let full_path = yt_dlp_config.full_path.clone();
+        let video_id = video_id.to_owned();
+
+        move || get_media_or_playlist_info(full_path, &video_id, false, GET_INFO_TIMEOUT, &"1:1:1".parse().unwrap())
+    })
+    .await
+    .map_err(HandlerError::new)?
+    {
+        Ok(videos) => videos,
+        Err(err) => {
+            event!(Level::ERROR, err = format_error_report(&err), "Error while get info");
+
+            error::occured_in_chosen_inline_result(&bot, "Sorry, an error occurred while getting media info", inline_message_id, None)
+                .await?;
+            return Ok(EventReturn::Finish);
+        }
+    };
+
+    let Some(video) = videos.front().cloned() else {
+        event!(Level::ERROR, "Video not found");
+
+        error::occured_in_chosen_inline_result(&bot, "Sorry, video not found", inline_message_id, None).await?;
+        return Ok(EventReturn::Finish);
+    };
+
+    drop(videos);
+
+    event!(Level::DEBUG, "Got media info");
+
+    let temp_dir = tempdir().map_err(HandlerError::new)?;
+
+    let handle: Result<(), DownloadErrorKind> = async {
+        if download_video {
+            #[allow(clippy::cast_possible_truncation)]
+            let (height, width, duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
+
+            let VideoInFS { path, thumbnail_path } = download::video(
+                video,
+                yt_dlp_config.max_file_size,
+                yt_dlp_config.full_path,
+                &bot_config.yt_toolkit_api_url,
+                temp_dir.path(),
+                DOWNLOAD_MEDIA_TIMEOUT,
+            )
+            .await?;
+
+            let message = send::with_retries(
+                &bot,
+                SendVideo::new(bot_config.receiver_video_chat_id, InputFile::fs(path))
+                    .disable_notification(true)
+                    .width_option(width)
+                    .height_option(height)
+                    .duration_option(duration)
+                    .thumbnail_option(thumbnail_path.map(InputFile::fs))
+                    .supports_streaming(true),
+                2,
+                Some(SEND_VIDEO_TIMEOUT),
+            )
+            .await?;
+
+            drop(temp_dir);
+
+            send::with_retries(
+                &bot,
+                EditMessageMedia::new(
+                    InputMediaVideo::new(InputFile::id(message.video().unwrap().file_id.as_ref())).parse_mode(ParseMode::HTML),
+                )
+                .inline_message_id(inline_message_id)
+                .reply_markup(InlineKeyboardMarkup::new([[]])),
+                2,
+                Some(SEND_VIDEO_TIMEOUT),
+            )
+            .await?;
+
+            tokio::spawn({
+                let message_id = message.id();
+                let bot = bot.clone();
+
+                async move {
+                    let _ = bot.send(DeleteMessage::new(bot_config.receiver_video_chat_id, message_id)).await;
+                }
+            });
+        } else {
+            let title = video.title.clone();
+
+            #[allow(clippy::cast_possible_truncation)]
+            let duration = video.duration.map(|duration| duration as i64);
+
+            let AudioInFS { path, thumbnail_path } = download::audio_to_temp_dir(
+                video,
+                video_id,
+                yt_dlp_config.max_file_size,
+                &yt_dlp_config.full_path,
+                &bot_config.yt_toolkit_api_url,
+                temp_dir.path(),
+                DOWNLOAD_MEDIA_TIMEOUT,
+            )
+            .await?;
+
+            let message = send::with_retries(
+                &bot,
+                SendAudio::new(bot_config.receiver_video_chat_id, InputFile::fs(path))
+                    .disable_notification(true)
+                    .title_option(title)
+                    .duration_option(duration)
+                    .thumbnail_option(thumbnail_path.map(InputFile::fs)),
+                2,
+                Some(SEND_AUDIO_TIMEOUT),
+            )
+            .await?;
+
+            let file_id = if let Some(audio) = message.audio() {
+                audio.file_id.as_ref()
+            } else if let Some(voice) = message.voice() {
+                voice.file_id.as_ref()
+            } else {
+                unreachable!("Message should have audio or voice")
+            };
+
+            send::with_retries(
+                &bot,
+                EditMessageMedia::new(InputMediaVideo::new(InputFile::id(file_id)).parse_mode(ParseMode::HTML))
+                    .inline_message_id(inline_message_id),
+                2,
+                Some(SEND_AUDIO_TIMEOUT),
+            )
+            .await?;
+
+            tokio::spawn({
+                let message_id = message.id();
+                let bot = bot.clone();
+
+                async move {
+                    let _ = bot.send(DeleteMessage::new(bot_config.receiver_video_chat_id, message_id)).await;
+                }
+            });
+        }
+
+        Ok(())
+    }
+    .await;
+
+    if let Err(err) = handle {
+        event!(Level::ERROR, err = format_error_report(&err), "Error while download media");
+
+        error::occured_in_chosen_inline_result(&bot, "Sorry, an error occurred while downloading media", inline_message_id, None).await?;
+    }
+
+    unsafe {
+        libc::malloc_trim(0);
+    }
+
+    Ok(EventReturn::Finish)
+}
+
 #[instrument(skip_all, fields(query_id, url))]
 pub async fn media_select_inline_query(
     bot: Bot,
@@ -806,8 +976,8 @@ pub async fn media_select_inline_query(
 
     event!(Level::DEBUG, "Got url");
 
-    let videos_titles: Vec<ShortInfo> = match get_video_info(Client::new(), &bot_config.yt_toolkit_api_url, &url).await {
-        Ok(videos_titles) => videos_titles.into_iter().map(Into::into).collect(),
+    let videos: Vec<ShortInfo> = match get_video_info(Client::new(), &bot_config.yt_toolkit_api_url, &url).await {
+        Ok(videos) => videos.into_iter().map(Into::into).collect(),
         Err(err) => {
             match err {
                 GetVideoInfoErrorKind::GetVideoId(err) => event!(Level::ERROR, %err, "Unsupported URL for YT Toolkit"),
@@ -830,27 +1000,19 @@ pub async fn media_select_inline_query(
                 Err(err) => {
                     event!(Level::ERROR, err = format_error_report(&err), "Getting media info error");
 
-                    error::occured_in_chosen_inline_result(
-                        &bot,
-                        "Sorry, an error occurred while getting media info",
-                        query_id.as_ref(),
-                        None,
-                    )
-                    .await?;
-
+                    error::occured_in_inline_query_occured(&bot, &query_id, "Sorry, an error occurred while getting media info").await?;
                     return Ok(EventReturn::Finish);
                 }
             }
         }
     };
 
-    let videos_len = videos_titles.len();
+    let videos_len = videos.len();
 
     if videos_len == 0 {
         event!(Level::WARN, "Playlist empty");
 
-        error::occured_in_inline_query_occured(&bot, query_id.as_ref(), "Playlist empty").await?;
-
+        error::occured_in_inline_query_occured(&bot, &query_id, "Playlist empty").await?;
         return Ok(EventReturn::Finish);
     }
 
@@ -858,7 +1020,7 @@ pub async fn media_select_inline_query(
 
     let mut results: Vec<InlineQueryResult> = Vec::with_capacity(videos_len);
 
-    for video in videos_titles {
+    for video in videos {
         let title = video.title.as_deref().unwrap_or("Untitled");
         let title_html = html_code(html_quote(title));
         let thumbnail_url = download::get_thumbnail_url(&video, &bot_config.yt_toolkit_api_url);
@@ -870,7 +1032,6 @@ pub async fn media_select_inline_query(
                 title,
                 InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
             )
-            .title(title)
             .thumbnail_url_option(thumbnail_url.clone())
             .description("Click to download video")
             .reply_markup(InlineKeyboardMarkup::new([[
@@ -881,10 +1042,88 @@ pub async fn media_select_inline_query(
         results.push(
             InlineQueryResultArticle::new(
                 format!("audio_{result_id}"),
+                "↑",
+                InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
+            )
+            .thumbnail_url_option(thumbnail_url)
+            .description("Click to download audio")
+            .reply_markup(InlineKeyboardMarkup::new([[
+                InlineKeyboardButton::new("Downloading...").callback_data("audio_download")
+            ]]))
+            .into(),
+        );
+    }
+
+    bot.send(
+        AnswerInlineQuery::new(query_id, results)
+            .is_personal(false)
+            .cache_time(SELECT_INLINE_QUERY_CACHE_TIME),
+    )
+    .await?;
+
+    Ok(EventReturn::Finish)
+}
+
+#[instrument(skip_all, fields(query_id, text))]
+pub async fn media_search_inline_query(
+    bot: Bot,
+    InlineQuery {
+        id: query_id, query: text, ..
+    }: InlineQuery,
+    Extension(bot_config): Extension<BotConfig>,
+) -> HandlerResult {
+    Span::current().record("query_id", query_id.as_ref());
+    Span::current().record("text", text.as_ref());
+
+    event!(Level::DEBUG, "Got text");
+
+    let videos: Vec<ShortInfo> = match search_video(Client::new(), &bot_config.yt_toolkit_api_url, &text).await {
+        Ok(videos) => videos.into_iter().map(Into::into).collect(),
+        Err(err) => {
+            event!(Level::ERROR, err = format_error_report(&err), "Search media error");
+
+            error::occured_in_inline_query_occured(&bot, &query_id, "Sorry, an error occurred while getting media info").await?;
+            return Ok(EventReturn::Finish);
+        }
+    };
+
+    let videos_len = videos.len();
+
+    if videos_len == 0 {
+        event!(Level::WARN, "Result empty");
+
+        error::occured_in_inline_query_occured(&bot, &query_id, "Result empty").await?;
+        return Ok(EventReturn::Finish);
+    }
+
+    event!(Level::DEBUG, videos_len, "Got media info");
+
+    let mut results: Vec<InlineQueryResult> = Vec::with_capacity(videos_len);
+
+    for video in videos {
+        let title = video.title.as_deref().unwrap_or("Untitled");
+        let title_html = html_code(html_quote(title));
+        let thumbnail_url = download::get_thumbnail_url(&video, &bot_config.yt_toolkit_api_url);
+
+        results.push(
+            InlineQueryResultArticle::new(
+                format!("video_{}", &video.id),
                 title,
                 InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
             )
-            .title(title)
+            .thumbnail_url_option(thumbnail_url.clone())
+            .description("Click to download video")
+            .reply_markup(InlineKeyboardMarkup::new([[
+                InlineKeyboardButton::new("Downloading...").callback_data("video_download")
+            ]]))
+            .into(),
+        );
+        results.push(
+            InlineQueryResultArticle::new(
+                format!("audio_{}", &video.id),
+                "↑",
+                InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
+            )
             .thumbnail_url_option(thumbnail_url)
             .description("Click to download audio")
             .reply_markup(InlineKeyboardMarkup::new([[
