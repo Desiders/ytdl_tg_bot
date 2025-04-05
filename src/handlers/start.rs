@@ -23,7 +23,8 @@ pub async fn start(
         If you want to download an audio, send <code>/ad</code> (<code>/audio_download</code>) instead of <code>/vd</code>. \
         This command works the same way as previous.\n\n\
         Playlist range download: <code>&lt;url&gt; [items=start:end:step]</code>.\n\n\
-        You can use me in inline mode in any chat by typing <code>@{bot_username} </code><code>&lt;url&gt;</code>.\n\n\
+        You can use me in inline mode in any chat by typing <code>@{bot_username} </code><code>&lt;url&gt;</code>.\n\
+        If text is specified instead of the URL, a YouTube video search will be performed.
         * You can't download playlists in inline mode.\n\
         * I'm download videos and audios in the best quality that less than {max_file_size_in_mb}MB.\n\
         * The bot is open source, and you can find the source code {source_code_href}.",
