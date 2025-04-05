@@ -798,8 +798,7 @@ pub async fn media_download_search_chosen_inline_result(
     Span::current().record("result_id", result_id.as_ref());
     Span::current().record("inline_message_id", inline_message_id.as_deref());
 
-    let mut result_id_terminator = result_id.split_terminator('_');
-    let (result_prefix, video_id) = (result_id_terminator.next().unwrap(), result_id_terminator.next().unwrap());
+    let (result_prefix, video_id) = result_id.split_once('_').unwrap();
 
     let download_video = result_prefix.starts_with("video");
     let inline_message_id = inline_message_id.as_deref().unwrap();
