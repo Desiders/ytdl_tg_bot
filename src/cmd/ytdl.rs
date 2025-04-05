@@ -211,7 +211,7 @@ pub async fn download_audio_to_path(
 
 pub fn get_media_or_playlist_info(
     executable_path: impl AsRef<str>,
-    url: impl AsRef<str>,
+    url_or_id: impl AsRef<str>,
     allow_playlist: bool,
     timeout: u64,
     range: &Range,
@@ -239,7 +239,7 @@ pub fn get_media_or_playlist_info(
         &range.to_range_string(),
         "-J",
         "--",
-        url.as_ref(),
+        url_or_id.as_ref(),
     ];
 
     let mut child = Command::new(executable_path.as_ref())

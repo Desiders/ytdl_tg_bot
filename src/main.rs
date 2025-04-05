@@ -11,9 +11,10 @@ mod services;
 mod utils;
 
 use config::read_config_from_env;
-use filters::{is_via_bot, text_contains_url, text_contains_url_with_reply};
+use filters::{is_via_bot, text_contains_url, text_contains_url_with_reply, text_empty};
 use handlers::{
-    audio_download, media_download_chosen_inline_result, media_select_inline_query, start, video_download, video_download_quite,
+    audio_download, media_download_chosen_inline_result, media_download_search_chosen_inline_result, media_search_inline_query,
+    media_select_inline_query, start, video_download, video_download_quite,
 };
 use std::{borrow::Cow, process};
 use telers::{
@@ -83,10 +84,15 @@ async fn main() {
         .filter(text_contains_url)
         .filter(is_via_bot.invert());
     router.inline_query.register(media_select_inline_query).filter(text_contains_url);
+    router.inline_query.register(media_search_inline_query).filter(text_empty.invert());
     router
         .chosen_inline_result
         .register(media_download_chosen_inline_result)
         .filter(text_contains_url);
+    router
+        .chosen_inline_result
+        .register(media_download_search_chosen_inline_result)
+        .filter(text_empty.invert());
 
     router.startup.register(on_startup, (bot.clone(),));
     router.shutdown.register(on_shutdown, ());
