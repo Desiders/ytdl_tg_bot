@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, future::Future};
 use telers::{types::UpdateKind, Request};
 use url::Url;
 
@@ -61,54 +61,52 @@ pub fn get_url_with_params_from_text(text: &str) -> Option<UrlWithParams> {
     None
 }
 
-pub async fn text_contains_url(mut request: Request) -> (bool, Request) {
-    (
-        if let Some(text) = request.update.text() {
-            let mut url_found = false;
+pub fn text_contains_url(request: &mut Request) -> impl Future<Output = bool> {
+    let result = if let Some(text) = request.update.text() {
+        let mut url_found = false;
 
-            if let Some(url_with_params) = get_url_with_params_from_text(text) {
-                url_found = true;
-                request.extensions.insert(url_with_params);
-            }
+        if let Some(url_with_params) = get_url_with_params_from_text(text) {
+            url_found = true;
+            request.extensions.insert(url_with_params);
+        }
 
-            url_found
-        } else {
-            false
-        },
-        request,
-    )
+        url_found
+    } else {
+        false
+    };
+
+    async move { result }
 }
 
 #[allow(clippy::module_name_repetitions)]
-pub async fn text_contains_url_with_reply(mut request: Request) -> (bool, Request) {
-    (
-        if let Some(text) = request.update.text() {
-            let mut url_found = false;
+pub fn text_contains_url_with_reply(request: &mut Request) -> impl Future<Output = bool> {
+    let result = if let Some(text) = request.update.text() {
+        let mut url_found = false;
 
-            match get_url_with_params_from_text(text) {
-                Some(url_with_params) => {
-                    url_found = true;
-                    request.extensions.insert(url_with_params);
-                }
-                None => match request.update.kind() {
-                    UpdateKind::Message(message) | UpdateKind::EditedMessage(message) => {
-                        if let Some(message) = message.reply_to_message() {
-                            if let Some(text) = message.text() {
-                                if let Some(url_with_params) = get_url_with_params_from_text(text) {
-                                    url_found = true;
-                                    request.extensions.insert(url_with_params);
-                                };
-                            };
-                        }
-                    }
-                    _ => {}
-                },
+        match get_url_with_params_from_text(text) {
+            Some(url_with_params) => {
+                url_found = true;
+                request.extensions.insert(url_with_params);
             }
+            None => match request.update.kind() {
+                UpdateKind::Message(message) | UpdateKind::EditedMessage(message) => {
+                    if let Some(message) = message.reply_to_message() {
+                        if let Some(text) = message.text() {
+                            if let Some(url_with_params) = get_url_with_params_from_text(text) {
+                                url_found = true;
+                                request.extensions.insert(url_with_params);
+                            };
+                        };
+                    }
+                }
+                _ => {}
+            },
+        }
 
-            url_found
-        } else {
-            false
-        },
-        request,
-    )
+        url_found
+    } else {
+        false
+    };
+
+    async move { result }
 }
