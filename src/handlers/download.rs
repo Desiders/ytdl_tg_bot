@@ -1078,7 +1078,13 @@ pub async fn media_search_inline_query(
     event!(Level::DEBUG, "Got text");
 
     let videos: Vec<ShortInfo> = match search_video(Client::new(), &bot_config.yt_toolkit_api_url, &text).await {
-        Ok(videos) => videos.into_iter().map(Into::into).collect(),
+        Ok(videos) => videos
+            .into_iter()
+            .map(Into::into)
+            .enumerate()
+            .filter(|(index, _)| *index < 50)
+            .map(|(_, video)| video)
+            .collect(),
         Err(err) => {
             event!(Level::ERROR, err = format_error_report(&err), "Search media error");
 
