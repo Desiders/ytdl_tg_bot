@@ -1036,7 +1036,7 @@ pub async fn media_select_inline_query(
     for video in videos {
         let title = video.title.as_deref().unwrap_or("Untitled");
         let title_html = html_code(html_quote(title));
-        let thumbnail_url = download::get_thumbnail_url(&video, &bot_config.yt_toolkit_api_url);
+        let thumbnail_url = video.thumbnail();
         let result_id = Uuid::new_v4();
 
         results.push(
@@ -1122,7 +1122,7 @@ pub async fn media_search_inline_query(
     for video in videos {
         let title = video.title.as_deref().unwrap_or("Untitled");
         let title_html = html_code(html_quote(title));
-        let thumbnail_url = download::get_thumbnail_url(&video, &bot_config.yt_toolkit_api_url);
+        let thumbnail_url = video.thumbnail();
 
         results.push(
             InlineQueryResultArticle::new(
