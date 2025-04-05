@@ -38,7 +38,7 @@ impl ShortInfo {
         self.thumbnails
             .iter()
             .filter_map(|thumbnail| thumbnail.url.as_deref())
-            .max_by_key(|url| preferred_order.iter().position(|&name| url.contains(name)))
+            .min_by_key(|url| preferred_order.iter().position(|&name| url.contains(name)))
     }
 }
 
