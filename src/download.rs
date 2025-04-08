@@ -43,13 +43,17 @@ pub enum StreamErrorKind {
 }
 
 #[instrument(skip_all)]
-pub fn get_thumbnail_url<'a>(video: &'a ShortInfo, yt_toolkit_api_url: impl AsRef<str>) -> Option<Cow<'a, str>> {
-    match (video.width, video.height) {
-        (Some(width), Some(height)) => match yt_toolkit::get_thumbnail_url(yt_toolkit_api_url.as_ref(), &video.id, width, height) {
-            Ok(url) => Some(Cow::Owned(url)),
-            Err(_) => video.thumbnail().map(Cow::Borrowed),
-        },
-        _ => video.thumbnail().map(Cow::Borrowed),
+pub fn get_thumbnail_url<'a>(video: &'a ShortInfo, yt_toolkit_api_url: impl AsRef<str>, is_youtube: bool) -> Option<Cow<'a, str>> {
+    if is_youtube {
+        match (video.width, video.height) {
+            (Some(width), Some(height)) => match yt_toolkit::get_thumbnail_url(yt_toolkit_api_url.as_ref(), &video.id, width, height) {
+                Ok(url) => Some(Cow::Owned(url)),
+                Err(_) => video.thumbnail().map(Cow::Borrowed),
+            },
+            _ => video.thumbnail().map(Cow::Borrowed),
+        }
+    } else {
+        video.thumbnail().map(Cow::Borrowed)
     }
 }
 
@@ -136,6 +140,7 @@ pub async fn video(
     executable_ytdl_path: impl AsRef<str>,
     yt_toolkit_api_url: impl AsRef<str>,
     temp_dir_path: impl AsRef<Path>,
+    is_youtube: bool,
     download_and_merge_timeout: u64,
 ) -> Result<VideoInFS, StreamErrorKind> {
     let mut combined_formats = video.get_combined_formats();
@@ -167,7 +172,7 @@ pub async fn video(
         Span::current().record("file_path", file_path.display().to_string());
 
         let (thumbnail_path, download_thumbnails) =
-            if let Some(thumbnail_url) = get_thumbnail_url(&video.clone().into(), yt_toolkit_api_url) {
+            if let Some(thumbnail_url) = get_thumbnail_url(&video.clone().into(), yt_toolkit_api_url, is_youtube) {
                 let thumbnail_path = get_thumbnail_path(thumbnail_url, &video.id, &temp_dir_path).await;
                 (thumbnail_path, false)
             } else {
@@ -246,7 +251,7 @@ pub async fn video(
         )?;
     };
 
-    let thumbnail_path = if let Some(thumbnail_url) = get_thumbnail_url(&video.clone().into(), yt_toolkit_api_url) {
+    let thumbnail_path = if let Some(thumbnail_url) = get_thumbnail_url(&video.clone().into(), yt_toolkit_api_url, is_youtube) {
         get_thumbnail_path(thumbnail_url, &video.id, &temp_dir_path).await
     } else {
         None
@@ -295,6 +300,7 @@ pub async fn audio_to_temp_dir(
     executable_ytdl_path: impl AsRef<str>,
     yt_toolkit_api_url: impl AsRef<str>,
     temp_dir_path: impl AsRef<Path>,
+    is_youtube: bool,
     download_timeout: u64,
 ) -> Result<AudioInFS, ToTempDirErrorKind> {
     let mut audio_formats = video.get_audio_formats();
@@ -322,12 +328,13 @@ pub async fn audio_to_temp_dir(
 
     event!(Level::DEBUG, ?file_path, "Got file path");
 
-    let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = get_thumbnail_url(&video.clone().into(), yt_toolkit_api_url) {
-        let thumbnail_path = get_thumbnail_path(thumbnail_url, &video.id, &temp_dir_path).await;
-        (thumbnail_path, false)
-    } else {
-        (None, true)
-    };
+    let (thumbnail_path, download_thumbnails) =
+        if let Some(thumbnail_url) = get_thumbnail_url(&video.clone().into(), yt_toolkit_api_url, is_youtube) {
+            let thumbnail_path = get_thumbnail_path(thumbnail_url, &video.id, &temp_dir_path).await;
+            (thumbnail_path, false)
+        } else {
+            (None, true)
+        };
 
     download_audio_to_path(
         executable_ytdl_path,

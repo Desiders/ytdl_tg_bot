@@ -32,6 +32,7 @@ use telers::{
 use tempfile::tempdir;
 use tokio::task::{spawn_blocking, JoinError, JoinHandle};
 use tracing::{event, field::debug, instrument, Level, Span};
+use url::Url;
 use uuid::Uuid;
 
 const GET_INFO_TIMEOUT: u64 = 120;
@@ -144,6 +145,8 @@ pub async fn video_download(
             &yt_dlp_config.full_path,
             &bot_config.yt_toolkit_api_url,
             temp_dir.path(),
+            url.domain()
+                .map_or(false, |domain| domain.contains("youtube") || domain == "youtu.be"),
             DOWNLOAD_MEDIA_TIMEOUT,
         )
         .await
@@ -313,6 +316,8 @@ pub async fn video_download_quite(
             &yt_dlp_config.full_path,
             &bot_config.yt_toolkit_api_url,
             temp_dir.path(),
+            url.domain()
+                .map_or(false, |domain| domain.contains("youtube") || domain == "youtu.be"),
             DOWNLOAD_MEDIA_TIMEOUT,
         )
         .await
@@ -504,6 +509,8 @@ pub async fn audio_download(
             &yt_dlp_config.full_path,
             &bot_config.yt_toolkit_api_url,
             temp_dir.path(),
+            url.domain()
+                .map_or(false, |domain| domain.contains("youtube") || domain == "youtu.be"),
             DOWNLOAD_MEDIA_TIMEOUT,
         )
         .await
@@ -612,13 +619,19 @@ pub async fn media_download_chosen_inline_result(
     Extension(yt_dlp_config): Extension<YtDlp>,
     Extension(bot_config): Extension<BotConfig>,
 ) -> HandlerResult {
+    let inline_message_id = inline_message_id.as_deref().unwrap();
+
+    let Ok(url) = Url::parse(&url) else {
+        error::occured_in_chosen_inline_result(&bot, "Sorry, video not found", inline_message_id, None).await?;
+        return Ok(EventReturn::Finish);
+    };
+
     Span::current().record("result_id", result_id.as_ref());
-    Span::current().record("inline_message_id", inline_message_id.as_deref());
-    Span::current().record("url", url.as_ref());
+    Span::current().record("inline_message_id", inline_message_id);
+    Span::current().record("url", url.as_str());
 
     // If `result_id` starts with `audio_` then it's audio, else it's video
     let download_video = result_id.starts_with("video_");
-    let inline_message_id = inline_message_id.as_deref().unwrap();
 
     event!(Level::DEBUG, "Got url");
 
@@ -665,6 +678,8 @@ pub async fn media_download_chosen_inline_result(
                 yt_dlp_config.full_path,
                 &bot_config.yt_toolkit_api_url,
                 temp_dir.path(),
+                url.domain()
+                    .map_or(false, |domain| domain.contains("youtube") || domain == "youtu.be"),
                 DOWNLOAD_MEDIA_TIMEOUT,
             )
             .await?;
@@ -720,6 +735,8 @@ pub async fn media_download_chosen_inline_result(
                 &yt_dlp_config.full_path,
                 &bot_config.yt_toolkit_api_url,
                 temp_dir.path(),
+                url.domain()
+                    .map_or(false, |domain| domain.contains("youtube") || domain == "youtu.be"),
                 DOWNLOAD_MEDIA_TIMEOUT,
             )
             .await?;
@@ -856,6 +873,7 @@ pub async fn media_download_search_chosen_inline_result(
                 yt_dlp_config.full_path,
                 &bot_config.yt_toolkit_api_url,
                 temp_dir.path(),
+                true,
                 DOWNLOAD_MEDIA_TIMEOUT,
             )
             .await?;
@@ -911,6 +929,7 @@ pub async fn media_download_search_chosen_inline_result(
                 &yt_dlp_config.full_path,
                 &bot_config.yt_toolkit_api_url,
                 temp_dir.path(),
+                true,
                 DOWNLOAD_MEDIA_TIMEOUT,
             )
             .await?;
