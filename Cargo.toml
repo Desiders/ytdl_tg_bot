@@ -4,7 +4,7 @@ version = "1.10.0"
 edition = "2021"
 
 [dependencies]
-telers = { git = "https://github.com/Desiders/telers.git", rev = "fa2f923", features = ["default_signal"] }
+telers = { git = "https://github.com/Desiders/telers.git", rev = "7be9ddd", features = ["default_signal"] }
 tokio = { version = "1.36", features = ["rt-multi-thread", "process"] }
 tokio-util = "0.7"
 nix = { version = "0.29", features = ["fs", "process"] }
