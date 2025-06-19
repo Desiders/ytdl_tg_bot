@@ -10,8 +10,6 @@ README.md
 
 .vscode/
 
-Cargo.lock
-
 target/
 
 yt-dlp-cache/

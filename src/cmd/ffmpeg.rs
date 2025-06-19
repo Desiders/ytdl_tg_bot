@@ -18,7 +18,7 @@ pub fn merge_streams(
     extension: impl AsRef<str>,
     output_path: impl AsRef<Path>,
 ) -> Result<tokio::process::Child, io::Error> {
-    tokio::process::Command::new("/usr/bin/ffmpeg")
+    tokio::process::Command::new("ffmpeg")
         .args([
             "-y",
             "-hide_banner",
