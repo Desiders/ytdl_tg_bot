@@ -5,11 +5,20 @@ services:
     restart: "unless-stopped"
     env_file:
       - ".env"
+    environment:
+      - CONFIG_PATH=${CONFIG_PATH:-config.toml}
     build:
       context: .
     networks:
       - yt_toolkit_api.network
       - telegram_bot_api.network
+    volumes:
+      - type: bind
+        source: ./config.toml
+        target: /app/config.toml
+      - type: bind
+        source: ./yt-dlp
+        target: /app/yt-dlp
     depends_on:
       - yt_toolkit_api
       - telegram_bot_api

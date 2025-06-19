@@ -31,6 +31,7 @@ fmt:
         --name ytdl_tg_bot.bot \
         --env-file .env \
         -v ./yt-dlp:/app/yt-dlp \
+        -v ./config.toml:/app/config.toml \
         ytdl_tg_bot:{{VERSION}}
 
 @docker-stop:
@@ -47,13 +48,16 @@ docker VERSION="latest":
 @docker-up:
     docker compose up
 
+@docker-up-build:
+    docker compose up --build
+
 @docker-down:
     docker compose down
 
 @docker-rmi VERSION="latest": docker-down
     docker rmi ytdl_tg_bot:{{VERSION}}
 
-docker-tag-to-locale USER VERSION="latest":
+docker-tag-to-locale USER VERSION="latest" :
     docker tag {{USER}}/ytdl_tg_bot:{{VERSION}} ytdl_tg_bot:{{VERSION}}
 
 docker-pull USER VERSION="latest":

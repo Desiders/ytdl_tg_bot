@@ -17,3 +17,6 @@ yt-dlp-cache/
 docker-compose.yml
 docker-compose.yaml
 Dockerfile
+
+config.toml
+config.example.toml
