@@ -15,7 +15,6 @@ use std::{
     borrow::Cow,
     fs::File,
     io,
-    os::fd::AsRawFd,
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -208,8 +207,8 @@ pub async fn video(
     let (video_read_fd, video_write_fd) = pipe().map_err(io::Error::from)?;
     let (audio_read_fd, audio_write_fd) = pipe().map_err(io::Error::from)?;
 
-    fcntl(video_write_fd.as_raw_fd(), F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
-    fcntl(audio_write_fd.as_raw_fd(), F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
+    fcntl(&video_write_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
+    fcntl(&audio_write_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
 
     let output_path = temp_dir_path.as_ref().join(format!("{video_id}.{extension}", video_id = video.id));
 
