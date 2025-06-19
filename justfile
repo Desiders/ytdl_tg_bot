@@ -2,46 +2,68 @@ set dotenv-load
 
 host := `uname -a`
 
-# Run cargo
-run:
-    cargo run
+help:
+    just -l
 
-run-with-pid:
-    cargo run & echo $!
-
-# Run release cargo
-run-release:
-    cargo run --release
-
-run-release-with-pid:
-    cargo run --release & echo $!
-
-# Run docker compose with build
-run-docker-build:
-    docker compose up --build
-
-# Run docker compose
-run-docker:
-    docker compose up
-
-# Down docker compose
-down-docker:
-    docker compose down
-
-# Build docker compose
-docker-build:
-    docker compose build
-
-# Update dependencies
-update:
-    cargo update
-
-# Clippy
 clippy:
     cargo clippy --all --all-features -- -W clippy::pedantic
 
-# Format
-format:
+fmt:
     cargo fmt --all -- --check
 
-fmt: format
+@build:
+    cargo build --all-features
+
+@build-release:
+    cargo build --release --all-features
+
+@run: build
+    cargo run
+
+@run-release: build-release
+    cargo run --release
+
+@docker-build VERSION="latest":
+    docker build -t ytdl_tg_bot:{{VERSION}} .
+
+@docker-run VERSION="latest":
+    docker run --rm -it \
+        --name ytdl_tg_bot.bot \
+        --env-file .env \
+        -v ./yt-dlp:/app/yt-dlp \
+        ytdl_tg_bot:{{VERSION}}
+
+@docker-stop:
+    docker stop ytdl_tg_bot.bot
+
+@docker-rm: docker-stop
+    docker rm ytdl_tg_bot.bot
+
+docker VERSION="latest":
+    @just docker-stop >/dev/null 2>&1 || true
+    @just docker-rm >/dev/null 2>&1 || true
+    @just docker-run {{VERSION}}
+
+@docker-up:
+    docker compose up
+
+@docker-down:
+    docker compose down
+
+@docker-rmi VERSION="latest": docker-down
+    docker rmi ytdl_tg_bot:{{VERSION}}
+
+docker-tag-to-locale USER VERSION="latest":
+    docker tag {{USER}}/ytdl_tg_bot:{{VERSION}} ytdl_tg_bot:{{VERSION}}
+
+docker-pull USER VERSION="latest":
+    docker pull {{USER}}/ytdl_tg_bot:{{VERSION}}
+    @just docker-tag-to-locale {{USER}} {{VERSION}}
+
+docker-tag-to-remote USER VERSION="latest":
+    docker tag ytdl_tg_bot:{{VERSION}} {{USER}}/ytdl_tg_bot:{{VERSION}}
+
+docker-push USER VERSION="latest":
+    @just docker-build {{VERSION}}
+    @just docker-tag-to-remote {{USER}} {{VERSION}}
+    docker push {{USER}}/ytdl_tg_bot:{{VERSION}}
