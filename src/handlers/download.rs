@@ -14,7 +14,6 @@ use crate::{
     utils::format_error_report,
 };
 
-use nix::libc;
 use reqwest::Client;
 use std::str::FromStr;
 use telers::{
@@ -234,10 +233,6 @@ pub async fn video_download(
 
     send::media_groups(&bot, chat_id, input_media_list, Some(message_id), Some(SEND_AUDIO_TIMEOUT)).await?;
 
-    unsafe {
-        libc::malloc_trim(0);
-    }
-
     Ok(EventReturn::Finish)
 }
 
@@ -400,10 +395,6 @@ pub async fn video_download_quite(
     };
 
     send::media_groups(&bot, chat_id, input_media_list, Some(message_id), Some(SEND_AUDIO_TIMEOUT)).await?;
-
-    unsafe {
-        libc::malloc_trim(0);
-    }
 
     Ok(EventReturn::Finish)
 }
@@ -600,10 +591,6 @@ pub async fn audio_download(
 
     send::media_groups(&bot, chat_id, input_media_list, Some(message_id), Some(SEND_AUDIO_TIMEOUT)).await?;
 
-    unsafe {
-        libc::malloc_trim(0);
-    }
-
     Ok(EventReturn::Finish)
 }
 
@@ -794,10 +781,6 @@ pub async fn media_download_chosen_inline_result(
         error::occured_in_chosen_inline_result(&bot, "Sorry, an error occurred while downloading media", inline_message_id, None).await?;
     }
 
-    unsafe {
-        libc::malloc_trim(0);
-    }
-
     Ok(EventReturn::Finish)
 }
 
@@ -985,10 +968,6 @@ pub async fn media_download_search_chosen_inline_result(
         event!(Level::ERROR, err = format_error_report(&err), "Error while download media");
 
         error::occured_in_chosen_inline_result(&bot, "Sorry, an error occurred while downloading media", inline_message_id, None).await?;
-    }
-
-    unsafe {
-        libc::malloc_trim(0);
     }
 
     Ok(EventReturn::Finish)
