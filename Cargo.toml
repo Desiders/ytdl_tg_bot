@@ -23,3 +23,4 @@ futures-util = "0.3"
 backoff = { version = "0.4", features = ["tokio"] }
 bytes = "1.5"
 wait-timeout = "0.2"
+toml = "0.8.23"
