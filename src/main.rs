@@ -1,4 +1,3 @@
-mod cmd;
 mod config;
 mod download;
 mod errors;
