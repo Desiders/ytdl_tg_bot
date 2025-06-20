@@ -2,7 +2,6 @@ mod config;
 mod download;
 mod errors;
 mod filters;
-mod fs;
 mod handlers;
 mod handlers_utils;
 mod models;
