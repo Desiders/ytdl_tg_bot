@@ -6,3 +6,5 @@ Cargo.lock
 target/
 
 yt-dlp-cache/
+
+config.toml
