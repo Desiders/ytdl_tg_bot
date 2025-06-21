@@ -211,7 +211,7 @@ pub async fn video(
 
     let output_path = temp_dir_path.as_ref().join(format!("{video_id}.{extension}", video_id = video.id));
 
-    let merge_child = merge_streams(video_read_fd, audio_read_fd, extension.to_owned(), output_path.clone());
+    let merge_child = merge_streams(&video_read_fd, &audio_read_fd, extension.to_owned(), output_path.clone());
 
     if let Some(filesize) = combined_format.video_format.filesize_or_approx() {
         tokio::spawn({
@@ -229,7 +229,7 @@ pub async fn video(
             &video.original_url,
             combined_format.video_format.id,
         )?;
-    };
+    }
 
     if let Some(filesize) = combined_format.audio_format.filesize_or_approx() {
         tokio::spawn({
@@ -272,7 +272,7 @@ pub async fn video(
     if !exit_code.success() {
         event!(Level::ERROR, "FFmpeg exited with status `{exit_code}`");
 
-        return Err(io::Error::new(io::ErrorKind::Other, format!("FFmpeg exited with status `{exit_code}`")).into());
+        return Err(io::Error::other(format!("FFmpeg exited with status `{exit_code}`")).into());
     }
 
     event!(Level::DEBUG, "Streams merged");

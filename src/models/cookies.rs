@@ -17,7 +17,7 @@ impl Cookies {
         self.cookies.push(Cookie { host, path });
     }
 
-    pub fn get_path_by_host<'a>(&self, host: &Host<&'a str>) -> Option<&Cookie> {
+    pub fn get_path_by_host(&self, host: &Host<&str>) -> Option<&Cookie> {
         let host_str = host.to_string();
         let host_stripped = if let Some(stripped) = host_str.strip_prefix("www.") {
             stripped
@@ -27,7 +27,7 @@ impl Cookies {
         self.cookies.iter().find(|cookie| cookie.host.to_string() == host_stripped)
     }
 
-    pub fn get_path_by_optional_host<'a>(&self, host: Option<&Host<&'a str>>) -> Option<&Cookie> {
+    pub fn get_path_by_optional_host(&self, host: Option<&Host<&str>>) -> Option<&Cookie> {
         host.and_then(|h| self.get_path_by_host(h))
     }
 

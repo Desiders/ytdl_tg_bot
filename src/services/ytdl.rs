@@ -126,10 +126,7 @@ pub async fn download_video_to_path(
             if exit_code.success() {
                 Ok(())
             } else {
-                Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Youtube-dl exited with status `{exit_code}`"),
-                ))
+                Err(io::Error::other(format!("Youtube-dl exited with status `{exit_code}`")))
             }
         }
         Ok(Err(err)) => Err(err),
@@ -198,10 +195,7 @@ pub async fn download_audio_to_path(
             if exit_code.success() {
                 Ok(())
             } else {
-                Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Youtube-dl exited with status `{exit_code}`"),
-                ))
+                Err(io::Error::other(format!("Youtube-dl exited with status `{exit_code}`")))
             }
         }
         Ok(Err(err)) => Err(err),
@@ -289,27 +283,24 @@ pub fn get_media_or_playlist_info(
 
     if !status.success() {
         event!(Level::ERROR, "Child process exited with error status: {status}");
-        return Err(io::Error::new(io::ErrorKind::Other, format!("Youtube-dl exited with status `{status}`")).into());
+        return Err(io::Error::other(format!("Youtube-dl exited with status `{status}`")).into());
     }
 
     let value: Value = serde_json::from_slice(&stdout)?;
-    match value.get("_type").and_then(Value::as_str) {
-        Some("playlist") => {
-            let entries = value
-                .get("entries")
-                .and_then(Value::as_array)
-                .ok_or_else(|| serde_json::Error::custom("Missing or invalid playlist entries"))?;
+    if let Some("playlist") = value.get("_type").and_then(Value::as_str) {
+        let entries = value
+            .get("entries")
+            .and_then(Value::as_array)
+            .ok_or_else(|| serde_json::Error::custom("Missing or invalid playlist entries"))?;
 
-            let videos = entries
-                .iter()
-                .map(|entry| serde_json::from_value(entry.clone()))
-                .collect::<Result<Vec<Video>, _>>()?;
+        let videos = entries
+            .iter()
+            .map(|entry| serde_json::from_value(entry.clone()))
+            .collect::<Result<Vec<Video>, _>>()?;
 
-            Ok(VideosInYT::new(videos))
-        }
-        _ => {
-            let video: Video = serde_json::from_value(value)?;
-            Ok(VideosInYT::new(vec![video]))
-        }
+        Ok(VideosInYT::new(videos))
+    } else {
+        let video: Video = serde_json::from_value(value)?;
+        Ok(VideosInYT::new(vec![video]))
     }
 }

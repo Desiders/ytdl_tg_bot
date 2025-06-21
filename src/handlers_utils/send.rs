@@ -135,7 +135,7 @@ pub async fn media_groups(
                 Err(_) => {
                     event!(Level::WARN, "Skip {media_group_len} media count to send");
                 }
-            };
+            }
 
             cur_media_group_len = 0;
         }

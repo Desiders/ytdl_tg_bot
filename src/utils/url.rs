@@ -12,6 +12,7 @@ pub enum ErrorKind {
 
 const VIDEO_ID_LENGTH: usize = 11;
 
+#[allow(clippy::match_on_vec_items)]
 pub fn get_video_id(input: &str) -> Result<String, ErrorKind> {
     let url = Url::parse(input).map_err(|_| ErrorKind::InvalidUrl)?;
     let host = url.host_str().ok_or(ErrorKind::InvalidUrl)?;
@@ -24,7 +25,7 @@ pub fn get_video_id(input: &str) -> Result<String, ErrorKind> {
             }
         }
 
-        let path_segments: Vec<&str> = url.path_segments().map(|c| c.collect()).unwrap_or_default();
+        let path_segments: Vec<&str> = url.path_segments().map(Iterator::collect).unwrap_or_default();
         if path_segments.len() > 1 {
             match path_segments[0] {
                 "embed" | "v" | "shorts" if path_segments[1].len() == VIDEO_ID_LENGTH => return Ok(path_segments[1].to_string()),
@@ -33,10 +34,10 @@ pub fn get_video_id(input: &str) -> Result<String, ErrorKind> {
             }
         }
     } else if host == "youtu.be" {
-        let path_segments: Vec<&str> = url.path_segments().map(|c| c.collect()).unwrap_or_default();
+        let path_segments: Vec<&str> = url.path_segments().map(Iterator::collect).unwrap_or_default();
         if let Some(id) = path_segments.first() {
             if id.len() == VIDEO_ID_LENGTH {
-                return Ok(id.to_string());
+                return Ok((*id).to_owned());
             }
         }
     }
