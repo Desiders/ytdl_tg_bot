@@ -22,7 +22,7 @@ pub async fn start(
         In a group chat, send <code>/vd</code> (<code>/video_download</code>) with a link or reply to the message with a link.\n\n\
         If you want to download an audio, send <code>/ad</code> (<code>/audio_download</code>) instead of <code>/vd</code>. \
         This command works the same way as previous.\n\n\
-        Playlist range download: <code>&lt;url&gt; [items=start:end:step]</code>.\n\n\
+        Playlist range download: <code>&lt;url&gt; [items=start:stop:step]</code>.\n\n\
         You can use me in inline mode in any chat by typing <code>@{bot_username} </code><code>&lt;url&gt;</code>.\n\
         If text is specified instead of the URL, a YouTube video search will be performed.\n\
         * You can't download playlists in inline mode.\n\n\

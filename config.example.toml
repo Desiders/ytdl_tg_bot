@@ -10,7 +10,8 @@ receiver_chat_id = 123
 
 [yt_dlp]
 max_file_size = 5000000
-path = "./yt-dlp/executable"
+executable_path = "./yt-dlp/executable"
+cookies_path = "./cookies"
 
 [yt_toolkit]
 url = "http://ytdl_tg_bot.yt_toolkit_api:8080"

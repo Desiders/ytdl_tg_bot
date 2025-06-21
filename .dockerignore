@@ -13,6 +13,9 @@ README.md
 target/
 
 yt-dlp-cache/
+yt-dlp
+
+cookies
 
 docker-compose.yml
 docker-compose.yaml

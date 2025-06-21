@@ -19,6 +19,9 @@ services:
       - type: bind
         source: ./yt-dlp
         target: /app/yt-dlp
+      - type: bind
+        source: ./cookies
+        target: /app/cookies
     depends_on:
       - yt_toolkit_api
       - telegram_bot_api
