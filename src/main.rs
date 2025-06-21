@@ -27,6 +27,8 @@ use tracing::{event, Level};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
 use utils::{on_shutdown, on_startup};
 
+use crate::services::get_cookies_from_directory;
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
     println!("{}", &*config::get_path());
@@ -38,7 +40,11 @@ async fn main() {
         .with(EnvFilter::builder().parse_lossy(config.logging.dirs))
         .init();
 
-    event!(Level::DEBUG, "Config loaded from env");
+    event!(Level::DEBUG, "Config loaded");
+
+    let cookies = get_cookies_from_directory(&*config.yt_dlp.cookies_path).unwrap_or_default();
+
+    event!(Level::DEBUG, hosts = ?cookies.get_hosts(), "Cookies loaded");
 
     let base_url = format!("{}/bot{{token}}/{{method_name}}", config.telegram_bot_api.url);
     let files_url = format!("{}/file{{token}}/{{path}}", config.telegram_bot_api.url);
@@ -95,6 +101,7 @@ async fn main() {
         .extension(config.bot)
         .extension(config.yt_toolkit)
         .extension(config.chat)
+        .extension(cookies)
         .build();
 
     match dispatcher.run_polling().await {
