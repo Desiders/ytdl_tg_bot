@@ -1,10 +1,10 @@
 use crate::{
     handlers_utils::range::Range,
-    models::{Video, VideosInYT},
+    models::{Cookie, Video, VideosInYT},
 };
 
 use serde::de::Error as _;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::{
     io::{self, Read},
     os::fd::OwnedFd,
@@ -215,8 +215,11 @@ pub fn get_media_or_playlist_info(
     allow_playlist: bool,
     timeout: u64,
     range: &Range,
+    cookie: Option<&Cookie>,
 ) -> Result<VideosInYT, Error> {
-    let args = [
+    let range_string = range.to_range_string();
+
+    let mut args = vec![
         "--no-update",
         "--ignore-config",
         "--no-color",
@@ -224,7 +227,6 @@ pub fn get_media_or_playlist_info(
         "5",
         "--output",
         "%(id)s.%(ext)s",
-        if allow_playlist { "--yes-playlist" } else { "--no-playlist" },
         "--no-mtime",
         "--no-write-comments",
         "--no-write-thumbnail",
@@ -236,57 +238,78 @@ pub fn get_media_or_playlist_info(
         "--concurrent-fragments",
         "4",
         "-I",
-        &range.to_range_string(),
+        &range_string,
         "-J",
-        "--",
-        url_or_id.as_ref(),
     ];
+
+    if allow_playlist {
+        args.push("--yes-playlist");
+    } else {
+        args.push("--no-playlist");
+    }
+
+    let cookie_path = cookie.map(|c| c.path.to_string_lossy());
+    if let Some(cookie_path) = cookie_path.as_deref() {
+        event!(Level::DEBUG, "Using cookies from: {}", cookie_path);
+
+        args.push("--cookies");
+        args.push(cookie_path);
+    } else {
+        event!(Level::DEBUG, "No cookies provided");
+    }
+
+    args.push("--");
+    args.push(url_or_id.as_ref());
 
     let mut child = Command::new(executable_path.as_ref())
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::piped())
         .spawn()?;
 
     let mut stdout = vec![];
     let child_stdout = child.stdout.take();
     io::copy(&mut child_stdout.unwrap(), &mut stdout)?;
 
-    let Some(exit_code) = child.wait_timeout(Duration::from_secs(timeout))? else {
+    let mut stderr = vec![];
+    let child_stderr = child.stderr.take();
+    if let Some(mut reader) = child_stderr {
+        reader.read_to_end(&mut stderr)?;
+        if !stderr.is_empty() {
+            event!(Level::ERROR, "Youtube-dl stderr: {}", String::from_utf8_lossy(&stderr));
+        }
+    }
+
+    let Some(status) = child.wait_timeout(Duration::from_secs(timeout))? else {
         event!(Level::ERROR, "Child process timed out");
-
         child.kill()?;
-
         return Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out").into());
     };
 
-    if !exit_code.success() {
-        event!(Level::ERROR, "Child process exited with error status: {exit_code}");
-
-        return Err(io::Error::new(io::ErrorKind::Other, format!("Youtube-dl exited with status `{exit_code}`")).into());
-    }
-
-    let mut stderr = vec![];
-    if let Some(mut reader) = child.stderr {
-        reader.read_to_end(&mut stderr)?;
+    if !status.success() {
+        event!(Level::ERROR, "Child process exited with error status: {status}");
+        return Err(io::Error::new(io::ErrorKind::Other, format!("Youtube-dl exited with status `{status}`")).into());
     }
 
     let value: Value = serde_json::from_slice(&stdout)?;
+    match value.get("_type").and_then(Value::as_str) {
+        Some("playlist") => {
+            let entries = value
+                .get("entries")
+                .and_then(Value::as_array)
+                .ok_or_else(|| serde_json::Error::custom("Missing or invalid playlist entries"))?;
 
-    if value["_type"] == json!("playlist") {
-        let mut videos = vec![];
+            let videos = entries
+                .iter()
+                .map(|entry| serde_json::from_value(entry.clone()))
+                .collect::<Result<Vec<Video>, _>>()?;
 
-        let entries = value["entries"].as_array().ok_or(serde_json::Error::custom("No entries found"))?;
-
-        for entry in entries {
-            videos.push(serde_json::from_value(entry.clone())?);
+            Ok(VideosInYT::new(videos))
         }
-
-        Ok(VideosInYT::new(videos))
-    } else {
-        let video: Video = serde_json::from_value(value)?;
-
-        Ok(VideosInYT::new(vec![video]))
+        _ => {
+            let video: Video = serde_json::from_value(value)?;
+            Ok(VideosInYT::new(vec![video]))
+        }
     }
 }
