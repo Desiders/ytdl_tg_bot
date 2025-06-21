@@ -8,9 +8,11 @@ use crate::{
         send,
         url::UrlWithParams,
     },
-    models::{AudioInFS, ShortInfo, TgAudioInPlaylist, TgVideoInPlaylist, VideoInFS},
-    services::get_media_or_playlist_info,
-    services::yt_toolkit::{get_video_info, search_video, GetVideoInfoErrorKind},
+    models::{AudioInFS, Cookies, ShortInfo, TgAudioInPlaylist, TgVideoInPlaylist, VideoInFS},
+    services::{
+        get_media_or_playlist_info,
+        yt_toolkit::{get_video_info, search_video, GetVideoInfoErrorKind},
+    },
     utils::format_error_report,
 };
 
@@ -31,7 +33,7 @@ use telers::{
 use tempfile::tempdir;
 use tokio::task::{spawn_blocking, JoinError, JoinHandle};
 use tracing::{event, field::debug, instrument, Level, Span};
-use url::Url;
+use url::{Host, Url};
 use uuid::Uuid;
 
 const GET_INFO_TIMEOUT: u64 = 120;
@@ -62,6 +64,7 @@ pub async fn video_download(
     Extension(yt_dlp_cfg): Extension<YtDlpConfig>,
     Extension(yt_toolkit_cfg): Extension<YtToolkitConfig>,
     Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(cookies): Extension<Cookies>,
 ) -> HandlerResult {
     let message_id = message.id();
     let chat_id = message.chat().id();
@@ -93,10 +96,13 @@ pub async fn video_download(
     });
 
     let videos = match spawn_blocking({
-        let path = yt_dlp_cfg.path.clone();
+        let path = yt_dlp_cfg.executable_path.clone();
         let url = url.clone();
+        let cookie = cookies.get_path_by_optional_host(url.host().as_ref()).cloned();
 
-        move || get_media_or_playlist_info(path, url, true, GET_INFO_TIMEOUT, &range)
+        event!(Level::DEBUG, host = ?url.host(), "Getting media info with yt-dlp");
+
+        move || get_media_or_playlist_info(path, url, true, GET_INFO_TIMEOUT, &range, cookie.as_ref())
     })
     .await
     .map_err(|err| {
@@ -142,11 +148,13 @@ pub async fn video_download(
         let VideoInFS { path, thumbnail_path } = match download::video(
             video,
             yt_dlp_cfg.max_file_size,
-            &yt_dlp_cfg.path,
+            &yt_dlp_cfg.executable_path,
             &yt_toolkit_cfg.url,
             temp_dir.path(),
-            url.domain()
-                .map_or(false, |domain| domain.contains("youtube") || domain == "youtu.be"),
+            url.host().map_or(false, |host| match host {
+                Host::Domain(domain) => domain.contains("youtube") || domain == "youtu.be",
+                _ => false,
+            }),
             DOWNLOAD_MEDIA_TIMEOUT,
         )
         .await
@@ -245,6 +253,7 @@ pub async fn video_download_quite(
     Extension(yt_dlp_cfg): Extension<YtDlpConfig>,
     Extension(yt_toolkit_cfg): Extension<YtToolkitConfig>,
     Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(cookies): Extension<Cookies>,
 ) -> HandlerResult {
     let message_id = message.id();
     let chat_id = message.chat().id();
@@ -269,10 +278,11 @@ pub async fn video_download_quite(
     };
 
     let videos = match spawn_blocking({
-        let path = yt_dlp_cfg.path.clone();
+        let path = yt_dlp_cfg.executable_path.clone();
         let url = url.clone();
+        let cookie = cookies.get_path_by_optional_host(url.host().as_ref()).cloned();
 
-        move || get_media_or_playlist_info(path, url, true, GET_INFO_TIMEOUT, &range)
+        move || get_media_or_playlist_info(path, url, true, GET_INFO_TIMEOUT, &range, cookie.as_ref())
     })
     .await
     .map_err(|err| {
@@ -310,11 +320,13 @@ pub async fn video_download_quite(
         let VideoInFS { path, thumbnail_path } = match download::video(
             video,
             yt_dlp_cfg.max_file_size,
-            &yt_dlp_cfg.path,
+            &yt_dlp_cfg.executable_path,
             &yt_toolkit_cfg.url,
             temp_dir.path(),
-            url.domain()
-                .map_or(false, |domain| domain.contains("youtube") || domain == "youtu.be"),
+            url.host().map_or(false, |host| match host {
+                Host::Domain(domain) => domain.contains("youtube") || domain == "youtu.be",
+                _ => false,
+            }),
             DOWNLOAD_MEDIA_TIMEOUT,
         )
         .await
@@ -409,6 +421,7 @@ pub async fn audio_download(
     Extension(yt_dlp_cfg): Extension<YtDlpConfig>,
     Extension(yt_toolkit_cfg): Extension<YtToolkitConfig>,
     Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(cookies): Extension<Cookies>,
 ) -> HandlerResult {
     let message_id = message.id();
     let chat_id = message.chat().id();
@@ -440,10 +453,11 @@ pub async fn audio_download(
     });
 
     let videos = match spawn_blocking({
-        let path = yt_dlp_cfg.path.clone();
+        let path = yt_dlp_cfg.executable_path.clone();
         let url = url.clone();
+        let cookie = cookies.get_path_by_optional_host(url.host().as_ref()).cloned();
 
-        move || get_media_or_playlist_info(path, url, true, GET_INFO_TIMEOUT, &range)
+        move || get_media_or_playlist_info(path, url, true, GET_INFO_TIMEOUT, &range, cookie.as_ref())
     })
     .await
     .map_err(|err| {
@@ -500,11 +514,13 @@ pub async fn audio_download(
             video,
             id_or_url,
             yt_dlp_cfg.max_file_size,
-            &yt_dlp_cfg.path,
+            &yt_dlp_cfg.executable_path,
             &yt_toolkit_cfg.url,
             temp_dir.path(),
-            url.domain()
-                .map_or(false, |domain| domain.contains("youtube") || domain == "youtu.be"),
+            url.host().map_or(false, |host| match host {
+                Host::Domain(domain) => domain.contains("youtube") || domain == "youtu.be",
+                _ => false,
+            }),
             DOWNLOAD_MEDIA_TIMEOUT,
         )
         .await
@@ -609,6 +625,7 @@ pub async fn media_download_chosen_inline_result(
     Extension(yt_dlp_cfg): Extension<YtDlpConfig>,
     Extension(yt_toolkit_cfg): Extension<YtToolkitConfig>,
     Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(cookies): Extension<Cookies>,
 ) -> HandlerResult {
     let inline_message_id = inline_message_id.as_deref().unwrap();
 
@@ -627,10 +644,11 @@ pub async fn media_download_chosen_inline_result(
     event!(Level::DEBUG, "Got url");
 
     let videos = match spawn_blocking({
-        let path = yt_dlp_cfg.path.clone();
+        let path = yt_dlp_cfg.executable_path.clone();
         let url = url.clone();
+        let cookies = cookies.get_path_by_optional_host(url.host().as_ref()).cloned();
 
-        move || get_media_or_playlist_info(path, url, false, GET_INFO_TIMEOUT, &"1:1:1".parse().unwrap())
+        move || get_media_or_playlist_info(path, url, false, GET_INFO_TIMEOUT, &"1:1:1".parse().unwrap(), cookies.as_ref())
     })
     .await
     .map_err(HandlerError::new)?
@@ -666,11 +684,13 @@ pub async fn media_download_chosen_inline_result(
             let VideoInFS { path, thumbnail_path } = download::video(
                 video,
                 yt_dlp_cfg.max_file_size,
-                yt_dlp_cfg.path,
+                yt_dlp_cfg.executable_path,
                 &yt_toolkit_cfg.url,
                 temp_dir.path(),
-                url.domain()
-                    .map_or(false, |domain| domain.contains("youtube") || domain == "youtu.be"),
+                url.host().map_or(false, |host| match host {
+                    Host::Domain(domain) => domain.contains("youtube") || domain == "youtu.be",
+                    _ => false,
+                }),
                 DOWNLOAD_MEDIA_TIMEOUT,
             )
             .await?;
@@ -723,7 +743,7 @@ pub async fn media_download_chosen_inline_result(
                 video,
                 &url,
                 yt_dlp_cfg.max_file_size,
-                &yt_dlp_cfg.path,
+                &yt_dlp_cfg.executable_path,
                 &yt_toolkit_cfg.url,
                 temp_dir.path(),
                 url.domain()
@@ -799,6 +819,7 @@ pub async fn media_download_search_chosen_inline_result(
     Extension(yt_dlp_cfg): Extension<YtDlpConfig>,
     Extension(yt_toolkit_cfg): Extension<YtToolkitConfig>,
     Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(cookies): Extension<Cookies>,
 ) -> HandlerResult {
     Span::current().record("result_id", result_id.as_ref());
     Span::current().record("inline_message_id", inline_message_id.as_deref());
@@ -811,8 +832,9 @@ pub async fn media_download_search_chosen_inline_result(
     event!(Level::DEBUG, "Got url");
 
     let videos = match spawn_blocking({
-        let path = yt_dlp_cfg.path.clone();
+        let path = yt_dlp_cfg.executable_path.clone();
         let video_id = video_id.to_owned();
+        let cookies = cookies.get_path_by_host(&Host::Domain("youtube.com")).cloned();
 
         move || {
             get_media_or_playlist_info(
@@ -821,6 +843,7 @@ pub async fn media_download_search_chosen_inline_result(
                 false,
                 GET_INFO_TIMEOUT,
                 &"1:1:1".parse().unwrap(),
+                cookies.as_ref(),
             )
         }
     })
@@ -858,7 +881,7 @@ pub async fn media_download_search_chosen_inline_result(
             let VideoInFS { path, thumbnail_path } = download::video(
                 video,
                 yt_dlp_cfg.max_file_size,
-                yt_dlp_cfg.path,
+                yt_dlp_cfg.executable_path,
                 &yt_toolkit_cfg.url,
                 temp_dir.path(),
                 true,
@@ -914,7 +937,7 @@ pub async fn media_download_search_chosen_inline_result(
                 video,
                 video_id,
                 yt_dlp_cfg.max_file_size,
-                &yt_dlp_cfg.path,
+                &yt_dlp_cfg.executable_path,
                 &yt_toolkit_cfg.url,
                 temp_dir.path(),
                 true,
@@ -986,13 +1009,19 @@ pub async fn media_select_inline_query(
     }: InlineQuery,
     Extension(yt_dlp_cfg): Extension<YtDlpConfig>,
     Extension(yt_toolkit_cfg): Extension<YtToolkitConfig>,
+    Extension(cookies): Extension<Cookies>,
 ) -> HandlerResult {
     Span::current().record("query_id", query_id.as_ref());
     Span::current().record("url", url.as_ref());
 
+    let Ok(url) = Url::parse(&url) else {
+        error::occured_in_inline_query_occured(&bot, &query_id, "Sorry, video not found").await?;
+        return Ok(EventReturn::Finish);
+    };
+
     event!(Level::DEBUG, "Got url");
 
-    let videos: Vec<ShortInfo> = match get_video_info(Client::new(), &yt_toolkit_cfg.url, &url).await {
+    let videos: Vec<ShortInfo> = match get_video_info(Client::new(), &yt_toolkit_cfg.url, url.as_str()).await {
         Ok(videos) => videos.into_iter().map(Into::into).collect(),
         Err(err) => {
             match err {
@@ -1001,12 +1030,15 @@ pub async fn media_select_inline_query(
             };
 
             match spawn_blocking(move || {
+                let cookie = cookies.get_path_by_optional_host(url.host().as_ref()).cloned();
+
                 get_media_or_playlist_info(
-                    &yt_dlp_cfg.path,
+                    &yt_dlp_cfg.executable_path,
                     url,
                     true,
                     GET_MEDIA_OR_PLAYLIST_INFO_INLINE_QUERY_TIMEOUT,
                     &"1:1:1".parse().unwrap(),
+                    cookie.as_ref(),
                 )
             })
             .await
