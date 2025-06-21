@@ -1,4 +1,4 @@
-FROM alpine:3.18 AS base-deps
+FROM alpine:3.18 AS base
 RUN apk add --no-cache \
         ffmpeg \
         python3 \
@@ -27,10 +27,11 @@ RUN touch src/main.rs
 RUN cargo build --release --target x86_64-unknown-linux-musl --locked
 RUN upx --best --lzma target/x86_64-unknown-linux-musl/release/ytdl_tg_bot
 
-FROM base-deps AS final
+FROM base AS final
 WORKDIR /app
 VOLUME ["/app/yt-dlp"]
 VOLUME ["/app/config.toml"]
+VOLUME ["/app/cookies"]
 COPY --from=build-src /usr/src/app/target/x86_64-unknown-linux-musl/release/ytdl_tg_bot .
 ENV RUST_BACKTRACE=full
 ENTRYPOINT ["/app/ytdl_tg_bot"]
