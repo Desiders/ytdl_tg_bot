@@ -250,12 +250,12 @@ pub fn get_media_or_playlist_info(
 
     let cookie_path = cookie.map(|c| c.path.to_string_lossy());
     if let Some(cookie_path) = cookie_path.as_deref() {
-        event!(Level::DEBUG, "Using cookies from: {}", cookie_path);
+        event!(Level::TRACE, "Using cookies from: {}", cookie_path);
 
         args.push("--cookies");
         args.push(cookie_path);
     } else {
-        event!(Level::DEBUG, "No cookies provided");
+        event!(Level::TRACE, "No cookies provided");
     }
 
     args.push("--");
