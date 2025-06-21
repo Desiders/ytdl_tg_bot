@@ -151,7 +151,7 @@ pub async fn video_download(
             &yt_dlp_cfg.executable_path,
             &yt_toolkit_cfg.url,
             temp_dir.path(),
-            url.host().map_or(false, |host| match host {
+            url.host().is_some_and(|host| match host {
                 Host::Domain(domain) => domain.contains("youtube") || domain == "youtu.be",
                 _ => false,
             }),
@@ -323,7 +323,7 @@ pub async fn video_download_quite(
             &yt_dlp_cfg.executable_path,
             &yt_toolkit_cfg.url,
             temp_dir.path(),
-            url.host().map_or(false, |host| match host {
+            url.host().is_some_and(|host| match host {
                 Host::Domain(domain) => domain.contains("youtube") || domain == "youtu.be",
                 _ => false,
             }),
@@ -517,7 +517,7 @@ pub async fn audio_download(
             &yt_dlp_cfg.executable_path,
             &yt_toolkit_cfg.url,
             temp_dir.path(),
-            url.host().map_or(false, |host| match host {
+            url.host().is_some_and(|host| match host {
                 Host::Domain(domain) => domain.contains("youtube") || domain == "youtu.be",
                 _ => false,
             }),
@@ -687,7 +687,7 @@ pub async fn media_download_chosen_inline_result(
                 yt_dlp_cfg.executable_path,
                 &yt_toolkit_cfg.url,
                 temp_dir.path(),
-                url.host().map_or(false, |host| match host {
+                url.host().is_some_and(|host| match host {
                     Host::Domain(domain) => domain.contains("youtube") || domain == "youtu.be",
                     _ => false,
                 }),
@@ -747,7 +747,7 @@ pub async fn media_download_chosen_inline_result(
                 &yt_toolkit_cfg.url,
                 temp_dir.path(),
                 url.domain()
-                    .map_or(false, |domain| domain.contains("youtube") || domain == "youtu.be"),
+                    .is_some_and(|domain| domain.contains("youtube") || domain == "youtu.be"),
                 DOWNLOAD_MEDIA_TIMEOUT,
             )
             .await?;
@@ -839,7 +839,7 @@ pub async fn media_download_search_chosen_inline_result(
         move || {
             get_media_or_playlist_info(
                 path,
-                &format!("ytsearch:{video_id}"),
+                format!("ytsearch:{video_id}"),
                 false,
                 GET_INFO_TIMEOUT,
                 &"1:1:1".parse().unwrap(),
@@ -1024,10 +1024,11 @@ pub async fn media_select_inline_query(
     let videos: Vec<ShortInfo> = match get_video_info(Client::new(), &yt_toolkit_cfg.url, url.as_str()).await {
         Ok(videos) => videos.into_iter().map(Into::into).collect(),
         Err(err) => {
-            match err {
-                GetVideoInfoErrorKind::GetVideoId(err) => event!(Level::ERROR, %err, "Unsupported URL for YT Toolkit"),
-                _ => event!(Level::ERROR, err = format_error_report(&err), "Getting media info YT Toolkit error"),
-            };
+            if let GetVideoInfoErrorKind::GetVideoId(err) = err {
+                event!(Level::ERROR, %err, "Unsupported URL for YT Toolkit");
+            } else {
+                event!(Level::ERROR, err = format_error_report(&err), "Getting media info YT Toolkit error");
+            }
 
             match spawn_blocking(move || {
                 let cookie = cookies.get_path_by_optional_host(url.host().as_ref()).cloned();
@@ -1080,7 +1081,7 @@ pub async fn media_select_inline_query(
                 title,
                 InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
             )
-            .thumbnail_url_option(thumbnail_url.clone())
+            .thumbnail_url_option(thumbnail_url)
             .description("Click to download video")
             .reply_markup(InlineKeyboardMarkup::new([[
                 InlineKeyboardButton::new("Downloading...").callback_data("video_download")
@@ -1165,7 +1166,7 @@ pub async fn media_search_inline_query(
                 title,
                 InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
             )
-            .thumbnail_url_option(thumbnail_url.clone())
+            .thumbnail_url_option(thumbnail_url)
             .description("Click to download video")
             .reply_markup(InlineKeyboardMarkup::new([[
                 InlineKeyboardButton::new("Downloading...").callback_data("video_download")

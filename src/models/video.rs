@@ -40,7 +40,7 @@ impl Video {
         if let Some(format) = &self.format {
             if let Ok(format) = format.kind(self.duration) {
                 format_kinds.push(format);
-            };
+            }
         }
 
         combined_format::Formats::from(format_kinds)
@@ -61,7 +61,7 @@ impl Video {
         if let Some(format) = &self.format {
             if let Ok(format::Kind::Audio(format)) = format.kind(self.duration) {
                 formats.push(format);
-            };
+            }
         }
 
         format::Audios::from(formats)
