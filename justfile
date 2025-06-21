@@ -32,6 +32,7 @@ fmt:
         --env-file .env \
         -v ./yt-dlp:/app/yt-dlp \
         -v ./config.toml:/app/config.toml \
+        -v ./cookies:/app/cookies \
         ytdl_tg_bot:{{VERSION}}
 
 @docker-stop:
