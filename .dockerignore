@@ -10,12 +10,16 @@ README.md
 
 .vscode/
 
-Cargo.lock
-
 target/
 
 yt-dlp-cache/
+yt-dlp
+
+cookies/*.txt
 
 docker-compose.yml
 docker-compose.yaml
 Dockerfile
+
+config.toml
+config.example.toml

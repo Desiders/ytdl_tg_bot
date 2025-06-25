@@ -1,14 +1,14 @@
 [package]
 name = "ytdl_tg_bot"
-version = "1.10.0"
+version = "1.11.0"
 edition = "2021"
 
 [dependencies]
-telers = { git = "https://github.com/Desiders/telers.git", rev = "7be9ddd", features = ["default_signal"] }
+telers = { version = "1.0.0-alpha.25", features = ["default_signal", "std", "rustls-tls"], default-features = false }
 tokio = { version = "1.36", features = ["rt-multi-thread", "process"] }
 tokio-util = "0.7"
-nix = { version = "0.29", features = ["fs", "process"] }
-reqwest = { version = "0.12", features = ["blocking"] }
+nix = { version = "0.30", features = ["fs", "process"] }
+reqwest = { version = "0.12", features = ["blocking", "rustls-tls", "charset"], default-features = false }
 serde = "1.0"
 serde_json = "1.0"
 url = "2.5"
@@ -23,3 +23,4 @@ futures-util = "0.3"
 backoff = { version = "0.4", features = ["tokio"] }
 bytes = "1.5"
 wait-timeout = "0.2"
+toml = "0.8.23"

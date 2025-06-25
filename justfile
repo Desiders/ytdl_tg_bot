@@ -2,46 +2,45 @@ set dotenv-load
 
 host := `uname -a`
 
-# Run cargo
-run:
-    cargo run
+help:
+    just -l
 
-run-with-pid:
-    cargo run & echo $!
-
-# Run release cargo
-run-release:
-    cargo run --release
-
-run-release-with-pid:
-    cargo run --release & echo $!
-
-# Run docker compose with build
-run-docker-build:
-    docker compose up --build
-
-# Run docker compose
-run-docker:
-    docker compose up
-
-# Down docker compose
-down-docker:
-    docker compose down
-
-# Build docker compose
-docker-build:
-    docker compose build
-
-# Update dependencies
-update:
-    cargo update
-
-# Clippy
 clippy:
     cargo clippy --all --all-features -- -W clippy::pedantic
 
-# Format
-format:
+fmt:
     cargo fmt --all -- --check
 
-fmt: format
+@build:
+    cargo build --all-features
+
+@build-release:
+    cargo build --release --all-features
+
+@run: build
+    cargo run
+
+@run-release: build-release
+    cargo run --release
+
+@docker-build VERSION="latest":
+    docker build -t ytdl_tg_bot:{{VERSION}} .
+
+@docker-compose-build:
+    docker compose build
+
+@docker-up:
+    docker compose up
+
+@docker-up-build: docker-compose-build
+    docker compose up
+
+@docker-down:
+    docker compose down
+
+docker-pull USER VERSION="latest":
+    docker pull {{USER}}/ytdl_tg_bot:{{VERSION}}
+
+docker-push USER VERSION="latest":
+    @just docker-compose-build
+    docker push {{USER}}/ytdl_tg_bot:{{VERSION}}

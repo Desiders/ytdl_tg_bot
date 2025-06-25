@@ -1,0 +1,24 @@
+[bot]
+token = "..."
+src_url = "https://github.com/.../..."
+
+[logging]
+dirs = "info,hyper=warn,reqwest=warn,tokio_util::codec=warn"
+
+[chat]
+receiver_chat_id = 123
+
+[yt_dlp]
+max_file_size = 5000000
+executable_path = "./yt-dlp/executable"
+cookies_path = "./cookies"
+
+[yt_toolkit]
+url = "http://ytdl_tg_bot.yt_toolkit_api:8080"
+# url = "http://127.0.0.1:8080"
+
+[telegram_bot_api]
+url = "http://ytdl_tg_bot.telegram_bot_api:8081"
+# url = "https://api.telegram.org"
+api_id = "..."
+api_hash = "..."
