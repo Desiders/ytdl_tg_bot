@@ -1,7 +1,9 @@
 use crate::{
-    models::{AudioInFS, ShortInfo, Video, VideoInFS},
-    services::{convert_to_jpg, download_audio_to_path, download_to_pipe, download_video_to_path, merge_streams, ytdl},
-    services::{get_best_thumbnail_path_in_dir, yt_toolkit},
+    models::{AudioInFS, Cookie, ShortInfo, Video, VideoInFS},
+    services::{
+        convert_to_jpg, download_audio_to_path, download_to_pipe, download_video_to_path, get_best_thumbnail_path_in_dir, merge_streams,
+        yt_toolkit, ytdl,
+    },
     utils::format_error_report,
 };
 use futures_util::StreamExt as _;
@@ -140,6 +142,7 @@ pub async fn video(
     temp_dir_path: impl AsRef<Path>,
     is_youtube: bool,
     download_and_merge_timeout: u64,
+    cookie: Option<&Cookie>,
 ) -> Result<VideoInFS, StreamErrorKind> {
     let mut combined_formats = video.get_combined_formats();
     combined_formats.sort(max_file_size);
@@ -184,6 +187,7 @@ pub async fn video(
             &temp_dir_path,
             download_and_merge_timeout,
             download_thumbnails,
+            cookie,
         )
         .await?;
 
@@ -228,6 +232,7 @@ pub async fn video(
             &executable_ytdl_path,
             &video.original_url,
             combined_format.video_format.id,
+            cookie,
         )?;
     }
 
@@ -246,6 +251,7 @@ pub async fn video(
             &executable_ytdl_path,
             &video.original_url,
             combined_format.audio_format.id,
+            cookie,
         )?;
     };
 
@@ -300,6 +306,7 @@ pub async fn audio_to_temp_dir(
     temp_dir_path: impl AsRef<Path>,
     is_youtube: bool,
     download_timeout: u64,
+    cookie: Option<&Cookie>,
 ) -> Result<AudioInFS, ToTempDirErrorKind> {
     let mut audio_formats = video.get_audio_formats();
     audio_formats.sort_by_priority_and_skip_by_size(max_file_size);
@@ -342,6 +349,7 @@ pub async fn audio_to_temp_dir(
         &temp_dir_path,
         download_timeout,
         download_thumbnails,
+        cookie,
     )
     .await?;
 
