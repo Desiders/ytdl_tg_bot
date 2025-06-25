@@ -95,10 +95,12 @@ pub async fn video_download(
         async move { upload_video_action_in_loop(&bot, chat_id).await }
     });
 
+    let cookie = cookies.get_path_by_optional_host(url.host().as_ref());
+
     let videos = match spawn_blocking({
         let path = yt_dlp_cfg.executable_path.clone();
         let url = url.clone();
-        let cookie = cookies.get_path_by_optional_host(url.host().as_ref()).cloned();
+        let cookie = cookie.cloned();
 
         event!(Level::DEBUG, host = ?url.host(), "Getting media info with yt-dlp");
 
@@ -156,6 +158,7 @@ pub async fn video_download(
                 _ => false,
             }),
             DOWNLOAD_MEDIA_TIMEOUT,
+            cookie,
         )
         .await
         {
@@ -277,10 +280,12 @@ pub async fn video_download_quite(
         None => Range::default(),
     };
 
+    let cookie = cookies.get_path_by_optional_host(url.host().as_ref());
+
     let videos = match spawn_blocking({
         let path = yt_dlp_cfg.executable_path.clone();
         let url = url.clone();
-        let cookie = cookies.get_path_by_optional_host(url.host().as_ref()).cloned();
+        let cookie = cookie.cloned();
 
         move || get_media_or_playlist_info(path, url, true, GET_INFO_TIMEOUT, &range, cookie.as_ref())
     })
@@ -328,6 +333,7 @@ pub async fn video_download_quite(
                 _ => false,
             }),
             DOWNLOAD_MEDIA_TIMEOUT,
+            cookie,
         )
         .await
         {
@@ -452,10 +458,12 @@ pub async fn audio_download(
         async move { upload_voice_action_in_loop(&bot, chat_id).await }
     });
 
+    let cookie = cookies.get_path_by_optional_host(url.host().as_ref());
+
     let videos = match spawn_blocking({
         let path = yt_dlp_cfg.executable_path.clone();
         let url = url.clone();
-        let cookie = cookies.get_path_by_optional_host(url.host().as_ref()).cloned();
+        let cookie = cookie.cloned();
 
         move || get_media_or_playlist_info(path, url, true, GET_INFO_TIMEOUT, &range, cookie.as_ref())
     })
@@ -522,6 +530,7 @@ pub async fn audio_download(
                 _ => false,
             }),
             DOWNLOAD_MEDIA_TIMEOUT,
+            cookie,
         )
         .await
         {
@@ -640,15 +649,16 @@ pub async fn media_download_chosen_inline_result(
 
     // If `result_id` starts with `audio_` then it's audio, else it's video
     let download_video = result_id.starts_with("video_");
+    let cookie = cookies.get_path_by_optional_host(url.host().as_ref());
 
     event!(Level::DEBUG, "Got url");
 
     let videos = match spawn_blocking({
         let path = yt_dlp_cfg.executable_path.clone();
         let url = url.clone();
-        let cookies = cookies.get_path_by_optional_host(url.host().as_ref()).cloned();
+        let cookie = cookie.cloned();
 
-        move || get_media_or_playlist_info(path, url, false, GET_INFO_TIMEOUT, &"1:1:1".parse().unwrap(), cookies.as_ref())
+        move || get_media_or_playlist_info(path, url, false, GET_INFO_TIMEOUT, &"1:1:1".parse().unwrap(), cookie.as_ref())
     })
     .await
     .map_err(HandlerError::new)?
@@ -692,6 +702,7 @@ pub async fn media_download_chosen_inline_result(
                     _ => false,
                 }),
                 DOWNLOAD_MEDIA_TIMEOUT,
+                cookie,
             )
             .await?;
 
@@ -749,6 +760,7 @@ pub async fn media_download_chosen_inline_result(
                 url.domain()
                     .is_some_and(|domain| domain.contains("youtube") || domain == "youtu.be"),
                 DOWNLOAD_MEDIA_TIMEOUT,
+                cookie,
             )
             .await?;
 
@@ -828,13 +840,14 @@ pub async fn media_download_search_chosen_inline_result(
 
     let download_video = result_prefix.starts_with("video");
     let inline_message_id = inline_message_id.as_deref().unwrap();
+    let cookie = cookies.get_path_by_host(&Host::Domain("youtube.com"));
 
     event!(Level::DEBUG, "Got url");
 
     let videos = match spawn_blocking({
         let path = yt_dlp_cfg.executable_path.clone();
         let video_id = video_id.to_owned();
-        let cookies = cookies.get_path_by_host(&Host::Domain("youtube.com")).cloned();
+        let cookie = cookie.cloned();
 
         move || {
             get_media_or_playlist_info(
@@ -843,7 +856,7 @@ pub async fn media_download_search_chosen_inline_result(
                 false,
                 GET_INFO_TIMEOUT,
                 &"1:1:1".parse().unwrap(),
-                cookies.as_ref(),
+                cookie.as_ref(),
             )
         }
     })
@@ -886,6 +899,7 @@ pub async fn media_download_search_chosen_inline_result(
                 temp_dir.path(),
                 true,
                 DOWNLOAD_MEDIA_TIMEOUT,
+                cookie,
             )
             .await?;
 
@@ -942,6 +956,7 @@ pub async fn media_download_search_chosen_inline_result(
                 temp_dir.path(),
                 true,
                 DOWNLOAD_MEDIA_TIMEOUT,
+                cookie,
             )
             .await?;
 

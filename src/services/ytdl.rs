@@ -35,8 +35,9 @@ pub fn download_to_pipe(
     executable_path: impl AsRef<str>,
     url: impl AsRef<str>,
     format: impl AsRef<str>,
+    cookie: Option<&Cookie>,
 ) -> Result<Child, io::Error> {
-    let args = [
+    let mut args = vec![
         "--ignore-config",
         "--no-colors",
         "--socket-timeout",
@@ -59,9 +60,20 @@ pub fn download_to_pipe(
         "10M",
         "-f",
         format.as_ref(),
-        "--",
-        url.as_ref(),
     ];
+
+    let cookie_path = cookie.map(|c| c.path.to_string_lossy());
+    if let Some(cookie_path) = cookie_path.as_deref() {
+        event!(Level::TRACE, "Using cookies from: {}", cookie_path);
+
+        args.push("--cookies");
+        args.push(cookie_path);
+    } else {
+        event!(Level::TRACE, "No cookies provided");
+    }
+
+    args.push("--");
+    args.push(url.as_ref());
 
     Command::new(executable_path.as_ref())
         .args(args)
@@ -78,6 +90,7 @@ pub async fn download_video_to_path(
     output_dir_path: impl AsRef<Path>,
     timeout: u64,
     download_thumbnails: bool,
+    cookie: Option<&Cookie>,
 ) -> Result<(), io::Error> {
     let output_dir_path = output_dir_path.as_ref().to_string_lossy();
 
@@ -108,6 +121,16 @@ pub async fn download_video_to_path(
 
     if download_thumbnails {
         args.push("--write-all-thumbnail");
+    }
+
+    let cookie_path = cookie.map(|c| c.path.to_string_lossy());
+    if let Some(cookie_path) = cookie_path.as_deref() {
+        event!(Level::TRACE, "Using cookies from: {}", cookie_path);
+
+        args.push("--cookies");
+        args.push(cookie_path);
+    } else {
+        event!(Level::TRACE, "No cookies provided");
     }
 
     args.push("--");
@@ -142,6 +165,7 @@ pub async fn download_audio_to_path(
     output_dir_path: impl AsRef<Path>,
     timeout: u64,
     download_thumbnails: bool,
+    cookie: Option<&Cookie>,
 ) -> Result<(), io::Error> {
     let output_dir_path = output_dir_path.as_ref().to_string_lossy();
 
@@ -177,6 +201,16 @@ pub async fn download_audio_to_path(
 
     if download_thumbnails {
         args.push("--write-all-thumbnail");
+    }
+
+    let cookie_path = cookie.map(|c| c.path.to_string_lossy());
+    if let Some(cookie_path) = cookie_path.as_deref() {
+        event!(Level::TRACE, "Using cookies from: {}", cookie_path);
+
+        args.push("--cookies");
+        args.push(cookie_path);
+    } else {
+        event!(Level::TRACE, "No cookies provided");
     }
 
     args.push("--");
