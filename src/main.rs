@@ -1,22 +1,19 @@
-mod cmd;
 mod config;
 mod download;
 mod errors;
 mod filters;
-mod fs;
 mod handlers;
 mod handlers_utils;
 mod models;
 mod services;
 mod utils;
 
-use config::read_config_from_env;
 use filters::{is_via_bot, text_contains_url, text_contains_url_with_reply, text_empty};
 use handlers::{
     audio_download, media_download_chosen_inline_result, media_download_search_chosen_inline_result, media_search_inline_query,
     media_select_inline_query, start, video_download, video_download_quite,
 };
-use std::{borrow::Cow, process};
+use std::borrow::Cow;
 use telers::{
     client::{
         telegram::{APIServer, BareFilesPathWrapper},
@@ -30,28 +27,27 @@ use tracing::{event, Level};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
 use utils::{on_shutdown, on_startup};
 
+use crate::services::get_cookies_from_directory;
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
-    let config = match read_config_from_env() {
-        Ok(config) => {
-            tracing_subscriber::registry()
-                .with(fmt::layer())
-                .with(EnvFilter::from_env("LOGGING_LEVEL"))
-                .init();
+    println!("{}", &*config::get_path());
 
-            event!(Level::DEBUG, "Config loaded from env");
+    let config = config::parse_from_fs(&*config::get_path()).unwrap();
 
-            config
-        }
-        Err(err) => {
-            eprintln!("Error reading config from env: {err}");
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::builder().parse_lossy(config.logging.dirs))
+        .init();
 
-            process::exit(1);
-        }
-    };
+    event!(Level::DEBUG, "Config loaded");
 
-    let base_url = format!("{}/bot{{token}}/{{method_name}}", config.bot.telegram_bot_api_url);
-    let files_url = format!("{}/file{{token}}/{{path}}", config.bot.telegram_bot_api_url);
+    let cookies = get_cookies_from_directory(&*config.yt_dlp.cookies_path).unwrap_or_default();
+
+    event!(Level::DEBUG, hosts = ?cookies.get_hosts(), "Cookies loaded");
+
+    let base_url = format!("{}/bot{{token}}/{{method_name}}", config.telegram_bot_api.url);
+    let files_url = format!("{}/file{{token}}/{{path}}", config.telegram_bot_api.url);
 
     let bot = Bot::with_client(
         config.bot.token.clone(),
@@ -103,6 +99,9 @@ async fn main() {
         .bot(bot)
         .extension(config.yt_dlp)
         .extension(config.bot)
+        .extension(config.yt_toolkit)
+        .extension(config.chat)
+        .extension(cookies)
         .build();
 
     match dispatcher.run_polling().await {

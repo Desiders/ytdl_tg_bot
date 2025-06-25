@@ -1,8 +1,9 @@
 use crate::{
-    cmd::{convert_to_jpg, download_audio_to_path, download_to_pipe, download_video_to_path, merge_streams, ytdl},
-    fs::get_best_thumbnail_path_in_dir,
-    models::{AudioInFS, ShortInfo, Video, VideoInFS},
-    services::yt_toolkit,
+    models::{AudioInFS, Cookie, ShortInfo, Video, VideoInFS},
+    services::{
+        convert_to_jpg, download_audio_to_path, download_to_pipe, download_video_to_path, get_best_thumbnail_path_in_dir, merge_streams,
+        yt_toolkit, ytdl,
+    },
     utils::format_error_report,
 };
 use futures_util::StreamExt as _;
@@ -15,7 +16,6 @@ use std::{
     borrow::Cow,
     fs::File,
     io,
-    os::fd::AsRawFd,
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -142,6 +142,7 @@ pub async fn video(
     temp_dir_path: impl AsRef<Path>,
     is_youtube: bool,
     download_and_merge_timeout: u64,
+    cookie: Option<&Cookie>,
 ) -> Result<VideoInFS, StreamErrorKind> {
     let mut combined_formats = video.get_combined_formats();
     combined_formats.sort(max_file_size);
@@ -186,6 +187,7 @@ pub async fn video(
             &temp_dir_path,
             download_and_merge_timeout,
             download_thumbnails,
+            cookie,
         )
         .await?;
 
@@ -208,12 +210,12 @@ pub async fn video(
     let (video_read_fd, video_write_fd) = pipe().map_err(io::Error::from)?;
     let (audio_read_fd, audio_write_fd) = pipe().map_err(io::Error::from)?;
 
-    fcntl(video_write_fd.as_raw_fd(), F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
-    fcntl(audio_write_fd.as_raw_fd(), F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
+    fcntl(&video_write_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
+    fcntl(&audio_write_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
 
     let output_path = temp_dir_path.as_ref().join(format!("{video_id}.{extension}", video_id = video.id));
 
-    let merge_child = merge_streams(video_read_fd, audio_read_fd, extension.to_owned(), output_path.clone());
+    let merge_child = merge_streams(&video_read_fd, &audio_read_fd, extension.to_owned(), output_path.clone());
 
     if let Some(filesize) = combined_format.video_format.filesize_or_approx() {
         tokio::spawn({
@@ -230,8 +232,9 @@ pub async fn video(
             &executable_ytdl_path,
             &video.original_url,
             combined_format.video_format.id,
+            cookie,
         )?;
-    };
+    }
 
     if let Some(filesize) = combined_format.audio_format.filesize_or_approx() {
         tokio::spawn({
@@ -248,6 +251,7 @@ pub async fn video(
             &executable_ytdl_path,
             &video.original_url,
             combined_format.audio_format.id,
+            cookie,
         )?;
     };
 
@@ -274,7 +278,7 @@ pub async fn video(
     if !exit_code.success() {
         event!(Level::ERROR, "FFmpeg exited with status `{exit_code}`");
 
-        return Err(io::Error::new(io::ErrorKind::Other, format!("FFmpeg exited with status `{exit_code}`")).into());
+        return Err(io::Error::other(format!("FFmpeg exited with status `{exit_code}`")).into());
     }
 
     event!(Level::DEBUG, "Streams merged");
@@ -302,6 +306,7 @@ pub async fn audio_to_temp_dir(
     temp_dir_path: impl AsRef<Path>,
     is_youtube: bool,
     download_timeout: u64,
+    cookie: Option<&Cookie>,
 ) -> Result<AudioInFS, ToTempDirErrorKind> {
     let mut audio_formats = video.get_audio_formats();
     audio_formats.sort_by_priority_and_skip_by_size(max_file_size);
@@ -344,6 +349,7 @@ pub async fn audio_to_temp_dir(
         &temp_dir_path,
         download_timeout,
         download_thumbnails,
+        cookie,
     )
     .await?;
 

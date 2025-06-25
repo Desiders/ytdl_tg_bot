@@ -13,12 +13,12 @@ use tracing::instrument;
 /// Returns the child process
 #[instrument(skip_all, fields(video_fd = video_fd.as_raw_fd(), audio_fd = audio_fd.as_raw_fd(), output_path = %output_path.as_ref().as_os_str().to_string_lossy()))]
 pub fn merge_streams(
-    video_fd: OwnedFd,
-    audio_fd: OwnedFd,
+    video_fd: &OwnedFd,
+    audio_fd: &OwnedFd,
     extension: impl AsRef<str>,
     output_path: impl AsRef<Path>,
 ) -> Result<tokio::process::Child, io::Error> {
-    tokio::process::Command::new("/usr/bin/ffmpeg")
+    tokio::process::Command::new("ffmpeg")
         .args([
             "-y",
             "-hide_banner",
@@ -70,7 +70,7 @@ pub async fn convert_to_jpg(input_url: impl AsRef<str>, output_path: impl AsRef<
     let output_path = output_path.as_ref();
 
     tokio::process::Command::new("/usr/bin/ffmpeg")
-        .args(&["-y", "-hide_banner", "-loglevel", "error", "-i", input_url])
+        .args(["-y", "-hide_banner", "-loglevel", "error", "-i", input_url])
         .arg(output_path.to_string_lossy().as_ref())
         .stdin(Stdio::null())
         .stdout(Stdio::null())

@@ -23,7 +23,7 @@ pub async fn get_video_info(client: Client, api_url: &str, url: &str) -> Result<
 
     match serde_json::from_str::<VideoInfoKind>(
         &client
-            .get(&format!("{api_url}/video"))
+            .get(format!("{api_url}/video"))
             .query(&[("id", &id)])
             .send()
             .await?
@@ -46,7 +46,7 @@ pub enum SearchVideoErrorKind {
 pub async fn search_video(client: Client, api_url: &str, text: &str) -> Result<Vec<BasicInfo>, SearchVideoErrorKind> {
     let basic_search_info = serde_json::from_str::<Vec<BasicSearchInfo>>(
         &client
-            .get(&format!("{api_url}/search"))
+            .get(format!("{api_url}/search"))
             .query(&[("q", &text)])
             .send()
             .await?
@@ -58,10 +58,11 @@ pub async fn search_video(client: Client, api_url: &str, text: &str) -> Result<V
 }
 
 pub fn get_thumbnail_url(api_url: &str, id: &str, width: i64, height: i64) -> Result<String, GetVideoIdErrorKind> {
-    Ok(Url::parse_with_params(
+    let url = Url::parse_with_params(
         &format!("{api_url}/thumbnail"),
         &[("id", id), ("width", &width.to_string()), ("height", &height.to_string())],
     )
-    .unwrap()
-    .into())
+    .map_err(|_| GetVideoIdErrorKind::InvalidUrl)?;
+
+    Ok(url.into())
 }

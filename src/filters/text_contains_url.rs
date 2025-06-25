@@ -95,8 +95,8 @@ pub fn text_contains_url_with_reply(request: &mut Request) -> impl Future<Output
                             if let Some(url_with_params) = get_url_with_params_from_text(text) {
                                 url_found = true;
                                 request.extensions.insert(url_with_params);
-                            };
-                        };
+                            }
+                        }
                     }
                 }
                 _ => {}

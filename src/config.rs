@@ -1,80 +1,85 @@
+#![allow(clippy::module_name_repetitions)]
+
+use serde::Deserialize;
 use std::{
-    borrow::Cow,
     env::{self, VarError},
-    num::ParseIntError,
-    str::ParseBoolError,
+    fs, io,
+    path::Path,
 };
+use thiserror::Error;
 
-#[derive(Clone, Debug)]
-pub struct Bot {
-    pub token: String,
-    pub source_code_url: String,
-    pub receiver_video_chat_id: i64,
-    pub yt_toolkit_api_url: String,
-    pub telegram_bot_api_url: String,
+#[derive(Deserialize, Clone, Debug)]
+pub struct BotConfig {
+    pub token: Box<str>,
+    pub src_url: Box<str>,
 }
 
-#[derive(Clone, Debug)]
-pub struct YtDlp {
-    pub full_path: String,
+#[derive(Deserialize, Clone, Debug)]
+pub struct ChatConfig {
+    pub receiver_chat_id: i64,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct LoggingConfig {
+    pub dirs: Box<str>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct YtDlpConfig {
     pub max_file_size: u32,
+    pub executable_path: Box<str>,
+    pub cookies_path: Box<str>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Deserialize, Clone, Debug)]
+pub struct YtToolkitConfig {
+    pub url: Box<str>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct TelegramBotApiConfig {
+    pub url: Box<str>,
+    pub api_id: Box<str>,
+    pub api_hash: Box<str>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct Config {
-    pub bot: Bot,
-    pub yt_dlp: YtDlp,
+    pub bot: BotConfig,
+    pub chat: ChatConfig,
+    pub logging: LoggingConfig,
+    pub yt_dlp: YtDlpConfig,
+    pub yt_toolkit: YtToolkitConfig,
+    pub telegram_bot_api: TelegramBotApiConfig,
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum ErrorKind {
-    #[error("env error: {source} for key {key}")]
-    Env { source: VarError, key: Cow<'static, str> },
+#[derive(Error, Debug)]
+pub enum ParseError {
     #[error(transparent)]
-    ParseInt(#[from] ParseIntError),
+    IO(#[from] io::Error),
     #[error(transparent)]
-    ParseBool(#[from] ParseBoolError),
+    Toml(#[from] toml::de::Error),
 }
 
-pub fn read_config_from_env() -> Result<Config, ErrorKind> {
-    Ok(Config {
-        bot: Bot {
-            token: env::var("BOT_TOKEN").map_err(|err| ErrorKind::Env {
-                source: err,
-                key: "BOT_TOKEN".into(),
-            })?,
-            source_code_url: env::var("BOT_SOURCE_CODE_URL").map_err(|err| ErrorKind::Env {
-                source: err,
-                key: "BOT_SOURCE_CODE_URL".into(),
-            })?,
-            receiver_video_chat_id: env::var("RECEIVER_VIDEO_CHAT_ID")
-                .map_err(|err| ErrorKind::Env {
-                    source: err,
-                    key: "RECEIVER_VIDEO_CHAT_ID".into(),
-                })?
-                .parse()
-                .map_err(ErrorKind::ParseInt)?,
-            yt_toolkit_api_url: env::var("YT_TOOLKIT_API_URL").map_err(|err| ErrorKind::Env {
-                source: err,
-                key: "YT_TOOLKIT_API_URL".into(),
-            })?,
-            telegram_bot_api_url: env::var("TELEGRAM_BOT_API_URL").map_err(|err| ErrorKind::Env {
-                source: err,
-                key: "TELEGRAM_BOT_API_URL".into(),
-            })?,
-        },
-        yt_dlp: YtDlp {
-            full_path: env::var("YT_DLP_FULL_PATH").map_err(|err| ErrorKind::Env {
-                source: err,
-                key: "YT_DLP_FULL_PATH".into(),
-            })?,
-            max_file_size: env::var("YT_DLP_MAX_FILE_SIZE")
-                .map_err(|err| ErrorKind::Env {
-                    source: err,
-                    key: "YT_DLP_MAX_FILE_SIZE".into(),
-                })?
-                .parse()
-                .map_err(ErrorKind::ParseInt)?,
-        },
-    })
+/// # Panics
+///
+/// Panics if the `CONFIG_PATH` environment variable is not valid UTF-8.
+#[must_use]
+pub fn get_path() -> Box<str> {
+    let path = match env::var("CONFIG_PATH") {
+        Ok(val) => val,
+        Err(VarError::NotPresent) => String::from("config.toml"),
+        Err(VarError::NotUnicode(_)) => {
+            panic!("`CONFIG_PATH` env variable is not a valid UTF-8 string!");
+        }
+    };
+
+    path.into_boxed_str()
+}
+
+#[allow(clippy::missing_errors_doc)]
+pub fn parse_from_fs(path: impl AsRef<Path>) -> Result<Config, ParseError> {
+    let raw = fs::read_to_string(path)?;
+    let cfg = toml::from_str(&raw)?;
+    Ok(cfg)
 }
