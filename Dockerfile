@@ -2,6 +2,8 @@ FROM alpine:3.18 AS base
 RUN apk add --no-cache \
         ffmpeg \
         python3 \
+        bash \
+        curl \
     && rm -rf /var/cache/apk/*
 
 FROM rust:1.87-slim-bullseye AS build-deps
