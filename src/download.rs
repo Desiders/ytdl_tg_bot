@@ -63,7 +63,13 @@ async fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_
 
     match convert_to_jpg(url, &path).await {
         Ok(mut child) => match timeout(Duration::from_secs(10), child.wait()).await {
-            Ok(Ok(_)) => Some(path),
+            Ok(Ok(status)) => {
+                if status.success() {
+                    Some(path)
+                } else {
+                    None
+                }
+            }
             Ok(Err(err)) => {
                 event!(Level::ERROR, err = format_error_report(&err), "Failed to convert thumbnail");
                 None
