@@ -16,5 +16,5 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 - Clone this repository `git clone https://github.com/Desiders/ytdl_tg_bot.git`
 - Copy `.env.example` to `.env` and fill it with your data
 - Run `docker compose up` to start the project
-<br>
+
 You can also use `just` to run the project with `just run` or `just run-docker` commands
