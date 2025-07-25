@@ -86,7 +86,7 @@ async fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_
     }
 }
 
-const RANGE_CHUNK_SIZE: i32 = 1024 * 1024 * 10;
+const RANGE_CHUNK_SIZE: i32 = 1024 * 1024 * 11;
 
 async fn range_download_to_write<W: AsyncWriteExt + Unpin>(
     url: impl AsRef<str>,
