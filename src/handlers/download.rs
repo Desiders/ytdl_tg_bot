@@ -4,6 +4,7 @@ use crate::{
     handlers_utils::{
         chat_action::{upload_video_action_in_loop, upload_voice_action_in_loop},
         error,
+        preferred_languages::PreferredLanguages,
         range::Range,
         send,
         url::UrlWithParams,
@@ -88,6 +89,22 @@ pub async fn video_download(
         },
         None => Range::default(),
     };
+    let preferred_languages = match params.get("lang") {
+        Some(raw_value) => match PreferredLanguages::from_str(raw_value) {
+            Ok(languages) => languages,
+            Err(err) => {
+                event!(
+                    Level::ERROR,
+                    err = format_error_report(&err),
+                    "Error while parse preferred languages"
+                );
+
+                error::occured_in_message(&bot, chat_id, message_id, &err.to_string(), None).await?;
+                return Ok(EventReturn::Finish);
+            }
+        },
+        None => PreferredLanguages::default(),
+    };
 
     let upload_action_task = tokio::spawn({
         let bot = bot.clone();
@@ -159,6 +176,7 @@ pub async fn video_download(
             }),
             DOWNLOAD_MEDIA_TIMEOUT,
             cookie,
+            &preferred_languages.languages.iter().map(AsRef::as_ref).collect::<Box<[_]>>(),
         )
         .await
         {
@@ -279,6 +297,22 @@ pub async fn video_download_quite(
         },
         None => Range::default(),
     };
+    let preferred_languages = match params.get("lang") {
+        Some(raw_value) => match PreferredLanguages::from_str(raw_value) {
+            Ok(languages) => languages,
+            Err(err) => {
+                event!(
+                    Level::ERROR,
+                    err = format_error_report(&err),
+                    "Error while parse preferred languages"
+                );
+
+                error::occured_in_message(&bot, chat_id, message_id, &err.to_string(), None).await?;
+                return Ok(EventReturn::Finish);
+            }
+        },
+        None => PreferredLanguages::default(),
+    };
 
     let cookie = cookies.get_path_by_optional_host(url.host().as_ref());
 
@@ -334,6 +368,7 @@ pub async fn video_download_quite(
             }),
             DOWNLOAD_MEDIA_TIMEOUT,
             cookie,
+            &preferred_languages.languages.iter().map(AsRef::as_ref).collect::<Box<[_]>>(),
         )
         .await
         {
@@ -451,6 +486,22 @@ pub async fn audio_download(
         },
         None => Range::default(),
     };
+    let preferred_languages = match params.get("lang") {
+        Some(raw_value) => match PreferredLanguages::from_str(raw_value) {
+            Ok(languages) => languages,
+            Err(err) => {
+                event!(
+                    Level::ERROR,
+                    err = format_error_report(&err),
+                    "Error while parse preferred languages"
+                );
+
+                error::occured_in_message(&bot, chat_id, message_id, &err.to_string(), None).await?;
+                return Ok(EventReturn::Finish);
+            }
+        },
+        None => PreferredLanguages::default(),
+    };
 
     let upload_action_task = tokio::spawn({
         let bot = bot.clone();
@@ -531,6 +582,7 @@ pub async fn audio_download(
             }),
             DOWNLOAD_MEDIA_TIMEOUT,
             cookie,
+            &preferred_languages.languages.iter().map(AsRef::as_ref).collect::<Box<[_]>>(),
         )
         .await
         {
@@ -703,6 +755,11 @@ pub async fn media_download_chosen_inline_result(
                 }),
                 DOWNLOAD_MEDIA_TIMEOUT,
                 cookie,
+                &PreferredLanguages::default()
+                    .languages
+                    .iter()
+                    .map(AsRef::as_ref)
+                    .collect::<Box<[_]>>(),
             )
             .await?;
 
@@ -761,6 +818,11 @@ pub async fn media_download_chosen_inline_result(
                     .is_some_and(|domain| domain.contains("youtube") || domain == "youtu.be"),
                 DOWNLOAD_MEDIA_TIMEOUT,
                 cookie,
+                &PreferredLanguages::default()
+                    .languages
+                    .iter()
+                    .map(AsRef::as_ref)
+                    .collect::<Box<[_]>>(),
             )
             .await?;
 
@@ -900,6 +962,11 @@ pub async fn media_download_search_chosen_inline_result(
                 true,
                 DOWNLOAD_MEDIA_TIMEOUT,
                 cookie,
+                &PreferredLanguages::default()
+                    .languages
+                    .iter()
+                    .map(AsRef::as_ref)
+                    .collect::<Box<[_]>>(),
             )
             .await?;
 
@@ -957,6 +1024,11 @@ pub async fn media_download_search_chosen_inline_result(
                 true,
                 DOWNLOAD_MEDIA_TIMEOUT,
                 cookie,
+                &PreferredLanguages::default()
+                    .languages
+                    .iter()
+                    .map(AsRef::as_ref)
+                    .collect::<Box<[_]>>(),
             )
             .await?;
 

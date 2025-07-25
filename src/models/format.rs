@@ -611,6 +611,7 @@ pub struct Any {
     pub url: String,
     pub ext: String,
     pub container: Option<String>,
+    pub language: Option<String>,
     pub abr: Option<f32>,
     pub vbr: Option<f32>,
     pub tbr: Option<f32>,
@@ -646,6 +647,7 @@ impl<'de> Deserialize<'de> for Any {
             acodec: Option<String>,
             vcodec: Option<String>,
             container: Option<String>,
+            language: Option<String>,
             abr: Option<f32>,
             vbr: Option<f32>,
             tbr: Option<f32>,
@@ -680,6 +682,7 @@ impl<'de> Deserialize<'de> for Any {
             acodec,
             vcodec,
             container: raw.container,
+            language: raw.language,
             abr: raw.abr,
             vbr: raw.vbr,
             tbr: raw.tbr,
@@ -693,7 +696,13 @@ impl<'de> Deserialize<'de> for Any {
 
 impl Any {
     #[allow(clippy::similar_names, clippy::too_many_lines)]
-    pub fn kind(&self, duration: Option<f64>) -> Result<Kind<'_>, FormatError<'_>> {
+    pub fn kind(&self, duration: Option<f64>, preferred_languages: &[&str]) -> Result<Kind<'_>, FormatError<'_>> {
+        if let Some(language) = &self.language {
+            if !preferred_languages.contains(&language.as_str()) {
+                return Err(FormatError::UnpreferredLanguage { language });
+            }
+        }
+
         let acodec = &self.acodec;
         let vcodec = &self.vcodec;
 

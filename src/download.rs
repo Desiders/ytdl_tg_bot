@@ -149,8 +149,9 @@ pub async fn video(
     is_youtube: bool,
     download_and_merge_timeout: u64,
     cookie: Option<&Cookie>,
+    preferred_languages: &[&str],
 ) -> Result<VideoInFS, StreamErrorKind> {
-    let mut combined_formats = video.get_combined_formats();
+    let mut combined_formats = video.get_combined_formats(preferred_languages);
     combined_formats.sort(max_file_size);
 
     let Some(combined_format) = combined_formats.first().cloned() else {
@@ -313,8 +314,9 @@ pub async fn audio_to_temp_dir(
     is_youtube: bool,
     download_timeout: u64,
     cookie: Option<&Cookie>,
+    preferred_languages: &[&str],
 ) -> Result<AudioInFS, ToTempDirErrorKind> {
-    let mut audio_formats = video.get_audio_formats();
+    let mut audio_formats = video.get_audio_formats(preferred_languages);
     audio_formats.sort_by_priority_and_skip_by_size(max_file_size);
 
     let Some(audio_format) = audio_formats.first().cloned() else {
