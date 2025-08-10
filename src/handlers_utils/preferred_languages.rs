@@ -8,7 +8,7 @@ pub struct PreferredLanguages {
 impl Default for PreferredLanguages {
     fn default() -> Self {
         PreferredLanguages {
-            languages: Box::new(["ru".into(), "en-GB".into(), "en-US".into(), "en".into()]),
+            languages: Box::new(["ru".into(), "en".into(), "en-US".into(), "en-GB".into()]),
         }
     }
 }
