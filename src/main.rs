@@ -100,6 +100,7 @@ async fn main() {
         .extension(config.yt_dlp)
         .extension(config.bot)
         .extension(config.yt_toolkit)
+        .extension(config.yt_pot_provider)
         .extension(config.chat)
         .extension(cookies)
         .build();
