@@ -75,8 +75,13 @@ impl<'a> Format<'a> {
         self.video_format.get_priority() + self.audio_format.get_priority()
     }
 
+    #[must_use]
     pub fn get_vbr_plus_abr(&self) -> f32 {
         self.video_format.vbr.unwrap_or(0.0) + self.audio_format.abr.unwrap_or(0.0)
+    }
+
+    pub fn get_language(&self) -> Option<&str> {
+        self.audio_format.language.as_deref().or(self.video_format.language.as_deref())
     }
 }
 
@@ -102,7 +107,7 @@ impl Formats<'_> {
     }
 
     #[allow(clippy::unnecessary_cast, clippy::cast_possible_truncation)]
-    fn sort_formats(&mut self, max_size: f64) {
+    fn sort_formats(&mut self, max_size: f64, preferred_languages: &[&str]) {
         fn calculate_size_weight(format: &Format, max_size: f64) -> f32 {
             match format.filesize_or_approx() {
                 Some(size) => {
@@ -115,6 +120,21 @@ impl Formats<'_> {
                 }
                 None => 0.3,
             }
+        }
+
+        fn calculate_size_language(language: Option<&str>, preferred_languages: &[&str]) -> f32 {
+            let Some(language) = language else {
+                return 0.2;
+            };
+
+            if let Some(pos) = preferred_languages
+                .iter()
+                .position(|&preferred_language| preferred_language.eq_ignore_ascii_case(language))
+            {
+                return (1.0 - pos as f32 * 0.1).max(0.4);
+            }
+
+            0.0
         }
 
         let max_vbr = self
@@ -142,18 +162,24 @@ impl Formats<'_> {
             let combined_bonus_a = if a.format_ids_are_equal() { 0.75 } else { 0.0 };
             let combined_bonus_b = if b.format_ids_are_equal() { 0.75 } else { 0.0 };
 
-            let total_weight_a = vbr_weight_a + size_weight_a * 2.0 + priority_weight_a + combined_bonus_a;
-            let total_weight_b = vbr_weight_b + size_weight_b * 2.0 + priority_weight_b + combined_bonus_b;
+            let language_a = a.get_language();
+            let language_b = b.get_language();
+
+            let language_weight_a = calculate_size_language(language_a, preferred_languages);
+            let language_weight_b = calculate_size_language(language_b, preferred_languages);
+
+            let total_weight_a = vbr_weight_a + size_weight_a * 2.0 + priority_weight_a + combined_bonus_a + language_weight_a * 2.0;
+            let total_weight_b = vbr_weight_b + size_weight_b * 2.0 + priority_weight_b + combined_bonus_b + language_weight_b * 2.0;
 
             total_weight_b.partial_cmp(&total_weight_a).unwrap_or(Ordering::Equal)
         });
     }
 
-    pub fn sort(&mut self, max_size: u32) {
+    pub fn sort(&mut self, max_size: u32, preferred_languages: &[&str]) {
         let max_size = f64::from(max_size);
 
         self.filter_by_max_size(max_size);
-        self.sort_formats(max_size);
+        self.sort_formats(max_size, preferred_languages);
     }
 }
 

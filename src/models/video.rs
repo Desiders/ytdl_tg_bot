@@ -27,18 +27,18 @@ pub struct Video {
 }
 
 impl Video {
-    pub fn get_combined_formats(&self, preferred_languages: &[&str]) -> combined_format::Formats<'_> {
+    pub fn get_combined_formats(&self) -> combined_format::Formats<'_> {
         let mut format_kinds = vec![];
 
         for format in &self.formats {
-            let Ok(format) = format.kind(self.duration, preferred_languages) else {
+            let Ok(format) = format.kind(self.duration) else {
                 continue;
             };
 
             format_kinds.push(format);
         }
         if let Some(format) = &self.format {
-            if let Ok(format) = format.kind(self.duration, preferred_languages) {
+            if let Ok(format) = format.kind(self.duration) {
                 format_kinds.push(format);
             }
         }
@@ -46,11 +46,11 @@ impl Video {
         combined_format::Formats::from(format_kinds)
     }
 
-    pub fn get_audio_formats(&self, preferred_languages: &[&str]) -> format::Audios<'_> {
+    pub fn get_audio_formats(&self) -> format::Audios<'_> {
         let mut formats = vec![];
 
         for format in &self.formats {
-            let Ok(format) = format.kind(self.duration, preferred_languages) else {
+            let Ok(format) = format.kind(self.duration) else {
                 continue;
             };
 
@@ -59,7 +59,7 @@ impl Video {
             }
         }
         if let Some(format) = &self.format {
-            if let Ok(format::Kind::Audio(format)) = format.kind(self.duration, preferred_languages) {
+            if let Ok(format::Kind::Audio(format)) = format.kind(self.duration) {
                 formats.push(format);
             }
         }
