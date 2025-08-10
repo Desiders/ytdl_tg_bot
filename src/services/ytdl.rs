@@ -34,6 +34,7 @@ pub fn download_to_pipe(
     fd: OwnedFd,
     executable_path: impl AsRef<str>,
     url: impl AsRef<str>,
+    pot_provider_api_url: impl AsRef<str>,
     format: impl AsRef<str>,
     cookie: Option<&Cookie>,
 ) -> Result<Child, io::Error> {
@@ -51,16 +52,15 @@ pub fn download_to_pipe(
         "--no-simulate",
         "--no-progress",
         "--no-check-formats",
-        "--extractor-args",
-        "\
-        youtube:player_client=default;player_skip=configs,js;\
-        youtubetab:skip=webpage;\
-        ",
         "--http-chunk-size",
         "10M",
         "-f",
         format.as_ref(),
     ];
+
+    let extractor_arg = format!("youtubepot-bgutilhttp:base_url={}", pot_provider_api_url.as_ref());
+    args.push("--extractor-args");
+    args.push(&extractor_arg);
 
     let cookie_path = cookie.map(|c| c.path.to_string_lossy());
     if let Some(cookie_path) = cookie_path.as_deref() {
@@ -86,6 +86,7 @@ pub fn download_to_pipe(
 pub async fn download_video_to_path(
     executable_path: impl AsRef<str>,
     url: impl AsRef<str>,
+    pot_provider_api_url: impl AsRef<str>,
     format: impl AsRef<str>,
     output_dir_path: impl AsRef<Path>,
     timeout: u64,
@@ -114,7 +115,7 @@ pub async fn download_video_to_path(
         "--concurrent-fragments",
         "4",
         "--http-chunk-size",
-        "15M",
+        "10M",
         "-f",
         format.as_ref(),
     ];
@@ -122,6 +123,10 @@ pub async fn download_video_to_path(
     if download_thumbnails {
         args.push("--write-all-thumbnail");
     }
+
+    let extractor_arg = format!("youtubepot-bgutilhttp:base_url={}", pot_provider_api_url.as_ref());
+    args.push("--extractor-args");
+    args.push(&extractor_arg);
 
     let cookie_path = cookie.map(|c| c.path.to_string_lossy());
     if let Some(cookie_path) = cookie_path.as_deref() {
@@ -160,6 +165,7 @@ pub async fn download_video_to_path(
 pub async fn download_audio_to_path(
     executable_path: impl AsRef<str>,
     url: impl AsRef<str>,
+    pot_provider_api_url: impl AsRef<str>,
     format: impl AsRef<str>,
     output_extension: impl AsRef<str>,
     output_dir_path: impl AsRef<Path>,
@@ -194,7 +200,7 @@ pub async fn download_audio_to_path(
         "--concurrent-fragments",
         "4",
         "--http-chunk-size",
-        "15M",
+        "10M",
         "-f",
         format.as_ref(),
     ];
@@ -202,6 +208,12 @@ pub async fn download_audio_to_path(
     if download_thumbnails {
         args.push("--write-all-thumbnail");
     }
+
+    let extractor_arg = format!("youtubepot-bgutilhttp:base_url={}", pot_provider_api_url.as_ref());
+    args.push("--extractor-args");
+    args.push(&extractor_arg);
+    args.push("--extractor-args");
+    args.push("youtube:player_client=default,mweb,web_music,web_creator;player_skip=configs,initial_data");
 
     let cookie_path = cookie.map(|c| c.path.to_string_lossy());
     if let Some(cookie_path) = cookie_path.as_deref() {
@@ -240,6 +252,7 @@ pub async fn download_audio_to_path(
 pub fn get_media_or_playlist_info(
     executable_path: impl AsRef<str>,
     url_or_id: impl AsRef<str>,
+    pot_provider_api_url: impl AsRef<str>,
     allow_playlist: bool,
     timeout: u64,
     range: &Range,
@@ -269,6 +282,12 @@ pub fn get_media_or_playlist_info(
         &range_string,
         "-J",
     ];
+
+    let extractor_arg = format!("youtubepot-bgutilhttp:base_url={}", pot_provider_api_url.as_ref());
+    args.push("--extractor-args");
+    args.push(&extractor_arg);
+    args.push("--extractor-args");
+    args.push("youtube:player_client=default,mweb,web_music,web_creator;player_skip=configs,initial_data");
 
     if allow_playlist {
         args.push("--yes-playlist");
