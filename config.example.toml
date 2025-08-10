@@ -17,6 +17,10 @@ cookies_path = "./cookies"
 url = "http://ytdl_tg_bot.yt_toolkit_api:8080"
 # url = "http://127.0.0.1:8080"
 
+[yt_pot_provider]
+url = "http://ytdl_tg_bot.yt_pot_provider_api:4416"
+# url = "http://127.0.0.1:4416"
+
 [telegram_bot_api]
 url = "http://ytdl_tg_bot.telegram_bot_api:8081"
 # url = "https://api.telegram.org"

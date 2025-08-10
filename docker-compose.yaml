@@ -11,6 +11,7 @@ services:
       context: .
     networks:
       - yt_toolkit_api.network
+      - yt_pot_provider_api.network
       - telegram_bot_api.network
     volumes:
       - type: bind
@@ -24,6 +25,7 @@ services:
         target: /app/cookies
     depends_on:
       - yt_toolkit_api
+      - yt_pot_provider_api
       - telegram_bot_api
     mem_limit: $BOT_MEM_LIMIT
 
@@ -37,6 +39,17 @@ services:
       - "8080"
     ports:
       - "127.0.0.1:8080:8080"
+
+  yt_pot_provider_api:
+    container_name: ytdl_tg_bot.yt_pot_provider_api
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    restart: "unless-stopped"
+    networks:
+      - yt_pot_provider_api.network
+    expose:
+      - "4416"
+    ports:
+      - "127.0.0.1:4416:4416"
 
   telegram_bot_api:
     container_name: ytdl_tg_bot.telegram_bot_api
@@ -60,4 +73,5 @@ volumes:
 
 networks:
   yt_toolkit_api.network: {}
+  yt_pot_provider_api.network: {}
   telegram_bot_api.network: {}

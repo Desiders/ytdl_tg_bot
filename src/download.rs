@@ -86,7 +86,7 @@ async fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_
     }
 }
 
-const RANGE_CHUNK_SIZE: i32 = 1024 * 1024 * 11;
+const RANGE_CHUNK_SIZE: i32 = 1024 * 1024 * 10;
 
 async fn range_download_to_write<W: AsyncWriteExt + Unpin>(
     url: impl AsRef<str>,
@@ -145,14 +145,15 @@ pub async fn video(
     max_file_size: u32,
     executable_ytdl_path: impl AsRef<str>,
     yt_toolkit_api_url: impl AsRef<str>,
+    yt_pot_provider_api_url: impl AsRef<str>,
     temp_dir_path: impl AsRef<Path>,
     is_youtube: bool,
     download_and_merge_timeout: u64,
     cookie: Option<&Cookie>,
     preferred_languages: &[&str],
 ) -> Result<VideoInFS, StreamErrorKind> {
-    let mut combined_formats = video.get_combined_formats(preferred_languages);
-    combined_formats.sort(max_file_size);
+    let mut combined_formats = video.get_combined_formats();
+    combined_formats.sort(max_file_size, preferred_languages);
 
     let Some(combined_format) = combined_formats.first().cloned() else {
         event!(Level::WARN, %combined_formats, "No video format found");
@@ -190,6 +191,7 @@ pub async fn video(
         download_video_to_path(
             executable_ytdl_path,
             &video.original_url,
+            yt_pot_provider_api_url.as_ref(),
             extension,
             &temp_dir_path,
             download_and_merge_timeout,
@@ -238,6 +240,7 @@ pub async fn video(
             video_write_fd,
             &executable_ytdl_path,
             &video.original_url,
+            yt_pot_provider_api_url.as_ref(),
             combined_format.video_format.id,
             cookie,
         )?;
@@ -257,6 +260,7 @@ pub async fn video(
             audio_write_fd,
             &executable_ytdl_path,
             &video.original_url,
+            yt_pot_provider_api_url.as_ref(),
             combined_format.audio_format.id,
             cookie,
         )?;
@@ -310,14 +314,15 @@ pub async fn audio_to_temp_dir(
     max_file_size: u32,
     executable_ytdl_path: impl AsRef<str>,
     yt_toolkit_api_url: impl AsRef<str>,
+    yt_pot_provider_api_url: impl AsRef<str>,
     temp_dir_path: impl AsRef<Path>,
     is_youtube: bool,
     download_timeout: u64,
     cookie: Option<&Cookie>,
     preferred_languages: &[&str],
 ) -> Result<AudioInFS, ToTempDirErrorKind> {
-    let mut audio_formats = video.get_audio_formats(preferred_languages);
-    audio_formats.sort_by_priority_and_skip_by_size(max_file_size);
+    let mut audio_formats = video.get_audio_formats();
+    audio_formats.sort(max_file_size, preferred_languages);
 
     let Some(audio_format) = audio_formats.first().cloned() else {
         event!(Level::ERROR, ?audio_formats, "No format found for audio");
@@ -352,6 +357,7 @@ pub async fn audio_to_temp_dir(
     download_audio_to_path(
         executable_ytdl_path,
         video_id_or_url,
+        yt_pot_provider_api_url.as_ref(),
         audio_format.id,
         extension,
         &temp_dir_path,

@@ -37,6 +37,11 @@ pub struct YtToolkitConfig {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+pub struct YtPotProviderConfig {
+    pub url: Box<str>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct TelegramBotApiConfig {
     pub url: Box<str>,
     pub api_id: Box<str>,
@@ -50,6 +55,7 @@ pub struct Config {
     pub logging: LoggingConfig,
     pub yt_dlp: YtDlpConfig,
     pub yt_toolkit: YtToolkitConfig,
+    pub yt_pot_provider: YtPotProviderConfig,
     pub telegram_bot_api: TelegramBotApiConfig,
 }
 

@@ -10,3 +10,5 @@ yt-dlp-cache/
 config.toml
 
 cookies/*.txt
+
+__pycache__
