@@ -3,6 +3,7 @@ use crate::errors::FormatError;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Deserializer};
 use std::{
+    cmp::Ordering,
     collections::HashMap,
     fmt::{self, Display, Formatter},
     ops::Deref,
@@ -379,6 +380,7 @@ pub struct Video<'a> {
     pub width: Option<f32>,
     pub filesize: Option<f64>,
     pub filesize_approx: Option<f64>,
+    pub language: Option<&'a str>,
 }
 
 impl<'a> Video<'a> {
@@ -393,6 +395,7 @@ impl<'a> Video<'a> {
         width: Option<f32>,
         filesize: Option<f64>,
         filesize_approx: Option<f64>,
+        language: Option<&'a str>,
     ) -> Self {
         Self {
             id,
@@ -404,6 +407,7 @@ impl<'a> Video<'a> {
             width,
             filesize,
             filesize_approx,
+            language,
         }
     }
 
@@ -456,6 +460,7 @@ pub struct Audio<'a> {
     pub abr: Option<f32>,
     pub filesize: Option<f64>,
     pub filesize_approx: Option<f64>,
+    pub language: Option<&'a str>,
 }
 
 impl<'a> Audio<'a> {
@@ -466,6 +471,7 @@ impl<'a> Audio<'a> {
         abr: Option<f32>,
         filesize: Option<f64>,
         filesize_approx: Option<f64>,
+        language: Option<&'a str>,
     ) -> Self {
         Self {
             id,
@@ -474,9 +480,16 @@ impl<'a> Audio<'a> {
             abr,
             filesize,
             filesize_approx,
+            language,
         }
     }
 
+    #[must_use]
+    pub fn get_abr(&self) -> f32 {
+        self.abr.unwrap_or(0.0)
+    }
+
+    #[must_use]
     pub fn get_priority(&self) -> u8 {
         let codec_priority = self.codec.get_priority();
 
@@ -491,6 +504,10 @@ impl<'a> Audio<'a> {
 
     pub fn filesize_or_approx(&self) -> Option<f64> {
         self.filesize.or(self.filesize_approx)
+    }
+
+    pub fn get_language(&self) -> Option<&str> {
+        self.language.as_deref()
     }
 }
 
@@ -511,23 +528,74 @@ impl Display for Audio<'_> {
 pub struct Audios<'a>(pub Vec<Audio<'a>>);
 
 impl Audios<'_> {
-    fn skip_with_size_greater_than(&mut self, size: f64) {
-        self.0.retain(|audio| {
-            let Some(filesize) = audio.filesize else {
-                return true;
+    fn filter_by_max_size(&mut self, max_size: f64) {
+        self.0
+            .retain(|format| format.filesize_or_approx().is_none_or(|size| size <= max_size));
+    }
+
+    fn sort_formats(&mut self, max_size: f64, preferred_languages: &[&str]) {
+        fn calculate_size_weight(audio: &Audio, max_size: f64) -> f32 {
+            match audio.filesize {
+                Some(size) => {
+                    let distance = (max_size - size).abs();
+                    if distance <= max_size * 0.2 {
+                        (1.0 - (distance / (max_size * 0.2)).min(1.0) * 0.2) as f32
+                    } else {
+                        (0.5 - (((distance - max_size * 0.2) / (max_size * 0.8)).min(1.0)) * 0.2) as f32
+                    }
+                }
+                None => 0.3,
+            }
+        }
+
+        fn calculate_size_language(language: Option<&str>, preferred_languages: &[&str]) -> f32 {
+            let Some(language) = language else {
+                return 0.2;
             };
 
-            filesize <= size
+            if let Some(pos) = preferred_languages
+                .iter()
+                .position(|&preferred_language| preferred_language.eq_ignore_ascii_case(language))
+            {
+                return (1.0 - pos as f32 * 0.1).max(0.4);
+            }
+
+            0.0
+        }
+
+        let max_abr = self.0.iter().map(Audio::get_abr).fold(0.0, |max, vbr| (max as f32).max(vbr));
+
+        self.0.sort_by(|a, b| {
+            let mut abr_weight_a = a.get_abr() / max_abr;
+            if abr_weight_a.is_nan() {
+                abr_weight_a = 0.0;
+            }
+            let mut abr_weight_b = b.get_abr() / max_abr;
+            if abr_weight_b.is_nan() {
+                abr_weight_b = 0.0;
+            }
+
+            let size_weight_a = calculate_size_weight(a, max_size);
+            let size_weight_b = calculate_size_weight(b, max_size);
+
+            let priority_weight_a = 1.0 / (f32::from(a.get_priority()) + 1.0);
+            let priority_weight_b = 1.0 / (f32::from(b.get_priority()) + 1.0);
+
+            let language_weight_a = calculate_size_language(a.get_language(), preferred_languages);
+            let language_weight_b = calculate_size_language(b.get_language(), preferred_languages);
+
+            let total_weight_a = abr_weight_a + size_weight_a * 2.0 + priority_weight_a + language_weight_a * 2.0;
+            let total_weight_b = abr_weight_b + size_weight_b * 2.0 + priority_weight_b + language_weight_b * 2.0;
+
+            total_weight_b.partial_cmp(&total_weight_a).unwrap_or(Ordering::Equal)
         });
     }
 
-    fn sort_by_format_id_priority(&mut self) {
-        self.0.sort_by_key(Audio::get_priority);
-    }
+    pub fn sort(&mut self, max_size: u32, preferred_languages: &[&str]) {
+        let max_size = f64::from(max_size);
 
-    pub fn sort_by_priority_and_skip_by_size(&mut self, size: u32) {
-        self.sort_by_format_id_priority();
-        self.skip_with_size_greater_than(f64::from(size));
+        self.filter_by_max_size(max_size);
+        self.sort_formats(max_size, preferred_languages);
     }
 }
 
@@ -696,13 +764,7 @@ impl<'de> Deserialize<'de> for Any {
 
 impl Any {
     #[allow(clippy::similar_names, clippy::too_many_lines)]
-    pub fn kind(&self, duration: Option<f64>, preferred_languages: &[&str]) -> Result<Kind<'_>, FormatError<'_>> {
-        if let Some(language) = &self.language {
-            if !preferred_languages.contains(&language.as_str()) {
-                return Err(FormatError::UnpreferredLanguage { language });
-            }
-        }
-
+    pub fn kind(&self, duration: Option<f64>) -> Result<Kind<'_>, FormatError<'_>> {
         let acodec = &self.acodec;
         let vcodec = &self.vcodec;
 
@@ -726,6 +788,7 @@ impl Any {
                 self.abr,
                 self.filesize,
                 self.filesize_approx.or(self.filesize_from_tbr(duration)),
+                self.language.as_deref(),
             );
 
             let video_format = Video::new(
@@ -738,6 +801,7 @@ impl Any {
                 self.width,
                 self.filesize,
                 self.filesize_approx.or(self.filesize_from_tbr(duration)),
+                self.language.as_deref(),
             );
 
             Ok(Kind::Combined(audio_format, video_format))
@@ -751,6 +815,7 @@ impl Any {
                 self.abr,
                 self.filesize,
                 self.filesize_approx.or(self.filesize_from_tbr(duration)),
+                self.language.as_deref(),
             );
 
             let video_format = Video::new(
@@ -763,6 +828,7 @@ impl Any {
                 self.width,
                 self.filesize,
                 self.filesize_approx.or(self.filesize_from_tbr(duration)),
+                self.language.as_deref(),
             );
 
             Ok(Kind::Combined(audio_format, video_format))
@@ -775,6 +841,7 @@ impl Any {
                 self.abr,
                 self.filesize,
                 self.filesize_approx.or(self.filesize_from_tbr(duration)),
+                self.language.as_deref(),
             );
 
             Ok(Kind::Audio(audio_format))
@@ -803,6 +870,7 @@ impl Any {
                 self.width,
                 self.filesize,
                 self.filesize_approx.or(self.filesize_from_tbr(duration)),
+                self.language.as_deref(),
             );
 
             Ok(Kind::Video(video_format))
@@ -816,6 +884,7 @@ impl Any {
                         self.abr,
                         self.filesize,
                         self.filesize_approx.or(self.filesize_from_tbr(duration)),
+                        self.language.as_deref(),
                     );
 
                     Ok(Kind::Audio(audio_format))
@@ -835,6 +904,7 @@ impl Any {
                         self.width,
                         self.filesize,
                         self.filesize_approx.or(self.filesize_from_tbr(duration)),
+                        self.language.as_deref(),
                     );
 
                     Ok(Kind::Video(video_format))
