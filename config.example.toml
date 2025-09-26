@@ -8,6 +8,9 @@ dirs = "info,hyper=warn,reqwest=warn,tokio_util::codec=warn"
 [chat]
 receiver_chat_id = 123
 
+[blacklisted]
+domains = ["t.me", "2girls1cup.ca"]
+
 [yt_dlp]
 max_file_size = 5000000
 executable_path = "./yt-dlp/executable"

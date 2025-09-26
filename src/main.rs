@@ -8,11 +8,12 @@ mod models;
 mod services;
 mod utils;
 
-use filters::{is_via_bot, text_contains_url, text_contains_url_with_reply, text_empty};
+use filters::{is_via_bot, text_contains_url, text_contains_url_with_reply, text_empty, url_is_blacklisted};
 use handlers::{
     audio_download, media_download_chosen_inline_result, media_download_search_chosen_inline_result, media_search_inline_query,
     media_select_inline_query, start, video_download, video_download_quite,
 };
+use services::get_cookies_from_directory;
 use std::borrow::Cow;
 use telers::{
     client::{
@@ -26,8 +27,6 @@ use telers::{
 use tracing::{event, Level};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
 use utils::{on_shutdown, on_startup};
-
-use crate::services::get_cookies_from_directory;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
@@ -78,6 +77,7 @@ async fn main() {
         .message
         .register(video_download_quite)
         .filter(text_contains_url)
+        .filter(url_is_blacklisted.invert())
         .filter(is_via_bot.invert());
     router.inline_query.register(media_select_inline_query).filter(text_contains_url);
     router.inline_query.register(media_search_inline_query).filter(text_empty.invert());
@@ -102,6 +102,7 @@ async fn main() {
         .extension(config.yt_toolkit)
         .extension(config.yt_pot_provider)
         .extension(config.chat)
+        .extension(config.blacklisted)
         .extension(cookies)
         .build();
 

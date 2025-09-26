@@ -20,6 +20,11 @@ pub struct ChatConfig {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+pub struct BlacklistedConfig {
+    pub domains: Vec<String>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct LoggingConfig {
     pub dirs: Box<str>,
 }
@@ -52,6 +57,7 @@ pub struct TelegramBotApiConfig {
 pub struct Config {
     pub bot: BotConfig,
     pub chat: ChatConfig,
+    pub blacklisted: BlacklistedConfig,
     pub logging: LoggingConfig,
     pub yt_dlp: YtDlpConfig,
     pub yt_toolkit: YtToolkitConfig,
