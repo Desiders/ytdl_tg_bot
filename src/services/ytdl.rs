@@ -185,8 +185,6 @@ pub async fn download_audio_to_path(
         output_dir_path.as_ref(),
         "--output",
         "%(id)s.%(ext)s",
-        "--prefer-ffmpeg",
-        "--hls-prefer-ffmpeg",
         "--extract-audio",
         "--audio-format",
         output_extension.as_ref(),
