@@ -4,13 +4,14 @@ use thiserror::Error;
 
 const MAX_ELEMENTS: i16 = 10;
 const DEFAULT_START: i16 = 1;
+const DEFAULT_COUNT: i16 = 1;
 const DEFAULT_STEP: i16 = 1;
 
 #[derive(Error, Debug, PartialEq)]
 pub enum ParseRangeError {
     #[error("Failed to parse number: {0}")]
     InvalidNumber(#[from] ParseIntError),
-    #[error("Invalid range format. Expected format \"start:stop:step\" or variations")]
+    #[error("Invalid range format. Expected format \"start:count:step\" or variations")]
     InvalidFormat,
     #[error("Step cannot be zero")]
     ZeroStep,
@@ -19,7 +20,7 @@ pub enum ParseRangeError {
 #[derive(Debug, PartialEq)]
 pub struct Range {
     pub start: i16,
-    pub stop: i16,
+    pub count: i16,
     pub step: i16,
 }
 
@@ -27,7 +28,7 @@ impl Default for Range {
     fn default() -> Self {
         Range {
             start: DEFAULT_START,
-            stop: DEFAULT_START + (MAX_ELEMENTS * DEFAULT_STEP) - DEFAULT_STEP,
+            count: DEFAULT_COUNT,
             step: DEFAULT_STEP,
         }
     }
@@ -35,14 +36,14 @@ impl Default for Range {
 
 impl Range {
     pub fn normalize(&mut self) {
-        let count = ((self.stop - self.start) / self.step).abs() + 1;
+        let count = ((self.count - self.start) / self.step).abs() + 1;
         if count > MAX_ELEMENTS {
-            self.stop = self.start + (MAX_ELEMENTS * self.step) - self.step;
+            self.count = self.start + (MAX_ELEMENTS * self.step) - self.step;
         }
     }
 
     pub fn to_range_string(&self) -> String {
-        format!("{}:{}:{}", self.start, self.stop, self.step)
+        format!("{}:{}:{}", self.start, self.count, self.step)
     }
 }
 
@@ -74,8 +75,8 @@ impl FromStr for Range {
         }
         let start = parse_optional_positive(parts.get(0).unwrap_or(&""), false)?.unwrap_or(DEFAULT_START);
         let step = parse_optional_positive(parts.get(2).unwrap_or(&""), true)?.unwrap_or(DEFAULT_STEP);
-        let stop = parse_optional_positive(parts.get(1).unwrap_or(&""), false)?.unwrap_or(start + (MAX_ELEMENTS * step) - step);
-        let mut range = Range { start, stop, step };
+        let count = parse_optional_positive(parts.get(1).unwrap_or(&""), false)?.unwrap_or(start + (MAX_ELEMENTS * step) - step);
+        let mut range = Range { start, count, step };
         range.normalize();
         Ok(range)
     }
@@ -92,7 +93,7 @@ mod tests {
             range,
             Range {
                 start: 1,
-                stop: 10,
+                count: 1,
                 step: 1
             }
         );
@@ -105,7 +106,7 @@ mod tests {
             range,
             Range {
                 start: 5,
-                stop: 14,
+                count: 14,
                 step: 1
             }
         );
@@ -118,7 +119,7 @@ mod tests {
             range,
             Range {
                 start: 5,
-                stop: 14,
+                count: 14,
                 step: 1
             }
         );
@@ -131,7 +132,7 @@ mod tests {
             range,
             Range {
                 start: 5,
-                stop: 23,
+                count: 23,
                 step: 2
             }
         );
@@ -144,7 +145,7 @@ mod tests {
             range,
             Range {
                 start: 1,
-                stop: 10,
+                count: 10,
                 step: 1
             }
         );
@@ -157,7 +158,7 @@ mod tests {
             range,
             Range {
                 start: 1,
-                stop: 10,
+                count: 10,
                 step: 1
             }
         );
@@ -169,7 +170,7 @@ mod tests {
             range,
             Range {
                 start: 5,
-                stop: 10,
+                count: 10,
                 step: 1
             }
         );
@@ -182,7 +183,7 @@ mod tests {
             range,
             Range {
                 start: 1,
-                stop: 19,
+                count: 19,
                 step: 2
             }
         );
@@ -195,7 +196,7 @@ mod tests {
             range,
             Range {
                 start: 5,
-                stop: 23,
+                count: 23,
                 step: 2
             }
         );
@@ -208,7 +209,7 @@ mod tests {
             range,
             Range {
                 start: 10,
-                stop: 30,
+                count: 30,
                 step: 5
             }
         );
@@ -217,7 +218,7 @@ mod tests {
             range,
             Range {
                 start: 3,
-                stop: 15,
+                count: 15,
                 step: 3
             }
         );
@@ -227,7 +228,7 @@ mod tests {
     fn test_to_range_string() {
         let range = Range {
             start: 3,
-            stop: 15,
+            count: 15,
             step: 2,
         };
         assert_eq!(range.to_range_string(), "3:15:2");
@@ -240,7 +241,7 @@ mod tests {
             range,
             Range {
                 start: 2,
-                stop: 20,
+                count: 20,
                 step: 2
             }
         );
@@ -253,7 +254,7 @@ mod tests {
             range,
             Range {
                 start: 1,
-                stop: 19,
+                count: 19,
                 step: 2
             }
         );
@@ -266,7 +267,7 @@ mod tests {
             range,
             Range {
                 start: 1,
-                stop: 10,
+                count: 10,
                 step: 2
             }
         );
