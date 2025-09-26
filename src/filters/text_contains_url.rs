@@ -2,7 +2,7 @@ use std::{collections::HashMap, future::Future};
 use telers::{types::UpdateKind, Request};
 use url::Url;
 
-use crate::handlers_utils::url::UrlWithParams;
+use crate::{config::BlacklistedConfig, handlers_utils::url::UrlWithParams};
 
 fn parse_params(param_block: &str) -> Vec<(Box<str>, Box<str>)> {
     let inner = param_block.trim();
@@ -106,6 +106,21 @@ pub fn text_contains_url_with_reply(request: &mut Request) -> impl Future<Output
         url_found
     } else {
         false
+    };
+
+    async move { result }
+}
+
+pub fn url_is_blacklisted(request: &mut Request) -> impl Future<Output = bool> {
+    let result = match (
+        request.extensions.get::<BlacklistedConfig>(),
+        request.extensions.get::<UrlWithParams>(),
+    ) {
+        (Some(BlacklistedConfig { domains }), Some(UrlWithParams { url, .. })) => match url.domain() {
+            Some(domain) => domains.into_iter().map(AsRef::as_ref).collect::<Vec<_>>().contains(&domain),
+            None => false,
+        },
+        _ => false,
     };
 
     async move { result }
