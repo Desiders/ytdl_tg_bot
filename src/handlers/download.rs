@@ -163,6 +163,7 @@ pub async fn video_download(
             HandlerError::new(err)
         })?;
 
+        let name = video.title.clone().unwrap_or(video.id.clone());
         #[allow(clippy::cast_possible_truncation)]
         let (height, width, duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
 
@@ -200,7 +201,7 @@ pub async fn video_download(
             tokio::spawn(async move {
                 let message = send::with_retries(
                     &bot,
-                    SendVideo::new(chat_id, InputFile::fs(path))
+                    SendVideo::new(chat_id, InputFile::fs_with_name(path, name))
                         .disable_notification(true)
                         .width_option(width)
                         .height_option(height)
@@ -358,6 +359,7 @@ pub async fn video_download_quite(
     for video in videos {
         let temp_dir = tempdir().map_err(HandlerError::new)?;
 
+        let name = video.title.clone().unwrap_or(video.id.clone());
         #[allow(clippy::cast_possible_truncation)]
         let (height, width, duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
 
@@ -395,7 +397,7 @@ pub async fn video_download_quite(
             tokio::spawn(async move {
                 let message = send::with_retries(
                     &bot,
-                    SendVideo::new(chat_id, InputFile::fs(path))
+                    SendVideo::new(chat_id, InputFile::fs_with_name(path, name))
                         .disable_notification(true)
                         .width_option(width)
                         .height_option(height)
@@ -573,6 +575,7 @@ pub async fn audio_download(
             video.id.clone()
         };
         let title = video.title.clone();
+        let name = title.clone().unwrap_or(video.id.clone());
 
         #[allow(clippy::cast_possible_truncation)]
         let duration = video.duration.map(|duration| duration as i64);
@@ -610,7 +613,7 @@ pub async fn audio_download(
             tokio::spawn(async move {
                 let message = send::with_retries(
                     &bot,
-                    SendAudio::new(chat_id, InputFile::fs(path))
+                    SendAudio::new(chat_id, InputFile::fs_with_name(path, name))
                         .disable_notification(true)
                         .title_option(title)
                         .duration_option(duration)
@@ -728,7 +731,7 @@ pub async fn media_download_chosen_inline_result(
                 pot_provider_api_url,
                 false,
                 GET_INFO_TIMEOUT,
-                &"1:1:1".parse().unwrap(),
+                &Range::default(),
                 cookie.as_ref(),
             )
         }
@@ -761,6 +764,7 @@ pub async fn media_download_chosen_inline_result(
 
     let handle: Result<(), DownloadErrorKind> = async {
         if download_video {
+            let name = video.title.clone().unwrap_or(video.id.clone());
             #[allow(clippy::cast_possible_truncation)]
             let (height, width, duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
 
@@ -787,7 +791,7 @@ pub async fn media_download_chosen_inline_result(
 
             let message = send::with_retries(
                 &bot,
-                SendVideo::new(chat_cfg.receiver_chat_id, InputFile::fs(path))
+                SendVideo::new(chat_cfg.receiver_chat_id, InputFile::fs_with_name(path, name))
                     .disable_notification(true)
                     .width_option(width)
                     .height_option(height)
@@ -825,6 +829,7 @@ pub async fn media_download_chosen_inline_result(
             });
         } else {
             let title = video.title.clone();
+            let name = title.clone().unwrap_or(video.id.clone());
 
             #[allow(clippy::cast_possible_truncation)]
             let duration = video.duration.map(|duration| duration as i64);
@@ -851,7 +856,7 @@ pub async fn media_download_chosen_inline_result(
 
             let message = send::with_retries(
                 &bot,
-                SendAudio::new(chat_cfg.receiver_chat_id, InputFile::fs(path))
+                SendAudio::new(chat_cfg.receiver_chat_id, InputFile::fs_with_name(path, name))
                     .disable_notification(true)
                     .title_option(title)
                     .duration_option(duration)
@@ -976,6 +981,7 @@ pub async fn media_download_search_chosen_inline_result(
 
     let handle: Result<(), DownloadErrorKind> = async {
         if download_video {
+            let name = video.title.clone().unwrap_or(video.id.clone());
             #[allow(clippy::cast_possible_truncation)]
             let (height, width, duration) = (video.height, video.width, video.duration.map(|duration| duration as i64));
 
@@ -999,7 +1005,7 @@ pub async fn media_download_search_chosen_inline_result(
 
             let message = send::with_retries(
                 &bot,
-                SendVideo::new(chat_cfg.receiver_chat_id, InputFile::fs(path))
+                SendVideo::new(chat_cfg.receiver_chat_id, InputFile::fs_with_name(path, name))
                     .disable_notification(true)
                     .width_option(width)
                     .height_option(height)
@@ -1037,6 +1043,7 @@ pub async fn media_download_search_chosen_inline_result(
             });
         } else {
             let title = video.title.clone();
+            let name = title.clone().unwrap_or(video.id.clone());
 
             #[allow(clippy::cast_possible_truncation)]
             let duration = video.duration.map(|duration| duration as i64);
@@ -1062,7 +1069,7 @@ pub async fn media_download_search_chosen_inline_result(
 
             let message = send::with_retries(
                 &bot,
-                SendAudio::new(chat_cfg.receiver_chat_id, InputFile::fs(path))
+                SendAudio::new(chat_cfg.receiver_chat_id, InputFile::fs_with_name(path, name))
                     .disable_notification(true)
                     .title_option(title)
                     .duration_option(duration)
@@ -1156,7 +1163,7 @@ pub async fn media_select_inline_query(
                     pot_provider_api_url,
                     true,
                     GET_MEDIA_OR_PLAYLIST_INFO_INLINE_QUERY_TIMEOUT,
-                    &"1:1:1".parse().unwrap(),
+                    &Range::default(),
                     cookie.as_ref(),
                 )
             })
