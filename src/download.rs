@@ -264,7 +264,7 @@ pub async fn video(
             combined_format.audio_format.id,
             cookie,
         )?;
-    };
+    }
 
     let thumbnail_path = if let Some(thumbnail_url) = get_thumbnail_url(&video.clone().into(), yt_toolkit_api_url, is_youtube) {
         get_thumbnail_path(thumbnail_url, &video.id, &temp_dir_path).await

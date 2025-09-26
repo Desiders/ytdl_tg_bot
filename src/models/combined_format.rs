@@ -81,7 +81,7 @@ impl<'a> Format<'a> {
     }
 
     pub fn get_language(&self) -> Option<&str> {
-        self.audio_format.language.as_deref().or(self.video_format.language.as_deref())
+        self.audio_format.language.or(self.video_format.language)
     }
 }
 
@@ -106,7 +106,7 @@ impl Formats<'_> {
             .retain(|format| format.filesize_or_approx().is_none_or(|size| size <= max_size));
     }
 
-    #[allow(clippy::unnecessary_cast, clippy::cast_possible_truncation)]
+    #[allow(clippy::unnecessary_cast, clippy::cast_possible_truncation, clippy::cast_precision_loss)]
     fn sort_formats(&mut self, max_size: f64, preferred_languages: &[&str]) {
         fn calculate_size_weight(format: &Format, max_size: f64) -> f32 {
             match format.filesize_or_approx() {
