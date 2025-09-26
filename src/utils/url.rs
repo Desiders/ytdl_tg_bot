@@ -12,7 +12,6 @@ pub enum ErrorKind {
 
 const VIDEO_ID_LENGTH: usize = 11;
 
-#[allow(clippy::match_on_vec_items)]
 pub fn get_video_id(input: &str) -> Result<String, ErrorKind> {
     let url = Url::parse(input).map_err(|_| ErrorKind::InvalidUrl)?;
     let host = url.host_str().ok_or(ErrorKind::InvalidUrl)?;

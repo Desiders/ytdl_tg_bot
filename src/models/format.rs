@@ -507,7 +507,7 @@ impl<'a> Audio<'a> {
     }
 
     pub fn get_language(&self) -> Option<&str> {
-        self.language.as_deref()
+        self.language
     }
 }
 
@@ -533,6 +533,7 @@ impl Audios<'_> {
             .retain(|format| format.filesize_or_approx().is_none_or(|size| size <= max_size));
     }
 
+    #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
     fn sort_formats(&mut self, max_size: f64, preferred_languages: &[&str]) {
         fn calculate_size_weight(audio: &Audio, max_size: f64) -> f32 {
             match audio.filesize {
@@ -563,7 +564,7 @@ impl Audios<'_> {
             0.0
         }
 
-        let max_abr = self.0.iter().map(Audio::get_abr).fold(0.0, |max, vbr| (max as f32).max(vbr));
+        let max_abr = self.0.iter().map(Audio::get_abr).fold(0.0, f32::max);
 
         self.0.sort_by(|a, b| {
             let mut abr_weight_a = a.get_abr() / max_abr;
