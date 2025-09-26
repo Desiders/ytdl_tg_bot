@@ -340,8 +340,8 @@ impl AudioCodec<'_> {
 
         match self {
             FLAC(_) => 1,
-            AAC_OR_ALAC(_) => 2,
-            Opus(_) => 3,
+            Opus(_) => 2,
+            AAC_OR_ALAC(_) => 3,
             MP3(_) => 4,
             PCM(_) => 5,
         }
