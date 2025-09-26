@@ -26,7 +26,7 @@ use telers::{
     methods::{AnswerInlineQuery, DeleteMessage, EditMessageMedia, SendAudio, SendVideo},
     types::{
         ChosenInlineResult, InlineKeyboardButton, InlineKeyboardMarkup, InlineQuery, InlineQueryResult, InlineQueryResultArticle,
-        InputFile, InputMediaVideo, InputTextMessageContent, Message,
+        InputFile, InputMediaAudio, InputMediaVideo, InputTextMessageContent, Message,
     },
     utils::text::{html_code, html_quote, html_text_link},
     Bot, Extension,
@@ -677,7 +677,7 @@ pub async fn audio_download(
         audios_in_playlist.sort_by(|a, b| a.index.cmp(&b.index));
         audios_in_playlist
             .into_iter()
-            .map(|video| InputMediaVideo::new(InputFile::id(video.file_id.into_string())))
+            .map(|audio| InputMediaAudio::new(InputFile::id(audio.file_id.into_string())))
             .collect()
     };
 
@@ -877,7 +877,7 @@ pub async fn media_download_chosen_inline_result(
             send::with_retries(
                 &bot,
                 EditMessageMedia::new(
-                    InputMediaVideo::new(InputFile::id(file_id))
+                    InputMediaAudio::new(InputFile::id(file_id))
                         .caption(html_text_link("Link", url))
                         .parse_mode(ParseMode::HTML),
                 )
@@ -1090,7 +1090,7 @@ pub async fn media_download_search_chosen_inline_result(
             send::with_retries(
                 &bot,
                 EditMessageMedia::new(
-                    InputMediaVideo::new(InputFile::id(file_id))
+                    InputMediaAudio::new(InputFile::id(file_id))
                         .caption(html_text_link("Link", format!("https://youtu.be/{video_id}")))
                         .parse_mode(ParseMode::HTML),
                 )
