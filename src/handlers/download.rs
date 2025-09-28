@@ -32,7 +32,7 @@ use telers::{
     Bot, Extension,
 };
 use tempfile::tempdir;
-use tokio::task::{spawn_blocking, JoinError, JoinHandle};
+use tokio::task::{JoinError, JoinHandle};
 use tracing::{event, field::debug, instrument, Level, Span};
 use url::{Host, Url};
 use uuid::Uuid;
@@ -115,22 +115,21 @@ pub async fn video_download(
 
     let cookie = cookies.get_path_by_optional_host(url.host().as_ref());
 
-    let videos = match spawn_blocking({
-        let path = yt_dlp_cfg.executable_path.clone();
-        let url = url.clone();
-        let pot_provider_api_url = yt_pot_provider_cfg.url.clone();
-        let cookie = cookie.cloned();
-
-        event!(Level::DEBUG, host = ?url.host(), "Getting media info with yt-dlp");
-
-        move || get_media_or_playlist_info(path, url, pot_provider_api_url, true, GET_INFO_TIMEOUT, &range, cookie.as_ref())
-    })
+    let videos = match get_media_or_playlist_info(
+        &yt_dlp_cfg.executable_path,
+        &url,
+        &yt_pot_provider_cfg.url,
+        true,
+        GET_INFO_TIMEOUT,
+        &range,
+        cookie,
+    )
     .await
     .map_err(|err| {
         upload_action_task.abort();
         event!(Level::ERROR, err = format_error_report(&err), "Error while join");
         HandlerError::new(err)
-    })? {
+    }) {
         Ok(videos) => videos,
         Err(err) => {
             upload_action_task.abort();
@@ -321,20 +320,21 @@ pub async fn video_download_quite(
 
     let cookie = cookies.get_path_by_optional_host(url.host().as_ref());
 
-    let videos = match spawn_blocking({
-        let path = yt_dlp_cfg.executable_path.clone();
-        let url = url.clone();
-        let pot_provider_api_url = yt_pot_provider_cfg.url.clone();
-        let cookie = cookie.cloned();
-
-        move || get_media_or_playlist_info(path, url, pot_provider_api_url, true, GET_INFO_TIMEOUT, &range, cookie.as_ref())
-    })
+    let videos = match get_media_or_playlist_info(
+        &yt_dlp_cfg.executable_path,
+        &url,
+        &yt_pot_provider_cfg.url,
+        true,
+        GET_INFO_TIMEOUT,
+        &range,
+        cookie,
+    )
     .await
     .map_err(|err| {
         event!(Level::ERROR, err = format_error_report(&err), "Error while join");
 
         HandlerError::new(err)
-    })? {
+    }) {
         Ok(videos) => videos,
         Err(err) => {
             event!(Level::ERROR, err = format_error_report(&err), "Error while get info");
@@ -520,20 +520,21 @@ pub async fn audio_download(
 
     let cookie = cookies.get_path_by_optional_host(url.host().as_ref());
 
-    let videos = match spawn_blocking({
-        let path = yt_dlp_cfg.executable_path.clone();
-        let url = url.clone();
-        let pot_provider_api_url = yt_pot_provider_cfg.url.clone();
-        let cookie = cookie.cloned();
-
-        move || get_media_or_playlist_info(path, url, pot_provider_api_url, true, GET_INFO_TIMEOUT, &range, cookie.as_ref())
-    })
+    let videos = match get_media_or_playlist_info(
+        &yt_dlp_cfg.executable_path,
+        &url,
+        &yt_pot_provider_cfg.url,
+        true,
+        GET_INFO_TIMEOUT,
+        &range,
+        cookie,
+    )
     .await
     .map_err(|err| {
         upload_action_task.abort();
         event!(Level::ERROR, err = format_error_report(&err), "Error while join");
         HandlerError::new(err)
-    })? {
+    }) {
         Ok(videos) => videos,
         Err(err) => {
             upload_action_task.abort();
@@ -718,26 +719,17 @@ pub async fn media_download_chosen_inline_result(
 
     event!(Level::DEBUG, "Got url");
 
-    let videos = match spawn_blocking({
-        let path = yt_dlp_cfg.executable_path.clone();
-        let url = url.clone();
-        let pot_provider_api_url = yt_pot_provider_cfg.url.clone();
-        let cookie = cookie.cloned();
-
-        move || {
-            get_media_or_playlist_info(
-                path,
-                url,
-                pot_provider_api_url,
-                false,
-                GET_INFO_TIMEOUT,
-                &Range::default(),
-                cookie.as_ref(),
-            )
-        }
-    })
+    let videos = match get_media_or_playlist_info(
+        &yt_dlp_cfg.executable_path,
+        &url,
+        &yt_pot_provider_cfg.url,
+        false,
+        GET_INFO_TIMEOUT,
+        &Range::default(),
+        cookie,
+    )
     .await
-    .map_err(HandlerError::new)?
+    .map_err(HandlerError::new)
     {
         Ok(videos) => videos,
         Err(err) => {
@@ -935,26 +927,17 @@ pub async fn media_download_search_chosen_inline_result(
 
     event!(Level::DEBUG, "Got url");
 
-    let videos = match spawn_blocking({
-        let path = yt_dlp_cfg.executable_path.clone();
-        let video_id = video_id.to_owned();
-        let pot_provider_api_url = yt_pot_provider_cfg.url.clone();
-        let cookie = cookie.cloned();
-
-        move || {
-            get_media_or_playlist_info(
-                path,
-                format!("ytsearch:{video_id}"),
-                pot_provider_api_url,
-                false,
-                GET_INFO_TIMEOUT,
-                &"1:1:1".parse().unwrap(),
-                cookie.as_ref(),
-            )
-        }
-    })
+    let videos = match get_media_or_playlist_info(
+        &yt_dlp_cfg.executable_path,
+        format!("ytsearch:{video_id}"),
+        &yt_pot_provider_cfg.url,
+        false,
+        GET_INFO_TIMEOUT,
+        &Range::default(),
+        cookie,
+    )
     .await
-    .map_err(HandlerError::new)?
+    .map_err(HandlerError::new)
     {
         Ok(videos) => videos,
         Err(err) => {
@@ -1153,22 +1136,17 @@ pub async fn media_select_inline_query(
                 event!(Level::ERROR, err = format_error_report(&err), "Getting media info YT Toolkit error");
             }
 
-            match spawn_blocking(move || {
-                let pot_provider_api_url = yt_pot_provider_cfg.url.clone();
-                let cookie = cookies.get_path_by_optional_host(url.host().as_ref()).cloned();
-
-                get_media_or_playlist_info(
-                    &yt_dlp_cfg.executable_path,
-                    url,
-                    pot_provider_api_url,
-                    true,
-                    GET_MEDIA_OR_PLAYLIST_INFO_INLINE_QUERY_TIMEOUT,
-                    &Range::default(),
-                    cookie.as_ref(),
-                )
-            })
+            match get_media_or_playlist_info(
+                &yt_dlp_cfg.executable_path,
+                &url,
+                yt_pot_provider_cfg.url,
+                true,
+                GET_MEDIA_OR_PLAYLIST_INFO_INLINE_QUERY_TIMEOUT,
+                &Range::default(),
+                cookies.get_path_by_optional_host(url.host().as_ref()),
+            )
             .await
-            .map_err(HandlerError::new)?
+            .map_err(HandlerError::new)
             {
                 Ok(videos) => videos.map(Into::into).collect(),
                 Err(err) => {
