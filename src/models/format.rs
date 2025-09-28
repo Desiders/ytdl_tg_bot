@@ -1,20 +1,19 @@
 use crate::errors::FormatError;
 
-use lazy_static::lazy_static;
 use serde::{Deserialize, Deserializer};
 use std::{
     cmp::Ordering,
     collections::HashMap,
     fmt::{self, Display, Formatter},
     ops::Deref,
+    sync::LazyLock,
 };
 
 const DEFAULT_PRIORITY: u8 = 19;
 const DEFAULT_VIDEO_CODEC_PRIORITY: u8 = 6;
 
-// Source: https://voussoir.net/writing/youtubedl_formats
-lazy_static! {
-    static ref VIDEO_IDS_AND_PRIORITY: HashMap<&'static str, u8> = HashMap::from([
+static VIDEO_IDS_AND_PRIORITY: LazyLock<HashMap<&'static str, u8>> = LazyLock::new(|| {
+    HashMap::from([
         ("571", 1),
         ("272", 2),
         ("337", 3),
@@ -58,11 +57,12 @@ lazy_static! {
         ("394", 18),
         ("160", 18),
         ("278", 18),
-    ]);
-    static ref AUDIO_IDS_AND_PRIORITY: HashMap<&'static str, u8> =
-        HashMap::from([("258", 1), ("256", 2), ("251", 3), ("140", 4), ("250", 5), ("249", 6)]);
-    static ref COMBINED_IDS_AND_PRIORITY: HashMap<&'static str, u8> = HashMap::from([("38", 2), ("37", 7), ("22", 14), ("18", 18)]);
-}
+    ])
+});
+static AUDIO_IDS_AND_PRIORITY: LazyLock<HashMap<&'static str, u8>> =
+    LazyLock::new(|| HashMap::from([("258", 1), ("256", 2), ("251", 3), ("140", 4), ("250", 5), ("249", 6)]));
+static COMBINED_IDS_AND_PRIORITY: LazyLock<HashMap<&'static str, u8>> =
+    LazyLock::new(|| HashMap::from([("38", 2), ("37", 7), ("22", 14), ("18", 18)]));
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone)]

@@ -13,6 +13,4 @@ pub enum Error<'a> {
     VideoContainerEmpty,
     #[error("Unknown format")]
     UnknownFormat,
-    #[error("Unpreferred language `{language}`")]
-    UnpreferredLanguage { language: &'a str },
 }

@@ -117,7 +117,7 @@ pub fn url_is_blacklisted(request: &mut Request) -> impl Future<Output = bool> {
         request.extensions.get::<UrlWithParams>(),
     ) {
         (Some(BlacklistedConfig { domains }), Some(UrlWithParams { url, .. })) => match url.domain() {
-            Some(domain) => domains.into_iter().map(AsRef::as_ref).collect::<Vec<_>>().contains(&domain),
+            Some(domain) => domains.iter().map(AsRef::as_ref).collect::<Vec<_>>().contains(&domain),
             None => false,
         },
         _ => false,
