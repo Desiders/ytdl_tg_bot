@@ -6,14 +6,13 @@ use crate::{
 use serde::de::Error as _;
 use serde_json::Value;
 use std::{
-    io::{self, Read},
+    io,
     os::fd::OwnedFd,
     path::Path,
-    process::{Child, Command, Stdio},
+    process::{Child, Command, Output, Stdio},
     time::Duration,
 };
 use tracing::{event, Level};
-use wait_timeout::ChildExt as _;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -79,7 +78,7 @@ pub fn download_to_pipe(
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::from(fd))
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())
         .spawn()
 }
 
@@ -145,7 +144,7 @@ pub async fn download_video_to_path(
     let mut child = tokio::process::Command::new(executable_path.as_ref())
         .args(args)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
+        .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .kill_on_drop(true)
         .spawn()?;
@@ -249,7 +248,7 @@ pub async fn download_audio_to_path(
     }
 }
 
-pub fn get_media_or_playlist_info(
+pub async fn get_media_or_playlist_info(
     executable_path: impl AsRef<str>,
     url_or_id: impl AsRef<str>,
     pot_provider_api_url: impl AsRef<str>,
@@ -308,36 +307,24 @@ pub fn get_media_or_playlist_info(
     args.push("--");
     args.push(url_or_id.as_ref());
 
-    let mut child = Command::new(executable_path.as_ref())
+    let child = tokio::process::Command::new(executable_path.as_ref())
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true)
         .spawn()?;
 
-    let mut stdout = vec![];
-    let child_stdout = child.stdout.take();
-    io::copy(&mut child_stdout.unwrap(), &mut stdout)?;
-
-    let mut stderr = vec![];
-    let child_stderr = child.stderr.take();
-    if let Some(mut reader) = child_stderr {
-        reader.read_to_end(&mut stderr)?;
-        if !stderr.is_empty() {
-            event!(Level::ERROR, "Youtube-dl stderr: {}", String::from_utf8_lossy(&stderr));
+    let stdout = match tokio::time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
+        Ok(Ok(Output { status, stdout, .. })) => {
+            if !status.success() {
+                return Err(io::Error::other(format!("Youtube-dl exited with status `{:?}`", status.code())).into());
+            }
+            stdout
         }
-    }
-
-    let Some(status) = child.wait_timeout(Duration::from_secs(timeout))? else {
-        event!(Level::ERROR, "Child process timed out");
-        child.kill()?;
-        return Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out").into());
+        Ok(Err(err)) => return Err(err.into()),
+        Err(_) => return Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out").into()),
     };
-
-    if !status.success() {
-        event!(Level::ERROR, "Child process exited with error status: {status}");
-        return Err(io::Error::other(format!("Youtube-dl exited with status `{status}`")).into());
-    }
 
     let value: Value = serde_json::from_slice(&stdout)?;
     if let Some("playlist") = value.get("_type").and_then(Value::as_str) {
