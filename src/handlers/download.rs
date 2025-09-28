@@ -577,6 +577,7 @@ pub async fn audio_download(
         };
         let title = video.title.clone();
         let name = title.clone().unwrap_or(video.id.clone());
+        let uploader = video.uploader.clone();
 
         #[allow(clippy::cast_possible_truncation)]
         let duration = video.duration.map(|duration| duration as i64);
@@ -618,6 +619,7 @@ pub async fn audio_download(
                         .disable_notification(true)
                         .title_option(title)
                         .duration_option(duration)
+                        .performer_option(uploader)
                         .thumbnail_option(thumbnail_path.map(InputFile::fs)),
                     2,
                     Some(SEND_AUDIO_TIMEOUT),
@@ -822,6 +824,7 @@ pub async fn media_download_chosen_inline_result(
         } else {
             let title = video.title.clone();
             let name = title.clone().unwrap_or(video.id.clone());
+            let uploader = video.uploader.clone();
 
             #[allow(clippy::cast_possible_truncation)]
             let duration = video.duration.map(|duration| duration as i64);
@@ -852,6 +855,7 @@ pub async fn media_download_chosen_inline_result(
                     .disable_notification(true)
                     .title_option(title)
                     .duration_option(duration)
+                    .performer_option(uploader)
                     .thumbnail_option(thumbnail_path.map(InputFile::fs)),
                 2,
                 Some(SEND_AUDIO_TIMEOUT),
@@ -1027,6 +1031,7 @@ pub async fn media_download_search_chosen_inline_result(
         } else {
             let title = video.title.clone();
             let name = title.clone().unwrap_or(video.id.clone());
+            let uploader = video.uploader.clone();
 
             #[allow(clippy::cast_possible_truncation)]
             let duration = video.duration.map(|duration| duration as i64);
@@ -1055,6 +1060,7 @@ pub async fn media_download_search_chosen_inline_result(
                 SendAudio::new(chat_cfg.receiver_chat_id, InputFile::fs_with_name(path, name))
                     .disable_notification(true)
                     .title_option(title)
+                    .performer_option(uploader)
                     .duration_option(duration)
                     .thumbnail_option(thumbnail_path.map(InputFile::fs)),
                 2,

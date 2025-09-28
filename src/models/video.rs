@@ -13,6 +13,7 @@ pub struct Thumbnail {
 pub struct Video {
     pub id: String,
     pub title: Option<String>,
+    pub uploader: Option<String>,
     pub thumbnail: Option<String>,
     pub thumbnails: Option<Vec<Thumbnail>>,
     pub original_url: String,
