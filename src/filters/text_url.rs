@@ -1,4 +1,4 @@
-use std::{collections::HashMap, future::Future};
+use std::{collections::HashMap, future::Future, str::FromStr};
 use telers::{types::UpdateKind, Request};
 use url::Url;
 
@@ -121,6 +121,23 @@ pub fn url_is_blacklisted(request: &mut Request) -> impl Future<Output = bool> {
             None => false,
         },
         _ => false,
+    };
+
+    async move { result }
+}
+
+pub fn url_is_skippable_by_param(request: &mut Request) -> impl Future<Output = bool> {
+    let mut result: bool = false;
+    match request.extensions.get::<UrlWithParams>() {
+        Some(UrlWithParams { url, .. }) => {
+            for (key, value) in url.query_pairs() {
+                if ["yv2t", "yv2t_bot", "download"].contains(&&*key.to_lowercase()) && !bool::from_str(&value).unwrap_or(true) {
+                    result = true;
+                    break;
+                }
+            }
+        }
+        _ => {}
     };
 
     async move { result }

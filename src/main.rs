@@ -8,7 +8,7 @@ mod models;
 mod services;
 mod utils;
 
-use filters::{is_via_bot, text_contains_url, text_contains_url_with_reply, text_empty, url_is_blacklisted};
+use filters::{is_via_bot, text_contains_url, text_contains_url_with_reply, text_empty, url_is_blacklisted, url_is_skippable_by_param};
 use handlers::{
     audio_download, media_download_chosen_inline_result, media_download_search_chosen_inline_result, media_search_inline_query,
     media_select_inline_query, start, video_download, video_download_quite,
@@ -78,6 +78,7 @@ async fn main() {
         .register(video_download_quite)
         .filter(text_contains_url)
         .filter(url_is_blacklisted.invert())
+        .filter(url_is_skippable_by_param.invert())
         .filter(is_via_bot.invert());
     router.inline_query.register(media_select_inline_query).filter(text_contains_url);
     router.inline_query.register(media_search_inline_query).filter(text_empty.invert());
