@@ -1,18 +1,30 @@
 mod config;
+mod database;
 mod download;
+mod entities;
 mod errors;
 mod filters;
 mod handlers;
 mod handlers_utils;
-mod models;
+mod interactors;
+mod middlewares;
 mod services;
 mod utils;
+mod value_objects;
 
+use config::DatabaseConfig;
 use filters::{is_via_bot, text_contains_url, text_contains_url_with_reply, text_empty, url_is_blacklisted, url_is_skippable_by_param};
+use froodi::{
+    async_impl::{Container, RegistryBuilder},
+    instance,
+    DefaultScope::{App, Request},
+    Inject, InstantiateErrorKind,
+};
 use handlers::{
     audio_download, media_download_chosen_inline_result, media_download_search_chosen_inline_result, media_search_inline_query,
     media_select_inline_query, start, video_download, video_download_quite,
 };
+use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 use services::get_cookies_from_directory;
 use std::borrow::Cow;
 use telers::{
@@ -27,6 +39,36 @@ use telers::{
 use tracing::{event, Level};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
 use utils::{on_shutdown, on_startup};
+
+use crate::{database::TxManager, middlewares::ContainerMiddleware};
+
+fn init_container(database_cfg: DatabaseConfig) -> Container {
+    let registry = RegistryBuilder::new()
+        .provide(instance(database_cfg), App)
+        .provide_async(
+            |Inject(database_cfg): Inject<DatabaseConfig>| async move {
+                let mut options = ConnectOptions::new(database_cfg.get_postgres_url());
+                options.sqlx_logging(true);
+
+                match Database::connect(options).await {
+                    Ok(database_conn) => {
+                        event!(Level::DEBUG, "Database conn created");
+                        Ok(database_conn)
+                    }
+                    Err(err) => {
+                        event!(Level::ERROR, %err, "Error creating database conn");
+                        Err(InstantiateErrorKind::Custom(err.into()))
+                    }
+                }
+            },
+            App,
+        )
+        .provide_async(
+            |Inject(pool): Inject<DatabaseConnection>| async move { Ok(TxManager::new(pool)) },
+            Request,
+        );
+    Container::new(registry)
+}
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
@@ -53,7 +95,14 @@ async fn main() {
         Reqwest::default().with_api_server(Cow::Owned(APIServer::new(&base_url, &files_url, true, BareFilesPathWrapper))),
     );
 
+    let container = init_container(config.database);
+
     let mut router = Router::new("main");
+    router.telegram_observers_mut().iter_mut().for_each(|observer| {
+        observer.inner_middlewares.register(ContainerMiddleware {
+            container: container.clone(),
+        })
+    });
     router.message.register(start).filter(Command::many(["start", "help"]));
     router
         .message
@@ -115,4 +164,6 @@ async fn main() {
             event!(Level::ERROR, error = %err, "Bot stopped");
         }
     }
+
+    container.close().await;
 }
