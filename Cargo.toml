@@ -9,10 +9,13 @@ tokio = { version = "1.36", features = ["rt-multi-thread", "process"] }
 tokio-util = "0.7"
 nix = { version = "0.30", features = ["fs"] }
 reqwest = { version = "0.12", features = ["rustls-tls", "charset"], default-features = false }
+sea-orm = { version = "1.1", features = ["macros", "sqlx-postgres", "runtime-tokio-rustls"] }
+froodi = { version = "1.0.0-beta.6", features = ["async"] }
 serde = "1.0"
 serde_json = "1.0"
 url = "2.5"
-uuid = "1.7"
+uuid = { version = "1.18", features = ["v7", "fast-rng"] }
+time = { version = "0.3", features = ["serde-human-readable"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "2.0"
@@ -20,3 +23,5 @@ tempfile = "3.9"
 futures-util = "0.3"
 backoff = { version = "0.4", features = ["tokio"] }
 toml = "0.8"
+async-trait = "0.1"
+anyhow = "1.0"
