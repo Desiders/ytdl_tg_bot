@@ -37,6 +37,28 @@ pub struct YtDlpConfig {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+pub struct DatabaseConfig {
+    pub host: Box<str>,
+    pub port: i16,
+    pub user: Box<str>,
+    pub password: Box<str>,
+    pub database: Box<str>,
+}
+
+impl DatabaseConfig {
+    pub fn get_postgres_url(&self) -> String {
+        format!(
+            "postgres://{user}:{password}@{host}:{port}/{database}",
+            user = self.user,
+            password = self.password,
+            host = self.host,
+            port = self.port,
+            database = self.database,
+        )
+    }
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct YtToolkitConfig {
     pub url: Box<str>,
 }
@@ -59,6 +81,7 @@ pub struct Config {
     pub chat: ChatConfig,
     pub blacklisted: BlacklistedConfig,
     pub logging: LoggingConfig,
+    pub database: DatabaseConfig,
     pub yt_dlp: YtDlpConfig,
     pub yt_toolkit: YtToolkitConfig,
     pub yt_pot_provider: YtPotProviderConfig,

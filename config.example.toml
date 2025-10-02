@@ -16,6 +16,15 @@ max_file_size = 5000000
 executable_path = "./yt-dlp/executable"
 cookies_path = "./cookies"
 
+[database]
+user = "..."
+password = "..."
+# You can use "127.0.0.1" if the database is running on the same network.
+# If the database is running in docker, you can use the database container name as the host.
+host = "ytdl_tg_bot.postgres"
+port = 5432
+database = "api"
+
 [yt_toolkit]
 url = "http://ytdl_tg_bot.yt_toolkit_api:8080"
 # url = "http://127.0.0.1:8080"
