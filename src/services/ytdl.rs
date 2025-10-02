@@ -1,6 +1,6 @@
 use crate::{
+    entities::{Cookie, Video, VideosInYT},
     handlers_utils::range::Range,
-    models::{Cookie, Video, VideosInYT},
 };
 
 use serde::de::Error as _;

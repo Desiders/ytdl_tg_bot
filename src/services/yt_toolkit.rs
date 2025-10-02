@@ -1,5 +1,5 @@
 use crate::{
-    models::yt_toolkit::{BasicInfo, BasicSearchInfo, PlayabilityStatus, VideoInfoKind},
+    entities::yt_toolkit::{BasicInfo, BasicSearchInfo, PlayabilityStatus, VideoInfoKind},
     utils::{get_video_id, GetVideoIdErrorKind},
 };
 
