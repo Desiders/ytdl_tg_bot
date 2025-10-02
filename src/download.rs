@@ -1,5 +1,5 @@
 use crate::{
-    models::{AudioInFS, Cookie, ShortInfo, Video, VideoInFS},
+    entities::{AudioInFS, Cookie, ShortInfo, Video, VideoInFS},
     services::{
         convert_to_jpg, download_audio_to_path, download_to_pipe, download_video_to_path, get_best_thumbnail_path_in_dir, merge_streams,
         yt_toolkit, ytdl,
