@@ -1,12 +1,20 @@
 pub mod audio;
+pub mod chat;
 pub mod combined_format;
 pub mod cookies;
+pub mod downloaded_media;
 pub mod format;
 pub mod short_info;
+pub mod user;
+pub mod user_downloaded_media;
 pub mod video;
 pub mod yt_toolkit;
 
 pub use audio::{AudioInFS, TgAudioInPlaylist};
+pub use chat::Chat;
 pub use cookies::{Cookie, Cookies};
+pub use downloaded_media::DownloadedMedia;
 pub use short_info::ShortInfo;
+pub use user::User;
+pub use user_downloaded_media::UserDownloadedMedia;
 pub use video::{TgVideoInPlaylist, Video, VideoInFS, VideosInYT};
