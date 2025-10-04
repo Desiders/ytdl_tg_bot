@@ -150,7 +150,7 @@ pub async fn video(
     is_youtube: bool,
     download_and_merge_timeout: u64,
     cookie: Option<&Cookie>,
-    preferred_languages: &[&str],
+    preferred_languages: &[Box<str>],
 ) -> Result<VideoInFS, StreamErrorKind> {
     let mut combined_formats = video.get_combined_formats();
     combined_formats.sort(max_file_size, preferred_languages);
@@ -319,7 +319,7 @@ pub async fn audio_to_temp_dir(
     is_youtube: bool,
     download_timeout: u64,
     cookie: Option<&Cookie>,
-    preferred_languages: &[&str],
+    preferred_languages: &[Box<str>],
 ) -> Result<AudioInFS, ToTempDirErrorKind> {
     let mut audio_formats = video.get_audio_formats();
     audio_formats.sort(max_file_size, preferred_languages);

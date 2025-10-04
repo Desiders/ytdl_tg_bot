@@ -178,7 +178,7 @@ pub async fn video_download(
             }),
             DOWNLOAD_MEDIA_TIMEOUT,
             cookie,
-            &preferred_languages.languages.iter().map(AsRef::as_ref).collect::<Box<[_]>>(),
+            &preferred_languages.as_ref(),
         )
         .await
         {
@@ -375,7 +375,7 @@ pub async fn video_download_quite(
             }),
             DOWNLOAD_MEDIA_TIMEOUT,
             cookie,
-            &preferred_languages.languages.iter().map(AsRef::as_ref).collect::<Box<[_]>>(),
+            &preferred_languages.as_ref(),
         )
         .await
         {
@@ -595,7 +595,7 @@ pub async fn audio_download(
             }),
             DOWNLOAD_MEDIA_TIMEOUT,
             cookie,
-            &preferred_languages.languages.iter().map(AsRef::as_ref).collect::<Box<[_]>>(),
+            &preferred_languages.as_ref(),
         )
         .await
         {
@@ -774,11 +774,7 @@ pub async fn media_download_chosen_inline_result(
                 }),
                 DOWNLOAD_MEDIA_TIMEOUT,
                 cookie,
-                &PreferredLanguages::default()
-                    .languages
-                    .iter()
-                    .map(AsRef::as_ref)
-                    .collect::<Box<[_]>>(),
+                PreferredLanguages::default().as_ref(),
             )
             .await?;
 
@@ -840,11 +836,7 @@ pub async fn media_download_chosen_inline_result(
                     .is_some_and(|domain| domain.contains("youtube") || domain == "youtu.be"),
                 DOWNLOAD_MEDIA_TIMEOUT,
                 cookie,
-                &PreferredLanguages::default()
-                    .languages
-                    .iter()
-                    .map(AsRef::as_ref)
-                    .collect::<Box<[_]>>(),
+                PreferredLanguages::default().as_ref(),
             )
             .await?;
 
@@ -981,11 +973,7 @@ pub async fn media_download_search_chosen_inline_result(
                 true,
                 DOWNLOAD_MEDIA_TIMEOUT,
                 cookie,
-                &PreferredLanguages::default()
-                    .languages
-                    .iter()
-                    .map(AsRef::as_ref)
-                    .collect::<Box<[_]>>(),
+                PreferredLanguages::default().as_ref(),
             )
             .await?;
 
@@ -1046,11 +1034,7 @@ pub async fn media_download_search_chosen_inline_result(
                 true,
                 DOWNLOAD_MEDIA_TIMEOUT,
                 cookie,
-                &PreferredLanguages::default()
-                    .languages
-                    .iter()
-                    .map(AsRef::as_ref)
-                    .collect::<Box<[_]>>(),
+                PreferredLanguages::default().as_ref(),
             )
             .await?;
 

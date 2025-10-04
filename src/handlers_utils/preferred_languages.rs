@@ -5,6 +5,12 @@ pub struct PreferredLanguages {
     pub languages: Box<[Box<str>]>,
 }
 
+impl AsRef<[Box<str>]> for PreferredLanguages {
+    fn as_ref(&self) -> &[Box<str>] {
+        &self.languages
+    }
+}
+
 impl Default for PreferredLanguages {
     fn default() -> Self {
         PreferredLanguages {
