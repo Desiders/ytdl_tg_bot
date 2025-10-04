@@ -1,7 +1,13 @@
 use super::{combined_format, format};
+use crate::{
+    entities::PreferredLanguages,
+    errors::CombinedFormatNotFound,
+    utils::{calculate_aspect_ratio, get_nearest_to_aspect, get_url_by_aspect},
+};
 
 use serde::Deserialize;
-use std::{collections::VecDeque, ops::Deref, path::PathBuf};
+use std::{borrow::Cow, collections::VecDeque, ops::Deref, path::PathBuf};
+use url::Host;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Thumbnail {
@@ -67,6 +73,37 @@ impl Video {
 
         format::Audios::from(formats)
     }
+
+    fn thumbnail_urls(&self) -> Vec<&str> {
+        let mut thumbnail_urls = vec![];
+        if let Some(url) = &self.thumbnail {
+            thumbnail_urls.push(url.as_ref());
+        }
+        for Thumbnail { url } in self.thumbnails.as_deref().unwrap_or_default() {
+            if let Some(url) = url.as_deref() {
+                thumbnail_urls.push(url.as_ref());
+            }
+        }
+        thumbnail_urls
+    }
+
+    pub fn thumbnail_url<'a>(&'a self, service_host: Option<&Host<&str>>) -> Option<Cow<'a, str>> {
+        let aspect_ratio = calculate_aspect_ratio(self.width, self.height);
+        let aspect_kind = get_nearest_to_aspect(aspect_ratio);
+        let thumbnail_urls = self.thumbnail_urls();
+
+        match get_url_by_aspect(service_host, &self.id, &thumbnail_urls, aspect_kind) {
+            Some(thumbnail_url) => Some(thumbnail_url),
+            None => {
+                let preferred_order = ["maxresdefault", "hq720", "sddefault", "hqdefault", "mqdefault", "default"];
+
+                thumbnail_urls
+                    .into_iter()
+                    .map(Cow::Borrowed)
+                    .min_by_key(|url| preferred_order.iter().position(|&name| url.contains(name)))
+            }
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -97,6 +134,28 @@ impl Deref for VideosInYT {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+pub struct VideoAndFormat<'a> {
+    pub video: &'a Video,
+    pub format: combined_format::Format<'a>,
+}
+
+impl<'a> VideoAndFormat<'a> {
+    pub fn new_with_select_format(
+        video: &'a Video,
+        max_file_size: u32,
+        PreferredLanguages { languages }: PreferredLanguages,
+    ) -> Result<Self, CombinedFormatNotFound> {
+        let mut formats = video.get_combined_formats();
+        formats.sort(max_file_size, &languages);
+
+        let Some(format) = formats.first().cloned() else {
+            return Err(CombinedFormatNotFound);
+        };
+
+        Ok(Self { video, format })
     }
 }
 
