@@ -1,4 +1,29 @@
+use super::{format, PreferredLanguages, Video};
+use crate::errors::FormatNotFound;
+
 use std::path::PathBuf;
+
+pub struct AudioAndFormat<'a> {
+    pub video: &'a Video,
+    pub format: format::Audio<'a>,
+}
+
+impl<'a> AudioAndFormat<'a> {
+    pub fn new_with_select_format(
+        video: &'a Video,
+        max_file_size: u32,
+        PreferredLanguages { languages }: PreferredLanguages,
+    ) -> Result<Self, FormatNotFound> {
+        let mut formats = video.get_audio_formats();
+        formats.sort(max_file_size, &languages);
+
+        let Some(format) = formats.first().cloned() else {
+            return Err(FormatNotFound);
+        };
+
+        Ok(Self { video, format })
+    }
+}
 
 #[derive(Debug)]
 pub struct TgAudioInPlaylist {
