@@ -1,11 +1,10 @@
 use crate::{
     config::{ChatConfig, YtDlpConfig, YtPotProviderConfig, YtToolkitConfig},
     download::{self, StreamErrorKind, ToTempDirErrorKind},
-    entities::{AudioInFS, Cookies, ShortInfo, TgAudioInPlaylist, TgVideoInPlaylist, VideoInFS},
+    entities::{AudioInFS, Cookies, PreferredLanguages, ShortInfo, TgAudioInPlaylist, TgVideoInPlaylist, VideoInFS},
     handlers_utils::{
         chat_action::{upload_video_action_in_loop, upload_voice_action_in_loop},
         error,
-        preferred_languages::PreferredLanguages,
         range::Range,
         send,
         url::UrlWithParams,
