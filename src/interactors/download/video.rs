@@ -1,3 +1,11 @@
+use crate::{
+    config::{YtDlpConfig, YtPotProviderConfig},
+    entities::{Cookies, VideoAndFormat, VideoInFS},
+    interactors::Interactor,
+    services::{convert_to_jpg, download_to_pipe, download_video_to_path, get_best_thumbnail_path_in_dir, merge_streams},
+    utils::format_error_report,
+};
+
 use bytes::Bytes;
 use futures_util::StreamExt as _;
 use nix::{errno::Errno, unistd::pipe};
@@ -13,15 +21,7 @@ use tokio::{io::AsyncWriteExt as _, sync::mpsc, time::timeout};
 use tracing::{event, instrument, Level};
 use url::Url;
 
-use crate::{
-    config::{YtDlpConfig, YtPotProviderConfig},
-    entities::{Cookies, VideoAndFormat, VideoInFS},
-    interactors::Interactor,
-    services::{convert_to_jpg, download_to_pipe, download_video_to_path, get_best_thumbnail_path_in_dir, merge_streams},
-    utils::format_error_report,
-};
-
-const DOWNLOAD_MEDIA_TIMEOUT: u64 = 180;
+const DOWNLOAD_TIMEOUT: u64 = 180;
 const RANGE_CHUNK_SIZE: i32 = 1024 * 1024 * 10;
 
 #[derive(thiserror::Error, Debug)]
@@ -111,7 +111,7 @@ impl Interactor for DownloadVideo {
                 self.yt_pot_provider_cfg.url.as_ref(),
                 extension,
                 self.temp_dir.path(),
-                DOWNLOAD_MEDIA_TIMEOUT,
+                DOWNLOAD_TIMEOUT,
                 download_thumbnails,
                 cookie,
             )
@@ -212,7 +212,7 @@ impl Interactor for DownloadVideo {
             None
         };
 
-        let exit_code = match timeout(Duration::from_secs(DOWNLOAD_MEDIA_TIMEOUT), merge_child.wait()).await {
+        let exit_code = match timeout(Duration::from_secs(DOWNLOAD_TIMEOUT), merge_child.wait()).await {
             Ok(Ok(exit_code)) => exit_code,
             Ok(Err(err)) => {
                 return Err(Self::Err::Ffmpeg(err));
@@ -298,7 +298,7 @@ impl Interactor for DownloadVideoPlaylist {
                     self.yt_pot_provider_cfg.url.as_ref(),
                     extension,
                     self.temp_dir.path(),
-                    DOWNLOAD_MEDIA_TIMEOUT,
+                    DOWNLOAD_TIMEOUT,
                     download_thumbnails,
                     cookie,
                 )
@@ -403,7 +403,7 @@ impl Interactor for DownloadVideoPlaylist {
                 None
             };
 
-            let exit_code = match timeout(Duration::from_secs(DOWNLOAD_MEDIA_TIMEOUT), merge_child.wait()).await {
+            let exit_code = match timeout(Duration::from_secs(DOWNLOAD_TIMEOUT), merge_child.wait()).await {
                 Ok(Ok(exit_code)) => exit_code,
                 Ok(Err(err)) => {
                     sender.send((index, Err(DownloadVideoErrorKind::Ffmpeg(err)))).await?;
