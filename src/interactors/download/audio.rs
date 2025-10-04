@@ -42,14 +42,14 @@ pub enum DownloadAudioPlaylistErrorKind {
     Pipe(Errno),
 }
 
-pub struct DownloadVideo {
+pub struct DownloadAudio {
     yt_dlp_cfg: YtDlpConfig,
     yt_pot_provider_cfg: YtPotProviderConfig,
     cookies: Cookies,
     temp_dir: TempDir,
 }
 
-impl DownloadVideo {
+impl DownloadAudio {
     pub const fn new(yt_dlp_cfg: YtDlpConfig, yt_pot_provider_cfg: YtPotProviderConfig, cookies: Cookies, temp_dir: TempDir) -> Self {
         Self {
             yt_dlp_cfg,
@@ -60,20 +60,20 @@ impl DownloadVideo {
     }
 }
 
-pub struct DownloadVideoInput<'a> {
+pub struct DownloadAudioInput<'a> {
     pub url: Url,
     pub video_and_format: AudioAndFormat<'a>,
 }
 
-impl Interactor for DownloadVideo {
-    type Input<'a> = DownloadVideoInput<'a>;
+impl Interactor for DownloadAudio {
+    type Input<'a> = DownloadAudioInput<'a>;
     type Output = AudioInFS;
     type Err = DownloadAudioErrorKind;
 
     #[instrument(skip(self))]
     async fn execute(
         &mut self,
-        DownloadVideoInput {
+        DownloadAudioInput {
             video_and_format: AudioAndFormat { video, format },
             url,
         }: Self::Input<'_>,
