@@ -10,11 +10,11 @@ pub mod user_downloaded_media;
 pub mod video;
 pub mod yt_toolkit;
 
-pub use audio::{AudioInFS, TgAudioInPlaylist};
+pub use audio::{AudioInFS, TgAudio, TgAudioInPlaylist};
 pub use chat::Chat;
 pub use cookies::{Cookie, Cookies};
 pub use downloaded_media::DownloadedMedia;
 pub use short_info::ShortInfo;
 pub use user::User;
 pub use user_downloaded_media::UserDownloadedMedia;
-pub use video::{TgVideoInPlaylist, Video, VideoInFS, VideosInYT};
+pub use video::{TgVideo, TgVideoInPlaylist, Video, VideoInFS, VideosInYT};
