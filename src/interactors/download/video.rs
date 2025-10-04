@@ -1,73 +1,34 @@
+use bytes::Bytes;
 use futures_util::StreamExt as _;
 use nix::{errno::Errno, unistd::pipe};
 use reqwest::Client;
 use std::{
-    borrow::Cow,
     fs::File,
     io,
     path::{Path, PathBuf},
     time::Duration,
 };
 use tempfile::TempDir;
-use tokio::{io::AsyncWriteExt, time::timeout};
+use tokio::{io::AsyncWriteExt as _, sync::mpsc, time::timeout};
 use tracing::{event, instrument, Level};
-use url::{Host, Url};
+use url::Url;
 
 use crate::{
-    config::{YtDlpConfig, YtPotProviderConfig, YtToolkitConfig},
-    download::StreamErrorKind,
-    entities::{combined_format::Format, Cookies, ShortInfo, Video, VideoInFS},
-    handlers_utils::preferred_languages::PreferredLanguages,
+    config::{YtDlpConfig, YtPotProviderConfig},
+    entities::{Cookies, VideoAndFormat, VideoInFS},
     interactors::Interactor,
-    services::{convert_to_jpg, download_to_pipe, download_video_to_path, get_best_thumbnail_path_in_dir, merge_streams, yt_toolkit},
+    services::{convert_to_jpg, download_to_pipe, download_video_to_path, get_best_thumbnail_path_in_dir, merge_streams},
     utils::format_error_report,
 };
 
 const DOWNLOAD_MEDIA_TIMEOUT: u64 = 180;
 const RANGE_CHUNK_SIZE: i32 = 1024 * 1024 * 10;
 
-pub struct DownloadVideo {
-    yt_dlp_cfg: YtDlpConfig,
-    yt_toolkit_cfg: YtToolkitConfig,
-    yt_pot_provider_cfg: YtPotProviderConfig,
-    cookies: Cookies,
-    temp_dir: TempDir,
-}
-
-impl DownloadVideo {
-    pub const fn new(
-        yt_dlp_cfg: YtDlpConfig,
-        yt_toolkit_cfg: YtToolkitConfig,
-        yt_pot_provider_cfg: YtPotProviderConfig,
-        cookies: Cookies,
-        temp_dir: TempDir,
-    ) -> Self {
-        Self {
-            yt_dlp_cfg,
-            yt_toolkit_cfg,
-            yt_pot_provider_cfg,
-            cookies,
-            temp_dir,
-        }
-    }
-}
-
-pub struct DownloadVideoInput<'a> {
-    pub url: Url,
-    pub video: &'a Video,
-    pub format: Format<'a>,
-    pub preferred_languages: PreferredLanguages,
-}
-
-pub struct DownloadVideoOutput {
-    pub video_in_fs: VideoInFS,
-}
-
 #[derive(thiserror::Error, Debug)]
 pub enum RangeDownloadErrorKind {
-    #[error(transparent)]
-    Io(#[from] io::Error),
-    #[error(transparent)]
+    #[error("Channel error: {0}")]
+    Channel(#[from] mpsc::error::SendError<Bytes>),
+    #[error("Request error: {0}")]
     Reqwest(#[from] reqwest::Error),
 }
 
@@ -79,47 +40,70 @@ pub enum DownloadVideoErrorKind {
     Ffmpeg(io::Error),
     #[error("Pipe error: {0}")]
     Pipe(Errno),
-    #[error("Range error: {0}")]
-    Range(#[from] RangeDownloadErrorKind),
-    #[error("Stream error: {0}")]
-    Stream(#[from] StreamErrorKind),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum DownloadVideoPlaylistErrorKind {
+    #[error("Channel error: {0}")]
+    Channel(#[from] mpsc::error::SendError<(usize, Result<VideoInFS, DownloadVideoErrorKind>)>),
+    #[error("Ytdlp error: {0}")]
+    Ytdlp(io::Error),
+    #[error("Ffmpeg error: {0}")]
+    Ffmpeg(io::Error),
+    #[error("Pipe error: {0}")]
+    Pipe(Errno),
+}
+
+pub struct DownloadVideo {
+    yt_dlp_cfg: YtDlpConfig,
+    yt_pot_provider_cfg: YtPotProviderConfig,
+    cookies: Cookies,
+    temp_dir: TempDir,
+}
+
+impl DownloadVideo {
+    pub const fn new(yt_dlp_cfg: YtDlpConfig, yt_pot_provider_cfg: YtPotProviderConfig, cookies: Cookies, temp_dir: TempDir) -> Self {
+        Self {
+            yt_dlp_cfg,
+            yt_pot_provider_cfg,
+            cookies,
+            temp_dir,
+        }
+    }
+}
+
+pub struct DownloadVideoInput<'a> {
+    pub url: Url,
+    pub video_and_format: VideoAndFormat<'a>,
 }
 
 impl Interactor for DownloadVideo {
     type Input<'a> = DownloadVideoInput<'a>;
-    type Output = DownloadVideoOutput;
+    type Output = VideoInFS;
     type Err = DownloadVideoErrorKind;
 
     #[instrument(skip(self))]
     async fn execute(
         &mut self,
         DownloadVideoInput {
-            video,
-            format,
+            video_and_format: VideoAndFormat { video, format },
             url,
-            preferred_languages,
         }: Self::Input<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let extension = format.get_extension();
         let file_path = self.temp_dir.as_ref().join(format!("{video_id}.{extension}", video_id = video.id));
-        let name = video.title.as_deref().unwrap_or(video.id.as_ref());
         let host = url.host();
-        let is_youtube = host.as_ref().is_some_and(|host| match host {
-            Host::Domain(domain) => domain.contains("youtube") || *domain == "youtu.be",
-            _ => false,
-        });
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
         if format.format_ids_are_equal() {
-            event!(Level::DEBUG, "Video and audio formats are the same");
+            event!(Level::DEBUG, "Formats are the same");
 
-            let (thumbnail_path, download_thumbnails) =
-                if let Some(thumbnail_url) = get_thumbnail_url(&video.clone().into(), self.yt_toolkit_cfg.url.as_ref(), is_youtube) {
-                    let thumbnail_path = get_thumbnail_path(thumbnail_url, &video.id, self.temp_dir.path()).await;
-                    (thumbnail_path, false)
-                } else {
-                    (None, true)
-                };
+            let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
+                let thumbnail_path = get_thumbnail_path(thumbnail_url, &video.id, self.temp_dir.path()).await;
+                (thumbnail_path, false)
+            } else {
+                (None, true)
+            };
 
             download_video_to_path(
                 self.yt_dlp_cfg.executable_path.as_ref(),
@@ -145,12 +129,10 @@ impl Interactor for DownloadVideo {
                 }
             };
 
-            return Ok(DownloadVideoOutput {
-                video_in_fs: VideoInFS::new(file_path, thumbnail_path),
-            });
+            return Ok(VideoInFS::new(file_path, thumbnail_path));
         }
 
-        event!(Level::DEBUG, "Video and audio formats are different");
+        event!(Level::DEBUG, "Formats are different");
 
         let (video_read_fd, video_write_fd) = pipe().map_err(Self::Err::Pipe)?;
         let (audio_read_fd, audio_write_fd) = pipe().map_err(Self::Err::Pipe)?;
@@ -158,11 +140,26 @@ impl Interactor for DownloadVideo {
         let mut merge_child = merge_streams(&video_read_fd, &audio_read_fd, extension, &file_path).map_err(Self::Err::Ffmpeg)?;
 
         if let Some(filesize) = format.video_format.filesize_or_approx() {
-            let url = format.video_format.url.to_owned();
-            tokio::spawn(async move {
-                let _ = range_download_to_write(url, filesize, tokio::fs::File::from_std(File::from(video_write_fd)))
-                    .await
-                    .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+            let (sender, mut receiver) = mpsc::unbounded_channel();
+
+            tokio::spawn({
+                let url = format.video_format.url.to_owned();
+                async move {
+                    let _ = range_download_to_write(url, filesize, sender)
+                        .await
+                        .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                }
+            });
+            tokio::spawn({
+                let mut writer = tokio::fs::File::from_std(File::from(video_write_fd));
+                async move {
+                    while let Some(bytes) = receiver.recv().await {
+                        let _ = writer
+                            .write(&bytes)
+                            .await
+                            .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                    }
+                }
             });
         } else {
             download_to_pipe(
@@ -175,13 +172,27 @@ impl Interactor for DownloadVideo {
             )
             .map_err(Self::Err::Ytdlp)?;
         }
-
         if let Some(filesize) = format.audio_format.filesize_or_approx() {
-            let url = format.audio_format.url.to_owned();
-            tokio::spawn(async move {
-                let _ = range_download_to_write(url, filesize, tokio::fs::File::from_std(File::from(audio_write_fd)))
-                    .await
-                    .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+            let (sender, mut receiver) = mpsc::unbounded_channel();
+
+            tokio::spawn({
+                let url = format.audio_format.url.to_owned();
+                async move {
+                    let _ = range_download_to_write(url, filesize, sender)
+                        .await
+                        .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                }
+            });
+            tokio::spawn({
+                let mut writer = tokio::fs::File::from_std(File::from(audio_write_fd));
+                async move {
+                    while let Some(bytes) = receiver.recv().await {
+                        let _ = writer
+                            .write(&bytes)
+                            .await
+                            .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                    }
+                }
             });
         } else {
             download_to_pipe(
@@ -195,12 +206,11 @@ impl Interactor for DownloadVideo {
             .map_err(Self::Err::Ytdlp)?;
         }
 
-        let thumbnail_path =
-            if let Some(thumbnail_url) = get_thumbnail_url(&video.clone().into(), self.yt_toolkit_cfg.url.as_ref(), is_youtube) {
-                get_thumbnail_path(thumbnail_url, &video.id, self.temp_dir.path()).await
-            } else {
-                None
-            };
+        let thumbnail_path = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
+            get_thumbnail_path(thumbnail_url, &video.id, self.temp_dir.path()).await
+        } else {
+            None
+        };
 
         let exit_code = match timeout(Duration::from_secs(DOWNLOAD_MEDIA_TIMEOUT), merge_child.wait()).await {
             Ok(Ok(exit_code)) => exit_code,
@@ -223,53 +233,218 @@ impl Interactor for DownloadVideo {
 
         event!(Level::DEBUG, "Streams merged");
 
-        Ok(DownloadVideoOutput {
-            video_in_fs: VideoInFS::new(file_path, thumbnail_path),
-        })
+        Ok(VideoInFS::new(file_path, thumbnail_path))
     }
 }
 
-pub struct DownloadVideoPlaylist {}
+pub struct DownloadVideoPlaylist {
+    yt_dlp_cfg: YtDlpConfig,
+    yt_pot_provider_cfg: YtPotProviderConfig,
+    cookies: Cookies,
+    temp_dir: TempDir,
+}
 
 impl DownloadVideoPlaylist {
-    pub const fn new() -> Self {
-        Self {}
+    pub const fn new(yt_dlp_cfg: YtDlpConfig, yt_pot_provider_cfg: YtPotProviderConfig, cookies: Cookies, temp_dir: TempDir) -> Self {
+        Self {
+            yt_dlp_cfg,
+            yt_pot_provider_cfg,
+            cookies,
+            temp_dir,
+        }
     }
 }
 
-pub struct DownloadVideoPlaylistInput {}
-
-pub struct DownloadVideoPlaylistOutput {}
-
-#[derive(thiserror::Error, Debug)]
-pub enum DownloadVideoPlaylistErrorKind {}
+pub struct DownloadVideoPlaylistInput<'a> {
+    pub url: Url,
+    pub videos_and_formats: Box<[VideoAndFormat<'a>]>,
+    pub sender: mpsc::Sender<(usize, Result<VideoInFS, DownloadVideoErrorKind>)>,
+}
 
 impl Interactor for DownloadVideoPlaylist {
-    type Input<'a> = DownloadVideoPlaylistInput;
-    type Output = DownloadVideoPlaylistOutput;
+    type Input<'a> = DownloadVideoPlaylistInput<'a>;
+    type Output = ();
     type Err = DownloadVideoPlaylistErrorKind;
 
-    async fn execute(&mut self, input: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
-        todo!()
-    }
-}
+    #[instrument(skip(self, videos_and_formats, sender))]
+    async fn execute(
+        &mut self,
+        DownloadVideoPlaylistInput {
+            url,
+            videos_and_formats,
+            sender,
+        }: Self::Input<'_>,
+    ) -> Result<Self::Output, Self::Err> {
+        let host = url.host();
+        let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
-#[instrument(skip_all)]
-fn get_thumbnail_url<'a>(video: &'a ShortInfo, yt_toolkit_api_url: impl AsRef<str>, is_youtube: bool) -> Option<Cow<'a, str>> {
-    if is_youtube {
-        match (video.width, video.height) {
-            (Some(width), Some(height)) => match yt_toolkit::get_thumbnail_url(yt_toolkit_api_url.as_ref(), &video.id, width, height) {
-                Ok(url) => Some(Cow::Owned(url)),
-                Err(_) => video.thumbnail().map(Cow::Borrowed),
-            },
-            _ => video.thumbnail().map(Cow::Borrowed),
+        for (index, VideoAndFormat { video, format }) in videos_and_formats.iter().enumerate() {
+            let extension = format.get_extension();
+            let file_path = self.temp_dir.as_ref().join(format!("{video_id}.{extension}", video_id = video.id));
+
+            if format.format_ids_are_equal() {
+                event!(Level::DEBUG, "Formats are the same");
+
+                let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
+                    let thumbnail_path = get_thumbnail_path(thumbnail_url, &video.id, self.temp_dir.path()).await;
+                    (thumbnail_path, false)
+                } else {
+                    (None, true)
+                };
+
+                if let Err(err) = download_video_to_path(
+                    self.yt_dlp_cfg.executable_path.as_ref(),
+                    &video.original_url,
+                    self.yt_pot_provider_cfg.url.as_ref(),
+                    extension,
+                    self.temp_dir.path(),
+                    DOWNLOAD_MEDIA_TIMEOUT,
+                    download_thumbnails,
+                    cookie,
+                )
+                .await
+                {
+                    sender.send((index, Err(DownloadVideoErrorKind::Ytdlp(err)))).await?;
+                    continue;
+                };
+
+                let thumbnail_path = match thumbnail_path {
+                    Some(url) => Some(url),
+                    None => {
+                        if download_thumbnails {
+                            get_best_thumbnail_path_in_dir(self.temp_dir.path()).ok().flatten()
+                        } else {
+                            None
+                        }
+                    }
+                };
+
+                sender.send((index, Ok(VideoInFS::new(file_path, thumbnail_path)))).await?;
+                continue;
+            }
+
+            event!(Level::DEBUG, "Formats are different");
+
+            let (video_read_fd, video_write_fd) = pipe().map_err(Self::Err::Pipe)?;
+            let (audio_read_fd, audio_write_fd) = pipe().map_err(Self::Err::Pipe)?;
+
+            let mut merge_child = merge_streams(&video_read_fd, &audio_read_fd, extension, &file_path).map_err(Self::Err::Ffmpeg)?;
+
+            if let Some(filesize) = format.video_format.filesize_or_approx() {
+                let (sender, mut receiver) = mpsc::unbounded_channel();
+
+                tokio::spawn({
+                    let url = format.video_format.url.to_owned();
+                    async move {
+                        let _ = range_download_to_write(url, filesize, sender)
+                            .await
+                            .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                    }
+                });
+                tokio::spawn({
+                    let mut writer = tokio::fs::File::from_std(File::from(video_write_fd));
+                    async move {
+                        while let Some(bytes) = receiver.recv().await {
+                            let _ = writer
+                                .write(&bytes)
+                                .await
+                                .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                        }
+                    }
+                });
+            } else {
+                download_to_pipe(
+                    video_write_fd,
+                    self.yt_dlp_cfg.executable_path.as_ref(),
+                    &video.original_url,
+                    self.yt_pot_provider_cfg.url.as_ref(),
+                    format.video_format.id,
+                    cookie,
+                )
+                .map_err(Self::Err::Ytdlp)?;
+            }
+            if let Some(filesize) = format.audio_format.filesize_or_approx() {
+                let (sender, mut receiver) = mpsc::unbounded_channel();
+
+                tokio::spawn({
+                    let url = format.audio_format.url.to_owned();
+                    async move {
+                        let _ = range_download_to_write(url, filesize, sender)
+                            .await
+                            .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                    }
+                });
+                tokio::spawn({
+                    let mut writer = tokio::fs::File::from_std(File::from(audio_write_fd));
+                    async move {
+                        while let Some(bytes) = receiver.recv().await {
+                            let _ = writer
+                                .write(&bytes)
+                                .await
+                                .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                        }
+                    }
+                });
+            } else {
+                download_to_pipe(
+                    audio_write_fd,
+                    self.yt_dlp_cfg.executable_path.as_ref(),
+                    &video.original_url,
+                    self.yt_pot_provider_cfg.url.as_ref(),
+                    format.audio_format.id,
+                    cookie,
+                )
+                .map_err(Self::Err::Ytdlp)?;
+            }
+
+            let thumbnail_path = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
+                get_thumbnail_path(thumbnail_url, &video.id, self.temp_dir.path()).await
+            } else {
+                None
+            };
+
+            let exit_code = match timeout(Duration::from_secs(DOWNLOAD_MEDIA_TIMEOUT), merge_child.wait()).await {
+                Ok(Ok(exit_code)) => exit_code,
+                Ok(Err(err)) => {
+                    sender.send((index, Err(DownloadVideoErrorKind::Ffmpeg(err)))).await?;
+                    continue;
+                }
+                Err(_) => {
+                    sender
+                        .send((
+                            index,
+                            Err(DownloadVideoErrorKind::Ffmpeg(io::Error::new(
+                                io::ErrorKind::TimedOut,
+                                "FFmpeg process timed out",
+                            ))),
+                        ))
+                        .await?;
+                    continue;
+                }
+            };
+
+            if !exit_code.success() {
+                sender
+                    .send((
+                        index,
+                        Err(DownloadVideoErrorKind::Ffmpeg(io::Error::other(format!(
+                            "FFmpeg exited with status `{exit_code}`"
+                        )))),
+                    ))
+                    .await?;
+                continue;
+            }
+
+            event!(Level::DEBUG, "Streams merged");
+
+            sender.send((index, Ok(VideoInFS::new(file_path, thumbnail_path)))).await?;
         }
-    } else {
-        video.thumbnail().map(Cow::Borrowed)
+
+        Ok(())
     }
 }
 
-#[instrument(skip_all)]
+#[instrument(skip(temp_dir_path), fields(url = url.as_ref(), id = id.as_ref()))]
 async fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_path: impl AsRef<Path>) -> Option<PathBuf> {
     let path = temp_dir_path.as_ref().join(format!("{}.jpg", id.as_ref()));
 
@@ -298,10 +473,10 @@ async fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_
     }
 }
 
-async fn range_download_to_write<W: AsyncWriteExt + Unpin>(
+async fn range_download_to_write(
     url: impl AsRef<str>,
     filesize: f64,
-    mut write: W,
+    sender: mpsc::UnboundedSender<Bytes>,
 ) -> Result<(), RangeDownloadErrorKind> {
     let client = Client::new();
     let url = url.as_ref();
@@ -323,7 +498,7 @@ async fn range_download_to_write<W: AsyncWriteExt + Unpin>(
 
             while let Some(chunk_res) = stream.next().await {
                 let chunk = chunk_res?;
-                write.write_all(&chunk).await?;
+                sender.send(chunk)?;
             }
 
             break;
@@ -338,7 +513,7 @@ async fn range_download_to_write<W: AsyncWriteExt + Unpin>(
 
         while let Some(chunk_res) = stream.next().await {
             let chunk = chunk_res?;
-            write.write_all(&chunk).await?;
+            sender.send(chunk)?;
         }
 
         start = end + 1;
