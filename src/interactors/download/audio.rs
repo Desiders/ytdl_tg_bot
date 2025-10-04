@@ -8,13 +8,9 @@ impl DownloadAudio {
 
 pub struct DownloadAudioInput {}
 
-pub struct DownloadAudioOutput {}
-
 pub struct DownloadAudioPlaylist {}
 
 pub struct DownloadAudioPlaylistInput {}
-
-pub struct DownloadAudioPlaylistOutput {}
 
 impl DownloadAudioPlaylist {
     pub const fn new() -> Self {
