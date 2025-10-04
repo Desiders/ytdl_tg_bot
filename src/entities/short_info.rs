@@ -2,8 +2,11 @@ use super::{
     video::{Thumbnail as YtDlpThumbnail, Video},
     yt_toolkit::BasicInfo,
 };
+use crate::utils::{calculate_aspect_ratio, get_nearest_to_aspect, get_url_by_aspect};
 
 use serde::Deserialize;
+use std::borrow::Cow;
+use url::Host;
 
 #[derive(Debug, Deserialize)]
 pub struct Thumbnail {
@@ -32,13 +35,32 @@ pub struct ShortInfo {
 }
 
 impl ShortInfo {
-    pub fn thumbnail(&self) -> Option<&str> {
-        let preferred_order = ["maxresdefault", "hq720", "sddefault", "hqdefault", "mqdefault", "default"];
+    pub fn thumbnail_urls(&self) -> Vec<&str> {
+        let mut thumbnail_urls = vec![];
+        for Thumbnail { url } in &self.thumbnails {
+            if let Some(url) = url.as_deref() {
+                thumbnail_urls.push(url.as_ref());
+            }
+        }
+        thumbnail_urls
+    }
 
-        self.thumbnails
-            .iter()
-            .filter_map(|thumbnail| thumbnail.url.as_deref())
-            .min_by_key(|url| preferred_order.iter().position(|&name| url.contains(name)))
+    pub fn thumbnail_url<'a>(&'a self, service_host: Option<&Host<&str>>) -> Option<Cow<'a, str>> {
+        let aspect_ratio = calculate_aspect_ratio(self.width, self.height);
+        let aspect_kind = get_nearest_to_aspect(aspect_ratio);
+        let thumbnail_urls = self.thumbnail_urls();
+
+        match get_url_by_aspect(service_host, &self.id, &thumbnail_urls, aspect_kind) {
+            Some(thumbnail_url) => Some(thumbnail_url),
+            None => {
+                let preferred_order = ["maxresdefault", "hq720", "sddefault", "hqdefault", "mqdefault", "default"];
+
+                thumbnail_urls
+                    .into_iter()
+                    .map(Cow::Borrowed)
+                    .min_by_key(|url| preferred_order.iter().position(|&name| url.contains(name)))
+            }
+        }
     }
 }
 

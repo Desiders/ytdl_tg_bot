@@ -1163,7 +1163,7 @@ pub async fn media_select_inline_query(
     for video in videos {
         let title = video.title.as_deref().unwrap_or("Untitled");
         let title_html = html_code(html_quote(title));
-        let thumbnail_url = video.thumbnail();
+        let thumbnail_url = video.thumbnail_url(url.host().as_ref());
         let result_id = Uuid::new_v4();
 
         results.push(
@@ -1172,7 +1172,7 @@ pub async fn media_select_inline_query(
                 title,
                 InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
             )
-            .thumbnail_url_option(thumbnail_url)
+            .thumbnail_url_option(thumbnail_url.clone())
             .description("Click to download video")
             .reply_markup(InlineKeyboardMarkup::new([[
                 InlineKeyboardButton::new("Downloading...").callback_data("video_download")
@@ -1249,7 +1249,7 @@ pub async fn media_search_inline_query(
     for video in videos {
         let title = video.title.as_deref().unwrap_or("Untitled");
         let title_html = html_code(html_quote(title));
-        let thumbnail_url = video.thumbnail();
+        let thumbnail_url = video.thumbnail_url(Some(&Host::Domain("youtube.com")));
 
         results.push(
             InlineQueryResultArticle::new(
@@ -1257,7 +1257,7 @@ pub async fn media_search_inline_query(
                 title,
                 InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
             )
-            .thumbnail_url_option(thumbnail_url)
+            .thumbnail_url_option(thumbnail_url.clone())
             .description("Click to download video")
             .reply_markup(InlineKeyboardMarkup::new([[
                 InlineKeyboardButton::new("Downloading...").callback_data("video_download")
