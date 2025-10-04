@@ -4,15 +4,27 @@ version = "1.16.0"
 edition = "2021"
 
 [dependencies]
-telers = { version = "1.0.0-alpha.26", features = ["default_signal", "std", "rustls-tls"], default-features = false }
-tokio = { version = "1.36", features = ["rt-multi-thread", "process"] }
+telers = { version = "1.0.0-alpha.26", features = [
+    "default_signal",
+    "std",
+    "rustls-tls",
+], default-features = false }
+tokio = { version = "1.36", features = ["rt-multi-thread", "process", "sync"] }
 tokio-util = "0.7"
 nix = { version = "0.30", features = ["fs"] }
-reqwest = { version = "0.12", features = ["rustls-tls", "charset"], default-features = false }
-sea-orm = { version = "1.1", features = ["macros", "sqlx-postgres", "runtime-tokio-rustls"] }
+reqwest = { version = "0.12", features = [
+    "rustls-tls",
+    "charset",
+], default-features = false }
+sea-orm = { version = "1.1", features = [
+    "macros",
+    "sqlx-postgres",
+    "runtime-tokio-rustls",
+] }
 froodi = { version = "1.0.0-beta.6", features = ["async"] }
 serde = "1.0"
 serde_json = "1.0"
+bytes = "1"
 url = "2.5"
 uuid = { version = "1.18", features = ["v7", "fast-rng"] }
 time = { version = "0.3", features = ["serde-human-readable"] }
