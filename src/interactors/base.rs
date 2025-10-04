@@ -1,7 +1,7 @@
 pub trait Interactor {
-    type Input;
+    type Input<'a>;
     type Output;
     type Err;
 
-    async fn execute(&mut self, input: Self::Input) -> Result<Self::Output, Self::Err>;
+    async fn execute<'a>(&mut self, input: Self::Input<'a>) -> Result<Self::Output, Self::Err>;
 }
