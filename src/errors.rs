@@ -1,4 +1,4 @@
 pub mod database;
 pub mod format;
 
-pub use format::{CombinedFormatNotFound, Error as FormatError};
+pub use format::{Error as FormatError, FormatNotFound};

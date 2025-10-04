@@ -1,7 +1,7 @@
 use super::{combined_format, format};
 use crate::{
     entities::PreferredLanguages,
-    errors::CombinedFormatNotFound,
+    errors::FormatNotFound,
     utils::{calculate_aspect_ratio, get_nearest_to_aspect, get_url_by_aspect},
 };
 
@@ -147,12 +147,12 @@ impl<'a> VideoAndFormat<'a> {
         video: &'a Video,
         max_file_size: u32,
         PreferredLanguages { languages }: PreferredLanguages,
-    ) -> Result<Self, CombinedFormatNotFound> {
+    ) -> Result<Self, FormatNotFound> {
         let mut formats = video.get_combined_formats();
         formats.sort(max_file_size, &languages);
 
         let Some(format) = formats.first().cloned() else {
-            return Err(CombinedFormatNotFound);
+            return Err(FormatNotFound);
         };
 
         Ok(Self { video, format })
