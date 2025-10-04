@@ -11,7 +11,7 @@ pub mod user_downloaded_media;
 pub mod video;
 pub mod yt_toolkit;
 
-pub use audio::{AudioInFS, TgAudio, TgAudioInPlaylist};
+pub use audio::{AudioAndFormat, AudioInFS, TgAudio, TgAudioInPlaylist};
 pub use chat::Chat;
 pub use cookies::{Cookie, Cookies};
 pub use downloaded_media::DownloadedMedia;
