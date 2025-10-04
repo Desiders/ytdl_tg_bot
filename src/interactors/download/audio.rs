@@ -18,7 +18,6 @@ use tracing::{event, instrument, Level};
 use url::Url;
 
 const DOWNLOAD_TIMEOUT: u64 = 180;
-const RANGE_CHUNK_SIZE: i32 = 1024 * 1024 * 10;
 
 #[derive(thiserror::Error, Debug)]
 pub enum DownloadAudioErrorKind {
