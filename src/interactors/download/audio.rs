@@ -2,19 +2,14 @@ use crate::{
     config::{YtDlpConfig, YtPotProviderConfig},
     entities::{AudioAndFormat, AudioInFS, Cookies},
     interactors::Interactor,
-    services::{convert_to_jpg, download_audio_to_path, get_best_thumbnail_path_in_dir},
-    utils::format_error_report,
+    services::{download_audio_to_path, download_thumbnail_to_path, get_best_thumbnail_path_in_dir},
 };
 
 use nix::errno::Errno;
-use std::{
-    io,
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use std::io;
 use tempfile::TempDir;
-use tokio::{sync::mpsc, time::timeout};
-use tracing::{event, instrument, Level};
+use tokio::sync::mpsc;
+use tracing::instrument;
 use url::Url;
 
 const DOWNLOAD_TIMEOUT: u64 = 180;
@@ -83,7 +78,7 @@ impl Interactor for DownloadAudio {
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
         let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
-            let thumbnail_path = get_thumbnail_path(thumbnail_url, &video.id, self.temp_dir.path()).await;
+            let thumbnail_path = download_thumbnail_to_path(thumbnail_url, &video.id, self.temp_dir.path()).await;
             (thumbnail_path, false)
         } else {
             (None, true)
@@ -162,7 +157,7 @@ impl Interactor for DownloadAudioPlaylist {
             let file_path = temp_dir.as_ref().join(format!("{video_id}.{extension}", video_id = video.id));
 
             let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
-                let thumbnail_path = get_thumbnail_path(thumbnail_url, &video.id, temp_dir.path()).await;
+                let thumbnail_path = download_thumbnail_to_path(thumbnail_url, &video.id, temp_dir.path()).await;
                 (thumbnail_path, false)
             } else {
                 (None, true)
@@ -200,34 +195,5 @@ impl Interactor for DownloadAudioPlaylist {
         }
 
         Ok(())
-    }
-}
-
-#[instrument(skip(temp_dir_path), fields(url = url.as_ref(), id = id.as_ref()))]
-async fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_path: impl AsRef<Path>) -> Option<PathBuf> {
-    let path = temp_dir_path.as_ref().join(format!("{}.jpg", id.as_ref()));
-
-    match convert_to_jpg(url, &path).await {
-        Ok(mut child) => match timeout(Duration::from_secs(10), child.wait()).await {
-            Ok(Ok(status)) => {
-                if status.success() {
-                    Some(path)
-                } else {
-                    None
-                }
-            }
-            Ok(Err(err)) => {
-                event!(Level::ERROR, err = format_error_report(&err), "Failed to convert thumbnail");
-                None
-            }
-            Err(_) => {
-                event!(Level::WARN, "Convert thumbnail timed out");
-                None
-            }
-        },
-        Err(err) => {
-            event!(Level::ERROR, err = format_error_report(&err), "Failed to convert thumbnail");
-            None
-        }
     }
 }
