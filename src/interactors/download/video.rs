@@ -241,23 +241,21 @@ pub struct DownloadVideoPlaylist {
     yt_dlp_cfg: YtDlpConfig,
     yt_pot_provider_cfg: YtPotProviderConfig,
     cookies: Cookies,
-    temp_dir: TempDir,
 }
 
 impl DownloadVideoPlaylist {
-    pub const fn new(yt_dlp_cfg: YtDlpConfig, yt_pot_provider_cfg: YtPotProviderConfig, cookies: Cookies, temp_dir: TempDir) -> Self {
+    pub const fn new(yt_dlp_cfg: YtDlpConfig, yt_pot_provider_cfg: YtPotProviderConfig, cookies: Cookies) -> Self {
         Self {
             yt_dlp_cfg,
             yt_pot_provider_cfg,
             cookies,
-            temp_dir,
         }
     }
 }
 
 pub struct DownloadVideoPlaylistInput<'a> {
     pub url: Url,
-    pub videos_and_formats: Box<[VideoAndFormat<'a>]>,
+    pub videos_and_formats: Box<[(VideoAndFormat<'a>, TempDir)]>,
     pub sender: mpsc::Sender<(usize, Result<VideoInFS, DownloadVideoErrorKind>)>,
 }
 
@@ -278,15 +276,15 @@ impl Interactor for DownloadVideoPlaylist {
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
-        for (index, VideoAndFormat { video, format }) in videos_and_formats.iter().enumerate() {
+        for (index, (VideoAndFormat { video, format }, temp_dir)) in videos_and_formats.iter().enumerate() {
             let extension = format.get_extension();
-            let file_path = self.temp_dir.as_ref().join(format!("{video_id}.{extension}", video_id = video.id));
+            let file_path = temp_dir.as_ref().join(format!("{video_id}.{extension}", video_id = video.id));
 
             if format.format_ids_are_equal() {
                 event!(Level::DEBUG, "Formats are the same");
 
                 let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
-                    let thumbnail_path = get_thumbnail_path(thumbnail_url, &video.id, self.temp_dir.path()).await;
+                    let thumbnail_path = get_thumbnail_path(thumbnail_url, &video.id, temp_dir.path()).await;
                     (thumbnail_path, false)
                 } else {
                     (None, true)
@@ -297,7 +295,7 @@ impl Interactor for DownloadVideoPlaylist {
                     &video.original_url,
                     self.yt_pot_provider_cfg.url.as_ref(),
                     extension,
-                    self.temp_dir.path(),
+                    temp_dir.path(),
                     DOWNLOAD_TIMEOUT,
                     download_thumbnails,
                     cookie,
@@ -312,7 +310,7 @@ impl Interactor for DownloadVideoPlaylist {
                     Some(url) => Some(url),
                     None => {
                         if download_thumbnails {
-                            get_best_thumbnail_path_in_dir(self.temp_dir.path()).ok().flatten()
+                            get_best_thumbnail_path_in_dir(temp_dir.path()).ok().flatten()
                         } else {
                             None
                         }
@@ -398,7 +396,7 @@ impl Interactor for DownloadVideoPlaylist {
             }
 
             let thumbnail_path = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
-                get_thumbnail_path(thumbnail_url, &video.id, self.temp_dir.path()).await
+                get_thumbnail_path(thumbnail_url, &video.id, temp_dir.path()).await
             } else {
                 None
             };
