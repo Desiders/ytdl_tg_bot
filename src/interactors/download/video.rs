@@ -2,7 +2,7 @@ use crate::{
     config::{YtDlpConfig, YtPotProviderConfig},
     entities::{Cookies, VideoAndFormat, VideoInFS},
     interactors::Interactor,
-    services::{convert_to_jpg, download_to_pipe, download_video_to_path, get_best_thumbnail_path_in_dir, merge_streams},
+    services::{download_thumbnail_to_path, download_to_pipe, download_video_to_path, get_best_thumbnail_path_in_dir, merge_streams},
     utils::format_error_report,
 };
 
@@ -10,12 +10,7 @@ use bytes::Bytes;
 use futures_util::StreamExt as _;
 use nix::{errno::Errno, unistd::pipe};
 use reqwest::Client;
-use std::{
-    fs::File,
-    io,
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use std::{fs::File, io, time::Duration};
 use tempfile::TempDir;
 use tokio::{io::AsyncWriteExt as _, sync::mpsc, time::timeout};
 use tracing::{event, instrument, Level};
@@ -99,7 +94,7 @@ impl Interactor for DownloadVideo {
             event!(Level::DEBUG, "Formats are the same");
 
             let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
-                let thumbnail_path = get_thumbnail_path(thumbnail_url, &video.id, self.temp_dir.path()).await;
+                let thumbnail_path = download_thumbnail_to_path(thumbnail_url, &video.id, self.temp_dir.path()).await;
                 (thumbnail_path, false)
             } else {
                 (None, true)
@@ -207,7 +202,7 @@ impl Interactor for DownloadVideo {
         }
 
         let thumbnail_path = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
-            get_thumbnail_path(thumbnail_url, &video.id, self.temp_dir.path()).await
+            download_thumbnail_to_path(thumbnail_url, &video.id, self.temp_dir.path()).await
         } else {
             None
         };
@@ -284,7 +279,7 @@ impl Interactor for DownloadVideoPlaylist {
                 event!(Level::DEBUG, "Formats are the same");
 
                 let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
-                    let thumbnail_path = get_thumbnail_path(thumbnail_url, &video.id, temp_dir.path()).await;
+                    let thumbnail_path = download_thumbnail_to_path(thumbnail_url, &video.id, temp_dir.path()).await;
                     (thumbnail_path, false)
                 } else {
                     (None, true)
@@ -396,7 +391,7 @@ impl Interactor for DownloadVideoPlaylist {
             }
 
             let thumbnail_path = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
-                get_thumbnail_path(thumbnail_url, &video.id, temp_dir.path()).await
+                download_thumbnail_to_path(thumbnail_url, &video.id, temp_dir.path()).await
             } else {
                 None
             };
@@ -439,35 +434,6 @@ impl Interactor for DownloadVideoPlaylist {
         }
 
         Ok(())
-    }
-}
-
-#[instrument(skip(temp_dir_path), fields(url = url.as_ref(), id = id.as_ref()))]
-async fn get_thumbnail_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_path: impl AsRef<Path>) -> Option<PathBuf> {
-    let path = temp_dir_path.as_ref().join(format!("{}.jpg", id.as_ref()));
-
-    match convert_to_jpg(url, &path).await {
-        Ok(mut child) => match timeout(Duration::from_secs(10), child.wait()).await {
-            Ok(Ok(status)) => {
-                if status.success() {
-                    Some(path)
-                } else {
-                    None
-                }
-            }
-            Ok(Err(err)) => {
-                event!(Level::ERROR, err = format_error_report(&err), "Failed to convert thumbnail");
-                None
-            }
-            Err(_) => {
-                event!(Level::WARN, "Convert thumbnail timed out");
-                None
-            }
-        },
-        Err(err) => {
-            event!(Level::ERROR, err = format_error_report(&err), "Failed to convert thumbnail");
-            None
-        }
     }
 }
 
