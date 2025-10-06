@@ -4,6 +4,7 @@ use crate::{
     interactors::Interactor,
 };
 
+use std::sync::Arc;
 use telers::{
     errors::SessionErrorKind,
     methods::{SendAudio, SendVideo},
@@ -15,11 +16,11 @@ use tracing::{event, instrument, Level};
 const SEND_TIMEOUT: f32 = 180.0;
 
 pub struct SendVideoInFS {
-    bot: Bot,
+    bot: Arc<Bot>,
 }
 
 impl SendVideoInFS {
-    pub const fn new(bot: Bot) -> Self {
+    pub const fn new(bot: Arc<Bot>) -> Self {
         Self { bot }
     }
 }
@@ -33,12 +34,32 @@ pub struct SendVideoInFSInput<'a> {
     pub duration: Option<i64>,
 }
 
+impl<'a> SendVideoInFSInput<'a> {
+    pub const fn new(
+        chat_id: i64,
+        video_in_fs: VideoInFS,
+        name: &'a str,
+        width: Option<i64>,
+        height: Option<i64>,
+        duration: Option<i64>,
+    ) -> Self {
+        Self {
+            chat_id,
+            video_in_fs,
+            name,
+            width,
+            height,
+            duration,
+        }
+    }
+}
+
 impl Interactor for SendVideoInFS {
     type Input<'a> = SendVideoInFSInput<'a>;
-    type Output = Box<str>;
+    type Output = (i64, Box<str>);
     type Err = SessionErrorKind;
 
-    #[instrument(skip(self))]
+    #[instrument(target = "send", skip_all, fields(name, width, height))]
     async fn execute<'a>(
         &mut self,
         SendVideoInFSInput {
@@ -50,6 +71,7 @@ impl Interactor for SendVideoInFS {
             duration,
         }: Self::Input<'a>,
     ) -> Result<Self::Output, Self::Err> {
+        event!(Level::DEBUG, "Video sending");
         let message = send::with_retries(
             &self.bot,
             SendVideo::new(chat_id, InputFile::fs_with_name(path, name))
@@ -63,10 +85,9 @@ impl Interactor for SendVideoInFS {
             Some(SEND_TIMEOUT),
         )
         .await?;
-
         event!(Level::DEBUG, "Video sent");
 
-        Ok(message.video().unwrap().file_id.clone())
+        Ok((message.id(), message.video().unwrap().file_id.clone()))
     }
 }
 
@@ -94,7 +115,7 @@ impl Interactor for SendAudioInFS {
     type Output = Box<str>;
     type Err = SessionErrorKind;
 
-    #[instrument(skip(self))]
+    #[instrument(target = "send", skip_all, fields(name, uploader))]
     async fn execute<'a>(
         &mut self,
         SendAudioInFSInput {
@@ -106,6 +127,7 @@ impl Interactor for SendAudioInFS {
             duration,
         }: Self::Input<'a>,
     ) -> Result<Self::Output, Self::Err> {
+        event!(Level::DEBUG, "Audio sending");
         let message = send::with_retries(
             &self.bot,
             SendAudio::new(chat_id, InputFile::fs_with_name(path, name))
@@ -118,7 +140,6 @@ impl Interactor for SendAudioInFS {
             Some(SEND_TIMEOUT),
         )
         .await?;
-
         event!(Level::DEBUG, "Audio sent");
 
         Ok(message.video().unwrap().file_id.clone())

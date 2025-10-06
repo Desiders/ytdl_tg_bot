@@ -4,6 +4,7 @@ use crate::{
     interactors::Interactor,
 };
 
+use std::sync::Arc;
 use telers::{
     errors::SessionErrorKind,
     methods::{SendAudio, SendVideo},
@@ -35,7 +36,7 @@ impl Interactor for SendVideoById {
     type Output = ();
     type Err = SessionErrorKind;
 
-    #[instrument(skip(self))]
+    #[instrument(target = "send", skip_all)]
     async fn execute<'a>(
         &mut self,
         SendVideoByIdInput {
@@ -44,6 +45,7 @@ impl Interactor for SendVideoById {
             id,
         }: Self::Input<'a>,
     ) -> Result<Self::Output, Self::Err> {
+        event!(Level::DEBUG, "Video sending");
         send::with_retries(
             &self.bot,
             SendVideo::new(chat_id, InputFile::id(id))
@@ -54,7 +56,6 @@ impl Interactor for SendVideoById {
             Some(SEND_TIMEOUT),
         )
         .await?;
-
         event!(Level::DEBUG, "Video sent");
 
         Ok(())
@@ -82,7 +83,7 @@ impl Interactor for SendAudioById {
     type Output = ();
     type Err = SessionErrorKind;
 
-    #[instrument(skip(self))]
+    #[instrument(target = "send", skip_all)]
     async fn execute<'a>(
         &mut self,
         SendAudioByIdInput {
@@ -91,6 +92,7 @@ impl Interactor for SendAudioById {
             id,
         }: Self::Input<'a>,
     ) -> Result<Self::Output, Self::Err> {
+        event!(Level::DEBUG, "Audio sending");
         send::with_retries(
             &self.bot,
             SendAudio::new(chat_id, InputFile::id(id))
@@ -100,7 +102,6 @@ impl Interactor for SendAudioById {
             Some(SEND_TIMEOUT),
         )
         .await?;
-
         event!(Level::DEBUG, "Audio sent");
 
         Ok(())
@@ -108,11 +109,11 @@ impl Interactor for SendAudioById {
 }
 
 pub struct SendVideoPlaylistById {
-    bot: Bot,
+    bot: Arc<Bot>,
 }
 
 impl SendVideoPlaylistById {
-    pub const fn new(bot: Bot) -> Self {
+    pub const fn new(bot: Arc<Bot>) -> Self {
         Self { bot }
     }
 }
@@ -123,12 +124,22 @@ pub struct SendVideoPlaylistByIdInput {
     pub videos: Vec<TgVideoInPlaylist>,
 }
 
+impl SendVideoPlaylistByIdInput {
+    pub const fn new(chat_id: i64, reply_to_message_id: Option<i64>, videos: Vec<TgVideoInPlaylist>) -> Self {
+        Self {
+            chat_id,
+            reply_to_message_id,
+            videos,
+        }
+    }
+}
+
 impl Interactor for SendVideoPlaylistById {
     type Input<'a> = SendVideoPlaylistByIdInput;
     type Output = ();
     type Err = SessionErrorKind;
 
-    #[instrument(skip(self))]
+    #[instrument(target = "send_playlist", skip_all)]
     async fn execute<'a>(
         &mut self,
         SendVideoPlaylistByIdInput {
@@ -139,6 +150,7 @@ impl Interactor for SendVideoPlaylistById {
     ) -> Result<Self::Output, Self::Err> {
         videos.sort_by(|a, b| a.index.cmp(&b.index));
 
+        event!(Level::DEBUG, "Video playlist sending");
         send::media_groups(
             &self.bot,
             chat_id,
@@ -150,7 +162,6 @@ impl Interactor for SendVideoPlaylistById {
             Some(SEND_TIMEOUT),
         )
         .await?;
-
         event!(Level::DEBUG, "Video playlist sent");
 
         Ok(())
@@ -178,7 +189,7 @@ impl Interactor for SendAudioPlaylistById {
     type Output = ();
     type Err = SessionErrorKind;
 
-    #[instrument(skip(self))]
+    #[instrument(target = "send_playlist", skip_all)]
     async fn execute<'a>(
         &mut self,
         SendAudioPlaylistByIdInput {
@@ -189,6 +200,7 @@ impl Interactor for SendAudioPlaylistById {
     ) -> Result<Self::Output, Self::Err> {
         audios.sort_by(|a, b| a.index.cmp(&b.index));
 
+        event!(Level::DEBUG, "Audio playlist sending");
         send::media_groups(
             &self.bot,
             chat_id,
@@ -200,7 +212,6 @@ impl Interactor for SendAudioPlaylistById {
             Some(SEND_TIMEOUT),
         )
         .await?;
-
         event!(Level::DEBUG, "Audio playlist sent");
 
         Ok(())
