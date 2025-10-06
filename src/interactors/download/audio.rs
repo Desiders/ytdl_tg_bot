@@ -5,7 +5,6 @@ use crate::{
     services::{download_audio_to_path, download_thumbnail_to_path, get_best_thumbnail_path_in_dir},
 };
 
-use nix::errno::Errno;
 use std::io;
 use tempfile::TempDir;
 use tokio::sync::mpsc;
@@ -18,22 +17,12 @@ const DOWNLOAD_TIMEOUT: u64 = 180;
 pub enum DownloadAudioErrorKind {
     #[error("Ytdlp error: {0}")]
     Ytdlp(io::Error),
-    #[error("Ffmpeg error: {0}")]
-    Ffmpeg(io::Error),
-    #[error("Pipe error: {0}")]
-    Pipe(Errno),
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum DownloadAudioPlaylistErrorKind {
     #[error("Channel error: {0}")]
     Channel(#[from] mpsc::error::SendError<(usize, Result<AudioInFS, DownloadAudioErrorKind>)>),
-    #[error("Ytdlp error: {0}")]
-    Ytdlp(io::Error),
-    #[error("Ffmpeg error: {0}")]
-    Ffmpeg(io::Error),
-    #[error("Pipe error: {0}")]
-    Pipe(Errno),
 }
 
 pub struct DownloadAudio {
