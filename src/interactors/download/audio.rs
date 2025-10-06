@@ -122,23 +122,21 @@ pub struct DownloadAudioPlaylist {
     yt_dlp_cfg: YtDlpConfig,
     yt_pot_provider_cfg: YtPotProviderConfig,
     cookies: Cookies,
-    temp_dir: TempDir,
 }
 
 impl DownloadAudioPlaylist {
-    pub const fn new(yt_dlp_cfg: YtDlpConfig, yt_pot_provider_cfg: YtPotProviderConfig, cookies: Cookies, temp_dir: TempDir) -> Self {
+    pub const fn new(yt_dlp_cfg: YtDlpConfig, yt_pot_provider_cfg: YtPotProviderConfig, cookies: Cookies) -> Self {
         Self {
             yt_dlp_cfg,
             yt_pot_provider_cfg,
             cookies,
-            temp_dir,
         }
     }
 }
 
 pub struct DownloadAudioPlaylistInput<'a> {
     pub url: Url,
-    pub audios_and_formats: Box<[AudioAndFormat<'a>]>,
+    pub audios_and_formats: Box<[(AudioAndFormat<'a>, TempDir)]>,
     pub sender: mpsc::Sender<(usize, Result<AudioInFS, DownloadAudioErrorKind>)>,
 }
 
@@ -159,12 +157,12 @@ impl Interactor for DownloadAudioPlaylist {
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
-        for (index, AudioAndFormat { video, format }) in audios_and_formats.iter().enumerate() {
+        for (index, (AudioAndFormat { video, format }, temp_dir)) in audios_and_formats.iter().enumerate() {
             let extension = format.codec.get_extension();
-            let file_path = self.temp_dir.as_ref().join(format!("{video_id}.{extension}", video_id = video.id));
+            let file_path = temp_dir.as_ref().join(format!("{video_id}.{extension}", video_id = video.id));
 
             let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
-                let thumbnail_path = get_thumbnail_path(thumbnail_url, &video.id, self.temp_dir.path()).await;
+                let thumbnail_path = get_thumbnail_path(thumbnail_url, &video.id, temp_dir.path()).await;
                 (thumbnail_path, false)
             } else {
                 (None, true)
@@ -191,7 +189,7 @@ impl Interactor for DownloadAudioPlaylist {
                 Some(url) => Some(url),
                 None => {
                     if download_thumbnails {
-                        get_best_thumbnail_path_in_dir(self.temp_dir.path()).ok().flatten()
+                        get_best_thumbnail_path_in_dir(temp_dir.path()).ok().flatten()
                     } else {
                         None
                     }
