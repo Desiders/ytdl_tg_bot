@@ -1,6 +1,6 @@
 use std::{convert::Infallible, str::FromStr};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PreferredLanguages {
     pub languages: Box<[Box<str>]>,
 }

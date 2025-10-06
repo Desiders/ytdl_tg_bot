@@ -6,7 +6,12 @@ use crate::{
 };
 
 use serde::Deserialize;
-use std::{borrow::Cow, collections::VecDeque, ops::Deref, path::PathBuf};
+use std::{
+    borrow::Cow,
+    ops::{Deref, DerefMut},
+    path::PathBuf,
+    vec,
+};
 use url::Host;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -107,19 +112,20 @@ impl Video {
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub struct VideosInYT(VecDeque<Video>);
+pub struct VideosInYT(Vec<Video>);
 
 impl VideosInYT {
-    pub fn new(videos: impl Into<VecDeque<Video>>) -> Self {
+    pub fn new(videos: impl Into<Vec<Video>>) -> Self {
         Self(videos.into())
     }
 }
 
-impl Iterator for VideosInYT {
+impl IntoIterator for VideosInYT {
     type Item = Video;
+    type IntoIter = vec::IntoIter<Self::Item>;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.pop_front()
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 
@@ -130,10 +136,16 @@ impl Extend<Video> for VideosInYT {
 }
 
 impl Deref for VideosInYT {
-    type Target = VecDeque<Video>;
+    type Target = Vec<Video>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl DerefMut for VideosInYT {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
@@ -146,10 +158,10 @@ impl<'a> VideoAndFormat<'a> {
     pub fn new_with_select_format(
         video: &'a Video,
         max_file_size: u32,
-        PreferredLanguages { languages }: PreferredLanguages,
+        PreferredLanguages { languages }: &PreferredLanguages,
     ) -> Result<Self, FormatNotFound> {
         let mut formats = video.get_combined_formats();
-        formats.sort(max_file_size, &languages);
+        formats.sort(max_file_size, languages);
 
         let Some(format) = formats.first().cloned() else {
             return Err(FormatNotFound);
