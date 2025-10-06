@@ -53,7 +53,7 @@ impl Interactor for DownloadAudio {
     type Output = AudioInFS;
     type Err = DownloadAudioErrorKind;
 
-    #[instrument(skip(self))]
+    #[instrument(target = "download", skip_all)]
     async fn execute(
         &mut self,
         DownloadAudioInput {
@@ -129,7 +129,7 @@ impl Interactor for DownloadAudioPlaylist {
     type Output = ();
     type Err = DownloadAudioPlaylistErrorKind;
 
-    #[instrument(skip(self, audios_and_formats, sender))]
+    #[instrument(target = "download_playlist", skip_all)]
     async fn execute(
         &mut self,
         DownloadAudioPlaylistInput {
