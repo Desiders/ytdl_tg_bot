@@ -22,7 +22,7 @@ use froodi::{
 };
 use handlers::{
     audio_download, media_download_chosen_inline_result, media_download_search_chosen_inline_result, media_search_inline_query,
-    media_select_inline_query, start, video_download, video_download_quite,
+    media_select_inline_query, start, video_download_quite,
 };
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 use services::get_cookies_from_directory;
@@ -36,15 +36,57 @@ use telers::{
     filters::{ChatType, Command, ContentType, Filter as _},
     Bot, Dispatcher, Router,
 };
+use tempfile::env::temp_dir;
 use tracing::{event, Level};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
 use utils::{on_shutdown, on_startup};
 
-use crate::{database::TxManager, middlewares::ContainerMiddleware};
+use crate::{
+    config::{YtDlpConfig, YtPotProviderConfig},
+    database::TxManager,
+    entities::Cookies,
+    handlers::video_download_nw,
+    interactors::{
+        download::{DownloadVideo, DownloadVideoPlaylist},
+        send_media::{SendVideoInFS, SendVideoPlaylistById},
+        GetMediaInfo,
+    },
+    middlewares::ContainerMiddleware,
+};
 
-fn init_container(database_cfg: DatabaseConfig) -> Container {
+fn init_container(
+    bot: Bot,
+    yt_dlp_cfg: YtDlpConfig,
+    yt_pot_provider_cfg: YtPotProviderConfig,
+    cookies: Cookies,
+    database_cfg: DatabaseConfig,
+) -> Container {
     let registry = RegistryBuilder::new()
+        .provide(instance(bot), App)
+        .provide(instance(yt_dlp_cfg), App)
+        .provide(instance(yt_pot_provider_cfg), App)
+        .provide(instance(cookies), App)
         .provide(instance(database_cfg), App)
+        .provide(
+            |Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
+             Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
+             Inject(cookies): Inject<Cookies>| { Ok(GetMediaInfo::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies)) },
+            Request,
+        )
+        .provide(
+            |Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
+             Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
+             Inject(cookies): Inject<Cookies>| Ok(DownloadVideo::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies, temp_dir())),
+            Request,
+        )
+        .provide(
+            |Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
+             Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
+             Inject(cookies): Inject<Cookies>| { Ok(DownloadVideoPlaylist::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies)) },
+            Request,
+        )
+        .provide(|Inject(bot): Inject<Bot>| Ok(SendVideoInFS::new(bot)), Request)
+        .provide(|Inject(bot): Inject<Bot>| Ok(SendVideoPlaylistById::new(bot)), Request)
         .provide_async(
             |Inject(database_cfg): Inject<DatabaseConfig>| async move {
                 let mut options = ConnectOptions::new(database_cfg.get_postgres_url());
@@ -95,7 +137,13 @@ async fn main() {
         Reqwest::default().with_api_server(Cow::Owned(APIServer::new(&base_url, &files_url, true, BareFilesPathWrapper))),
     );
 
-    let container = init_container(config.database);
+    let container = init_container(
+        bot.clone(),
+        config.yt_dlp.clone(),
+        config.yt_pot_provider.clone(),
+        cookies.clone(),
+        config.database.clone(),
+    );
 
     let mut router = Router::new("main");
     router.telegram_observers_mut().iter_mut().for_each(|observer| {
@@ -106,7 +154,7 @@ async fn main() {
     router.message.register(start).filter(Command::many(["start", "help"]));
     router
         .message
-        .register(video_download)
+        .register(video_download_nw)
         .filter(ContentType::one(ContentTypeEnum::Text))
         .filter(Command::many(["vd", "video_download"]))
         .filter(text_contains_url_with_reply);
@@ -118,7 +166,7 @@ async fn main() {
         .filter(text_contains_url_with_reply);
     router
         .message
-        .register(video_download)
+        .register(video_download_nw)
         .filter(ChatType::one(ChatTypeEnum::Private))
         .filter(text_contains_url_with_reply)
         .filter(is_via_bot.invert());
