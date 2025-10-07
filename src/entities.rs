@@ -12,7 +12,7 @@ pub mod user_downloaded_media;
 pub mod video;
 pub mod yt_toolkit;
 
-pub use audio::{AudioAndFormat, AudioInFS, TgAudio, TgAudioInPlaylist};
+pub use audio::{AudioAndFormat, AudioInFS, TgAudioInPlaylist};
 pub use chat::Chat;
 pub use cookies::{Cookie, Cookies};
 pub use downloaded_media::DownloadedMedia;
@@ -21,4 +21,4 @@ pub use range::{ParseRangeError, Range};
 pub use short_info::ShortInfo;
 pub use user::User;
 pub use user_downloaded_media::UserDownloadedMedia;
-pub use video::{TgVideo, TgVideoInPlaylist, Video, VideoAndFormat, VideoInFS, VideosInYT};
+pub use video::{TgVideoInPlaylist, Video, VideoAndFormat, VideoInFS, VideosInYT};
