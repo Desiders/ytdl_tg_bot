@@ -18,7 +18,7 @@ use crate::{
         send_media::{SendVideoInFS, SendVideoInFSInput, SendVideoPlaylistById, SendVideoPlaylistByIdInput},
         GetMedaInfoInput, GetMediaInfo, Interactor as _,
     },
-    utils::format_error_report,
+    utils::{format_error_report, FormatErrorToMessage as _},
 };
 
 #[instrument(skip_all, fields(message_id, chat_id, url = url.as_str(), params))]
@@ -51,7 +51,7 @@ pub async fn download(
             Ok(range) => range,
             Err(err) => {
                 event!(Level::ERROR, %err, "Parse range err");
-                let text = format!("Sorry, an error to parse range\n\n{}", expandable_blockquote(err.to_string()));
+                let text = format!("Sorry, an error to parse range\n{}", expandable_blockquote(err.format(&bot.token)));
                 error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
                 return Ok(EventReturn::Finish);
             }
@@ -66,7 +66,10 @@ pub async fn download(
         Ok(val) => val,
         Err(err) => {
             event!(Level::ERROR, err = format_error_report(&err), "Get info err");
-            let text = format!("Sorry, an error to get media info\n\n{}", expandable_blockquote(err.to_string()));
+            let text = format!(
+                "Sorry, an error to get media info\n{}",
+                expandable_blockquote(err.format(&bot.token))
+            );
             error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
             return Ok(EventReturn::Finish);
         }
@@ -77,7 +80,10 @@ pub async fn download(
             Ok(val) => val,
             Err(err) => {
                 event!(Level::ERROR, %err, "Select format err");
-                let text = format!("Sorry, an error to select a format\n\n{}", expandable_blockquote(err.to_string()));
+                let text = format!(
+                    "Sorry, an error to select a format\n{}",
+                    expandable_blockquote(err.format(&bot.token))
+                );
                 error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
                 return Ok(EventReturn::Finish);
             }
@@ -87,8 +93,8 @@ pub async fn download(
             Err(err) => {
                 event!(Level::ERROR, err = format_error_report(&err), "Download video err");
                 let text = format!(
-                    "Sorry, an error to download the video\n\n{}",
-                    expandable_blockquote(err.to_string())
+                    "Sorry, an error to download the video\n{}",
+                    expandable_blockquote(err.format(&bot.token))
                 );
                 error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
                 return Ok(EventReturn::Finish);
@@ -110,7 +116,10 @@ pub async fn download(
             Ok((_message_id, file_id)) => file_id,
             Err(err) => {
                 event!(Level::ERROR, err = format_error_report(&err), "Send video err");
-                let text = format!("Sorry, an error to send the video\n\n{}", expandable_blockquote(err.to_string()));
+                let text = format!(
+                    "Sorry, an error to send the video\n{}",
+                    expandable_blockquote(err.format(&bot.token))
+                );
                 error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
                 return Ok(EventReturn::Finish);
             }
@@ -126,7 +135,10 @@ pub async fn download(
                 Ok(val) => val,
                 Err(err) => {
                     event!(Level::ERROR, %err, "Select format err");
-                    let text = format!("Sorry, an error to select a format\n\n{}", expandable_blockquote(err.to_string()));
+                    let text = format!(
+                        "Sorry, an error to select a format\n{}",
+                        expandable_blockquote(err.format(&bot.token))
+                    );
                     error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
                     return Ok(EventReturn::Finish);
                 }
@@ -135,6 +147,7 @@ pub async fn download(
     }
     let (download_playlist_input, mut video_in_fs_receiver) = DownloadVideoPlaylistInput::new(&url, media_and_formats);
     let download_playlist_handle = tokio::spawn({
+        let bot = bot.clone();
         let videos = videos.clone();
         async move {
             let mut playlist = vec![];
@@ -144,7 +157,7 @@ pub async fn download(
                     Ok(val) => val,
                     Err(err) => {
                         event!(Level::ERROR, %err, "Download video err");
-                        errs.push(err.to_string().into_boxed_str());
+                        errs.push(err.format(&bot.token));
                         continue;
                     }
                 };
@@ -168,7 +181,7 @@ pub async fn download(
                     }
                     Err(err) => {
                         event!(Level::ERROR, err = format_error_report(&err), "Send video err");
-                        errs.push(err.to_string().into_boxed_str());
+                        errs.push(err.format(&bot.token));
                         continue;
                     }
                 }
@@ -180,8 +193,8 @@ pub async fn download(
     if let Err(err) = download_playlist.execute(download_playlist_input).await {
         event!(Level::ERROR, %err, "Download playlist err");
         let text = format!(
-            "Sorry, an error to download a playlist\n\n{}",
-            expandable_blockquote(err.to_string())
+            "Sorry, an error to download a playlist\n{}",
+            expandable_blockquote(err.format(&bot.token))
         );
         if let Err(err) = error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await {
             event!(Level::ERROR, %err);
@@ -191,7 +204,7 @@ pub async fn download(
     if !errors.is_empty() {
         let mut text = "Sorry, some video download/send failed:\n".to_owned();
         for (index, err) in errors.into_iter().enumerate() {
-            text.push_str(&format!("{index}. {}", expandable_blockquote(err)));
+            text.push_str(&expandable_blockquote(format!("{index}. {err}")));
             text.push('\n');
         }
         if let Err(err) = error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await {
@@ -203,7 +216,10 @@ pub async fn download(
         .await
     {
         event!(Level::ERROR, %err, "Send playlist err");
-        let text = format!("Sorry, an error to send the playlist\n\n{}", expandable_blockquote(err.to_string()));
+        let text = format!(
+            "Sorry, an error to send the playlist\n{}",
+            expandable_blockquote(err.format(&bot.token))
+        );
         if let Err(err) = error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await {
             event!(Level::ERROR, %err);
         }

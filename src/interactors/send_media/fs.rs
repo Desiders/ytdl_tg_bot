@@ -11,7 +11,7 @@ use telers::{
     types::InputFile,
     Bot,
 };
-use tracing::{event, instrument, Level};
+use tracing::{event, span, Level};
 
 const SEND_TIMEOUT: f32 = 180.0;
 
@@ -62,7 +62,6 @@ impl Interactor for SendVideoInFS {
     type Output = (i64, Box<str>);
     type Err = SessionErrorKind;
 
-    #[instrument(target = "send", skip_all, fields(name, width, height, with_delete))]
     async fn execute<'a>(
         &mut self,
         SendVideoInFSInput {
@@ -79,6 +78,9 @@ impl Interactor for SendVideoInFS {
             with_delete,
         }: Self::Input<'a>,
     ) -> Result<Self::Output, Self::Err> {
+        let span = span!(Level::INFO, "send", name, width, height, with_delete);
+        let _guard = span.enter();
+
         event!(Level::DEBUG, "Video sending");
         let message = send::with_retries(
             &self.bot,
@@ -159,7 +161,6 @@ impl Interactor for SendAudioInFS {
     type Output = (i64, Box<str>);
     type Err = SessionErrorKind;
 
-    #[instrument(target = "send", skip_all, fields(name, uploader, with_delete))]
     async fn execute<'a>(
         &mut self,
         SendAudioInFSInput {
@@ -176,6 +177,9 @@ impl Interactor for SendAudioInFS {
             with_delete,
         }: Self::Input<'a>,
     ) -> Result<Self::Output, Self::Err> {
+        let span = span!(Level::INFO, "send", name, uploader, with_delete);
+        let _guard = span.enter();
+
         event!(Level::DEBUG, "Audio sending");
         let message = send::with_retries(
             &self.bot,
@@ -204,6 +208,6 @@ impl Interactor for SendAudioInFS {
             });
         }
 
-        Ok((message_id, message.video().unwrap().file_id.clone()))
+        Ok((message_id, message.audio().unwrap().file_id.clone()))
     }
 }

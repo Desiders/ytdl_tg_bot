@@ -5,7 +5,7 @@ mod thumbnail;
 mod url;
 mod video;
 
-pub use error::format_error_report;
+pub use error::{format_error_report, FormatErrorToMessage};
 pub use shutdown::on_shutdown;
 pub use startup::on_startup;
 pub use thumbnail::get_url_by_aspect;
