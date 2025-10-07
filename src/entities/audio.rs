@@ -1,3 +1,5 @@
+use tempfile::TempDir;
+
 use super::{format, PreferredLanguages, Video};
 use crate::errors::FormatNotFound;
 
@@ -12,7 +14,7 @@ impl<'a> AudioAndFormat<'a> {
     pub fn new_with_select_format(
         video: &'a Video,
         max_file_size: u32,
-        PreferredLanguages { languages }: PreferredLanguages,
+        PreferredLanguages { languages }: &PreferredLanguages,
     ) -> Result<Self, FormatNotFound> {
         let mut formats = video.get_audio_formats();
         formats.sort(max_file_size, &languages);
@@ -56,13 +58,15 @@ impl TgAudio {
 pub struct AudioInFS {
     pub path: PathBuf,
     pub thumbnail_path: Option<PathBuf>,
+    pub temp_dir: TempDir,
 }
 
 impl AudioInFS {
-    pub fn new(path: impl Into<PathBuf>, thumbnail_path: Option<PathBuf>) -> Self {
+    pub fn new(path: impl Into<PathBuf>, thumbnail_path: Option<PathBuf>, temp_dir: TempDir) -> Self {
         Self {
             path: path.into(),
             thumbnail_path,
+            temp_dir,
         }
     }
 }
