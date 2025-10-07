@@ -11,7 +11,7 @@ use telers::{
     types::{InputFile, InputMediaAudio, InputMediaVideo, ReplyParameters},
     Bot,
 };
-use tracing::{event, instrument, Level};
+use tracing::{event, span, Level};
 
 const SEND_TIMEOUT: f32 = 360.0;
 
@@ -36,7 +36,6 @@ impl Interactor for SendVideoById {
     type Output = ();
     type Err = SessionErrorKind;
 
-    #[instrument(target = "send", skip_all)]
     async fn execute<'a>(
         &mut self,
         SendVideoByIdInput {
@@ -45,6 +44,9 @@ impl Interactor for SendVideoById {
             id,
         }: Self::Input<'a>,
     ) -> Result<Self::Output, Self::Err> {
+        let span = span!(Level::INFO, "send");
+        let _guard = span.enter();
+
         event!(Level::DEBUG, "Video sending");
         send::with_retries(
             &self.bot,
@@ -83,7 +85,6 @@ impl Interactor for SendAudioById {
     type Output = ();
     type Err = SessionErrorKind;
 
-    #[instrument(target = "send", skip_all)]
     async fn execute<'a>(
         &mut self,
         SendAudioByIdInput {
@@ -92,6 +93,9 @@ impl Interactor for SendAudioById {
             id,
         }: Self::Input<'a>,
     ) -> Result<Self::Output, Self::Err> {
+        let span = span!(Level::INFO, "send");
+        let _guard = span.enter();
+
         event!(Level::DEBUG, "Audio sending");
         send::with_retries(
             &self.bot,
@@ -139,7 +143,6 @@ impl Interactor for SendVideoPlaylistById {
     type Output = ();
     type Err = SessionErrorKind;
 
-    #[instrument(target = "send_playlist", skip_all)]
     async fn execute<'a>(
         &mut self,
         SendVideoPlaylistByIdInput {
@@ -148,6 +151,9 @@ impl Interactor for SendVideoPlaylistById {
             mut videos,
         }: Self::Input<'a>,
     ) -> Result<Self::Output, Self::Err> {
+        let span = span!(Level::INFO, "send_playlist");
+        let _guard = span.enter();
+
         videos.sort_by(|a, b| a.index.cmp(&b.index));
 
         event!(Level::DEBUG, "Video playlist sending");
@@ -199,7 +205,6 @@ impl Interactor for SendAudioPlaylistById {
     type Output = ();
     type Err = SessionErrorKind;
 
-    #[instrument(target = "send_playlist", skip_all)]
     async fn execute<'a>(
         &mut self,
         SendAudioPlaylistByIdInput {
@@ -208,6 +213,9 @@ impl Interactor for SendAudioPlaylistById {
             mut audios,
         }: Self::Input<'a>,
     ) -> Result<Self::Output, Self::Err> {
+        let span = span!(Level::INFO, "send_playlist");
+        let _guard = span.enter();
+
         audios.sort_by(|a, b| a.index.cmp(&b.index));
 
         event!(Level::DEBUG, "Audio playlist sending");

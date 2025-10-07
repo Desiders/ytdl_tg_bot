@@ -8,7 +8,7 @@ use crate::{
 use std::{io, sync::Arc};
 use tempfile::TempDir;
 use tokio::sync::mpsc;
-use tracing::instrument;
+use tracing::{event, span, Level};
 use url::Url;
 
 const DOWNLOAD_TIMEOUT: u64 = 180;
@@ -61,7 +61,6 @@ impl Interactor for DownloadAudio {
     type Output = AudioInFS;
     type Err = DownloadAudioErrorKind;
 
-    #[instrument(target = "download", skip_all)]
     async fn execute(
         &mut self,
         DownloadAudioInput {
@@ -70,6 +69,10 @@ impl Interactor for DownloadAudio {
         }: Self::Input<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let extension = format.codec.get_extension();
+
+        let span = span!(Level::INFO, "download", extension, %format);
+        let _guard = span.enter();
+
         let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
         let file_path = temp_dir.path().join(format!("{video_id}.{extension}", video_id = video.id));
         let host = url.host();
@@ -86,9 +89,9 @@ impl Interactor for DownloadAudio {
             self.yt_dlp_cfg.executable_path.as_ref(),
             &video.original_url,
             self.yt_pot_provider_cfg.url.as_ref(),
-            format.url,
+            format.id,
             extension,
-            &file_path,
+            temp_dir.path(),
             DOWNLOAD_TIMEOUT,
             download_thumbnails,
             cookie,
@@ -106,6 +109,8 @@ impl Interactor for DownloadAudio {
                 }
             }
         };
+
+        event!(Level::INFO, "Audio downloaded");
 
         Ok(AudioInFS::new(file_path, thumbnail_path, temp_dir))
     }
@@ -155,7 +160,6 @@ impl Interactor for DownloadAudioPlaylist {
     type Output = ();
     type Err = DownloadAudioPlaylistErrorKind;
 
-    #[instrument(target = "download_playlist", skip_all)]
     async fn execute(
         &mut self,
         DownloadAudioPlaylistInput {
@@ -164,11 +168,18 @@ impl Interactor for DownloadAudioPlaylist {
             sender,
         }: Self::Input<'_>,
     ) -> Result<Self::Output, Self::Err> {
+        let span = span!(Level::INFO, "download_playlist");
+        let _guard = span.enter();
+
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
         for (index, AudioAndFormat { video, format }) in audios_and_formats.into_iter().enumerate() {
             let extension = format.codec.get_extension();
+
+            let span = span!(Level::TRACE, "iter", extension, %format);
+            let _guard = span.enter();
+
             let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
             let file_path = temp_dir.path().join(format!("{video_id}.{extension}", video_id = video.id));
 
@@ -183,9 +194,9 @@ impl Interactor for DownloadAudioPlaylist {
                 self.yt_dlp_cfg.executable_path.as_ref(),
                 &video.original_url,
                 self.yt_pot_provider_cfg.url.as_ref(),
-                format.url,
+                format.id,
                 extension,
-                &file_path,
+                temp_dir.path(),
                 DOWNLOAD_TIMEOUT,
                 download_thumbnails,
                 cookie,
@@ -206,6 +217,8 @@ impl Interactor for DownloadAudioPlaylist {
                     }
                 }
             };
+
+            event!(Level::INFO, "Audio downloaded");
 
             sender.send((index, Ok(AudioInFS::new(file_path, thumbnail_path, temp_dir))))?;
         }

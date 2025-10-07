@@ -17,7 +17,7 @@ use reqwest::Client;
 use std::{fs::File, io, sync::Arc, time::Duration};
 use tempfile::TempDir;
 use tokio::{io::AsyncWriteExt as _, sync::mpsc, time::timeout};
-use tracing::{event, instrument, Level};
+use tracing::{event, span, Level};
 use url::Url;
 
 const DOWNLOAD_TIMEOUT: u64 = 180;
@@ -89,7 +89,6 @@ impl Interactor for DownloadVideo {
     type Output = VideoInFS;
     type Err = DownloadVideoErrorKind;
 
-    #[instrument(target = "download", skip_all)]
     async fn execute(
         &mut self,
         DownloadVideoInput {
@@ -98,6 +97,10 @@ impl Interactor for DownloadVideo {
         }: Self::Input<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let extension = format.get_extension();
+
+        let span = span!(Level::TRACE, "download", extension, %format);
+        let _guard = span.enter();
+
         let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
         let file_path = temp_dir.path().join(format!("{video_id}.{extension}", video_id = video.id));
         let host = url.host();
@@ -136,6 +139,8 @@ impl Interactor for DownloadVideo {
                     }
                 }
             };
+
+            event!(Level::INFO, "Video downloaded");
 
             return Ok(VideoInFS::new(file_path, thumbnail_path, temp_dir));
         }
@@ -242,7 +247,7 @@ impl Interactor for DownloadVideo {
             ))));
         }
 
-        event!(Level::DEBUG, "Streams merged");
+        event!(Level::DEBUG, "Video downloaded and merged");
 
         Ok(VideoInFS::new(file_path, thumbnail_path, temp_dir))
     }
@@ -292,7 +297,6 @@ impl Interactor for DownloadVideoPlaylist {
     type Output = ();
     type Err = DownloadVideoPlaylistErrorKind;
 
-    #[instrument(target = "download_playlist", skip_all)]
     async fn execute(
         &mut self,
         DownloadVideoPlaylistInput {
@@ -301,11 +305,18 @@ impl Interactor for DownloadVideoPlaylist {
             sender,
         }: Self::Input<'_>,
     ) -> Result<Self::Output, Self::Err> {
+        let span = span!(Level::TRACE, "download_playlist");
+        let _guard = span.enter();
+
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
         for (index, VideoAndFormat { video, format }) in videos_and_formats.iter().enumerate() {
             let extension = format.get_extension();
+
+            let span = span!(Level::TRACE, "iter", extension, %format);
+            let _guard = span.enter();
+
             let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
             let file_path = temp_dir.path().join(format!("{video_id}.{extension}", video_id = video.id));
 
@@ -345,6 +356,8 @@ impl Interactor for DownloadVideoPlaylist {
                         }
                     }
                 };
+
+                event!(Level::INFO, "Video downloaded");
 
                 sender.send((index, Ok(VideoInFS::new(file_path, thumbnail_path, temp_dir))))?;
                 continue;
@@ -461,7 +474,7 @@ impl Interactor for DownloadVideoPlaylist {
                 continue;
             }
 
-            event!(Level::DEBUG, "Streams merged");
+            event!(Level::DEBUG, "Video downloaded and merged");
 
             sender.send((index, Ok(VideoInFS::new(file_path, thumbnail_path, temp_dir))))?;
         }
