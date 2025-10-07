@@ -32,37 +32,34 @@ pub trait FormatErrorToMessage {
 impl FormatErrorToMessage for SessionErrorKind {
     fn format(&self, token: &str) -> Cow<'static, str> {
         match self {
-            SessionErrorKind::Client(err) => match err.source() {
-                Some(err_source) => Cow::Owned(format!("{}. {}", err, format_error_report(err_source)).replace(token, "...")),
-                None => Cow::Borrowed("error sending request for url"),
-            },
-            SessionErrorKind::Parse(err) => Cow::Owned(format_error_report(err)),
-            SessionErrorKind::Telegram(err) => Cow::Owned(format_error_report(err)),
+            SessionErrorKind::Client(err) => Cow::Owned(err.to_string().replace(token, "...")),
+            SessionErrorKind::Parse(err) => Cow::Owned(err.to_string()),
+            SessionErrorKind::Telegram(err) => Cow::Owned(err.to_string()),
         }
     }
 }
 
 impl FormatErrorToMessage for DownloadAudioErrorKind {
     fn format(&self, _token: &str) -> Cow<'static, str> {
-        Cow::Owned(format_error_report(self))
+        Cow::Owned(self.to_string())
     }
 }
 
 impl FormatErrorToMessage for DownloadAudioPlaylistErrorKind {
     fn format(&self, _token: &str) -> Cow<'static, str> {
-        Cow::Owned(format_error_report(self))
+        Cow::Owned(self.to_string())
     }
 }
 
 impl FormatErrorToMessage for DownloadVideoErrorKind {
     fn format(&self, _token: &str) -> Cow<'static, str> {
-        Cow::Owned(format_error_report(self))
+        Cow::Owned(self.to_string())
     }
 }
 
 impl FormatErrorToMessage for DownloadVideoPlaylistErrorKind {
     fn format(&self, _token: &str) -> Cow<'static, str> {
-        Cow::Owned(format_error_report(self))
+        Cow::Owned(self.to_string())
     }
 }
 
