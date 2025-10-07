@@ -42,17 +42,6 @@ impl TgAudioInPlaylist {
     }
 }
 
-#[derive(Debug)]
-pub struct TgAudio {
-    pub file_id: Box<str>,
-}
-
-impl TgAudio {
-    pub fn new(file_id: impl Into<Box<str>>) -> Self {
-        Self { file_id: file_id.into() }
-    }
-}
-
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct AudioInFS {

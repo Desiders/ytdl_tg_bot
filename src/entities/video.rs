@@ -187,17 +187,6 @@ impl TgVideoInPlaylist {
     }
 }
 
-#[derive(Debug)]
-pub struct TgVideo {
-    pub file_id: Box<str>,
-}
-
-impl TgVideo {
-    pub fn new(file_id: impl Into<Box<str>>) -> Self {
-        Self { file_id: file_id.into() }
-    }
-}
-
 #[allow(clippy::module_name_repetitions)]
 #[derive(Debug)]
 pub struct VideoInFS {
