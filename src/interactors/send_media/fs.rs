@@ -7,7 +7,7 @@ use crate::{
 use std::sync::Arc;
 use telers::{
     errors::SessionErrorKind,
-    methods::{SendAudio, SendVideo},
+    methods::{DeleteMessage, SendAudio, SendVideo},
     types::InputFile,
     Bot,
 };
@@ -32,6 +32,7 @@ pub struct SendVideoInFSInput<'a> {
     pub width: Option<i64>,
     pub height: Option<i64>,
     pub duration: Option<i64>,
+    pub with_delete: bool,
 }
 
 impl<'a> SendVideoInFSInput<'a> {
@@ -42,6 +43,7 @@ impl<'a> SendVideoInFSInput<'a> {
         width: Option<i64>,
         height: Option<i64>,
         duration: Option<i64>,
+        with_delete: bool,
     ) -> Self {
         Self {
             chat_id,
@@ -50,6 +52,7 @@ impl<'a> SendVideoInFSInput<'a> {
             width,
             height,
             duration,
+            with_delete,
         }
     }
 }
@@ -59,16 +62,21 @@ impl Interactor for SendVideoInFS {
     type Output = (i64, Box<str>);
     type Err = SessionErrorKind;
 
-    #[instrument(target = "send", skip_all, fields(name, width, height))]
+    #[instrument(target = "send", skip_all, fields(name, width, height, with_delete))]
     async fn execute<'a>(
         &mut self,
         SendVideoInFSInput {
             chat_id,
-            video_in_fs: VideoInFS { path, thumbnail_path },
+            video_in_fs: VideoInFS {
+                path,
+                thumbnail_path,
+                temp_dir,
+            },
             name,
             width,
             height,
             duration,
+            with_delete,
         }: Self::Input<'a>,
     ) -> Result<Self::Output, Self::Err> {
         event!(Level::DEBUG, "Video sending");
@@ -86,17 +94,30 @@ impl Interactor for SendVideoInFS {
         )
         .await?;
         event!(Level::DEBUG, "Video sent");
+        drop(temp_dir);
 
-        Ok((message.id(), message.video().unwrap().file_id.clone()))
+        let message_id = message.id();
+        if with_delete {
+            tokio::spawn({
+                let bot = self.bot.clone();
+                async move {
+                    if let Err(err) = bot.send(DeleteMessage::new(chat_id, message_id)).await {
+                        event!(Level::ERROR, %err, "Delete message err");
+                    }
+                }
+            });
+        }
+
+        Ok((message_id, message.video().unwrap().file_id.clone()))
     }
 }
 
 pub struct SendAudioInFS {
-    bot: Bot,
+    bot: Arc<Bot>,
 }
 
 impl SendAudioInFS {
-    pub const fn new(bot: Bot) -> Self {
+    pub const fn new(bot: Arc<Bot>) -> Self {
         Self { bot }
     }
 }
@@ -108,23 +129,51 @@ pub struct SendAudioInFSInput<'a> {
     pub title: Option<&'a str>,
     pub uploader: Option<&'a str>,
     pub duration: Option<i64>,
+    pub with_delete: bool,
 }
 
-impl Interactor for SendAudioInFS {
-    type Input<'a> = SendAudioInFSInput<'a>;
-    type Output = Box<str>;
-    type Err = SessionErrorKind;
-
-    #[instrument(target = "send", skip_all, fields(name, uploader))]
-    async fn execute<'a>(
-        &mut self,
-        SendAudioInFSInput {
+impl<'a> SendAudioInFSInput<'a> {
+    pub const fn new(
+        chat_id: i64,
+        audio_in_fs: AudioInFS,
+        name: &'a str,
+        title: Option<&'a str>,
+        uploader: Option<&'a str>,
+        duration: Option<i64>,
+        with_delete: bool,
+    ) -> Self {
+        Self {
             chat_id,
-            audio_in_fs: AudioInFS { path, thumbnail_path },
+            audio_in_fs,
             name,
             title,
             uploader,
             duration,
+            with_delete,
+        }
+    }
+}
+
+impl Interactor for SendAudioInFS {
+    type Input<'a> = SendAudioInFSInput<'a>;
+    type Output = (i64, Box<str>);
+    type Err = SessionErrorKind;
+
+    #[instrument(target = "send", skip_all, fields(name, uploader, with_delete))]
+    async fn execute<'a>(
+        &mut self,
+        SendAudioInFSInput {
+            chat_id,
+            audio_in_fs: AudioInFS {
+                path,
+                thumbnail_path,
+                temp_dir,
+            },
+            name,
+            title,
+            uploader,
+            duration,
+            with_delete,
         }: Self::Input<'a>,
     ) -> Result<Self::Output, Self::Err> {
         event!(Level::DEBUG, "Audio sending");
@@ -141,7 +190,20 @@ impl Interactor for SendAudioInFS {
         )
         .await?;
         event!(Level::DEBUG, "Audio sent");
+        drop(temp_dir);
 
-        Ok(message.video().unwrap().file_id.clone())
+        let message_id = message.id();
+        if with_delete {
+            tokio::spawn({
+                let bot = self.bot.clone();
+                async move {
+                    if let Err(err) = bot.send(DeleteMessage::new(chat_id, message_id)).await {
+                        event!(Level::ERROR, %err, "Delete message err");
+                    }
+                }
+            });
+        }
+
+        Ok((message_id, message.video().unwrap().file_id.clone()))
     }
 }

@@ -12,6 +12,7 @@ use std::{
     path::PathBuf,
     vec,
 };
+use tempfile::TempDir;
 use url::Host;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -202,13 +203,15 @@ impl TgVideo {
 pub struct VideoInFS {
     pub path: PathBuf,
     pub thumbnail_path: Option<PathBuf>,
+    pub temp_dir: TempDir,
 }
 
 impl VideoInFS {
-    pub fn new(path: impl Into<PathBuf>, thumbnail_path: Option<PathBuf>) -> Self {
+    pub fn new(path: impl Into<PathBuf>, thumbnail_path: Option<PathBuf>, temp_dir: TempDir) -> Self {
         Self {
             path: path.into(),
             thumbnail_path,
+            temp_dir,
         }
     }
 }

@@ -5,7 +5,7 @@ use crate::{
     services::{download_audio_to_path, download_thumbnail_to_path, get_best_thumbnail_path_in_dir},
 };
 
-use std::io;
+use std::{io, sync::Arc};
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 use tracing::instrument;
@@ -17,35 +17,43 @@ const DOWNLOAD_TIMEOUT: u64 = 180;
 pub enum DownloadAudioErrorKind {
     #[error("Ytdlp error: {0}")]
     Ytdlp(io::Error),
+    #[error("Temp dir error: {0}")]
+    TempDir(io::Error),
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum DownloadAudioPlaylistErrorKind {
     #[error("Channel error: {0}")]
     Channel(#[from] mpsc::error::SendError<(usize, Result<AudioInFS, DownloadAudioErrorKind>)>),
+    #[error("Temp dir error: {0}")]
+    TempDir(io::Error),
 }
 
 pub struct DownloadAudio {
-    yt_dlp_cfg: YtDlpConfig,
-    yt_pot_provider_cfg: YtPotProviderConfig,
-    cookies: Cookies,
-    temp_dir: TempDir,
+    yt_dlp_cfg: Arc<YtDlpConfig>,
+    yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
+    cookies: Arc<Cookies>,
 }
 
 impl DownloadAudio {
-    pub const fn new(yt_dlp_cfg: YtDlpConfig, yt_pot_provider_cfg: YtPotProviderConfig, cookies: Cookies, temp_dir: TempDir) -> Self {
+    pub const fn new(yt_dlp_cfg: Arc<YtDlpConfig>, yt_pot_provider_cfg: Arc<YtPotProviderConfig>, cookies: Arc<Cookies>) -> Self {
         Self {
             yt_dlp_cfg,
             yt_pot_provider_cfg,
             cookies,
-            temp_dir,
         }
     }
 }
 
 pub struct DownloadAudioInput<'a> {
-    pub url: Url,
-    pub video_and_format: AudioAndFormat<'a>,
+    pub url: &'a Url,
+    pub audio_and_format: AudioAndFormat<'a>,
+}
+
+impl<'a> DownloadAudioInput<'a> {
+    pub const fn new(url: &'a Url, audio_and_format: AudioAndFormat<'a>) -> Self {
+        Self { url, audio_and_format }
+    }
 }
 
 impl Interactor for DownloadAudio {
@@ -57,17 +65,18 @@ impl Interactor for DownloadAudio {
     async fn execute(
         &mut self,
         DownloadAudioInput {
-            video_and_format: AudioAndFormat { video, format },
+            audio_and_format: AudioAndFormat { video, format },
             url,
         }: Self::Input<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let extension = format.codec.get_extension();
-        let file_path = self.temp_dir.as_ref().join(format!("{video_id}.{extension}", video_id = video.id));
+        let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
+        let file_path = temp_dir.path().join(format!("{video_id}.{extension}", video_id = video.id));
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
         let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
-            let thumbnail_path = download_thumbnail_to_path(thumbnail_url, &video.id, self.temp_dir.path()).await;
+            let thumbnail_path = download_thumbnail_to_path(thumbnail_url, &video.id, temp_dir.path()).await;
             (thumbnail_path, false)
         } else {
             (None, true)
@@ -91,25 +100,25 @@ impl Interactor for DownloadAudio {
             Some(url) => Some(url),
             None => {
                 if download_thumbnails {
-                    get_best_thumbnail_path_in_dir(self.temp_dir.path()).ok().flatten()
+                    get_best_thumbnail_path_in_dir(temp_dir.path()).ok().flatten()
                 } else {
                     None
                 }
             }
         };
 
-        Ok(AudioInFS::new(file_path, thumbnail_path))
+        Ok(AudioInFS::new(file_path, thumbnail_path, temp_dir))
     }
 }
 
 pub struct DownloadAudioPlaylist {
-    yt_dlp_cfg: YtDlpConfig,
-    yt_pot_provider_cfg: YtPotProviderConfig,
-    cookies: Cookies,
+    yt_dlp_cfg: Arc<YtDlpConfig>,
+    yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
+    cookies: Arc<Cookies>,
 }
 
 impl DownloadAudioPlaylist {
-    pub const fn new(yt_dlp_cfg: YtDlpConfig, yt_pot_provider_cfg: YtPotProviderConfig, cookies: Cookies) -> Self {
+    pub const fn new(yt_dlp_cfg: Arc<YtDlpConfig>, yt_pot_provider_cfg: Arc<YtPotProviderConfig>, cookies: Arc<Cookies>) -> Self {
         Self {
             yt_dlp_cfg,
             yt_pot_provider_cfg,
@@ -119,9 +128,26 @@ impl DownloadAudioPlaylist {
 }
 
 pub struct DownloadAudioPlaylistInput<'a> {
-    pub url: Url,
-    pub audios_and_formats: Box<[(AudioAndFormat<'a>, TempDir)]>,
-    pub sender: mpsc::Sender<(usize, Result<AudioInFS, DownloadAudioErrorKind>)>,
+    pub url: &'a Url,
+    pub audios_and_formats: Vec<AudioAndFormat<'a>>,
+    pub sender: mpsc::UnboundedSender<(usize, Result<AudioInFS, DownloadAudioErrorKind>)>,
+}
+
+impl<'a> DownloadAudioPlaylistInput<'a> {
+    pub fn new(
+        url: &'a Url,
+        audios_and_formats: Vec<AudioAndFormat<'a>>,
+    ) -> (Self, mpsc::UnboundedReceiver<(usize, Result<AudioInFS, DownloadAudioErrorKind>)>) {
+        let (sender, receiver) = mpsc::unbounded_channel();
+        (
+            Self {
+                url,
+                audios_and_formats,
+                sender,
+            },
+            receiver,
+        )
+    }
 }
 
 impl Interactor for DownloadAudioPlaylist {
@@ -141,9 +167,10 @@ impl Interactor for DownloadAudioPlaylist {
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
-        for (index, (AudioAndFormat { video, format }, temp_dir)) in audios_and_formats.iter().enumerate() {
+        for (index, AudioAndFormat { video, format }) in audios_and_formats.into_iter().enumerate() {
             let extension = format.codec.get_extension();
-            let file_path = temp_dir.as_ref().join(format!("{video_id}.{extension}", video_id = video.id));
+            let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
+            let file_path = temp_dir.path().join(format!("{video_id}.{extension}", video_id = video.id));
 
             let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
                 let thumbnail_path = download_thumbnail_to_path(thumbnail_url, &video.id, temp_dir.path()).await;
@@ -165,7 +192,7 @@ impl Interactor for DownloadAudioPlaylist {
             )
             .await
             {
-                sender.send((index, Err(DownloadAudioErrorKind::Ytdlp(err)))).await?;
+                sender.send((index, Err(DownloadAudioErrorKind::Ytdlp(err))))?;
                 continue;
             }
 
@@ -180,7 +207,7 @@ impl Interactor for DownloadAudioPlaylist {
                 }
             };
 
-            sender.send((index, Ok(AudioInFS::new(file_path, thumbnail_path)))).await?;
+            sender.send((index, Ok(AudioInFS::new(file_path, thumbnail_path, temp_dir))))?;
         }
 
         Ok(())

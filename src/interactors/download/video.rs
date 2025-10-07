@@ -14,7 +14,8 @@ use nix::{
     unistd::pipe,
 };
 use reqwest::Client;
-use std::{fs::File, io, path::PathBuf, sync::Arc, time::Duration};
+use std::{fs::File, io, sync::Arc, time::Duration};
+use tempfile::TempDir;
 use tokio::{io::AsyncWriteExt as _, sync::mpsc, time::timeout};
 use tracing::{event, instrument, Level};
 use url::Url;
@@ -38,6 +39,8 @@ pub enum DownloadVideoErrorKind {
     Ffmpeg(io::Error),
     #[error("Pipe error: {0}")]
     Pipe(Errno),
+    #[error("Temp dir error: {0}")]
+    TempDir(io::Error),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -50,27 +53,22 @@ pub enum DownloadVideoPlaylistErrorKind {
     Ffmpeg(io::Error),
     #[error("Pipe error: {0}")]
     Pipe(Errno),
+    #[error("Temp dir error: {0}")]
+    TempDir(io::Error),
 }
 
 pub struct DownloadVideo {
     yt_dlp_cfg: Arc<YtDlpConfig>,
     yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
     cookies: Arc<Cookies>,
-    temp_dir_path: PathBuf,
 }
 
 impl DownloadVideo {
-    pub const fn new(
-        yt_dlp_cfg: Arc<YtDlpConfig>,
-        yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
-        cookies: Arc<Cookies>,
-        temp_dir_path: PathBuf,
-    ) -> Self {
+    pub const fn new(yt_dlp_cfg: Arc<YtDlpConfig>, yt_pot_provider_cfg: Arc<YtPotProviderConfig>, cookies: Arc<Cookies>) -> Self {
         Self {
             yt_dlp_cfg,
             yt_pot_provider_cfg,
             cookies,
-            temp_dir_path,
         }
     }
 }
@@ -100,7 +98,8 @@ impl Interactor for DownloadVideo {
         }: Self::Input<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let extension = format.get_extension();
-        let file_path = self.temp_dir_path.join(format!("{video_id}.{extension}", video_id = video.id));
+        let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
+        let file_path = temp_dir.path().join(format!("{video_id}.{extension}", video_id = video.id));
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
@@ -108,7 +107,7 @@ impl Interactor for DownloadVideo {
             event!(Level::DEBUG, "Formats are the same");
 
             let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
-                let thumbnail_path = download_thumbnail_to_path(thumbnail_url, &video.id, &self.temp_dir_path).await;
+                let thumbnail_path = download_thumbnail_to_path(thumbnail_url, &video.id, temp_dir.path()).await;
                 (thumbnail_path, false)
             } else {
                 (None, true)
@@ -119,7 +118,7 @@ impl Interactor for DownloadVideo {
                 &video.original_url,
                 self.yt_pot_provider_cfg.url.as_ref(),
                 extension,
-                &self.temp_dir_path,
+                temp_dir.path(),
                 DOWNLOAD_TIMEOUT,
                 download_thumbnails,
                 cookie,
@@ -131,14 +130,14 @@ impl Interactor for DownloadVideo {
                 Some(url) => Some(url),
                 None => {
                     if download_thumbnails {
-                        get_best_thumbnail_path_in_dir(&self.temp_dir_path).ok().flatten()
+                        get_best_thumbnail_path_in_dir(temp_dir.path()).ok().flatten()
                     } else {
                         None
                     }
                 }
             };
 
-            return Ok(VideoInFS::new(file_path, thumbnail_path));
+            return Ok(VideoInFS::new(file_path, thumbnail_path, temp_dir));
         }
 
         event!(Level::DEBUG, "Formats are different");
@@ -219,7 +218,7 @@ impl Interactor for DownloadVideo {
         }
 
         let thumbnail_path = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
-            download_thumbnail_to_path(thumbnail_url, &video.id, &self.temp_dir_path).await
+            download_thumbnail_to_path(thumbnail_url, &video.id, temp_dir.path()).await
         } else {
             None
         };
@@ -245,7 +244,7 @@ impl Interactor for DownloadVideo {
 
         event!(Level::DEBUG, "Streams merged");
 
-        Ok(VideoInFS::new(file_path, thumbnail_path))
+        Ok(VideoInFS::new(file_path, thumbnail_path, temp_dir))
     }
 }
 
@@ -267,14 +266,14 @@ impl DownloadVideoPlaylist {
 
 pub struct DownloadVideoPlaylistInput<'a> {
     pub url: &'a Url,
-    pub videos_and_formats: Box<[(VideoAndFormat<'a>, PathBuf)]>,
+    pub videos_and_formats: Vec<VideoAndFormat<'a>>,
     pub sender: mpsc::UnboundedSender<(usize, Result<VideoInFS, DownloadVideoErrorKind>)>,
 }
 
 impl<'a> DownloadVideoPlaylistInput<'a> {
     pub fn new(
         url: &'a Url,
-        videos_and_formats: Box<[(VideoAndFormat<'a>, PathBuf)]>,
+        videos_and_formats: Vec<VideoAndFormat<'a>>,
     ) -> (Self, mpsc::UnboundedReceiver<(usize, Result<VideoInFS, DownloadVideoErrorKind>)>) {
         let (sender, receiver) = mpsc::unbounded_channel();
         (
@@ -305,15 +304,16 @@ impl Interactor for DownloadVideoPlaylist {
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
-        for (index, (VideoAndFormat { video, format }, temp_dir_path)) in videos_and_formats.iter().enumerate() {
+        for (index, VideoAndFormat { video, format }) in videos_and_formats.iter().enumerate() {
             let extension = format.get_extension();
-            let file_path = temp_dir_path.join(format!("{video_id}.{extension}", video_id = video.id));
+            let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
+            let file_path = temp_dir.path().join(format!("{video_id}.{extension}", video_id = video.id));
 
             if format.format_ids_are_equal() {
                 event!(Level::DEBUG, "Formats are the same");
 
                 let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
-                    let thumbnail_path = download_thumbnail_to_path(thumbnail_url, &video.id, temp_dir_path).await;
+                    let thumbnail_path = download_thumbnail_to_path(thumbnail_url, &video.id, temp_dir.path()).await;
                     (thumbnail_path, false)
                 } else {
                     (None, true)
@@ -324,7 +324,7 @@ impl Interactor for DownloadVideoPlaylist {
                     &video.original_url,
                     self.yt_pot_provider_cfg.url.as_ref(),
                     extension,
-                    temp_dir_path,
+                    temp_dir.path(),
                     DOWNLOAD_TIMEOUT,
                     download_thumbnails,
                     cookie,
@@ -339,14 +339,14 @@ impl Interactor for DownloadVideoPlaylist {
                     Some(url) => Some(url),
                     None => {
                         if download_thumbnails {
-                            get_best_thumbnail_path_in_dir(temp_dir_path).ok().flatten()
+                            get_best_thumbnail_path_in_dir(temp_dir.path()).ok().flatten()
                         } else {
                             None
                         }
                     }
                 };
 
-                sender.send((index, Ok(VideoInFS::new(file_path, thumbnail_path))))?;
+                sender.send((index, Ok(VideoInFS::new(file_path, thumbnail_path, temp_dir))))?;
                 continue;
             }
 
@@ -428,7 +428,7 @@ impl Interactor for DownloadVideoPlaylist {
             }
 
             let thumbnail_path = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
-                download_thumbnail_to_path(thumbnail_url, &video.id, temp_dir_path).await
+                download_thumbnail_to_path(thumbnail_url, &video.id, temp_dir.path()).await
             } else {
                 None
             };
@@ -463,7 +463,7 @@ impl Interactor for DownloadVideoPlaylist {
 
             event!(Level::DEBUG, "Streams merged");
 
-            sender.send((index, Ok(VideoInFS::new(file_path, thumbnail_path))))?;
+            sender.send((index, Ok(VideoInFS::new(file_path, thumbnail_path, temp_dir))))?;
         }
 
         Ok(())

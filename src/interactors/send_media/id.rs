@@ -16,11 +16,11 @@ use tracing::{event, instrument, Level};
 const SEND_TIMEOUT: f32 = 360.0;
 
 pub struct SendVideoById {
-    bot: Bot,
+    bot: Arc<Bot>,
 }
 
 impl SendVideoById {
-    pub const fn new(bot: Bot) -> Self {
+    pub const fn new(bot: Arc<Bot>) -> Self {
         Self { bot }
     }
 }
@@ -63,11 +63,11 @@ impl Interactor for SendVideoById {
 }
 
 pub struct SendAudioById {
-    bot: Bot,
+    bot: Arc<Bot>,
 }
 
 impl SendAudioById {
-    pub const fn new(bot: Bot) -> Self {
+    pub const fn new(bot: Arc<Bot>) -> Self {
         Self { bot }
     }
 }
@@ -169,11 +169,11 @@ impl Interactor for SendVideoPlaylistById {
 }
 
 pub struct SendAudioPlaylistById {
-    bot: Bot,
+    bot: Arc<Bot>,
 }
 
 impl SendAudioPlaylistById {
-    pub const fn new(bot: Bot) -> Self {
+    pub const fn new(bot: Arc<Bot>) -> Self {
         Self { bot }
     }
 }
@@ -182,6 +182,16 @@ pub struct SendAudioPlaylistByIdInput {
     pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
     pub audios: Vec<TgAudioInPlaylist>,
+}
+
+impl SendAudioPlaylistByIdInput {
+    pub const fn new(chat_id: i64, reply_to_message_id: Option<i64>, audios: Vec<TgAudioInPlaylist>) -> Self {
+        Self {
+            chat_id,
+            reply_to_message_id,
+            audios,
+        }
+    }
 }
 
 impl Interactor for SendAudioPlaylistById {
