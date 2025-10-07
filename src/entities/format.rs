@@ -224,8 +224,9 @@ impl VideoCodec<'_> {
         use VideoCodec::{ProRes, H264, H265, VP9};
 
         match self {
-            H264(_) | H265(_) => 1,
-            VP9(_) => 2,
+            H264(_) => 1,
+            H265(_) => 2,
+            VP9(_) => 3,
             ProRes(_) => 4,
         }
     }
@@ -441,8 +442,9 @@ impl Display for Video<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{id} {container}+{codec} {resolution} {filesize_kb:.2}KiB ({filesize_mb:.2}MiB)",
+            "{id}{language} {container}+{codec} {resolution} {filesize_kb:.2}KiB ({filesize_mb:.2}MiB)",
             id = self.id,
+            language = self.language.unwrap_or_default(),
             container = self.container,
             codec = self.codec.as_ref().map_or("unknown", VideoCodec::as_str),
             resolution = self.resolution(),
@@ -515,8 +517,9 @@ impl Display for Audio<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{id} {codec} {filesize_kb:.2}KB ({filesize_mb:.2}MB)",
+            "{id}{language} {codec} {filesize_kb:.2}KB ({filesize_mb:.2}MB)",
             id = self.id,
+            language = self.language.unwrap_or_default(),
             codec = self.codec,
             filesize_kb = self.filesize_or_approx().map_or(0.0, |filesize| filesize / 1024.0),
             filesize_mb = self.filesize_or_approx().map_or(0.0, |filesize| filesize / 1024.0 / 1024.0),
