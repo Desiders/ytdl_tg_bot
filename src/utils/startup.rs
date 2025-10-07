@@ -1,4 +1,9 @@
-use telers::{event::simple::HandlerResult, methods::SetMyCommands, types::BotCommand, Bot};
+use telers::{
+    event::simple::HandlerResult,
+    methods::SetMyCommands,
+    types::{BotCommand, BotCommandScopeAllPrivateChats},
+    Bot,
+};
 
 async fn set_my_commands(bot: Bot) -> HandlerResult {
     let commands = [
@@ -6,9 +11,8 @@ async fn set_my_commands(bot: Bot) -> HandlerResult {
         BotCommand::new("vd", "Download a video"),
         BotCommand::new("ad", "Download an audio"),
     ];
-
-    bot.send(SetMyCommands::new(commands)).await?;
-
+    bot.send(SetMyCommands::new(commands).scope(BotCommandScopeAllPrivateChats {}))
+        .await?;
     Ok(())
 }
 
