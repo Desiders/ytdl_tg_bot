@@ -1,0 +1,213 @@
+use froodi::async_impl::Container;
+use std::str::FromStr as _;
+use telers::{
+    enums::ParseMode,
+    event::{telegram::HandlerResult, EventReturn},
+    types::Message,
+    utils::text::html_formatter::expandable_blockquote,
+    Bot, Extension,
+};
+use tracing::{event, field::debug, instrument, Level, Span};
+
+use crate::{
+    config::{ChatConfig, YtDlpConfig},
+    entities::{AudioAndFormat, PreferredLanguages, Range, TgAudioInPlaylist},
+    handlers_utils::{error, url::UrlWithParams},
+    interactors::{
+        download::{DownloadAudio, DownloadAudioInput, DownloadAudioPlaylist, DownloadAudioPlaylistInput},
+        send_media::{SendAudioInFS, SendAudioInFSInput, SendAudioPlaylistById, SendAudioPlaylistByIdInput},
+        GetMedaInfoInput, GetMediaInfo, Interactor as _,
+    },
+    utils::format_error_report,
+};
+
+#[instrument(skip_all, fields(message_id, chat_id, url = url.as_str(), params))]
+pub async fn download(
+    bot: Bot,
+    message: Message,
+    Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
+    Extension(yt_dlp_cfg): Extension<YtDlpConfig>,
+    Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(container): Extension<Container>,
+) -> HandlerResult {
+    let message_id = message.id();
+    let chat_id = message.chat().id();
+
+    Span::current()
+        .record("chat_id", chat_id)
+        .record("message_id", message_id)
+        .record("params", debug(&params));
+
+    event!(Level::DEBUG, "Got url");
+
+    let mut get_media_info = container.get_transient::<GetMediaInfo>().await.unwrap();
+    let mut download = container.get_transient::<DownloadAudio>().await.unwrap();
+    let mut download_playlist = container.get_transient::<DownloadAudioPlaylist>().await.unwrap();
+    let mut send_media_in_fs = container.get_transient::<SendAudioInFS>().await.unwrap();
+    let mut send_playlist = container.get_transient::<SendAudioPlaylistById>().await.unwrap();
+
+    let range = match params.get("items") {
+        Some(raw_value) => match Range::from_str(raw_value) {
+            Ok(range) => range,
+            Err(err) => {
+                event!(Level::ERROR, %err, "Parse range err");
+                let text = format!("Sorry, an error to parse range\n\n{}", expandable_blockquote(err.to_string()));
+                error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
+                return Ok(EventReturn::Finish);
+            }
+        },
+        None => Range::default(),
+    };
+    let preferred_languages = match params.get("lang") {
+        Some(raw_value) => PreferredLanguages::from_str(raw_value).unwrap(),
+        None => PreferredLanguages::default(),
+    };
+    let mut videos = match get_media_info.execute(GetMedaInfoInput::new(&url, &range)).await {
+        Ok(val) => val,
+        Err(err) => {
+            event!(Level::ERROR, err = format_error_report(&err), "Get info err");
+            let text = format!("Sorry, an error to get media info\n\n{}", expandable_blockquote(err.to_string()));
+            error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
+            return Ok(EventReturn::Finish);
+        }
+    };
+    if videos.len() == 1 {
+        let video = videos.remove(0);
+        let audio_and_format = match AudioAndFormat::new_with_select_format(&video, yt_dlp_cfg.max_file_size, &preferred_languages) {
+            Ok(val) => val,
+            Err(err) => {
+                event!(Level::ERROR, %err, "Select format err");
+                let text = format!("Sorry, an error to select a format\n\n{}", expandable_blockquote(err.to_string()));
+                error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
+                return Ok(EventReturn::Finish);
+            }
+        };
+        let audio_in_fs = match download.execute(DownloadAudioInput::new(&url, audio_and_format)).await {
+            Ok(val) => val,
+            Err(err) => {
+                event!(Level::ERROR, err = format_error_report(&err), "Download audio err");
+                let text = format!(
+                    "Sorry, an error to download the audio\n\n{}",
+                    expandable_blockquote(err.to_string())
+                );
+                error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
+                return Ok(EventReturn::Finish);
+            }
+        };
+        let _file_id = match send_media_in_fs
+            .execute(SendAudioInFSInput::new(
+                chat_id,
+                audio_in_fs,
+                video.title.as_deref().unwrap_or(video.id.as_ref()),
+                video.title.as_deref(),
+                video.uploader.as_deref(),
+                #[allow(clippy::cast_possible_truncation)]
+                video.duration.map(|duration| duration as i64),
+                false,
+            ))
+            .await
+        {
+            Ok((_message_id, file_id)) => file_id,
+            Err(err) => {
+                event!(Level::ERROR, err = format_error_report(&err), "Send audio err");
+                let text = format!("Sorry, an error to send the audio\n\n{}", expandable_blockquote(err.to_string()));
+                error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
+                return Ok(EventReturn::Finish);
+            }
+        };
+
+        return Ok(EventReturn::Finish);
+    }
+
+    let mut media_and_formats = Vec::with_capacity(videos.len());
+    for video in videos.iter() {
+        media_and_formats.push(
+            match AudioAndFormat::new_with_select_format(&video, yt_dlp_cfg.max_file_size, &preferred_languages) {
+                Ok(val) => val,
+                Err(err) => {
+                    event!(Level::ERROR, %err, "Select format err");
+                    let text = format!("Sorry, an error to select a format\n\n{}", expandable_blockquote(err.to_string()));
+                    error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
+                    return Ok(EventReturn::Finish);
+                }
+            },
+        );
+    }
+    let (download_playlist_input, mut video_in_fs_receiver) = DownloadAudioPlaylistInput::new(&url, media_and_formats);
+    let download_playlist_handle = tokio::spawn({
+        let videos = videos.clone();
+        async move {
+            let mut playlist = vec![];
+            let mut errs = vec![];
+            while let Some((index, res)) = video_in_fs_receiver.recv().await {
+                let audio_in_fs = match res {
+                    Ok(val) => val,
+                    Err(err) => {
+                        event!(Level::ERROR, %err, "Download video err");
+                        errs.push(err.to_string().into_boxed_str());
+                        continue;
+                    }
+                };
+                let video = videos.get(index).unwrap();
+
+                match send_media_in_fs
+                    .execute(SendAudioInFSInput::new(
+                        chat_cfg.receiver_chat_id,
+                        audio_in_fs,
+                        video.title.as_deref().unwrap_or(video.id.as_ref()),
+                        video.title.as_deref(),
+                        video.uploader.as_deref(),
+                        #[allow(clippy::cast_possible_truncation)]
+                        video.duration.map(|duration| duration as i64),
+                        true,
+                    ))
+                    .await
+                {
+                    Ok((_, file_id)) => {
+                        playlist.push(TgAudioInPlaylist { file_id, index });
+                    }
+                    Err(err) => {
+                        event!(Level::ERROR, err = format_error_report(&err), "Send audio err");
+                        errs.push(err.to_string().into_boxed_str());
+                        continue;
+                    }
+                }
+            }
+            (playlist, errs)
+        }
+    });
+
+    if let Err(err) = download_playlist.execute(download_playlist_input).await {
+        event!(Level::ERROR, %err, "Download playlist err");
+        let text = format!(
+            "Sorry, an error to download a playlist\n\n{}",
+            expandable_blockquote(err.to_string())
+        );
+        if let Err(err) = error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await {
+            event!(Level::ERROR, %err);
+        }
+    }
+    let (playlist, errors) = download_playlist_handle.await.unwrap();
+    if !errors.is_empty() {
+        let mut text = "Sorry, some audio download/send failed:\n".to_owned();
+        for (index, err) in errors.into_iter().enumerate() {
+            text.push_str(&format!("{index}. {}", expandable_blockquote(err)));
+            text.push('\n');
+        }
+        if let Err(err) = error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await {
+            event!(Level::ERROR, %err);
+        }
+    }
+    if let Err(err) = send_playlist
+        .execute(SendAudioPlaylistByIdInput::new(chat_id, Some(message_id), playlist))
+        .await
+    {
+        event!(Level::ERROR, %err, "Send playlist err");
+        let text = format!("Sorry, an error to send the playlist\n\n{}", expandable_blockquote(err.to_string()));
+        if let Err(err) = error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await {
+            event!(Level::ERROR, %err);
+        }
+    }
+
+    Ok(EventReturn::Finish)
+}
