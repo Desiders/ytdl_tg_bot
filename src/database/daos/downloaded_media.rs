@@ -16,7 +16,7 @@ impl<'a, Conn> DownloadedMediaDao<'a, Conn> {
     }
 }
 
-impl<'a, Conn> DownloadedMediaDao<'a, Conn>
+impl<Conn> DownloadedMediaDao<'_, Conn>
 where
     Conn: ConnectionTrait,
 {
@@ -31,7 +31,11 @@ where
             created_at,
         }: DownloadedMedia,
     ) -> Result<DownloadedMedia, ErrorKind<Infallible>> {
-        use downloaded_media::{ActiveModel, Column::*, Entity};
+        use downloaded_media::{
+            ActiveModel,
+            Column::{MediaType, TgId},
+            Entity,
+        };
 
         let model = ActiveModel {
             id: Set(id),
@@ -55,7 +59,10 @@ where
         id_in_url: Option<Box<str>>,
         url: Box<str>,
     ) -> Result<Option<DownloadedMedia>, ErrorKind<Infallible>> {
-        use downloaded_media::{Column::*, Entity};
+        use downloaded_media::{
+            Column::{IdInUrl, Url},
+            Entity,
+        };
 
         Entity::find()
             .filter(IdInUrl.eq(id_in_url.as_deref()).or(Url.eq(url.as_ref())))

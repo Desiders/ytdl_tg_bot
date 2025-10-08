@@ -179,7 +179,7 @@ async fn main() {
     router.telegram_observers_mut().iter_mut().for_each(|observer| {
         observer.inner_middlewares.register(ContainerMiddleware {
             container: container.clone(),
-        })
+        });
     });
     router.message.register(start).filter(Command::many(["start", "help"]));
 

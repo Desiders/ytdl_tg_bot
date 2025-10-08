@@ -98,16 +98,15 @@ impl Video {
         let aspect_kind = get_nearest_to_aspect(aspect_ratio);
         let thumbnail_urls = self.thumbnail_urls();
 
-        match get_url_by_aspect(service_host, &self.id, &thumbnail_urls, aspect_kind) {
-            Some(thumbnail_url) => Some(thumbnail_url),
-            None => {
-                let preferred_order = ["maxresdefault", "hq720", "sddefault", "hqdefault", "mqdefault", "default"];
+        if let Some(thumbnail_url) = get_url_by_aspect(service_host, &self.id, &thumbnail_urls, aspect_kind) {
+            Some(thumbnail_url)
+        } else {
+            let preferred_order = ["maxresdefault", "hq720", "sddefault", "hqdefault", "mqdefault", "default"];
 
-                thumbnail_urls
-                    .into_iter()
-                    .map(Cow::Borrowed)
-                    .min_by_key(|url| preferred_order.iter().position(|&name| url.contains(name)))
-            }
+            thumbnail_urls
+                .into_iter()
+                .map(Cow::Borrowed)
+                .min_by_key(|url| preferred_order.iter().position(|&name| url.contains(name)))
         }
     }
 }

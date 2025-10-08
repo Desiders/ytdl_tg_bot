@@ -49,7 +49,7 @@ impl Interactor for GetMediaInfo {
     type Err = ytdl::Error;
 
     #[instrument(target = "get_info", skip_all)]
-    async fn execute<'a>(&mut self, GetMedaInfoInput { url, range }: Self::Input<'a>) -> Result<Self::Output, Self::Err> {
+    async fn execute(&mut self, GetMedaInfoInput { url, range }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
@@ -96,7 +96,7 @@ impl Interactor for GetShortMediaInfo {
     type Err = GetVideoInfoErrorKind;
 
     #[instrument(target = "get_info", skip_all)]
-    async fn execute<'a>(&mut self, GetShortMediaInfoInput { url }: Self::Input<'a>) -> Result<Self::Output, Self::Err> {
+    async fn execute(&mut self, GetShortMediaInfoInput { url }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
         event!(Level::DEBUG, "Getting media info");
         let res = get_video_info(&self.client, self.yt_toolkit_cfg.url.as_ref(), url.as_ref()).await?;
         event!(Level::DEBUG, "Got media info");
@@ -131,7 +131,7 @@ impl Interactor for SearchMediaInfo {
     type Err = SearchVideoErrorKind;
 
     #[instrument(target = "get_info", skip_all)]
-    async fn execute<'a>(&mut self, SearchMediaInfoInput { text }: Self::Input<'a>) -> Result<Self::Output, Self::Err> {
+    async fn execute(&mut self, SearchMediaInfoInput { text }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
         event!(Level::DEBUG, "Searching media info");
         let res = search_video(&self.client, self.yt_toolkit_cfg.url.as_ref(), text).await?;
         event!(Level::DEBUG, "Got media info");

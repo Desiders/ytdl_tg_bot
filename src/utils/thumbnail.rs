@@ -9,12 +9,8 @@ pub fn get_url_by_aspect<'a>(
     urls: &[&'a str],
     aspect_kind: AspectKind,
 ) -> Option<Cow<'a, str>> {
-    let domain = match service_host {
-        Some(host) => match host {
-            Host::Domain(domain) => domain,
-            _ => return None,
-        },
-        None => return None,
+    let Some(Host::Domain(domain)) = service_host else {
+        return None;
     };
 
     if domain.contains("youtube") || *domain == "youtu.be" {
