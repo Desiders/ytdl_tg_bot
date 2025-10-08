@@ -95,7 +95,7 @@ impl Interactor for SendVideoInFS {
             Some(SEND_TIMEOUT),
         )
         .await?;
-        event!(Level::DEBUG, "Video sent");
+        event!(Level::INFO, "Video sent");
         drop(temp_dir);
 
         let message_id = message.id();
@@ -193,7 +193,7 @@ impl Interactor for SendAudioInFS {
             Some(SEND_TIMEOUT),
         )
         .await?;
-        event!(Level::DEBUG, "Audio sent");
+        event!(Level::INFO, "Audio sent");
         drop(temp_dir);
 
         let message_id = message.id();

@@ -247,7 +247,7 @@ impl Interactor for DownloadVideo {
             ))));
         }
 
-        event!(Level::DEBUG, "Video downloaded and merged");
+        event!(Level::INFO, "Video downloaded and merged");
 
         Ok(VideoInFS::new(file_path, thumbnail_path, temp_dir))
     }
@@ -475,7 +475,7 @@ impl Interactor for DownloadVideoPlaylist {
                 continue;
             }
 
-            event!(Level::DEBUG, "Video downloaded and merged");
+            event!(Level::INFO, "Video downloaded and merged");
 
             sender.send((index, Ok(VideoInFS::new(file_path, thumbnail_path, temp_dir))))?;
         }

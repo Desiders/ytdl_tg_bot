@@ -59,7 +59,7 @@ impl Interactor for SendVideoById {
             Some(SEND_TIMEOUT),
         )
         .await?;
-        event!(Level::DEBUG, "Video sent");
+        event!(Level::INFO, "Video sent");
 
         Ok(())
     }
@@ -107,7 +107,7 @@ impl Interactor for SendAudioById {
             Some(SEND_TIMEOUT),
         )
         .await?;
-        event!(Level::DEBUG, "Audio sent");
+        event!(Level::INFO, "Audio sent");
 
         Ok(())
     }
@@ -170,7 +170,7 @@ impl Interactor for EditVideoById {
             Some(SEND_TIMEOUT),
         )
         .await?;
-        event!(Level::DEBUG, "Video edited");
+        event!(Level::INFO, "Video edited");
 
         Ok(())
     }
@@ -228,7 +228,7 @@ impl Interactor for EditAudioById {
             Some(SEND_TIMEOUT),
         )
         .await?;
-        event!(Level::DEBUG, "Audio edited");
+        event!(Level::INFO, "Audio edited");
 
         Ok(())
     }
@@ -290,7 +290,7 @@ impl Interactor for SendVideoPlaylistById {
             Some(SEND_TIMEOUT),
         )
         .await?;
-        event!(Level::DEBUG, "Video playlist sent");
+        event!(Level::INFO, "Video playlist sent");
 
         Ok(())
     }
@@ -352,7 +352,7 @@ impl Interactor for SendAudioPlaylistById {
             Some(SEND_TIMEOUT),
         )
         .await?;
-        event!(Level::DEBUG, "Audio playlist sent");
+        event!(Level::INFO, "Audio playlist sent");
 
         Ok(())
     }

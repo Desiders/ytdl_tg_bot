@@ -123,7 +123,7 @@ fn init_container(
 
                 match Database::connect(options).await {
                     Ok(database_conn) => {
-                        event!(Level::DEBUG, "Database conn created");
+                        event!(Level::INFO, "Database conn created");
                         Ok(database_conn)
                     }
                     Err(err) => {
@@ -152,11 +152,9 @@ async fn main() {
         .with(EnvFilter::builder().parse_lossy(config.logging.dirs))
         .init();
 
-    event!(Level::DEBUG, "Config loaded");
-
     let cookies = get_cookies_from_directory(&*config.yt_dlp.cookies_path).unwrap_or_default();
 
-    event!(Level::DEBUG, hosts = ?cookies.get_hosts(), "Cookies loaded");
+    event!(Level::INFO, hosts = ?cookies.get_hosts(), "Cookies loaded");
 
     let base_url = format!("{}/bot{{token}}/{{method_name}}", config.telegram_bot_api.url);
     let files_url = format!("{}/file{{token}}/{{path}}", config.telegram_bot_api.url);

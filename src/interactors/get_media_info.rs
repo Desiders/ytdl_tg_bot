@@ -64,7 +64,7 @@ impl Interactor for GetMediaInfo {
             cookie,
         )
         .await;
-        event!(Level::DEBUG, "Got media info");
+        event!(Level::INFO, "Got media info");
         res
     }
 }
@@ -99,7 +99,7 @@ impl Interactor for GetShortMediaInfo {
     async fn execute(&mut self, GetShortMediaInfoInput { url }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
         event!(Level::DEBUG, "Getting media info");
         let res = get_video_info(&self.client, self.yt_toolkit_cfg.url.as_ref(), url.as_ref()).await?;
-        event!(Level::DEBUG, "Got media info");
+        event!(Level::INFO, "Got media info");
         Ok(res)
     }
 }
@@ -134,7 +134,7 @@ impl Interactor for SearchMediaInfo {
     async fn execute(&mut self, SearchMediaInfoInput { text }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
         event!(Level::DEBUG, "Searching media info");
         let res = search_video(&self.client, self.yt_toolkit_cfg.url.as_ref(), text).await?;
-        event!(Level::DEBUG, "Got media info");
+        event!(Level::INFO, "Got media info");
         Ok(res)
     }
 }
