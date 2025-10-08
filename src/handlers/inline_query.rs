@@ -19,20 +19,20 @@ use telers::{
     utils::text::{html_code, html_quote},
     Bot, Extension,
 };
-use tracing::{event, instrument, Level, Span};
+use tracing::{event, span, Level};
 use url::Host;
 use uuid::Uuid;
 
 const SELECT_INLINE_QUERY_CACHE_TIME: i64 = 86400; // 24 hours
 
-#[instrument(skip_all, fields(query_id, url = url.as_str()))]
 pub async fn select_by_url(
     bot: Bot,
     InlineQuery { id: query_id, .. }: InlineQuery,
     Extension(UrlWithParams { url, .. }): Extension<UrlWithParams>,
     Extension(container): Extension<Container>,
 ) -> HandlerResult {
-    Span::current().record("query_id", query_id.as_ref());
+    let span = span!(Level::INFO, "inline_url_handler", query_id, url = url.as_str());
+    let _enter = span.enter();
 
     event!(Level::DEBUG, "Got url");
 
@@ -109,7 +109,6 @@ pub async fn select_by_url(
     Ok(EventReturn::Finish)
 }
 
-#[instrument(skip_all, fields(query_id, text))]
 pub async fn select_by_text(
     bot: Bot,
     InlineQuery {
@@ -117,7 +116,8 @@ pub async fn select_by_text(
     }: InlineQuery,
     Extension(container): Extension<Container>,
 ) -> HandlerResult {
-    Span::current().record("query_id", query_id.as_ref()).record("text", text.as_ref());
+    let span = span!(Level::INFO, "inline_text_handler", query_id, text);
+    let _enter = span.enter();
 
     event!(Level::DEBUG, "Got text");
 

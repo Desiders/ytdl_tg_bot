@@ -19,9 +19,8 @@ use telers::{
     utils::text::html_formatter::expandable_blockquote,
     Bot, Extension,
 };
-use tracing::{event, field::debug, instrument, Level, Span};
+use tracing::{event, span, Level};
 
-#[instrument(skip_all, fields(message_id, chat_id, url = url.as_str(), params))]
 pub async fn download(
     bot: Bot,
     message: Message,
@@ -33,10 +32,8 @@ pub async fn download(
     let message_id = message.id();
     let chat_id = message.chat().id();
 
-    Span::current()
-        .record("chat_id", chat_id)
-        .record("message_id", message_id)
-        .record("params", debug(&params));
+    let span = span!(Level::INFO, "audio_handler", message_id, chat_id, url = url.as_str(), ?params);
+    let _enter = span.enter();
 
     event!(Level::DEBUG, "Got url");
 
