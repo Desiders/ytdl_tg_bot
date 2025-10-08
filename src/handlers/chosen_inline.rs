@@ -30,9 +30,7 @@ pub async fn download(
     bot: Bot,
     ChosenInlineResult {
         result_id,
-        from,
         inline_message_id,
-        query,
         ..
     }: ChosenInlineResult,
     Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,

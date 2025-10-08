@@ -6,6 +6,7 @@ use crate::{
 
 use std::sync::Arc;
 use telers::{
+    enums::ParseMode,
     errors::SessionErrorKind,
     methods::{EditMessageMedia, SendAudio, SendVideo},
     types::{InlineKeyboardMarkup, InputFile, InputMediaAudio, InputMediaVideo, ReplyParameters},
@@ -215,7 +216,7 @@ impl Interactor for EditAudioById {
         event!(Level::DEBUG, "Audio editing");
         send::with_retries(
             &self.bot,
-            EditMessageMedia::new(InputMediaAudio::new(InputFile::id(id)).caption(caption))
+            EditMessageMedia::new(InputMediaAudio::new(InputFile::id(id)).caption(caption).parse_mode(ParseMode::HTML))
                 .inline_message_id(inline_message_id)
                 .reply_markup(InlineKeyboardMarkup::new([[]])),
             2,

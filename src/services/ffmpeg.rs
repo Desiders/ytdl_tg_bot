@@ -69,7 +69,7 @@ pub enum Error {
 /// # Returns
 /// Returns the child process
 #[instrument(skip_all)]
-pub async fn convert_to_jpg(input_url: impl AsRef<str>, output_path: impl AsRef<Path>) -> Result<tokio::process::Child, Error> {
+async fn convert_to_jpg(input_url: impl AsRef<str>, output_path: impl AsRef<Path>) -> Result<tokio::process::Child, Error> {
     let input_url = input_url.as_ref();
     let output_path = output_path.as_ref();
 

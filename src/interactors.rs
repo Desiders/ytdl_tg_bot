@@ -6,4 +6,6 @@ pub mod send_media;
 
 pub use base::Interactor;
 pub use create_user_and_chat::{CreateUserAndChat, CreateUserAndChatInput, CreateUserAndChatOutput};
-pub use get_media_info::{GetMedaInfoInput, GetMediaInfo};
+pub use get_media_info::{
+    GetMedaInfoInput, GetMediaInfo, GetShortMediaInfo, GetShortMediaInfoInput, SearchMediaInfo, SearchMediaInfoInput,
+};
