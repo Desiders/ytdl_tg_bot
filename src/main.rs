@@ -1,6 +1,5 @@
 mod config;
 mod database;
-mod download;
 mod entities;
 mod errors;
 mod filters;
@@ -12,20 +11,32 @@ mod services;
 mod utils;
 mod value_objects;
 
-use config::DatabaseConfig;
-use filters::{is_via_bot, text_contains_url, text_contains_url_with_reply, text_empty, url_is_blacklisted, url_is_skippable_by_param};
+use crate::{
+    config::{DatabaseConfig, YtDlpConfig, YtPotProviderConfig, YtToolkitConfig},
+    database::TxManager,
+    entities::Cookies,
+    filters::{is_via_bot, text_contains_url, text_contains_url_with_reply, text_empty, url_is_blacklisted, url_is_skippable_by_param},
+    handlers::{audio, chosen_inline, inline_query, start, video},
+    interactors::{
+        download::{DownloadAudio, DownloadAudioPlaylist, DownloadVideo, DownloadVideoPlaylist},
+        send_media::{
+            EditAudioById, EditVideoById, SendAudioById, SendAudioInFS, SendAudioPlaylistById, SendVideoById, SendVideoInFS,
+            SendVideoPlaylistById,
+        },
+        GetMediaInfo, GetShortMediaInfo, SearchMediaInfo,
+    },
+    middlewares::{ContainerMiddleware, ReactionMiddleware},
+    services::get_cookies_from_directory,
+    utils::{on_shutdown, on_startup},
+};
 use froodi::{
     async_impl::{Container, RegistryBuilder},
     instance,
     DefaultScope::{App, Request},
     Inject, InstantiateErrorKind,
 };
-use handlers::{
-    audio_download, media_download_chosen_inline_result, media_download_search_chosen_inline_result, media_search_inline_query,
-    media_select_inline_query, start, video_download_quite,
-};
+use reqwest::Client;
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
-use services::get_cookies_from_directory;
 use std::borrow::Cow;
 use telers::{
     client::{
@@ -36,27 +47,13 @@ use telers::{
     filters::{ChatType, Command, ContentType, Filter as _},
     Bot, Dispatcher, Router,
 };
-use tempfile::env::temp_dir;
 use tracing::{event, Level};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
-use utils::{on_shutdown, on_startup};
-
-use crate::{
-    config::{YtDlpConfig, YtPotProviderConfig},
-    database::TxManager,
-    entities::Cookies,
-    handlers::video_download_nw,
-    interactors::{
-        download::{DownloadVideo, DownloadVideoPlaylist},
-        send_media::{SendVideoInFS, SendVideoPlaylistById},
-        GetMediaInfo,
-    },
-    middlewares::ContainerMiddleware,
-};
 
 fn init_container(
     bot: Bot,
     yt_dlp_cfg: YtDlpConfig,
+    yt_toolkit_cfg: YtToolkitConfig,
     yt_pot_provider_cfg: YtPotProviderConfig,
     cookies: Cookies,
     database_cfg: DatabaseConfig,
@@ -64,6 +61,7 @@ fn init_container(
     let registry = RegistryBuilder::new()
         .provide(instance(bot), App)
         .provide(instance(yt_dlp_cfg), App)
+        .provide(instance(yt_toolkit_cfg), App)
         .provide(instance(yt_pot_provider_cfg), App)
         .provide(instance(cookies), App)
         .provide(instance(database_cfg), App)
@@ -74,9 +72,21 @@ fn init_container(
             Request,
         )
         .provide(
+            |Inject(client): Inject<Client>, Inject(yt_toolkit_cfg): Inject<YtToolkitConfig>| {
+                Ok(GetShortMediaInfo::new(client, yt_toolkit_cfg))
+            },
+            Request,
+        )
+        .provide(
+            |Inject(client): Inject<Client>, Inject(yt_toolkit_cfg): Inject<YtToolkitConfig>| {
+                Ok(SearchMediaInfo::new(client, yt_toolkit_cfg))
+            },
+            Request,
+        )
+        .provide(
             |Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
              Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-             Inject(cookies): Inject<Cookies>| Ok(DownloadVideo::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies, temp_dir())),
+             Inject(cookies): Inject<Cookies>| Ok(DownloadVideo::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies)),
             Request,
         )
         .provide(
@@ -85,8 +95,27 @@ fn init_container(
              Inject(cookies): Inject<Cookies>| { Ok(DownloadVideoPlaylist::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies)) },
             Request,
         )
+        .provide(
+            |Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
+             Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
+             Inject(cookies): Inject<Cookies>| Ok(DownloadAudio::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies)),
+            Request,
+        )
+        .provide(
+            |Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
+             Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
+             Inject(cookies): Inject<Cookies>| { Ok(DownloadAudioPlaylist::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies)) },
+            Request,
+        )
         .provide(|Inject(bot): Inject<Bot>| Ok(SendVideoInFS::new(bot)), Request)
+        .provide(|Inject(bot): Inject<Bot>| Ok(SendVideoById::new(bot)), Request)
         .provide(|Inject(bot): Inject<Bot>| Ok(SendVideoPlaylistById::new(bot)), Request)
+        .provide(|Inject(bot): Inject<Bot>| Ok(SendAudioInFS::new(bot)), Request)
+        .provide(|Inject(bot): Inject<Bot>| Ok(SendAudioById::new(bot)), Request)
+        .provide(|Inject(bot): Inject<Bot>| Ok(SendAudioPlaylistById::new(bot)), Request)
+        .provide(|Inject(bot): Inject<Bot>| Ok(EditVideoById::new(bot)), Request)
+        .provide(|Inject(bot): Inject<Bot>| Ok(EditAudioById::new(bot)), Request)
+        .provide(|| Ok(Client::new()), App)
         .provide_async(
             |Inject(database_cfg): Inject<DatabaseConfig>| async move {
                 let mut options = ConnectOptions::new(database_cfg.get_postgres_url());
@@ -140,6 +169,7 @@ async fn main() {
     let container = init_container(
         bot.clone(),
         config.yt_dlp.clone(),
+        config.yt_toolkit.clone(),
         config.yt_pot_provider.clone(),
         cookies.clone(),
         config.database.clone(),
@@ -152,41 +182,52 @@ async fn main() {
         })
     });
     router.message.register(start).filter(Command::many(["start", "help"]));
-    router
+
+    let mut download_router = Router::new("download");
+    download_router.message.inner_middlewares.register(ReactionMiddleware);
+    download_router
         .message
-        .register(video_download_nw)
+        .register(video::download)
         .filter(ContentType::one(ContentTypeEnum::Text))
         .filter(Command::many(["vd", "video_download"]))
         .filter(text_contains_url_with_reply);
-    router
+    download_router
         .message
-        .register(audio_download)
+        .register(audio::download)
         .filter(ContentType::one(ContentTypeEnum::Text))
         .filter(Command::many(["ad", "audio_download"]))
         .filter(text_contains_url_with_reply);
-    router
+    download_router
         .message
-        .register(video_download_nw)
+        .register(video::download)
         .filter(ChatType::one(ChatTypeEnum::Private))
         .filter(text_contains_url_with_reply)
         .filter(is_via_bot.invert());
-    router
+    download_router
         .message
-        .register(video_download_quite)
+        .register(video::download)
         .filter(text_contains_url)
         .filter(url_is_blacklisted.invert())
         .filter(url_is_skippable_by_param.invert())
         .filter(is_via_bot.invert());
-    router.inline_query.register(media_select_inline_query).filter(text_contains_url);
-    router.inline_query.register(media_search_inline_query).filter(text_empty.invert());
-    router
-        .chosen_inline_result
-        .register(media_download_chosen_inline_result)
+    download_router
+        .inline_query
+        .register(inline_query::select_by_url)
         .filter(text_contains_url);
-    router
-        .chosen_inline_result
-        .register(media_download_search_chosen_inline_result)
+    download_router
+        .inline_query
+        .register(inline_query::select_by_text)
         .filter(text_empty.invert());
+    download_router
+        .inline_query
+        .register(inline_query::select_by_url)
+        .filter(text_empty.invert());
+    download_router
+        .chosen_inline_result
+        .register(chosen_inline::download)
+        .filter(text_contains_url);
+
+    router.include(download_router);
 
     router.startup.register(on_startup, (bot.clone(),));
     router.shutdown.register(on_shutdown, ());
