@@ -158,9 +158,14 @@ impl Interactor for EditVideoById {
         event!(Level::DEBUG, "Video editing");
         send::with_retries(
             &self.bot,
-            EditMessageMedia::new(InputMediaVideo::new(InputFile::id(id)).caption(caption).supports_streaming(true))
-                .inline_message_id(inline_message_id)
-                .reply_markup(InlineKeyboardMarkup::new([[]])),
+            EditMessageMedia::new(
+                InputMediaVideo::new(InputFile::id(id))
+                    .caption(caption)
+                    .supports_streaming(true)
+                    .parse_mode(ParseMode::HTML),
+            )
+            .inline_message_id(inline_message_id)
+            .reply_markup(InlineKeyboardMarkup::new([[]])),
             2,
             Some(SEND_TIMEOUT),
         )
