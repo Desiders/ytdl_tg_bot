@@ -103,6 +103,7 @@ pub async fn download(
         let _file_id = match send_media_in_fs
             .execute(SendVideoInFSInput::new(
                 chat_id,
+                Some(message_id),
                 video_in_fs,
                 video.title.as_deref().unwrap_or(video.id.as_ref()),
                 video.width,
@@ -166,6 +167,7 @@ pub async fn download(
                 match send_media_in_fs
                     .execute(SendVideoInFSInput::new(
                         chat_cfg.receiver_chat_id,
+                        Some(message_id),
                         video_in_fs,
                         video.title.as_deref().unwrap_or(video.id.as_ref()),
                         video.width,
