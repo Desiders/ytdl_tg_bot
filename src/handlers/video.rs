@@ -225,3 +225,152 @@ pub async fn download(
 
     Ok(EventReturn::Finish)
 }
+
+pub async fn download_quite(
+    message: Message,
+    Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
+    Extension(yt_dlp_cfg): Extension<YtDlpConfig>,
+    Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(container): Extension<Container>,
+) -> HandlerResult {
+    let message_id = message.id();
+    let chat_id = message.chat().id();
+
+    let span = span!(Level::INFO, "video_handler", message_id, chat_id, url = url.as_str(), ?params);
+    let _enter = span.enter();
+
+    event!(Level::DEBUG, "Got url");
+
+    let mut get_media_info = container.get_transient::<GetMediaInfo>().await.unwrap();
+    let mut download = container.get_transient::<DownloadVideo>().await.unwrap();
+    let mut download_playlist = container.get_transient::<DownloadVideoPlaylist>().await.unwrap();
+    let mut send_media_in_fs = container.get_transient::<SendVideoInFS>().await.unwrap();
+    let mut send_playlist = container.get_transient::<SendVideoPlaylistById>().await.unwrap();
+
+    let range = match params.get("items") {
+        Some(raw_value) => match Range::from_str(raw_value) {
+            Ok(range) => range,
+            Err(err) => {
+                event!(Level::ERROR, %err, "Parse range err");
+                return Ok(EventReturn::Finish);
+            }
+        },
+        None => Range::default(),
+    };
+    let preferred_languages = match params.get("lang") {
+        Some(raw_value) => PreferredLanguages::from_str(raw_value).unwrap(),
+        None => PreferredLanguages::default(),
+    };
+    let mut videos = match get_media_info.execute(GetMedaInfoInput::new(&url, &range)).await {
+        Ok(val) => val,
+        Err(err) => {
+            event!(Level::ERROR, err = format_error_report(&err), "Get info err");
+            return Ok(EventReturn::Finish);
+        }
+    };
+    if videos.len() == 1 {
+        let video = videos.remove(0);
+        let video_and_format = match VideoAndFormat::new_with_select_format(&video, yt_dlp_cfg.max_file_size, &preferred_languages) {
+            Ok(val) => val,
+            Err(err) => {
+                event!(Level::ERROR, %err, "Select format err");
+                return Ok(EventReturn::Finish);
+            }
+        };
+        let video_in_fs = match download.execute(DownloadVideoInput::new(&url, video_and_format)).await {
+            Ok(val) => val,
+            Err(err) => {
+                event!(Level::ERROR, err = format_error_report(&err), "Download video err");
+                return Ok(EventReturn::Finish);
+            }
+        };
+        let _file_id = match send_media_in_fs
+            .execute(SendVideoInFSInput::new(
+                chat_id,
+                Some(message_id),
+                video_in_fs,
+                video.title.as_deref().unwrap_or(video.id.as_ref()),
+                video.width,
+                video.height,
+                #[allow(clippy::cast_possible_truncation)]
+                video.duration.map(|duration| duration as i64),
+                false,
+            ))
+            .await
+        {
+            Ok((_message_id, file_id)) => file_id,
+            Err(err) => {
+                event!(Level::ERROR, err = format_error_report(&err), "Send video err");
+                return Ok(EventReturn::Finish);
+            }
+        };
+
+        return Ok(EventReturn::Finish);
+    }
+
+    let mut media_and_formats = vec![];
+    for video in videos.iter() {
+        media_and_formats.push(
+            match VideoAndFormat::new_with_select_format(video, yt_dlp_cfg.max_file_size, &preferred_languages) {
+                Ok(val) => val,
+                Err(err) => {
+                    event!(Level::ERROR, %err, "Select format err");
+                    return Ok(EventReturn::Finish);
+                }
+            },
+        );
+    }
+    let (download_playlist_input, mut video_in_fs_receiver) = DownloadVideoPlaylistInput::new(&url, media_and_formats);
+    let download_playlist_handle = tokio::spawn({
+        let videos = videos.clone();
+        async move {
+            let mut playlist = vec![];
+            while let Some((index, res)) = video_in_fs_receiver.recv().await {
+                let video_in_fs = match res {
+                    Ok(val) => val,
+                    Err(err) => {
+                        event!(Level::ERROR, %err, "Download video err");
+                        continue;
+                    }
+                };
+                let video = videos.get(index).unwrap();
+
+                match send_media_in_fs
+                    .execute(SendVideoInFSInput::new(
+                        chat_cfg.receiver_chat_id,
+                        Some(message_id),
+                        video_in_fs,
+                        video.title.as_deref().unwrap_or(video.id.as_ref()),
+                        video.width,
+                        video.height,
+                        #[allow(clippy::cast_possible_truncation)]
+                        video.duration.map(|duration| duration as i64),
+                        true,
+                    ))
+                    .await
+                {
+                    Ok((_, file_id)) => {
+                        playlist.push(TgVideoInPlaylist::new(file_id, index));
+                    }
+                    Err(err) => {
+                        event!(Level::ERROR, err = format_error_report(&err), "Send video err");
+                    }
+                }
+            }
+            playlist
+        }
+    });
+
+    if let Err(err) = download_playlist.execute(download_playlist_input).await {
+        event!(Level::ERROR, %err, "Download playlist err");
+    }
+    let playlist = download_playlist_handle.await.unwrap();
+    if let Err(err) = send_playlist
+        .execute(SendVideoPlaylistByIdInput::new(chat_id, Some(message_id), playlist))
+        .await
+    {
+        event!(Level::ERROR, %err, "Send playlist err");
+    }
+
+    Ok(EventReturn::Finish)
+}
