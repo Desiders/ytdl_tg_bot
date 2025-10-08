@@ -8,7 +8,7 @@ use std::sync::Arc;
 use telers::{
     errors::SessionErrorKind,
     methods::{DeleteMessage, SendAudio, SendVideo},
-    types::InputFile,
+    types::{InputFile, ReplyParameters},
     Bot,
 };
 use tracing::{event, span, Level};
@@ -27,6 +27,7 @@ impl SendVideoInFS {
 
 pub struct SendVideoInFSInput<'a> {
     pub chat_id: i64,
+    pub reply_to_message_id: Option<i64>,
     pub video_in_fs: VideoInFS,
     pub name: &'a str,
     pub width: Option<i64>,
@@ -38,6 +39,7 @@ pub struct SendVideoInFSInput<'a> {
 impl<'a> SendVideoInFSInput<'a> {
     pub const fn new(
         chat_id: i64,
+        reply_to_message_id: Option<i64>,
         video_in_fs: VideoInFS,
         name: &'a str,
         width: Option<i64>,
@@ -47,6 +49,7 @@ impl<'a> SendVideoInFSInput<'a> {
     ) -> Self {
         Self {
             chat_id,
+            reply_to_message_id,
             video_in_fs,
             name,
             width,
@@ -66,6 +69,7 @@ impl Interactor for SendVideoInFS {
         &mut self,
         SendVideoInFSInput {
             chat_id,
+            reply_to_message_id,
             video_in_fs: VideoInFS {
                 path,
                 thumbnail_path,
@@ -90,7 +94,8 @@ impl Interactor for SendVideoInFS {
                 .height_option(height)
                 .duration_option(duration)
                 .thumbnail_option(thumbnail_path.map(InputFile::fs))
-                .supports_streaming(true),
+                .supports_streaming(true)
+                .reply_parameters_option(reply_to_message_id.map(ReplyParameters::new)),
             2,
             Some(SEND_TIMEOUT),
         )
@@ -126,6 +131,7 @@ impl SendAudioInFS {
 
 pub struct SendAudioInFSInput<'a> {
     pub chat_id: i64,
+    pub reply_to_message_id: Option<i64>,
     pub audio_in_fs: AudioInFS,
     pub name: &'a str,
     pub title: Option<&'a str>,
@@ -137,6 +143,7 @@ pub struct SendAudioInFSInput<'a> {
 impl<'a> SendAudioInFSInput<'a> {
     pub const fn new(
         chat_id: i64,
+        reply_to_message_id: Option<i64>,
         audio_in_fs: AudioInFS,
         name: &'a str,
         title: Option<&'a str>,
@@ -146,6 +153,7 @@ impl<'a> SendAudioInFSInput<'a> {
     ) -> Self {
         Self {
             chat_id,
+            reply_to_message_id,
             audio_in_fs,
             name,
             title,
@@ -165,6 +173,7 @@ impl Interactor for SendAudioInFS {
         &mut self,
         SendAudioInFSInput {
             chat_id,
+            reply_to_message_id,
             audio_in_fs: AudioInFS {
                 path,
                 thumbnail_path,
@@ -188,7 +197,8 @@ impl Interactor for SendAudioInFS {
                 .title_option(title)
                 .duration_option(duration)
                 .performer_option(uploader)
-                .thumbnail_option(thumbnail_path.map(InputFile::fs)),
+                .thumbnail_option(thumbnail_path.map(InputFile::fs))
+                .reply_parameters_option(reply_to_message_id.map(ReplyParameters::new)),
             2,
             Some(SEND_TIMEOUT),
         )
