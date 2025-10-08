@@ -131,7 +131,7 @@ pub async fn download(
     let mut media_and_formats = vec![];
     for video in videos.iter() {
         media_and_formats.push(
-            match VideoAndFormat::new_with_select_format(&video, yt_dlp_cfg.max_file_size, &preferred_languages) {
+            match VideoAndFormat::new_with_select_format(video, yt_dlp_cfg.max_file_size, &preferred_languages) {
                 Ok(val) => val,
                 Err(err) => {
                     event!(Level::ERROR, %err, "Select format err");
@@ -177,12 +177,11 @@ pub async fn download(
                     .await
                 {
                     Ok((_, file_id)) => {
-                        playlist.push(TgVideoInPlaylist { file_id, index });
+                        playlist.push(TgVideoInPlaylist::new(file_id, index));
                     }
                     Err(err) => {
                         event!(Level::ERROR, err = format_error_report(&err), "Send video err");
                         errs.push(err.format(&bot.token));
-                        continue;
                     }
                 }
             }

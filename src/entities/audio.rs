@@ -17,7 +17,7 @@ impl<'a> AudioAndFormat<'a> {
         PreferredLanguages { languages }: &PreferredLanguages,
     ) -> Result<Self, FormatNotFound> {
         let mut formats = video.get_audio_formats();
-        formats.sort(max_file_size, &languages);
+        formats.sort(max_file_size, languages);
 
         let Some(format) = formats.first().cloned() else {
             return Err(FormatNotFound);

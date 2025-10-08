@@ -276,6 +276,7 @@ pub struct DownloadVideoPlaylistInput<'a> {
 }
 
 impl<'a> DownloadVideoPlaylistInput<'a> {
+    #[allow(clippy::type_complexity)]
     pub fn new(
         url: &'a Url,
         videos_and_formats: Vec<VideoAndFormat<'a>>,
@@ -344,7 +345,7 @@ impl Interactor for DownloadVideoPlaylist {
                 {
                     sender.send((index, Err(DownloadVideoErrorKind::Ytdlp(err))))?;
                     continue;
-                };
+                }
 
                 let thumbnail_path = match thumbnail_path {
                     Some(url) => Some(url),

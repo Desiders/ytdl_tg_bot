@@ -139,6 +139,7 @@ pub struct DownloadAudioPlaylistInput<'a> {
 }
 
 impl<'a> DownloadAudioPlaylistInput<'a> {
+    #[allow(clippy::type_complexity)]
     pub fn new(
         url: &'a Url,
         audios_and_formats: Vec<AudioAndFormat<'a>>,

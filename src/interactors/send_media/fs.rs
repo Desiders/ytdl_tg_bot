@@ -62,7 +62,7 @@ impl Interactor for SendVideoInFS {
     type Output = (i64, Box<str>);
     type Err = SessionErrorKind;
 
-    async fn execute<'a>(
+    async fn execute(
         &mut self,
         SendVideoInFSInput {
             chat_id,
@@ -76,7 +76,7 @@ impl Interactor for SendVideoInFS {
             height,
             duration,
             with_delete,
-        }: Self::Input<'a>,
+        }: Self::Input<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let span = span!(Level::INFO, "send", name, width, height, with_delete);
         let _guard = span.enter();
@@ -161,7 +161,7 @@ impl Interactor for SendAudioInFS {
     type Output = (i64, Box<str>);
     type Err = SessionErrorKind;
 
-    async fn execute<'a>(
+    async fn execute(
         &mut self,
         SendAudioInFSInput {
             chat_id,
@@ -175,7 +175,7 @@ impl Interactor for SendAudioInFS {
             uploader,
             duration,
             with_delete,
-        }: Self::Input<'a>,
+        }: Self::Input<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let span = span!(Level::INFO, "send", name, uploader, with_delete);
         let _guard = span.enter();

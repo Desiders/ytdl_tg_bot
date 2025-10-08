@@ -27,7 +27,7 @@ impl TxManager {
 
     pub async fn begin_with_config(&mut self, level: IsolationLevel, access_mode: AccessMode) -> Result<(), BeginError> {
         if self.transaction.is_none() {
-            self.transaction = Some(self.pool.begin_with_config(Some(level.into()), Some(access_mode.into())).await?);
+            self.transaction = Some(self.pool.begin_with_config(Some(level), Some(access_mode)).await?);
         }
         Ok(())
     }

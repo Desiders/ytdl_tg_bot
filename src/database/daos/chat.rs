@@ -17,7 +17,7 @@ impl<'a, Conn> ChatDao<'a, Conn> {
     }
 }
 
-impl<'a, Conn> ChatDao<'a, Conn>
+impl<Conn> ChatDao<'_, Conn>
 where
     Conn: ConnectionTrait,
 {
@@ -31,7 +31,11 @@ where
             updated_at,
         }: Chat,
     ) -> Result<Chat, ErrorKind<Infallible>> {
-        use chat::{ActiveModel, Column::*, Entity};
+        use chat::{
+            ActiveModel,
+            Column::{TgId, UpdatedAt, Username},
+            Entity,
+        };
 
         let model = ActiveModel {
             id: Set(id),

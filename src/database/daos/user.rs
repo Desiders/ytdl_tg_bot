@@ -17,7 +17,7 @@ impl<'a, Conn> UserDao<'a, Conn> {
     }
 }
 
-impl<'a, Conn> UserDao<'a, Conn>
+impl<Conn> UserDao<'_, Conn>
 where
     Conn: ConnectionTrait,
 {
@@ -31,7 +31,11 @@ where
             updated_at,
         }: User,
     ) -> Result<User, ErrorKind<Infallible>> {
-        use user::{ActiveModel, Column::*, Entity};
+        use user::{
+            ActiveModel,
+            Column::{TgId, UpdatedAt, Username},
+            Entity,
+        };
 
         let model = ActiveModel {
             id: Set(id),

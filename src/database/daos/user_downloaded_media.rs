@@ -17,7 +17,7 @@ impl<'a, Conn> UserDownloadedMediaDao<'a, Conn> {
     }
 }
 
-impl<'a, Conn> UserDownloadedMediaDao<'a, Conn>
+impl<Conn> UserDownloadedMediaDao<'_, Conn>
 where
     Conn: ConnectionTrait,
 {

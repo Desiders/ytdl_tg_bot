@@ -2,6 +2,7 @@ const ASPECT_VERTICAL: f64 = 9.0 / 16.0;
 const ASPECT_SD: f64 = 4.0 / 3.0;
 const ASPECT_HD: f64 = 16.0 / 9.0;
 
+#[derive(Clone, Copy)]
 pub enum AspectKind {
     Vertical,
     Sd,
@@ -9,6 +10,7 @@ pub enum AspectKind {
     Other,
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub const fn calculate_aspect_ratio(width: Option<i64>, height: Option<i64>) -> f64 {
     match (width, height) {
         (Some(width), Some(height)) if height > 0 => width as f64 / height as f64,

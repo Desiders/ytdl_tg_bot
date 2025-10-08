@@ -28,8 +28,8 @@ pub struct CreateUserAndChatOutput {
     pub chat: Chat,
 }
 
-impl<'a> Interactor for CreateUserAndChat<'a> {
-    type Input<'b> = CreateUserAndChatInput;
+impl Interactor for CreateUserAndChat<'_> {
+    type Input<'a> = CreateUserAndChatInput;
     type Output = CreateUserAndChatOutput;
     type Err = ErrorKind<Infallible>;
 
@@ -41,7 +41,7 @@ impl<'a> Interactor for CreateUserAndChat<'a> {
             Ok(val) => val,
             Err(err) => {
                 self.tx_manager.rollback().await?;
-                return Err(err.into());
+                return Err(err);
             }
         };
         event!(Level::INFO, "User created");
@@ -50,7 +50,7 @@ impl<'a> Interactor for CreateUserAndChat<'a> {
             Ok(val) => val,
             Err(err) => {
                 self.tx_manager.rollback().await?;
-                return Err(err.into());
+                return Err(err);
             }
         };
         event!(Level::INFO, "Chat created");

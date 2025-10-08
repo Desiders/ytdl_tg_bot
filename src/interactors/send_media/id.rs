@@ -37,13 +37,13 @@ impl Interactor for SendVideoById {
     type Output = ();
     type Err = SessionErrorKind;
 
-    async fn execute<'a>(
+    async fn execute(
         &mut self,
         SendVideoByIdInput {
             chat_id,
             reply_to_message_id,
             id,
-        }: Self::Input<'a>,
+        }: Self::Input<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let span = span!(Level::INFO, "send");
         let _guard = span.enter();
@@ -86,13 +86,13 @@ impl Interactor for SendAudioById {
     type Output = ();
     type Err = SessionErrorKind;
 
-    async fn execute<'a>(
+    async fn execute(
         &mut self,
         SendAudioByIdInput {
             chat_id,
             reply_to_message_id,
             id,
-        }: Self::Input<'a>,
+        }: Self::Input<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let span = span!(Level::INFO, "send");
         let _guard = span.enter();
@@ -144,13 +144,13 @@ impl Interactor for EditVideoById {
     type Output = ();
     type Err = SessionErrorKind;
 
-    async fn execute<'a>(
+    async fn execute(
         &mut self,
         EditVideoByIdInput {
             inline_message_id,
             id,
             caption,
-        }: Self::Input<'a>,
+        }: Self::Input<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let span = span!(Level::INFO, "send");
         let _guard = span.enter();
@@ -202,13 +202,13 @@ impl Interactor for EditAudioById {
     type Output = ();
     type Err = SessionErrorKind;
 
-    async fn execute<'a>(
+    async fn execute(
         &mut self,
         EditAudioByIdInput {
             inline_message_id,
             id,
             caption,
-        }: Self::Input<'a>,
+        }: Self::Input<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let span = span!(Level::INFO, "send");
         let _guard = span.enter();
@@ -260,13 +260,13 @@ impl Interactor for SendVideoPlaylistById {
     type Output = ();
     type Err = SessionErrorKind;
 
-    async fn execute<'a>(
+    async fn execute(
         &mut self,
         SendVideoPlaylistByIdInput {
             chat_id,
             reply_to_message_id,
             mut videos,
-        }: Self::Input<'a>,
+        }: Self::Input<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let span = span!(Level::INFO, "send_playlist");
         let _guard = span.enter();
@@ -322,13 +322,13 @@ impl Interactor for SendAudioPlaylistById {
     type Output = ();
     type Err = SessionErrorKind;
 
-    async fn execute<'a>(
+    async fn execute(
         &mut self,
         SendAudioPlaylistByIdInput {
             chat_id,
             reply_to_message_id,
             mut audios,
-        }: Self::Input<'a>,
+        }: Self::Input<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let span = span!(Level::INFO, "send_playlist");
         let _guard = span.enter();

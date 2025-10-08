@@ -128,17 +128,14 @@ pub fn url_is_blacklisted(request: &mut Request) -> impl Future<Output = bool> {
 
 pub fn url_is_skippable_by_param(request: &mut Request) -> impl Future<Output = bool> {
     let mut result: bool = false;
-    match request.extensions.get::<UrlWithParams>() {
-        Some(UrlWithParams { url, .. }) => {
-            for (key, value) in url.query_pairs() {
-                if ["yv2t", "yv2t_bot", "download"].contains(&&*key.to_lowercase()) && !bool::from_str(&value).unwrap_or(true) {
-                    result = true;
-                    break;
-                }
+    if let Some(UrlWithParams { url, .. }) = request.extensions.get::<UrlWithParams>() {
+        for (key, value) in url.query_pairs() {
+            if ["yv2t", "yv2t_bot", "download"].contains(&&*key.to_lowercase()) && !bool::from_str(&value).unwrap_or(true) {
+                result = true;
+                break;
             }
         }
-        _ => {}
-    };
+    }
 
     async move { result }
 }
