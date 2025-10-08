@@ -14,3 +14,7 @@ pub enum Error<'a> {
     #[error("Unknown format")]
     UnknownFormat,
 }
+
+#[derive(thiserror::Error, Debug)]
+#[error("Format not found for media for languages ")]
+pub struct FormatNotFound;

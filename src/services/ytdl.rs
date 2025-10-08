@@ -1,7 +1,4 @@
-use crate::{
-    handlers_utils::range::Range,
-    models::{Cookie, Video, VideosInYT},
-};
+use crate::entities::{Cookie, Range, Video, VideosInYT};
 
 use serde::de::Error as _;
 use serde_json::Value;

@@ -1,4 +1,4 @@
-use crate::models::Cookies;
+use crate::entities::Cookies;
 
 use std::{io, path::Path};
 use tracing::{event, Level};

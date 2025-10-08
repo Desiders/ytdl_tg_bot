@@ -8,6 +8,7 @@ use telers::{
     utils::text::{html_quote, html_text_link},
     Bot, Extension,
 };
+use tracing::{span, Level};
 
 pub async fn start(
     bot: Bot,
@@ -15,6 +16,9 @@ pub async fn start(
     Extension(yt_dlp_cfg): Extension<YtDlpConfig>,
     Extension(bot_cfg): Extension<BotConfig>,
 ) -> HandlerResult {
+    let span = span!(Level::INFO, "start_handler");
+    let _enter = span.enter();
+
     let bot_info = bot.send(GetMe {}).await?;
     let text = format!(
         "Hi, {first_name}. I'm a bot that can help you download videos from YouTube and other resources.\n\n\
