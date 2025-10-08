@@ -7,8 +7,8 @@ use crate::{
 use std::sync::Arc;
 use telers::{
     errors::SessionErrorKind,
-    methods::{SendAudio, SendVideo},
-    types::{InputFile, InputMediaAudio, InputMediaVideo, ReplyParameters},
+    methods::{EditMessageMedia, SendAudio, SendVideo},
+    types::{InlineKeyboardMarkup, InputFile, InputMediaAudio, InputMediaVideo, ReplyParameters},
     Bot,
 };
 use tracing::{event, span, Level};
@@ -107,6 +107,122 @@ impl Interactor for SendAudioById {
         )
         .await?;
         event!(Level::DEBUG, "Audio sent");
+
+        Ok(())
+    }
+}
+
+pub struct EditVideoById {
+    bot: Arc<Bot>,
+}
+
+impl EditVideoById {
+    pub const fn new(bot: Arc<Bot>) -> Self {
+        Self { bot }
+    }
+}
+
+pub struct EditVideoByIdInput<'a> {
+    pub inline_message_id: &'a str,
+    pub id: &'a str,
+    pub caption: &'a str,
+}
+
+impl<'a> EditVideoByIdInput<'a> {
+    pub const fn new(inline_message_id: &'a str, id: &'a str, caption: &'a str) -> Self {
+        Self {
+            inline_message_id,
+            id,
+            caption,
+        }
+    }
+}
+
+impl Interactor for EditVideoById {
+    type Input<'a> = EditVideoByIdInput<'a>;
+    type Output = ();
+    type Err = SessionErrorKind;
+
+    async fn execute<'a>(
+        &mut self,
+        EditVideoByIdInput {
+            inline_message_id,
+            id,
+            caption,
+        }: Self::Input<'a>,
+    ) -> Result<Self::Output, Self::Err> {
+        let span = span!(Level::INFO, "send");
+        let _guard = span.enter();
+
+        event!(Level::DEBUG, "Video editing");
+        send::with_retries(
+            &self.bot,
+            EditMessageMedia::new(InputMediaVideo::new(InputFile::id(id)).caption(caption).supports_streaming(true))
+                .inline_message_id(inline_message_id)
+                .reply_markup(InlineKeyboardMarkup::new([[]])),
+            2,
+            Some(SEND_TIMEOUT),
+        )
+        .await?;
+        event!(Level::DEBUG, "Video edited");
+
+        Ok(())
+    }
+}
+
+pub struct EditAudioById {
+    bot: Arc<Bot>,
+}
+
+impl EditAudioById {
+    pub const fn new(bot: Arc<Bot>) -> Self {
+        Self { bot }
+    }
+}
+
+pub struct EditAudioByIdInput<'a> {
+    pub inline_message_id: &'a str,
+    pub id: &'a str,
+    pub caption: &'a str,
+}
+
+impl<'a> EditAudioByIdInput<'a> {
+    pub const fn new(inline_message_id: &'a str, id: &'a str, caption: &'a str) -> Self {
+        Self {
+            inline_message_id,
+            id,
+            caption,
+        }
+    }
+}
+
+impl Interactor for EditAudioById {
+    type Input<'a> = EditAudioByIdInput<'a>;
+    type Output = ();
+    type Err = SessionErrorKind;
+
+    async fn execute<'a>(
+        &mut self,
+        EditAudioByIdInput {
+            inline_message_id,
+            id,
+            caption,
+        }: Self::Input<'a>,
+    ) -> Result<Self::Output, Self::Err> {
+        let span = span!(Level::INFO, "send");
+        let _guard = span.enter();
+
+        event!(Level::DEBUG, "Audio editing");
+        send::with_retries(
+            &self.bot,
+            EditMessageMedia::new(InputMediaAudio::new(InputFile::id(id)).caption(caption))
+                .inline_message_id(inline_message_id)
+                .reply_markup(InlineKeyboardMarkup::new([[]])),
+            2,
+            Some(SEND_TIMEOUT),
+        )
+        .await?;
+        event!(Level::DEBUG, "Audio edited");
 
         Ok(())
     }
