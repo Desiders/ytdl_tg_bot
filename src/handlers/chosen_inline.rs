@@ -1,19 +1,7 @@
-use std::str::FromStr as _;
-
-use froodi::async_impl::Container;
-use telers::{
-    enums::ParseMode,
-    event::{telegram::HandlerResult, EventReturn},
-    types::ChosenInlineResult,
-    utils::text::{html_formatter::expandable_blockquote, html_text_link},
-    Bot, Extension,
-};
-use tracing::{event, field::debug, instrument, Level, Span};
-
 use crate::{
     config::{ChatConfig, YtDlpConfig},
-    entities::{AudioAndFormat, PreferredLanguages, Range, VideoAndFormat},
-    handlers_utils::{error, url::UrlWithParams},
+    entities::{AudioAndFormat, PreferredLanguages, Range, UrlWithParams, VideoAndFormat},
+    handlers_utils::error,
     interactors::{
         download::{DownloadAudio, DownloadAudioInput, DownloadVideo, DownloadVideoInput},
         send_media::{
@@ -24,6 +12,17 @@ use crate::{
     },
     utils::{format_error_report, FormatErrorToMessage as _},
 };
+
+use froodi::async_impl::Container;
+use std::str::FromStr as _;
+use telers::{
+    enums::ParseMode,
+    event::{telegram::HandlerResult, EventReturn},
+    types::ChosenInlineResult,
+    utils::text::{html_formatter::expandable_blockquote, html_text_link},
+    Bot, Extension,
+};
+use tracing::{event, field::debug, instrument, Level, Span};
 
 #[instrument(skip_all, fields(inline_message_id, result_id, url = url.as_str(), params))]
 pub async fn download(

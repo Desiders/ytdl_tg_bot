@@ -1,8 +1,8 @@
+use crate::{config::BlacklistedConfig, entities::UrlWithParams};
+
 use std::{collections::HashMap, future::Future, str::FromStr};
 use telers::{types::UpdateKind, Request};
 use url::Url;
-
-use crate::{config::BlacklistedConfig, handlers_utils::url::UrlWithParams};
 
 fn parse_params(param_block: &str) -> Vec<(Box<str>, Box<str>)> {
     let inner = param_block.trim();
