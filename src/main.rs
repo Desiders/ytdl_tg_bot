@@ -203,7 +203,7 @@ async fn main() {
         .filter(is_via_bot.invert());
     download_router
         .message
-        .register(video::download)
+        .register(video::download_quite)
         .filter(text_contains_url)
         .filter(url_is_blacklisted.invert())
         .filter(url_is_skippable_by_param.invert())
