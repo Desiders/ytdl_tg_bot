@@ -107,7 +107,7 @@ impl Formats<'_> {
     }
 
     #[allow(clippy::unnecessary_cast, clippy::cast_possible_truncation, clippy::cast_precision_loss)]
-    fn sort_formats(&mut self, max_size: f64, preferred_languages: &[&str]) {
+    fn sort_formats(&mut self, max_size: f64, preferred_languages: &[Box<str>]) {
         fn calculate_size_weight(format: &Format, max_size: f64) -> f32 {
             match format.filesize_or_approx() {
                 Some(size) => {
@@ -122,14 +122,14 @@ impl Formats<'_> {
             }
         }
 
-        fn calculate_size_language(language: Option<&str>, preferred_languages: &[&str]) -> f32 {
+        fn calculate_size_language(language: Option<&str>, preferred_languages: &[Box<str>]) -> f32 {
             let Some(language) = language else {
                 return 0.2;
             };
 
             if let Some(pos) = preferred_languages
                 .iter()
-                .position(|&preferred_language| preferred_language.eq_ignore_ascii_case(language))
+                .position(|preferred_language| preferred_language.eq_ignore_ascii_case(language))
             {
                 return (1.0 - pos as f32 * 0.1).max(0.4);
             }
@@ -175,7 +175,7 @@ impl Formats<'_> {
         });
     }
 
-    pub fn sort(&mut self, max_size: u32, preferred_languages: &[&str]) {
+    pub fn sort(&mut self, max_size: u32, preferred_languages: &[Box<str>]) {
         let max_size = f64::from(max_size);
 
         self.filter_by_max_size(max_size);

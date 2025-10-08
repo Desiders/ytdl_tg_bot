@@ -52,7 +52,7 @@ where
             Err(err) => {
                 Err(match err {
                     SessionErrorKind::Telegram(TelegramErrorKind::RetryAfter { retry_after, .. }) => {
-                        event!(Level::DEBUG, "Sleeping for {retry_after:?} seconds");
+                        event!(Level::WARN, "Sleeping for {retry_after:?} seconds");
 
                         backoff::Error::retry_after(err, Duration::from_secs_f32(retry_after))
                     }

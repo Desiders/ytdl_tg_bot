@@ -1,8 +1,14 @@
 use std::{convert::Infallible, str::FromStr};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PreferredLanguages {
     pub languages: Box<[Box<str>]>,
+}
+
+impl AsRef<[Box<str>]> for PreferredLanguages {
+    fn as_ref(&self) -> &[Box<str>] {
+        &self.languages
+    }
 }
 
 impl Default for PreferredLanguages {

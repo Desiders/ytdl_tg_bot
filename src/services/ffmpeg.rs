@@ -1,10 +1,14 @@
 use std::{
     io,
     os::fd::{AsRawFd, OwnedFd},
-    path::Path,
+    path::{Path, PathBuf},
     process::Stdio,
+    time::Duration,
 };
-use tracing::instrument;
+use tokio::time::timeout;
+use tracing::{event, instrument, Level};
+
+use crate::utils::format_error_report;
 
 /// Merge the video and audio streams into a single file.
 /// # Errors
@@ -65,7 +69,7 @@ pub enum Error {
 /// # Returns
 /// Returns the child process
 #[instrument(skip_all)]
-pub async fn convert_to_jpg(input_url: impl AsRef<str>, output_path: impl AsRef<Path>) -> Result<tokio::process::Child, Error> {
+async fn convert_to_jpg(input_url: impl AsRef<str>, output_path: impl AsRef<Path>) -> Result<tokio::process::Child, Error> {
     let input_url = input_url.as_ref();
     let output_path = output_path.as_ref();
 
@@ -78,4 +82,33 @@ pub async fn convert_to_jpg(input_url: impl AsRef<str>, output_path: impl AsRef<
         .kill_on_drop(true)
         .spawn()
         .map_err(Into::into)
+}
+
+#[instrument(skip(temp_dir_path), fields(url = url.as_ref(), id = id.as_ref()))]
+pub async fn download_thumbnail_to_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_path: impl AsRef<Path>) -> Option<PathBuf> {
+    let path = temp_dir_path.as_ref().join(format!("{}.jpg", id.as_ref()));
+
+    match convert_to_jpg(url, &path).await {
+        Ok(mut child) => match timeout(Duration::from_secs(10), child.wait()).await {
+            Ok(Ok(status)) => {
+                if status.success() {
+                    Some(path)
+                } else {
+                    None
+                }
+            }
+            Ok(Err(err)) => {
+                event!(Level::ERROR, err = format_error_report(&err), "Failed to convert thumbnail");
+                None
+            }
+            Err(_) => {
+                event!(Level::WARN, "Convert thumbnail timed out");
+                None
+            }
+        },
+        Err(err) => {
+            event!(Level::ERROR, err = format_error_report(&err), "Failed to convert thumbnail");
+            None
+        }
+    }
 }

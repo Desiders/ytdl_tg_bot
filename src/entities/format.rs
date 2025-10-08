@@ -224,8 +224,9 @@ impl VideoCodec<'_> {
         use VideoCodec::{ProRes, H264, H265, VP9};
 
         match self {
-            H264(_) | H265(_) => 1,
-            VP9(_) => 2,
+            H264(_) => 1,
+            H265(_) => 2,
+            VP9(_) => 3,
             ProRes(_) => 4,
         }
     }
@@ -441,8 +442,9 @@ impl Display for Video<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{id} {container}+{codec} {resolution} {filesize_kb:.2}KiB ({filesize_mb:.2}MiB)",
+            "{id}{language} {container}+{codec} {resolution} {filesize_kb:.2}KiB ({filesize_mb:.2}MiB)",
             id = self.id,
+            language = self.language.unwrap_or_default(),
             container = self.container,
             codec = self.codec.as_ref().map_or("unknown", VideoCodec::as_str),
             resolution = self.resolution(),
@@ -515,8 +517,9 @@ impl Display for Audio<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{id} {codec} {filesize_kb:.2}KB ({filesize_mb:.2}MB)",
+            "{id}{language} {codec} {filesize_kb:.2}KB ({filesize_mb:.2}MB)",
             id = self.id,
+            language = self.language.unwrap_or_default(),
             codec = self.codec,
             filesize_kb = self.filesize_or_approx().map_or(0.0, |filesize| filesize / 1024.0),
             filesize_mb = self.filesize_or_approx().map_or(0.0, |filesize| filesize / 1024.0 / 1024.0),
@@ -534,7 +537,7 @@ impl Audios<'_> {
     }
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
-    fn sort_formats(&mut self, max_size: f64, preferred_languages: &[&str]) {
+    fn sort_formats(&mut self, max_size: f64, preferred_languages: &[Box<str>]) {
         fn calculate_size_weight(audio: &Audio, max_size: f64) -> f32 {
             match audio.filesize {
                 Some(size) => {
@@ -549,14 +552,14 @@ impl Audios<'_> {
             }
         }
 
-        fn calculate_size_language(language: Option<&str>, preferred_languages: &[&str]) -> f32 {
+        fn calculate_size_language(language: Option<&str>, preferred_languages: &[Box<str>]) -> f32 {
             let Some(language) = language else {
                 return 0.2;
             };
 
             if let Some(pos) = preferred_languages
                 .iter()
-                .position(|&preferred_language| preferred_language.eq_ignore_ascii_case(language))
+                .position(|preferred_language| preferred_language.eq_ignore_ascii_case(language))
             {
                 return (1.0 - pos as f32 * 0.1).max(0.4);
             }
@@ -592,7 +595,7 @@ impl Audios<'_> {
         });
     }
 
-    pub fn sort(&mut self, max_size: u32, preferred_languages: &[&str]) {
+    pub fn sort(&mut self, max_size: u32, preferred_languages: &[Box<str>]) {
         let max_size = f64::from(max_size);
 
         self.filter_by_max_size(max_size);
