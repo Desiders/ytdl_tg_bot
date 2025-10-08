@@ -22,9 +22,8 @@ use telers::{
     utils::text::{html_formatter::expandable_blockquote, html_text_link},
     Bot, Extension,
 };
-use tracing::{event, field::debug, instrument, Level, Span};
+use tracing::{event, span, Level};
 
-#[instrument(skip_all, fields(inline_message_id, result_id, url = url.as_str(), params))]
 pub async fn download(
     bot: Bot,
     ChosenInlineResult {
@@ -40,10 +39,15 @@ pub async fn download(
     let inline_message_id = inline_message_id.as_deref().unwrap();
     let is_video = result_id.starts_with("video_");
 
-    Span::current()
-        .record("inline_message_id", inline_message_id)
-        .record("result_id", result_id.as_ref())
-        .record("params", debug(&params));
+    let span = span!(
+        Level::INFO,
+        "inline_text_handler",
+        inline_message_id,
+        result_id,
+        url = url.as_str(),
+        ?params
+    );
+    let _enter = span.enter();
 
     event!(Level::DEBUG, "Got url");
 
