@@ -1,10 +1,15 @@
 use crate::{
-    config::{YtDlpConfig, YtPotProviderConfig},
-    entities::{Cookies, Range, VideosInYT},
+    config::{YtDlpConfig, YtPotProviderConfig, YtToolkitConfig},
+    entities::{yt_toolkit::BasicInfo, Cookies, Range, VideosInYT},
     interactors::Interactor,
-    services::{get_media_or_playlist_info, ytdl},
+    services::{
+        get_media_or_playlist_info,
+        yt_toolkit::{get_video_info, search_video, GetVideoInfoErrorKind, SearchVideoErrorKind},
+        ytdl,
+    },
 };
 
+use reqwest::Client;
 use std::sync::Arc;
 use tracing::{event, instrument, Level};
 use url::Url;
@@ -61,5 +66,75 @@ impl Interactor for GetMediaInfo {
         .await;
         event!(Level::DEBUG, "Got media info");
         res
+    }
+}
+
+pub struct GetShortMediaInfo {
+    client: Arc<Client>,
+    yt_toolkit_cfg: Arc<YtToolkitConfig>,
+}
+
+impl GetShortMediaInfo {
+    pub const fn new(client: Arc<Client>, yt_toolkit_cfg: Arc<YtToolkitConfig>) -> Self {
+        Self { client, yt_toolkit_cfg }
+    }
+}
+
+pub struct GetShortMediaInfoInput<'a> {
+    pub url: &'a Url,
+}
+
+impl<'a> GetShortMediaInfoInput<'a> {
+    pub const fn new(url: &'a Url) -> Self {
+        Self { url }
+    }
+}
+
+impl Interactor for GetShortMediaInfo {
+    type Input<'a> = GetShortMediaInfoInput<'a>;
+    type Output = Vec<BasicInfo>;
+    type Err = GetVideoInfoErrorKind;
+
+    #[instrument(target = "get_info", skip_all)]
+    async fn execute<'a>(&mut self, GetShortMediaInfoInput { url }: Self::Input<'a>) -> Result<Self::Output, Self::Err> {
+        event!(Level::DEBUG, "Getting media info");
+        let res = get_video_info(&self.client, self.yt_toolkit_cfg.url.as_ref(), url.as_ref()).await?;
+        event!(Level::DEBUG, "Got media info");
+        Ok(res)
+    }
+}
+
+pub struct SearchMediaInfo {
+    client: Arc<Client>,
+    yt_toolkit_cfg: Arc<YtToolkitConfig>,
+}
+
+impl SearchMediaInfo {
+    pub const fn new(client: Arc<Client>, yt_toolkit_cfg: Arc<YtToolkitConfig>) -> Self {
+        Self { client, yt_toolkit_cfg }
+    }
+}
+
+pub struct SearchMediaInfoInput<'a> {
+    pub text: &'a str,
+}
+
+impl<'a> SearchMediaInfoInput<'a> {
+    pub const fn new(text: &'a str) -> Self {
+        Self { text }
+    }
+}
+
+impl Interactor for SearchMediaInfo {
+    type Input<'a> = SearchMediaInfoInput<'a>;
+    type Output = Vec<BasicInfo>;
+    type Err = SearchVideoErrorKind;
+
+    #[instrument(target = "get_info", skip_all)]
+    async fn execute<'a>(&mut self, SearchMediaInfoInput { text }: Self::Input<'a>) -> Result<Self::Output, Self::Err> {
+        event!(Level::DEBUG, "Searching media info");
+        let res = search_video(&self.client, self.yt_toolkit_cfg.url.as_ref(), text).await?;
+        event!(Level::DEBUG, "Got media info");
+        Ok(res)
     }
 }
