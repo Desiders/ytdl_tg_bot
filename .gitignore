@@ -1,8 +1,6 @@
 .env
 .vscode/
 
-Cargo.lock
-
 target/
 
 yt-dlp-cache/
