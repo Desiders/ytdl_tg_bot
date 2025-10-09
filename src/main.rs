@@ -23,7 +23,7 @@ use crate::{
             EditAudioById, EditVideoById, SendAudioById, SendAudioInFS, SendAudioPlaylistById, SendVideoById, SendVideoInFS,
             SendVideoPlaylistById,
         },
-        GetMediaInfo, GetShortMediaInfo, SearchMediaInfo,
+        GetMediaInfoById, GetMediaInfoByURL, GetShortMediaByURLInfo, SearchMediaInfo,
     },
     middlewares::{ContainerMiddleware, ReactionMiddleware},
     services::get_cookies_from_directory,
@@ -68,12 +68,18 @@ fn init_container(
         .provide(
             |Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
              Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-             Inject(cookies): Inject<Cookies>| { Ok(GetMediaInfo::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies)) },
+             Inject(cookies): Inject<Cookies>| { Ok(GetMediaInfoByURL::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies)) },
+            Request,
+        )
+        .provide(
+            |Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
+             Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
+             Inject(cookies): Inject<Cookies>| { Ok(GetMediaInfoById::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies)) },
             Request,
         )
         .provide(
             |Inject(client): Inject<Client>, Inject(yt_toolkit_cfg): Inject<YtToolkitConfig>| {
-                Ok(GetShortMediaInfo::new(client, yt_toolkit_cfg))
+                Ok(GetShortMediaByURLInfo::new(client, yt_toolkit_cfg))
             },
             Request,
         )
@@ -217,13 +223,13 @@ async fn main() {
         .register(inline_query::select_by_text)
         .filter(text_empty.invert());
     download_router
-        .inline_query
-        .register(inline_query::select_by_url)
-        .filter(text_empty.invert());
+        .chosen_inline_result
+        .register(chosen_inline::download_by_url)
+        .filter(text_contains_url);
     download_router
         .chosen_inline_result
-        .register(chosen_inline::download)
-        .filter(text_contains_url);
+        .register(chosen_inline::download_by_text)
+        .filter(text_empty.invert());
 
     router.include(download_router);
 

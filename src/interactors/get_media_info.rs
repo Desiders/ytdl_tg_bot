@@ -12,17 +12,17 @@ use crate::{
 use reqwest::Client;
 use std::sync::Arc;
 use tracing::{event, span, Level};
-use url::Url;
+use url::{Host, Url};
 
 const GET_INFO_TIMEOUT: u64 = 180;
 
-pub struct GetMediaInfo {
+pub struct GetMediaInfoByURL {
     yt_dlp_cfg: Arc<YtDlpConfig>,
     yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
     cookies: Arc<Cookies>,
 }
 
-impl GetMediaInfo {
+impl GetMediaInfoByURL {
     pub const fn new(yt_dlp_cfg: Arc<YtDlpConfig>, yt_pot_provider_cfg: Arc<YtPotProviderConfig>, cookies: Arc<Cookies>) -> Self {
         Self {
             yt_dlp_cfg,
@@ -32,23 +32,23 @@ impl GetMediaInfo {
     }
 }
 
-pub struct GetMedaInfoInput<'a> {
+pub struct GetMedaInfoByURLInput<'a> {
     pub url: &'a Url,
     pub range: &'a Range,
 }
 
-impl<'a> GetMedaInfoInput<'a> {
+impl<'a> GetMedaInfoByURLInput<'a> {
     pub const fn new(url: &'a Url, range: &'a Range) -> Self {
         Self { url, range }
     }
 }
 
-impl Interactor for GetMediaInfo {
-    type Input<'a> = GetMedaInfoInput<'a>;
+impl Interactor for GetMediaInfoByURL {
+    type Input<'a> = GetMedaInfoByURLInput<'a>;
     type Output = VideosInYT;
     type Err = ytdl::Error;
 
-    async fn execute(&mut self, GetMedaInfoInput { url, range }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
+    async fn execute(&mut self, GetMedaInfoByURLInput { url, range }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
         let span = span!(Level::INFO, "get_info");
         let _enter = span.enter();
 
@@ -71,33 +71,88 @@ impl Interactor for GetMediaInfo {
     }
 }
 
-pub struct GetShortMediaInfo {
+pub struct GetMediaInfoById {
+    yt_dlp_cfg: Arc<YtDlpConfig>,
+    yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
+    cookies: Arc<Cookies>,
+}
+
+impl GetMediaInfoById {
+    pub const fn new(yt_dlp_cfg: Arc<YtDlpConfig>, yt_pot_provider_cfg: Arc<YtPotProviderConfig>, cookies: Arc<Cookies>) -> Self {
+        Self {
+            yt_dlp_cfg,
+            yt_pot_provider_cfg,
+            cookies,
+        }
+    }
+}
+
+pub struct GetMediaInfoByIdInput<'a> {
+    pub id: &'a str,
+    pub host: &'a Host<&'a str>,
+    pub range: &'a Range,
+}
+
+impl<'a> GetMediaInfoByIdInput<'a> {
+    pub const fn new(id: &'a str, host: &'a Host<&'a str>, range: &'a Range) -> Self {
+        Self { id, host, range }
+    }
+}
+
+impl Interactor for GetMediaInfoById {
+    type Input<'a> = GetMediaInfoByIdInput<'a>;
+    type Output = VideosInYT;
+    type Err = ytdl::Error;
+
+    async fn execute(&mut self, GetMediaInfoByIdInput { id, host, range }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
+        let span = span!(Level::INFO, "get_info");
+        let _enter = span.enter();
+
+        let cookie = self.cookies.get_path_by_host(host);
+
+        event!(Level::DEBUG, "Getting media info");
+        let res = get_media_or_playlist_info(
+            self.yt_dlp_cfg.executable_path.as_ref(),
+            format!("ytsearch:{id}"),
+            self.yt_pot_provider_cfg.url.as_ref(),
+            true,
+            GET_INFO_TIMEOUT,
+            range,
+            cookie,
+        )
+        .await;
+        event!(Level::INFO, "Got media info");
+        res
+    }
+}
+
+pub struct GetShortMediaByURLInfo {
     client: Arc<Client>,
     yt_toolkit_cfg: Arc<YtToolkitConfig>,
 }
 
-impl GetShortMediaInfo {
+impl GetShortMediaByURLInfo {
     pub const fn new(client: Arc<Client>, yt_toolkit_cfg: Arc<YtToolkitConfig>) -> Self {
         Self { client, yt_toolkit_cfg }
     }
 }
 
-pub struct GetShortMediaInfoInput<'a> {
+pub struct GetShortMediaInfoByURLInput<'a> {
     pub url: &'a Url,
 }
 
-impl<'a> GetShortMediaInfoInput<'a> {
+impl<'a> GetShortMediaInfoByURLInput<'a> {
     pub const fn new(url: &'a Url) -> Self {
         Self { url }
     }
 }
 
-impl Interactor for GetShortMediaInfo {
-    type Input<'a> = GetShortMediaInfoInput<'a>;
+impl Interactor for GetShortMediaByURLInfo {
+    type Input<'a> = GetShortMediaInfoByURLInput<'a>;
     type Output = Vec<BasicInfo>;
     type Err = GetVideoInfoErrorKind;
 
-    async fn execute(&mut self, GetShortMediaInfoInput { url }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
+    async fn execute(&mut self, GetShortMediaInfoByURLInput { url }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
         let span = span!(Level::INFO, "get_short_info");
         let _enter = span.enter();
 

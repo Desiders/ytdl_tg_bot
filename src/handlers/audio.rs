@@ -5,7 +5,7 @@ use crate::{
     interactors::{
         download::{DownloadAudio, DownloadAudioInput, DownloadAudioPlaylist, DownloadAudioPlaylistInput},
         send_media::{SendAudioInFS, SendAudioInFSInput, SendAudioPlaylistById, SendAudioPlaylistByIdInput},
-        GetMedaInfoInput, GetMediaInfo, Interactor as _,
+        GetMedaInfoByURLInput, GetMediaInfoByURL, Interactor as _,
     },
     utils::{format_error_report, FormatErrorToMessage as _},
 };
@@ -37,7 +37,7 @@ pub async fn download(
 
     event!(Level::DEBUG, "Got url");
 
-    let mut get_media_info = container.get_transient::<GetMediaInfo>().await.unwrap();
+    let mut get_media_info = container.get_transient::<GetMediaInfoByURL>().await.unwrap();
     let mut download = container.get_transient::<DownloadAudio>().await.unwrap();
     let mut download_playlist = container.get_transient::<DownloadAudioPlaylist>().await.unwrap();
     let mut send_media_in_fs = container.get_transient::<SendAudioInFS>().await.unwrap();
@@ -59,7 +59,7 @@ pub async fn download(
         Some(raw_value) => PreferredLanguages::from_str(raw_value).unwrap(),
         None => PreferredLanguages::default(),
     };
-    let mut videos = match get_media_info.execute(GetMedaInfoInput::new(&url, &range)).await {
+    let mut videos = match get_media_info.execute(GetMedaInfoByURLInput::new(&url, &range)).await {
         Ok(val) => val,
         Err(err) => {
             event!(Level::ERROR, err = format_error_report(&err), "Get info err");
