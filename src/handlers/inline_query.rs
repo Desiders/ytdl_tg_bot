@@ -2,7 +2,8 @@ use crate::{
     entities::{Range, ShortInfo, UrlWithParams},
     handlers_utils::error,
     interactors::{
-        GetMedaInfoInput, GetMediaInfo, GetShortMediaInfo, GetShortMediaInfoInput, Interactor, SearchMediaInfo, SearchMediaInfoInput,
+        GetMedaInfoByURLInput, GetMediaInfoByURL, GetShortMediaByURLInfo, GetShortMediaInfoByURLInput, Interactor, SearchMediaInfo,
+        SearchMediaInfoInput,
     },
     services::yt_toolkit::GetVideoInfoErrorKind,
     utils::format_error_report,
@@ -36,10 +37,10 @@ pub async fn select_by_url(
 
     event!(Level::DEBUG, "Got url");
 
-    let mut get_short_media_info = container.get_transient::<GetShortMediaInfo>().await.unwrap();
-    let mut get_media_info = container.get_transient::<GetMediaInfo>().await.unwrap();
+    let mut get_short_media_info = container.get_transient::<GetShortMediaByURLInfo>().await.unwrap();
+    let mut get_media_info = container.get_transient::<GetMediaInfoByURL>().await.unwrap();
 
-    let videos: Vec<ShortInfo> = match get_short_media_info.execute(GetShortMediaInfoInput::new(&url)).await {
+    let videos: Vec<ShortInfo> = match get_short_media_info.execute(GetShortMediaInfoByURLInput::new(&url)).await {
         Ok(val) => val.into_iter().map(Into::into).collect(),
         Err(err) => {
             if let GetVideoInfoErrorKind::GetVideoId(err) = err {
@@ -48,7 +49,7 @@ pub async fn select_by_url(
                 event!(Level::ERROR, err = format_error_report(&err), "Get YT Toolkit media info error");
             }
 
-            match get_media_info.execute(GetMedaInfoInput::new(&url, &Range::default())).await {
+            match get_media_info.execute(GetMedaInfoByURLInput::new(&url, &Range::default())).await {
                 Ok(val) => val.into_iter().map(Into::into).collect(),
                 Err(err) => {
                     event!(Level::ERROR, err = format_error_report(&err), "Get info err");

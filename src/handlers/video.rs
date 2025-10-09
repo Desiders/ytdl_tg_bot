@@ -5,7 +5,7 @@ use crate::{
     interactors::{
         download::{DownloadVideo, DownloadVideoInput, DownloadVideoPlaylist, DownloadVideoPlaylistInput},
         send_media::{SendVideoInFS, SendVideoInFSInput, SendVideoPlaylistById, SendVideoPlaylistByIdInput},
-        GetMedaInfoInput, GetMediaInfo, Interactor as _,
+        GetMedaInfoByURLInput, GetMediaInfoByURL, Interactor as _,
     },
     utils::{format_error_report, FormatErrorToMessage as _},
 };
@@ -37,7 +37,7 @@ pub async fn download(
 
     event!(Level::DEBUG, "Got url");
 
-    let mut get_media_info = container.get_transient::<GetMediaInfo>().await.unwrap();
+    let mut get_media_info = container.get_transient::<GetMediaInfoByURL>().await.unwrap();
     let mut download = container.get_transient::<DownloadVideo>().await.unwrap();
     let mut download_playlist = container.get_transient::<DownloadVideoPlaylist>().await.unwrap();
     let mut send_media_in_fs = container.get_transient::<SendVideoInFS>().await.unwrap();
@@ -59,7 +59,7 @@ pub async fn download(
         Some(raw_value) => PreferredLanguages::from_str(raw_value).unwrap(),
         None => PreferredLanguages::default(),
     };
-    let mut videos = match get_media_info.execute(GetMedaInfoInput::new(&url, &range)).await {
+    let mut videos = match get_media_info.execute(GetMedaInfoByURLInput::new(&url, &range)).await {
         Ok(val) => val,
         Err(err) => {
             event!(Level::ERROR, err = format_error_report(&err), "Get info err");
@@ -241,7 +241,7 @@ pub async fn download_quite(
 
     event!(Level::DEBUG, "Got url");
 
-    let mut get_media_info = container.get_transient::<GetMediaInfo>().await.unwrap();
+    let mut get_media_info = container.get_transient::<GetMediaInfoByURL>().await.unwrap();
     let mut download = container.get_transient::<DownloadVideo>().await.unwrap();
     let mut download_playlist = container.get_transient::<DownloadVideoPlaylist>().await.unwrap();
     let mut send_media_in_fs = container.get_transient::<SendVideoInFS>().await.unwrap();
@@ -261,7 +261,7 @@ pub async fn download_quite(
         Some(raw_value) => PreferredLanguages::from_str(raw_value).unwrap(),
         None => PreferredLanguages::default(),
     };
-    let mut videos = match get_media_info.execute(GetMedaInfoInput::new(&url, &range)).await {
+    let mut videos = match get_media_info.execute(GetMedaInfoByURLInput::new(&url, &range)).await {
         Ok(val) => val,
         Err(err) => {
             event!(Level::ERROR, err = format_error_report(&err), "Get info err");
