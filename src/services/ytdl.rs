@@ -9,7 +9,7 @@ use std::{
     process::{Child, Command, Output, Stdio},
     time::Duration,
 };
-use tracing::{event, Level};
+use tracing::{event, instrument, Level};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -26,6 +26,7 @@ pub enum Error {
 /// Returns [`io::Error`] if the spawn child process fails
 /// # Returns
 /// Returns the child process
+#[instrument(skip_all)]
 pub fn download_to_pipe(
     fd: OwnedFd,
     executable_path: impl AsRef<str>,
@@ -79,6 +80,7 @@ pub fn download_to_pipe(
         .spawn()
 }
 
+#[instrument(skip_all)]
 pub async fn download_video_to_path(
     executable_path: impl AsRef<str>,
     url: impl AsRef<str>,
@@ -159,6 +161,7 @@ pub async fn download_video_to_path(
     }
 }
 
+#[instrument(skip_all)]
 pub async fn download_audio_to_path(
     executable_path: impl AsRef<str>,
     url: impl AsRef<str>,
@@ -245,6 +248,7 @@ pub async fn download_audio_to_path(
     }
 }
 
+#[instrument(skip_all)]
 pub async fn get_media_or_playlist_info(
     executable_path: impl AsRef<str>,
     url_or_id: impl AsRef<str>,

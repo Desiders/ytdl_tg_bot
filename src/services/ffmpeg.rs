@@ -15,7 +15,7 @@ use crate::utils::format_error_report;
 /// Returns [`io::Error`] if the spawn child process fails.
 /// # Returns
 /// Returns the child process
-#[instrument(skip_all, fields(video_fd = video_fd.as_raw_fd(), audio_fd = audio_fd.as_raw_fd(), output_path = %output_path.as_ref().as_os_str().to_string_lossy()))]
+#[instrument(skip_all, fields(video_fd = video_fd.as_raw_fd(), audio_fd = audio_fd.as_raw_fd(), path = %output_path.as_ref().as_os_str().to_string_lossy()))]
 pub fn merge_streams(
     video_fd: &OwnedFd,
     audio_fd: &OwnedFd,
@@ -84,7 +84,7 @@ async fn convert_to_jpg(input_url: impl AsRef<str>, output_path: impl AsRef<Path
         .map_err(Into::into)
 }
 
-#[instrument(skip(temp_dir_path), fields(url = url.as_ref(), id = id.as_ref()))]
+#[instrument(skip_all)]
 pub async fn download_thumbnail_to_path(url: impl AsRef<str>, id: impl AsRef<str>, temp_dir_path: impl AsRef<Path>) -> Option<PathBuf> {
     let path = temp_dir_path.as_ref().join(format!("{}.jpg", id.as_ref()));
 

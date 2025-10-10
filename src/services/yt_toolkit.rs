@@ -4,6 +4,7 @@ use crate::{
 };
 
 use reqwest::Client;
+use tracing::instrument;
 
 #[derive(thiserror::Error, Debug)]
 pub enum GetVideoInfoErrorKind {
@@ -17,6 +18,7 @@ pub enum GetVideoInfoErrorKind {
     Unplayable(PlayabilityStatus),
 }
 
+#[instrument(skip_all)]
 pub async fn get_video_info(client: &Client, api_url: &str, url: &str) -> Result<Vec<BasicInfo>, GetVideoInfoErrorKind> {
     let id = get_video_id(url)?;
 
@@ -42,6 +44,7 @@ pub enum SearchVideoErrorKind {
     Json(#[from] serde_json::Error),
 }
 
+#[instrument(skip_all)]
 pub async fn search_video(client: &Client, api_url: &str, text: &str) -> Result<Vec<BasicInfo>, SearchVideoErrorKind> {
     let basic_search_info = serde_json::from_str::<Vec<BasicSearchInfo>>(
         &client

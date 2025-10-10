@@ -8,7 +8,7 @@ use crate::{
 use std::{io, sync::Arc};
 use tempfile::TempDir;
 use tokio::sync::mpsc;
-use tracing::{event, instrument, Level};
+use tracing::{event, instrument, span, Level};
 use url::Url;
 
 const DOWNLOAD_TIMEOUT: u64 = 180;
@@ -173,12 +173,11 @@ impl Interactor for DownloadAudioPlaylist {
         for (index, AudioAndFormat { video, format }) in audios_and_formats.into_iter().enumerate() {
             let extension = format.codec.get_extension();
 
-            // let span = span!(Level::TRACE, "iter", extension, %format);
-            // let _guard = span.enter();
-
+            let span = span!(Level::INFO, "iter", extension, %format).entered();
             let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
             let file_path = temp_dir.path().join(format!("{video_id}.{extension}", video_id = video.id));
 
+            let span = span.exit();
             let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
                 let thumbnail_path = download_thumbnail_to_path(thumbnail_url, &video.id, temp_dir.path()).await;
                 (thumbnail_path, false)
@@ -199,10 +198,12 @@ impl Interactor for DownloadAudioPlaylist {
             )
             .await
             {
+                let _guard = span.enter();
                 sender.send((index, Err(DownloadAudioErrorKind::Ytdlp(err))))?;
                 continue;
             }
 
+            let _guard = span.enter();
             let thumbnail_path = match thumbnail_path {
                 Some(url) => Some(url),
                 None => {
