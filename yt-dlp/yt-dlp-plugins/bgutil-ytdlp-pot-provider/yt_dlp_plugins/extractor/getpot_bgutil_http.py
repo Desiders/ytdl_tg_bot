@@ -109,13 +109,24 @@ class BgUtilHTTPPTP(BgUtilPTPBase):
         self.logger.trace('Generating POT via HTTP server')
 
         disable_innertube = bool(self._configuration_arg('disable_innertube', default=[None])[0])
+        challenge = self._get_attestation(None if disable_innertube else request.video_webpage)
+        # The challenge is falsy when the webpage and the challenge are unavailable
+        # In this case, we need to disable /att/get since it's broken for web_music
+        if not challenge and request.internal_client_name == 'web_music':
+            if not disable_innertube:  # if not already set, warn the user
+                self.logger.warning(
+                    'BotGuard challenges could not be obtained from the webpage, '
+                    'overriding disable_innertube=True because InnerTube challenges '
+                    'are currently broken for the web_music client. '
+                    'Pass disable_innertube=1 to suppress this warning.')
+            disable_innertube = True
 
         try:
             response = self._request_webpage(
                 request=Request(
                     f'{self._base_url}/get_pot', data=json.dumps({
                         'bypass_cache': request.bypass_cache,
-                        'challenge': self._get_attestation(None if disable_innertube else request.video_webpage),
+                        'challenge': challenge,
                         'content_binding': get_webpo_content_binding(request)[0],
                         'disable_innertube': disable_innertube,
                         'disable_tls_verification': not request.request_verify_tls,
