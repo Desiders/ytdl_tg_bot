@@ -22,9 +22,10 @@ use telers::{
     utils::text::{html_formatter::expandable_blockquote, html_text_link},
     Bot, Extension,
 };
-use tracing::{event, span, Level};
+use tracing::{event, instrument, Level, Span};
 use url::{Host, Url};
 
+#[instrument(skip_all, fields(inline_message_id, is_video, url = url.as_str(), ?params))]
 pub async fn download_by_url(
     bot: Bot,
     ChosenInlineResult {
@@ -40,15 +41,9 @@ pub async fn download_by_url(
     let inline_message_id = inline_message_id.as_deref().unwrap();
     let is_video = result_id.starts_with("video_");
 
-    let span = span!(
-        Level::INFO,
-        "chosen_inline_url_handler",
-        inline_message_id,
-        result_id,
-        url = url.as_str(),
-        ?params
-    );
-    let _enter = span.enter();
+    Span::current()
+        .record("inline_message_id", inline_message_id)
+        .record("is_video", is_video);
 
     event!(Level::DEBUG, "Got url");
 
@@ -213,7 +208,8 @@ pub async fn download_by_url(
     Ok(EventReturn::Finish)
 }
 
-pub async fn download_by_text(
+#[instrument(skip_all, fields(inline_message_id, is_video, video_id))]
+pub async fn download_by_id(
     bot: Bot,
     ChosenInlineResult {
         result_id,
@@ -228,8 +224,10 @@ pub async fn download_by_text(
     let (result_prefix, video_id) = result_id.split_once('_').unwrap();
     let is_video = result_prefix.starts_with("video");
 
-    let span = span!(Level::INFO, "chosen_inline_text_handler", inline_message_id, result_id);
-    let _enter = span.enter();
+    Span::current()
+        .record("inline_message_id", inline_message_id)
+        .record("is_video", is_video)
+        .record("video_id", video_id);
 
     event!(Level::DEBUG, "Got url");
 

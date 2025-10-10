@@ -53,14 +53,6 @@ impl<'a> Format<'a> {
     }
 
     #[must_use]
-    pub fn format_id(&self) -> Box<str> {
-        let video_format_id = self.video_format.id;
-        let audio_format_id = self.audio_format.id;
-
-        format!("{video_format_id}+{audio_format_id}").into_boxed_str()
-    }
-
-    #[must_use]
     pub fn format_ids_are_equal(&self) -> bool {
         self.video_format.id == self.audio_format.id
     }

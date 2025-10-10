@@ -8,7 +8,7 @@ use crate::{
 use std::{io, sync::Arc};
 use tempfile::TempDir;
 use tokio::sync::mpsc;
-use tracing::{event, span, Level};
+use tracing::{event, instrument, Level};
 use url::Url;
 
 const DOWNLOAD_TIMEOUT: u64 = 180;
@@ -61,6 +61,7 @@ impl Interactor for DownloadAudio {
     type Output = AudioInFS;
     type Err = DownloadAudioErrorKind;
 
+    #[instrument(skip_all, fields(extension = format.codec.get_extension(), %format))]
     async fn execute(
         &mut self,
         DownloadAudioInput {
@@ -69,10 +70,6 @@ impl Interactor for DownloadAudio {
         }: Self::Input<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let extension = format.codec.get_extension();
-
-        let span = span!(Level::INFO, "download", extension, %format);
-        let _guard = span.enter();
-
         let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
         let file_path = temp_dir.path().join(format!("{video_id}.{extension}", video_id = video.id));
         let host = url.host();
@@ -161,6 +158,7 @@ impl Interactor for DownloadAudioPlaylist {
     type Output = ();
     type Err = DownloadAudioPlaylistErrorKind;
 
+    #[instrument(skip_all)]
     async fn execute(
         &mut self,
         DownloadAudioPlaylistInput {
@@ -169,17 +167,14 @@ impl Interactor for DownloadAudioPlaylist {
             sender,
         }: Self::Input<'_>,
     ) -> Result<Self::Output, Self::Err> {
-        let span = span!(Level::INFO, "download_playlist");
-        let _guard = span.enter();
-
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
         for (index, AudioAndFormat { video, format }) in audios_and_formats.into_iter().enumerate() {
             let extension = format.codec.get_extension();
 
-            let span = span!(Level::TRACE, "iter", extension, %format);
-            let _guard = span.enter();
+            // let span = span!(Level::TRACE, "iter", extension, %format);
+            // let _guard = span.enter();
 
             let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
             let file_path = temp_dir.path().join(format!("{video_id}.{extension}", video_id = video.id));

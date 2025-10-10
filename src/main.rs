@@ -228,7 +228,7 @@ async fn main() {
         .filter(text_contains_url);
     download_router
         .chosen_inline_result
-        .register(chosen_inline::download_by_text)
+        .register(chosen_inline::download_by_id)
         .filter(text_empty.invert());
 
     router.include(download_router);

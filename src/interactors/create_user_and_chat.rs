@@ -6,7 +6,7 @@ use crate::{
 };
 
 use std::convert::Infallible;
-use tracing::{event, span, Level};
+use tracing::{event, instrument, Level};
 
 pub struct CreateUserAndChat<'a> {
     pub tx_manager: &'a mut TxManager,
@@ -33,10 +33,8 @@ impl Interactor for CreateUserAndChat<'_> {
     type Output = CreateUserAndChatOutput;
     type Err = ErrorKind<Infallible>;
 
+    #[instrument(skip_all)]
     async fn execute(&mut self, Self::Input { user, chat }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
-        let span = span!(Level::INFO, "create_user_and_chat");
-        let _enter = span.enter();
-
         self.tx_manager.begin().await?;
 
         let user = match self.tx_manager.user_dao()?.insert_or_update(user).await {
