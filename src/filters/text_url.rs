@@ -66,8 +66,10 @@ pub fn text_contains_url(request: &mut Request) -> impl Future<Output = bool> {
         let mut url_found = false;
 
         if let Some(url_with_params) = get_url_with_params_from_text(text) {
-            url_found = true;
-            request.extensions.insert(url_with_params);
+            if url_with_params.url.origin().is_tuple() {
+                url_found = true;
+                request.extensions.insert(url_with_params);
+            }
         }
 
         url_found
@@ -85,8 +87,10 @@ pub fn text_contains_url_with_reply(request: &mut Request) -> impl Future<Output
 
         match get_url_with_params_from_text(text) {
             Some(url_with_params) => {
-                url_found = true;
-                request.extensions.insert(url_with_params);
+                if url_with_params.url.origin().is_tuple() {
+                    url_found = true;
+                    request.extensions.insert(url_with_params);
+                }
             }
             None => match request.update.kind() {
                 UpdateKind::Message(message) | UpdateKind::EditedMessage(message) => {
