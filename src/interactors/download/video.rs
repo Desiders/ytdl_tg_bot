@@ -17,7 +17,7 @@ use reqwest::Client;
 use std::{fs::File, io, sync::Arc, time::Duration};
 use tempfile::TempDir;
 use tokio::{io::AsyncWriteExt as _, sync::mpsc, time::timeout};
-use tracing::{event, instrument, Level};
+use tracing::{event, instrument, span, Instrument, Level};
 use url::Url;
 
 const DOWNLOAD_TIMEOUT: u64 = 180;
@@ -310,15 +310,14 @@ impl Interactor for DownloadVideoPlaylist {
         for (index, VideoAndFormat { video, format }) in videos_and_formats.iter().enumerate() {
             let extension = format.get_extension();
 
-            // let span = span!(Level::TRACE, "iter", extension, %format);
-            // let _guard = span.enter();
-
+            let span = span!(Level::INFO, "iter", extension, %format).entered();
             let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
             let file_path = temp_dir.path().join(format!("{video_id}.{extension}", video_id = video.id));
 
             if format.format_ids_are_equal() {
                 event!(Level::DEBUG, "Formats are the same");
 
+                let span = span.exit();
                 let (thumbnail_path, download_thumbnails) = if let Some(thumbnail_url) = video.thumbnail_url(host.as_ref()) {
                     let thumbnail_path = download_thumbnail_to_path(thumbnail_url, &video.id, temp_dir.path()).await;
                     (thumbnail_path, false)
@@ -338,10 +337,12 @@ impl Interactor for DownloadVideoPlaylist {
                 )
                 .await
                 {
+                    let _guard = span.enter();
                     sender.send((index, Err(DownloadVideoErrorKind::Ytdlp(err))))?;
                     continue;
                 }
 
+                let _guard = span.enter();
                 let thumbnail_path = match thumbnail_path {
                     Some(url) => Some(url),
                     None => {
@@ -369,29 +370,34 @@ impl Interactor for DownloadVideoPlaylist {
 
             let mut merge_child = merge_streams(&video_read_fd, &audio_read_fd, extension, &file_path).map_err(Self::Err::Ffmpeg)?;
 
+            let span = span.exit();
             if let Some(filesize) = format.video_format.filesize_or_approx() {
                 let (sender, mut receiver) = mpsc::unbounded_channel();
 
                 let url = format.video_format.url.to_owned();
-                tokio::spawn(async move {
-                    tokio::join!(
-                        async move {
-                            let _ = range_download_to_write(url, filesize, sender)
-                                .await
-                                .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
-                        },
-                        async move {
-                            let mut writer = tokio::fs::File::from_std(File::from(video_write_fd));
-                            while let Some(bytes) = receiver.recv().await {
-                                let _ = writer
-                                    .write(&bytes)
+                tokio::spawn(
+                    async move {
+                        tokio::join!(
+                            async move {
+                                let _ = range_download_to_write(url, filesize, sender)
                                     .await
                                     .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                            },
+                            async move {
+                                let mut writer = tokio::fs::File::from_std(File::from(video_write_fd));
+                                while let Some(bytes) = receiver.recv().await {
+                                    let _ = writer
+                                        .write(&bytes)
+                                        .await
+                                        .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                                }
                             }
-                        }
-                    )
-                });
+                        )
+                    }
+                    .instrument(span.clone()),
+                );
             } else {
+                let _guard = span.enter();
                 download_to_pipe(
                     video_write_fd,
                     self.yt_dlp_cfg.executable_path.as_ref(),
@@ -406,25 +412,29 @@ impl Interactor for DownloadVideoPlaylist {
                 let (sender, mut receiver) = mpsc::unbounded_channel();
 
                 let url = format.audio_format.url.to_owned();
-                tokio::spawn(async move {
-                    tokio::join!(
-                        async move {
-                            let _ = range_download_to_write(url, filesize, sender)
-                                .await
-                                .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
-                        },
-                        async move {
-                            let mut writer = tokio::fs::File::from_std(File::from(audio_write_fd));
-                            while let Some(bytes) = receiver.recv().await {
-                                let _ = writer
-                                    .write(&bytes)
+                tokio::spawn(
+                    async move {
+                        tokio::join!(
+                            async move {
+                                let _ = range_download_to_write(url, filesize, sender)
                                     .await
                                     .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                            },
+                            async move {
+                                let mut writer = tokio::fs::File::from_std(File::from(audio_write_fd));
+                                while let Some(bytes) = receiver.recv().await {
+                                    let _ = writer
+                                        .write(&bytes)
+                                        .await
+                                        .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                                }
                             }
-                        }
-                    )
-                });
+                        )
+                    }
+                    .instrument(span.clone()),
+                );
             } else {
+                let _guard = span.enter();
                 download_to_pipe(
                     audio_write_fd,
                     self.yt_dlp_cfg.executable_path.as_ref(),
@@ -445,10 +455,12 @@ impl Interactor for DownloadVideoPlaylist {
             let exit_code = match timeout(Duration::from_secs(DOWNLOAD_TIMEOUT), merge_child.wait()).await {
                 Ok(Ok(exit_code)) => exit_code,
                 Ok(Err(err)) => {
+                    let _guard = span.enter();
                     sender.send((index, Err(DownloadVideoErrorKind::Ffmpeg(err))))?;
                     continue;
                 }
                 Err(_) => {
+                    let _guard = span.enter();
                     sender.send((
                         index,
                         Err(DownloadVideoErrorKind::Ffmpeg(io::Error::new(
@@ -460,6 +472,7 @@ impl Interactor for DownloadVideoPlaylist {
                 }
             };
 
+            let _guard = span.enter();
             if !exit_code.success() {
                 sender.send((
                     index,

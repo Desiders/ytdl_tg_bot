@@ -1,9 +1,10 @@
 use crate::entities::Cookies;
 
 use std::{io, path::Path};
-use tracing::{event, Level};
+use tracing::{event, instrument, Level};
 use url::Host;
 
+#[instrument(skip_all)]
 pub fn get_cookies_from_directory(path: impl AsRef<Path>) -> Result<Cookies, io::Error> {
     let path = path.as_ref();
     let mut cookies = Cookies::default();

@@ -8,7 +8,7 @@ use tracing::instrument;
 const MAX_THUMBNAIL_SIZE_IN_BYTES: u64 = 1024 * 200; // 200 KB
 const ACCEPTABLE_THUMBNAIL_EXTENSIONS: [&str; 2] = ["jpg", "jpeg"];
 
-#[instrument(skip_all, fields(path_dir = ?path_dir.as_ref()))]
+#[instrument(skip_all, fields(path = ?path_dir.as_ref()))]
 pub fn get_best_thumbnail_path_in_dir(path_dir: impl AsRef<Path>) -> Result<Option<PathBuf>, io::Error> {
     let path_dir = path_dir.as_ref();
 
