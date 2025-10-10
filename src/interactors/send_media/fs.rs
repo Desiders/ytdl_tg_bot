@@ -11,7 +11,7 @@ use telers::{
     types::{InputFile, ReplyParameters},
     Bot,
 };
-use tracing::{event, span, Level};
+use tracing::{event, instrument, Level};
 
 const SEND_TIMEOUT: f32 = 180.0;
 
@@ -65,6 +65,7 @@ impl Interactor for SendVideoInFS {
     type Output = (i64, Box<str>);
     type Err = SessionErrorKind;
 
+    #[instrument(skip_all, fields(name, width, height, with_delete))]
     async fn execute(
         &mut self,
         SendVideoInFSInput {
@@ -82,9 +83,6 @@ impl Interactor for SendVideoInFS {
             with_delete,
         }: Self::Input<'_>,
     ) -> Result<Self::Output, Self::Err> {
-        let span = span!(Level::INFO, "send", name, width, height, with_delete);
-        let _guard = span.enter();
-
         event!(Level::DEBUG, "Video sending");
         let message = send::with_retries(
             &self.bot,
@@ -169,6 +167,7 @@ impl Interactor for SendAudioInFS {
     type Output = (i64, Box<str>);
     type Err = SessionErrorKind;
 
+    #[instrument(skip_all, fields(name, uploader, with_delete))]
     async fn execute(
         &mut self,
         SendAudioInFSInput {
@@ -186,9 +185,6 @@ impl Interactor for SendAudioInFS {
             with_delete,
         }: Self::Input<'_>,
     ) -> Result<Self::Output, Self::Err> {
-        let span = span!(Level::INFO, "send", name, uploader, with_delete);
-        let _guard = span.enter();
-
         event!(Level::DEBUG, "Audio sending");
         let message = send::with_retries(
             &self.bot,

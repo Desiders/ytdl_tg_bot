@@ -11,7 +11,7 @@ use crate::{
 
 use reqwest::Client;
 use std::sync::Arc;
-use tracing::{event, span, Level};
+use tracing::{event, instrument, Level};
 use url::{Host, Url};
 
 const GET_INFO_TIMEOUT: u64 = 180;
@@ -48,10 +48,8 @@ impl Interactor for GetMediaInfoByURL {
     type Output = VideosInYT;
     type Err = ytdl::Error;
 
+    #[instrument(skip_all)]
     async fn execute(&mut self, GetMedaInfoByURLInput { url, range }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
-        let span = span!(Level::INFO, "get_info");
-        let _enter = span.enter();
-
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
@@ -104,10 +102,8 @@ impl Interactor for GetMediaInfoById {
     type Output = VideosInYT;
     type Err = ytdl::Error;
 
+    #[instrument(skip_all)]
     async fn execute(&mut self, GetMediaInfoByIdInput { id, host, range }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
-        let span = span!(Level::INFO, "get_info");
-        let _enter = span.enter();
-
         let cookie = self.cookies.get_path_by_host(host);
 
         event!(Level::DEBUG, "Getting media info");
@@ -152,10 +148,8 @@ impl Interactor for GetShortMediaByURLInfo {
     type Output = Vec<BasicInfo>;
     type Err = GetVideoInfoErrorKind;
 
+    #[instrument(skip_all)]
     async fn execute(&mut self, GetShortMediaInfoByURLInput { url }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
-        let span = span!(Level::INFO, "get_short_info");
-        let _enter = span.enter();
-
         event!(Level::DEBUG, "Getting media info");
         let res = get_video_info(&self.client, self.yt_toolkit_cfg.url.as_ref(), url.as_ref()).await?;
         event!(Level::INFO, "Got media info");
@@ -189,10 +183,8 @@ impl Interactor for SearchMediaInfo {
     type Output = Vec<BasicInfo>;
     type Err = SearchVideoErrorKind;
 
+    #[instrument(skip_all)]
     async fn execute(&mut self, SearchMediaInfoInput { text }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
-        let span = span!(Level::INFO, "search_media_info");
-        let _enter = span.enter();
-
         event!(Level::DEBUG, "Searching media info");
         let res = search_video(&self.client, self.yt_toolkit_cfg.url.as_ref(), text).await?;
         event!(Level::INFO, "Got media info");
