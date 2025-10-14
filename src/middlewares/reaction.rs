@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use telers::{
     errors::EventErrorKind,
     event::telegram::HandlerResponse,
@@ -14,7 +13,6 @@ static REACTIONS: [&str; 2] = ["👌", "👍"];
 #[derive(Clone)]
 pub struct ReactionMiddleware;
 
-#[async_trait]
 impl Middleware for ReactionMiddleware {
     async fn call(&mut self, request: Request, next: Next) -> Result<HandlerResponse, EventErrorKind> {
         let Some(message) = request.update.message() else {

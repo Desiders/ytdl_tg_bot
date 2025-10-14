@@ -1,12 +1,13 @@
 use crate::config::{BotConfig, YtDlpConfig};
 
+use froodi::Inject;
 use telers::{
     enums::ParseMode,
     event::{telegram::HandlerResult, EventReturn},
     methods::{GetMe, SendMessage},
     types::{LinkPreviewOptions, Message, ReplyParameters},
     utils::text::{html_quote, html_text_link},
-    Bot, Extension,
+    Bot,
 };
 use tracing::instrument;
 
@@ -14,8 +15,8 @@ use tracing::instrument;
 pub async fn start(
     bot: Bot,
     message: Message,
-    Extension(yt_dlp_cfg): Extension<YtDlpConfig>,
-    Extension(bot_cfg): Extension<BotConfig>,
+    Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
+    Inject(bot_cfg): Inject<BotConfig>,
 ) -> HandlerResult {
     let bot_info = bot.send(GetMe {}).await?;
     let text = format!(
@@ -35,7 +36,7 @@ pub async fn start(
             .map_or("Anonymous".to_owned(), |user| html_quote(user.first_name.as_ref())),
         bot_username = bot_info.username.expect("Bots always have a username"),
         max_file_size_in_mb = yt_dlp_cfg.max_file_size / 1000 / 1000,
-        source_code = html_text_link("here", html_quote(bot_cfg.src_url)),
+        source_code = html_text_link("here", html_quote(&bot_cfg.src_url)),
     );
 
     bot.send(
