@@ -25,13 +25,14 @@ use crate::{
         },
         GetMediaInfoById, GetMediaInfoByURL, GetShortMediaByURLInfo, SearchMediaInfo,
     },
-    middlewares::{ContainerMiddleware, ReactionMiddleware},
+    middlewares::ReactionMiddleware,
     services::get_cookies_from_directory,
     utils::{on_shutdown, on_startup},
 };
 use froodi::{
     async_impl::{Container, RegistryBuilder},
     instance,
+    telers::setup_async_default,
     DefaultScope::{App, Request},
     Inject, InstantiateErrorKind,
 };
@@ -170,12 +171,8 @@ async fn main() {
 
     let container = init_container(bot.clone(), config, cookies);
 
-    let mut router = Router::new("main");
-    router.telegram_observers_mut().iter_mut().for_each(|observer| {
-        observer.inner_middlewares.register(ContainerMiddleware {
-            container: container.clone(),
-        });
-    });
+    let router = Router::new("main");
+    let mut router = setup_async_default(router, container.clone());
 
     router.message.register(start).filter(Command::many(["start", "help"]));
 
