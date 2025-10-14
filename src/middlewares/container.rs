@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use froodi::{async_impl::Container, Context, DefaultScope};
 use telers::{
     errors::EventErrorKind,
@@ -12,7 +11,6 @@ pub struct ContainerMiddleware {
     pub container: Container,
 }
 
-#[async_trait]
 impl Middleware for ContainerMiddleware {
     async fn call(&mut self, mut request: Request, next: Next) -> Result<HandlerResponse, EventErrorKind> {
         let mut context = Context::new();
@@ -29,9 +27,7 @@ impl Middleware for ContainerMiddleware {
         request.extensions.insert(container.clone());
 
         let resp = next(request).await;
-
         container.close().await;
-
         resp
     }
 }

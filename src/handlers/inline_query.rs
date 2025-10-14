@@ -9,7 +9,7 @@ use crate::{
     utils::format_error_report,
 };
 
-use froodi::async_impl::Container;
+use froodi::InjectTransient;
 use telers::{
     enums::ParseMode,
     event::{telegram::HandlerResult, EventReturn},
@@ -31,12 +31,10 @@ pub async fn select_by_url(
     bot: Bot,
     InlineQuery { id: query_id, .. }: InlineQuery,
     Extension(UrlWithParams { url, .. }): Extension<UrlWithParams>,
-    Extension(container): Extension<Container>,
+    InjectTransient(mut get_short_media_info): InjectTransient<GetShortMediaByURLInfo>,
+    InjectTransient(mut get_media_info): InjectTransient<GetMediaInfoByURL>,
 ) -> HandlerResult {
     event!(Level::DEBUG, "Got url");
-
-    let mut get_short_media_info = container.get_transient::<GetShortMediaByURLInfo>().await.unwrap();
-    let mut get_media_info = container.get_transient::<GetMediaInfoByURL>().await.unwrap();
 
     let videos: Vec<ShortInfo> = match get_short_media_info.execute(GetShortMediaInfoByURLInput::new(&url)).await {
         Ok(val) => val.into_iter().map(Into::into).collect(),
@@ -114,11 +112,9 @@ pub async fn select_by_text(
     InlineQuery {
         id: query_id, query: text, ..
     }: InlineQuery,
-    Extension(container): Extension<Container>,
+    InjectTransient(mut search_media_info): InjectTransient<SearchMediaInfo>,
 ) -> HandlerResult {
     event!(Level::DEBUG, "Got text");
-
-    let mut search_media_info = container.get_transient::<SearchMediaInfo>().await.unwrap();
 
     let videos: Vec<ShortInfo> = match search_media_info.execute(SearchMediaInfoInput::new(text.as_ref())).await {
         Ok(val) => val
