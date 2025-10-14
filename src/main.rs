@@ -12,7 +12,7 @@ mod utils;
 mod value_objects;
 
 use crate::{
-    config::{DatabaseConfig, YtDlpConfig, YtPotProviderConfig, YtToolkitConfig},
+    config::{Config, DatabaseConfig, YtDlpConfig, YtPotProviderConfig, YtToolkitConfig},
     database::TxManager,
     entities::Cookies,
     filters::{is_via_bot, text_contains_url, text_contains_url_with_reply, text_empty, url_is_blacklisted, url_is_skippable_by_param},
@@ -25,13 +25,14 @@ use crate::{
         },
         GetMediaInfoById, GetMediaInfoByURL, GetShortMediaByURLInfo, SearchMediaInfo,
     },
-    middlewares::{ContainerMiddleware, ReactionMiddleware},
+    middlewares::ReactionMiddleware,
     services::get_cookies_from_directory,
     utils::{on_shutdown, on_startup},
 };
 use froodi::{
     async_impl::{Container, RegistryBuilder},
     instance,
+    telers::setup_async_default,
     DefaultScope::{App, Request},
     Inject, InstantiateErrorKind,
 };
@@ -50,21 +51,19 @@ use telers::{
 use tracing::{event, Level};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
 
-fn init_container(
-    bot: Bot,
-    yt_dlp_cfg: YtDlpConfig,
-    yt_toolkit_cfg: YtToolkitConfig,
-    yt_pot_provider_cfg: YtPotProviderConfig,
-    cookies: Cookies,
-    database_cfg: DatabaseConfig,
-) -> Container {
+fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
     let registry = RegistryBuilder::new()
         .provide(instance(bot), App)
-        .provide(instance(yt_dlp_cfg), App)
-        .provide(instance(yt_toolkit_cfg), App)
-        .provide(instance(yt_pot_provider_cfg), App)
         .provide(instance(cookies), App)
-        .provide(instance(database_cfg), App)
+        .provide(instance(config.bot), App)
+        .provide(instance(config.chat), App)
+        .provide(instance(config.blacklisted), App)
+        .provide(instance(config.logging), App)
+        .provide(instance(config.database), App)
+        .provide(instance(config.yt_dlp), App)
+        .provide(instance(config.yt_toolkit), App)
+        .provide(instance(config.yt_pot_provider), App)
+        .provide(instance(config.telegram_bot_api), App)
         .provide(
             |Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
              Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
@@ -155,7 +154,7 @@ async fn main() {
 
     tracing_subscriber::registry()
         .with(fmt::layer())
-        .with(EnvFilter::builder().parse_lossy(config.logging.dirs))
+        .with(EnvFilter::builder().parse_lossy(config.logging.dirs.as_ref()))
         .init();
 
     let cookies = get_cookies_from_directory(&*config.yt_dlp.cookies_path).unwrap_or_default();
@@ -170,21 +169,11 @@ async fn main() {
         Reqwest::default().with_api_server(Cow::Owned(APIServer::new(&base_url, &files_url, true, BareFilesPathWrapper))),
     );
 
-    let container = init_container(
-        bot.clone(),
-        config.yt_dlp.clone(),
-        config.yt_toolkit.clone(),
-        config.yt_pot_provider.clone(),
-        cookies.clone(),
-        config.database.clone(),
-    );
+    let container = init_container(bot.clone(), config, cookies);
 
-    let mut router = Router::new("main");
-    router.telegram_observers_mut().iter_mut().for_each(|observer| {
-        observer.inner_middlewares.register(ContainerMiddleware {
-            container: container.clone(),
-        });
-    });
+    let router = Router::new("main");
+    let mut router = setup_async_default(router, container.clone());
+
     router.message.register(start).filter(Command::many(["start", "help"]));
 
     let mut download_router = Router::new("download");
@@ -240,13 +229,6 @@ async fn main() {
         .allowed_updates(router.resolve_used_update_types())
         .main_router(router.configure_default())
         .bot(bot)
-        .extension(config.yt_dlp)
-        .extension(config.bot)
-        .extension(config.yt_toolkit)
-        .extension(config.yt_pot_provider)
-        .extension(config.chat)
-        .extension(config.blacklisted)
-        .extension(cookies)
         .build();
 
     match dispatcher.run_polling().await {

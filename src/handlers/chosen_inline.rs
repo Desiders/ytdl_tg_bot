@@ -13,7 +13,7 @@ use crate::{
     utils::{format_error_report, FormatErrorToMessage as _},
 };
 
-use froodi::async_impl::Container;
+use froodi::{Inject, InjectTransient};
 use std::str::FromStr as _;
 use telers::{
     enums::ParseMode,
@@ -34,9 +34,15 @@ pub async fn download_by_url(
         ..
     }: ChosenInlineResult,
     Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
-    Extension(yt_dlp_cfg): Extension<YtDlpConfig>,
-    Extension(chat_cfg): Extension<ChatConfig>,
-    Extension(container): Extension<Container>,
+    Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
+    Inject(chat_cfg): Inject<ChatConfig>,
+    InjectTransient(mut get_media_info): InjectTransient<GetMediaInfoByURL>,
+    InjectTransient(mut download_video): InjectTransient<DownloadVideo>,
+    InjectTransient(mut download_audio): InjectTransient<DownloadAudio>,
+    InjectTransient(mut send_video_in_fs): InjectTransient<SendVideoInFS>,
+    InjectTransient(mut edit_video_by_id): InjectTransient<EditVideoById>,
+    InjectTransient(mut send_audio_in_fs): InjectTransient<SendAudioInFS>,
+    InjectTransient(mut edit_audio_by_id): InjectTransient<EditAudioById>,
 ) -> HandlerResult {
     let inline_message_id = inline_message_id.as_deref().unwrap();
     let is_video = result_id.starts_with("video_");
@@ -46,14 +52,6 @@ pub async fn download_by_url(
         .record("is_video", is_video);
 
     event!(Level::DEBUG, "Got url");
-
-    let mut get_media_info = container.get_transient::<GetMediaInfoByURL>().await.unwrap();
-    let mut download_video = container.get_transient::<DownloadVideo>().await.unwrap();
-    let mut download_audio = container.get_transient::<DownloadAudio>().await.unwrap();
-    let mut send_video_in_fs = container.get_transient::<SendVideoInFS>().await.unwrap();
-    let mut edit_video_by_id = container.get_transient::<EditVideoById>().await.unwrap();
-    let mut send_audio_in_fs = container.get_transient::<SendAudioInFS>().await.unwrap();
-    let mut edit_audio_by_id = container.get_transient::<EditAudioById>().await.unwrap();
 
     let preferred_languages = match params.get("lang") {
         Some(raw_value) => PreferredLanguages::from_str(raw_value).unwrap(),
@@ -216,9 +214,15 @@ pub async fn download_by_id(
         inline_message_id,
         ..
     }: ChosenInlineResult,
-    Extension(yt_dlp_cfg): Extension<YtDlpConfig>,
-    Extension(chat_cfg): Extension<ChatConfig>,
-    Extension(container): Extension<Container>,
+    Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
+    Inject(chat_cfg): Inject<ChatConfig>,
+    InjectTransient(mut get_media_info): InjectTransient<GetMediaInfoById>,
+    InjectTransient(mut download_video): InjectTransient<DownloadVideo>,
+    InjectTransient(mut download_audio): InjectTransient<DownloadAudio>,
+    InjectTransient(mut send_video_in_fs): InjectTransient<SendVideoInFS>,
+    InjectTransient(mut edit_video_by_id): InjectTransient<EditVideoById>,
+    InjectTransient(mut send_audio_in_fs): InjectTransient<SendAudioInFS>,
+    InjectTransient(mut edit_audio_by_id): InjectTransient<EditAudioById>,
 ) -> HandlerResult {
     let inline_message_id = inline_message_id.as_deref().unwrap();
     let (result_prefix, video_id) = result_id.split_once('_').unwrap();
@@ -230,14 +234,6 @@ pub async fn download_by_id(
         .record("video_id", video_id);
 
     event!(Level::DEBUG, "Got url");
-
-    let mut get_media_info = container.get_transient::<GetMediaInfoById>().await.unwrap();
-    let mut download_video = container.get_transient::<DownloadVideo>().await.unwrap();
-    let mut download_audio = container.get_transient::<DownloadAudio>().await.unwrap();
-    let mut send_video_in_fs = container.get_transient::<SendVideoInFS>().await.unwrap();
-    let mut edit_video_by_id = container.get_transient::<EditVideoById>().await.unwrap();
-    let mut send_audio_in_fs = container.get_transient::<SendAudioInFS>().await.unwrap();
-    let mut edit_audio_by_id = container.get_transient::<EditAudioById>().await.unwrap();
 
     let preferred_languages = PreferredLanguages::default();
     let mut videos = match get_media_info
