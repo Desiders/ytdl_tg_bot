@@ -1,7 +1,9 @@
 use crate::{config::BlacklistedConfig, entities::UrlWithParams};
 
+use froodi::async_impl::Container;
 use std::{collections::HashMap, future::Future, str::FromStr};
 use telers::{types::UpdateKind, Request};
+use tracing::{event, Level};
 use url::Url;
 
 fn parse_params(param_block: &str) -> Vec<(Box<str>, Box<str>)> {
@@ -116,18 +118,26 @@ pub fn text_contains_url_with_reply(request: &mut Request) -> impl Future<Output
 }
 
 pub fn url_is_blacklisted(request: &mut Request) -> impl Future<Output = bool> {
-    let result = match (
-        request.extensions.get::<BlacklistedConfig>(),
-        request.extensions.get::<UrlWithParams>(),
-    ) {
-        (Some(BlacklistedConfig { domains }), Some(UrlWithParams { url, .. })) => match url.domain() {
-            Some(domain) => domains.iter().map(AsRef::as_ref).collect::<Vec<_>>().contains(&domain),
-            None => false,
-        },
-        _ => false,
-    };
-
-    async move { result }
+    let url_with_params_option = request.extensions.get::<UrlWithParams>().cloned();
+    let container_option = request.extensions.get::<Container>().cloned();
+    async move {
+        let Some(UrlWithParams { url, .. }) = url_with_params_option else {
+            return false;
+        };
+        let Some(domain) = url.domain() else {
+            return false;
+        };
+        let Some(container) = container_option else {
+            return false;
+        };
+        match container.get::<BlacklistedConfig>().await {
+            Ok(cfg) => cfg.domains.iter().map(String::as_str).collect::<Vec<_>>().contains(&domain),
+            Err(err) => {
+                event!(Level::ERROR, %err);
+                return false;
+            }
+        }
+    }
 }
 
 pub fn url_is_skippable_by_param(request: &mut Request) -> impl Future<Output = bool> {
@@ -140,6 +150,5 @@ pub fn url_is_skippable_by_param(request: &mut Request) -> impl Future<Output = 
             }
         }
     }
-
     async move { result }
 }

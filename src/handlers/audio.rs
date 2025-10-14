@@ -10,7 +10,7 @@ use crate::{
     utils::{format_error_report, FormatErrorToMessage as _},
 };
 
-use froodi::async_impl::Container;
+use froodi::{Inject, InjectTransient};
 use std::str::FromStr as _;
 use telers::{
     enums::ParseMode,
@@ -26,20 +26,18 @@ pub async fn download(
     bot: Bot,
     message: Message,
     Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
-    Extension(yt_dlp_cfg): Extension<YtDlpConfig>,
-    Extension(chat_cfg): Extension<ChatConfig>,
-    Extension(container): Extension<Container>,
+    Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
+    Inject(chat_cfg): Inject<ChatConfig>,
+    InjectTransient(mut get_media_info): InjectTransient<GetMediaInfoByURL>,
+    InjectTransient(mut download): InjectTransient<DownloadAudio>,
+    InjectTransient(mut download_playlist): InjectTransient<DownloadAudioPlaylist>,
+    InjectTransient(mut send_media_in_fs): InjectTransient<SendAudioInFS>,
+    InjectTransient(mut send_playlist): InjectTransient<SendAudioPlaylistById>,
 ) -> HandlerResult {
     event!(Level::DEBUG, "Got url");
 
     let message_id = message.id();
     let chat_id = message.chat().id();
-
-    let mut get_media_info = container.get_transient::<GetMediaInfoByURL>().await.unwrap();
-    let mut download = container.get_transient::<DownloadAudio>().await.unwrap();
-    let mut download_playlist = container.get_transient::<DownloadAudioPlaylist>().await.unwrap();
-    let mut send_media_in_fs = container.get_transient::<SendAudioInFS>().await.unwrap();
-    let mut send_playlist = container.get_transient::<SendAudioPlaylistById>().await.unwrap();
 
     let range = match params.get("items") {
         Some(raw_value) => match Range::from_str(raw_value) {
