@@ -88,7 +88,6 @@ pub async fn download_video_to_path(
     format: impl AsRef<str>,
     output_dir_path: impl AsRef<Path>,
     timeout: u64,
-    download_thumbnails: bool,
     cookie: Option<&Cookie>,
 ) -> Result<(), io::Error> {
     let output_dir_path = output_dir_path.as_ref().to_string_lossy();
@@ -118,10 +117,6 @@ pub async fn download_video_to_path(
         "-f",
         format.as_ref(),
     ];
-
-    if download_thumbnails {
-        args.push("--write-all-thumbnail");
-    }
 
     let extractor_arg = format!("youtubepot-bgutilhttp:base_url={}", pot_provider_api_url.as_ref());
     args.push("--extractor-args");
@@ -170,7 +165,6 @@ pub async fn download_audio_to_path(
     output_extension: impl AsRef<str>,
     output_dir_path: impl AsRef<Path>,
     timeout: u64,
-    download_thumbnails: bool,
     cookie: Option<&Cookie>,
 ) -> Result<(), io::Error> {
     let output_dir_path = output_dir_path.as_ref().to_string_lossy();
@@ -203,10 +197,6 @@ pub async fn download_audio_to_path(
         "-f",
         format.as_ref(),
     ];
-
-    if download_thumbnails {
-        args.push("--write-all-thumbnail");
-    }
 
     let extractor_arg = format!("youtubepot-bgutilhttp:base_url={}", pot_provider_api_url.as_ref());
     args.push("--extractor-args");

@@ -65,7 +65,7 @@ pub async fn select_by_url(
     for video in videos {
         let title = video.title.as_deref().unwrap_or("No name");
         let title_html = html_code(html_quote(title));
-        let thumbnail_url = video.thumbnail_url(url.host().as_ref());
+        let thumbnail_urls = video.thumbnail_urls(url.host().as_ref());
         let result_id = Uuid::new_v4();
 
         results.push(
@@ -74,7 +74,7 @@ pub async fn select_by_url(
                 title,
                 InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
             )
-            .thumbnail_url_option(thumbnail_url.clone())
+            .thumbnail_url_option(thumbnail_urls.first())
             .description("Click to download video")
             .reply_markup(InlineKeyboardMarkup::new([[
                 InlineKeyboardButton::new("Downloading video...").callback_data("video_download")
@@ -87,7 +87,7 @@ pub async fn select_by_url(
                 "↑",
                 InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
             )
-            .thumbnail_url_option(thumbnail_url)
+            .thumbnail_url_option(thumbnail_urls.first())
             .description("Click to download audio")
             .reply_markup(InlineKeyboardMarkup::new([[
                 InlineKeyboardButton::new("Downloading audio...").callback_data("audio_download")
@@ -140,7 +140,7 @@ pub async fn select_by_text(
     for video in videos {
         let title = video.title.as_deref().unwrap_or("No name");
         let title_html = html_code(html_quote(title));
-        let thumbnail_url = video.thumbnail_url(Some(&Host::Domain("youtube.com")));
+        let thumbnail_urls = video.thumbnail_urls(Some(&Host::Domain("youtube.com")));
         let id = &video.id;
 
         results.push(
@@ -149,7 +149,7 @@ pub async fn select_by_text(
                 title,
                 InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
             )
-            .thumbnail_url_option(thumbnail_url.clone())
+            .thumbnail_url_option(thumbnail_urls.first())
             .description("Click to download video")
             .reply_markup(InlineKeyboardMarkup::new([[
                 InlineKeyboardButton::new("Downloading video...").callback_data("video_download")
@@ -162,7 +162,7 @@ pub async fn select_by_text(
                 "↑",
                 InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
             )
-            .thumbnail_url_option(thumbnail_url)
+            .thumbnail_url_option(thumbnail_urls.first())
             .description("Click to download audio")
             .reply_markup(InlineKeyboardMarkup::new([[
                 InlineKeyboardButton::new("Downloading audio...").callback_data("audio_download")
