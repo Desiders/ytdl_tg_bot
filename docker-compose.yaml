@@ -1,7 +1,7 @@
 services:
   bot:
     container_name: ytdl_tg_bot.bot
-    image: desiders/ytdl_tg_bot:2.0.2
+    image: desiders/ytdl_tg_bot:2.0.3
     restart: "unless-stopped"
     env_file:
       - ".env"
@@ -68,7 +68,7 @@ services:
 
   yt_pot_provider_api:
     container_name: ytdl_tg_bot.yt_pot_provider_api
-    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    image: brainicism/bgutil-ytdlp-pot-provider:1.2.2
     restart: "unless-stopped"
     networks:
       - yt_pot_provider_api.network
