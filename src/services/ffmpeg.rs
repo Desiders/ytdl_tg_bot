@@ -89,7 +89,7 @@ pub async fn download_thumbnail_to_path(url: impl AsRef<str>, id: impl AsRef<str
     let path = temp_dir_path.as_ref().join(format!("{}.jpg", id.as_ref()));
 
     match convert_to_jpg(url, &path).await {
-        Ok(mut child) => match timeout(Duration::from_secs(10), child.wait()).await {
+        Ok(mut child) => match timeout(Duration::from_secs(5), child.wait()).await {
             Ok(Ok(status)) => {
                 if status.success() {
                     Some(path)

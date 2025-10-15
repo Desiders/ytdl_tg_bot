@@ -2,7 +2,7 @@ const ASPECT_VERTICAL: f64 = 9.0 / 16.0;
 const ASPECT_SD: f64 = 4.0 / 3.0;
 const ASPECT_HD: f64 = 16.0 / 9.0;
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum AspectKind {
     Vertical,
     Sd,

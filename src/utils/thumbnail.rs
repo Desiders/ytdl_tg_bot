@@ -1,34 +1,29 @@
-use std::{borrow::Cow, fmt::Display};
+use std::fmt::Display;
+use tracing::instrument;
 use url::Host;
 
 use super::AspectKind;
 
-pub fn get_url_by_aspect<'a>(
-    service_host: Option<&Host<&str>>,
-    id: impl Display,
-    urls: &[&'a str],
-    aspect_kind: AspectKind,
-) -> Option<Cow<'a, str>> {
+#[instrument(skip_all, fields(%id, ?aspect_kind, ?host = service_host))]
+pub fn get_urls_by_aspect(service_host: Option<&Host<&str>>, id: impl Display, aspect_kind: AspectKind) -> Vec<String> {
     let Some(Host::Domain(domain)) = service_host else {
-        return None;
+        return vec![];
     };
 
     if domain.contains("youtube") || *domain == "youtu.be" {
-        let accepted_fragments = match aspect_kind {
-            AspectKind::Vertical => vec!["oardefault.jpg"],
-            AspectKind::Sd => vec!["sddefault.jpg", "0.jpg", "hqdefault.jpg"],
-            AspectKind::Hd => vec!["maxresdefault.jpg", "hq720.jpg", "maxres2.jpg"],
-            AspectKind::Other => return Some(Cow::Owned(format!("https://i.ytimg.com/vi/{id}/frame0.jpg"))),
+        let fragments = match aspect_kind {
+            AspectKind::Vertical => vec!["oardefault"],
+            AspectKind::Sd => vec!["sddefault", "0", "hqdefault"],
+            AspectKind::Hd => vec!["maxresdefault", "hq720", "maxres2"],
+            AspectKind::Other => vec![],
         };
 
-        for url in urls {
-            for fragment in &accepted_fragments {
-                if url.contains(fragment) {
-                    return Some(Cow::Borrowed(url));
-                }
-            }
-        }
+        return fragments
+            .into_iter()
+            .chain(Some("frame0"))
+            .map(|fragment| format!("https://i.ytimg.com/vi/{id}/{fragment}.jpg"))
+            .collect();
     }
 
-    None
+    vec![]
 }
