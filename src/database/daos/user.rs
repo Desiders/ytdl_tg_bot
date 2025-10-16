@@ -4,11 +4,11 @@ use sea_orm::{sea_query::OnConflict, ActiveValue::Set, ConnectionTrait, EntityTr
 
 use crate::{database::models::user, entities::User, errors::database::ErrorKind};
 
-pub struct UserDao<'a, Conn> {
+pub struct Dao<'a, Conn> {
     conn: &'a Conn,
 }
 
-impl<'a, Conn> UserDao<'a, Conn> {
+impl<'a, Conn> Dao<'a, Conn> {
     pub const fn new(conn: &'a Conn) -> Self
     where
         Conn: ConnectionTrait,
@@ -17,7 +17,7 @@ impl<'a, Conn> UserDao<'a, Conn> {
     }
 }
 
-impl<Conn> UserDao<'_, Conn>
+impl<Conn> Dao<'_, Conn>
 where
     Conn: ConnectionTrait,
 {
