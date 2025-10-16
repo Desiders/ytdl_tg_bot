@@ -3,11 +3,11 @@ use std::convert::Infallible;
 
 use crate::{database::models::downloaded_media, entities::DownloadedMedia, errors::database::ErrorKind};
 
-pub struct DownloadedMediaDao<'a, Conn> {
+pub struct Dao<'a, Conn> {
     conn: &'a Conn,
 }
 
-impl<'a, Conn> DownloadedMediaDao<'a, Conn> {
+impl<'a, Conn> Dao<'a, Conn> {
     pub const fn new(conn: &'a Conn) -> Self
     where
         Conn: ConnectionTrait,
@@ -16,7 +16,7 @@ impl<'a, Conn> DownloadedMediaDao<'a, Conn> {
     }
 }
 
-impl<Conn> DownloadedMediaDao<'_, Conn>
+impl<Conn> Dao<'_, Conn>
 where
     Conn: ConnectionTrait,
 {

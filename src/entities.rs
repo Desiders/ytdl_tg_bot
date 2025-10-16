@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod chat;
+pub mod chat_downloaded_media;
 pub mod combined_format;
 pub mod cookies;
 pub mod downloaded_media;
@@ -9,12 +10,12 @@ pub mod range;
 pub mod short_info;
 pub mod url;
 pub mod user;
-pub mod user_downloaded_media;
 pub mod video;
 pub mod yt_toolkit;
 
 pub use audio::{AudioAndFormat, AudioInFS, TgAudioInPlaylist};
 pub use chat::Chat;
+pub use chat_downloaded_media::ChatDownloadedMedia;
 pub use cookies::{Cookie, Cookies};
 pub use downloaded_media::DownloadedMedia;
 pub use preferred_languages::PreferredLanguages;
@@ -22,5 +23,4 @@ pub use range::{ParseRangeError, Range};
 pub use short_info::ShortInfo;
 pub use url::UrlWithParams;
 pub use user::User;
-pub use user_downloaded_media::UserDownloadedMedia;
 pub use video::{TgVideoInPlaylist, Video, VideoAndFormat, VideoInFS, VideosInYT};

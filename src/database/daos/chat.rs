@@ -4,11 +4,11 @@ use sea_orm::{sea_query::OnConflict, ActiveValue::Set, ConnectionTrait, EntityTr
 
 use crate::{database::models::chat, entities::Chat, errors::database::ErrorKind};
 
-pub struct ChatDao<'a, Conn> {
+pub struct Dao<'a, Conn> {
     conn: &'a Conn,
 }
 
-impl<'a, Conn> ChatDao<'a, Conn> {
+impl<'a, Conn> Dao<'a, Conn> {
     pub const fn new(conn: &'a Conn) -> Self
     where
         Conn: ConnectionTrait,
@@ -17,7 +17,7 @@ impl<'a, Conn> ChatDao<'a, Conn> {
     }
 }
 
-impl<Conn> ChatDao<'_, Conn>
+impl<Conn> Dao<'_, Conn>
 where
     Conn: ConnectionTrait,
 {
