@@ -2,7 +2,7 @@ use std::convert::Infallible;
 
 use sea_orm::{sea_query::OnConflict, ActiveValue::Set, ConnectionTrait, EntityTrait};
 
-use crate::{database::models::chat, entities::Chat, errors::database::ErrorKind};
+use crate::{database::models::chats, entities::Chat, errors::database::ErrorKind};
 
 pub struct Dao<'a, Conn> {
     conn: &'a Conn,
@@ -24,21 +24,19 @@ where
     pub async fn insert_or_update(
         &self,
         Chat {
-            id,
             tg_id,
             username,
             created_at,
             updated_at,
         }: Chat,
     ) -> Result<Chat, ErrorKind<Infallible>> {
-        use chat::{
+        use chats::{
             ActiveModel,
             Column::{TgId, UpdatedAt, Username},
             Entity,
         };
 
         let model = ActiveModel {
-            id: Set(id),
             tg_id: Set(tg_id),
             username: Set(username.map(Into::into)),
             created_at: Set(created_at),

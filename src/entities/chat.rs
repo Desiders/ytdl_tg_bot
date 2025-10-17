@@ -1,21 +1,18 @@
-use crate::database::models::chat::Model;
+use crate::database::models::chats::Model;
 
 use time::OffsetDateTime;
-use uuid::Uuid;
 
 #[derive(Debug)]
 pub struct Chat {
-    pub id: Uuid,
     pub tg_id: i64,
-    pub username: Option<Box<str>>,
+    pub username: Option<String>,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }
 
 impl Chat {
-    pub fn new(tg_id: i64, username: Option<Box<str>>) -> Self {
+    pub fn new(tg_id: i64, username: Option<String>) -> Self {
         Self {
-            id: Uuid::now_v7(),
             tg_id,
             username,
             created_at: OffsetDateTime::now_utc(),
@@ -27,7 +24,6 @@ impl Chat {
 impl From<Model> for Chat {
     fn from(
         Model {
-            id,
             tg_id,
             username,
             created_at,
@@ -35,9 +31,8 @@ impl From<Model> for Chat {
         }: Model,
     ) -> Self {
         Self {
-            id,
             tg_id,
-            username: username.map(String::into_boxed_str),
+            username,
             created_at,
             updated_at,
         }
