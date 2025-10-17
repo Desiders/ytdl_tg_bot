@@ -3,6 +3,9 @@ name = "ytdl_tg_bot"
 version = "2.0.3"
 edition = "2021"
 
+[workspace]
+members = [".", "migration"]
+
 [dependencies]
 telers = { version = "1.0.0-alpha.27", features = ["default_signal", "rustls-tls"], default-features = false }
 tokio = { version = "1.36", features = ["rt-multi-thread", "process", "sync"], default-features = false }
