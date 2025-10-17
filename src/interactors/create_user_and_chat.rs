@@ -1,61 +1,47 @@
 use super::Interactor;
-use crate::{
-    database::TxManager,
-    entities::{Chat, User},
-    errors::database::ErrorKind,
-};
+use crate::{database::TxManager, entities::Chat, errors::database::ErrorKind};
 
 use std::convert::Infallible;
 use tracing::{event, instrument, Level};
 
-pub struct CreateUserAndChat<'a> {
-    pub tx_manager: &'a mut TxManager,
-}
+pub struct CreateChat {}
 
-impl<'a> CreateUserAndChat<'a> {
-    pub const fn new(tx_manager: &'a mut TxManager) -> Self {
-        Self { tx_manager }
+impl CreateChat {
+    pub const fn new() -> Self {
+        Self {}
     }
 }
 
-pub struct CreateUserAndChatInput {
-    pub user: User,
+pub struct CreateChatInput<'a> {
     pub chat: Chat,
+    pub tx_manager: &'a mut TxManager,
 }
 
-pub struct CreateUserAndChatOutput {
-    pub user: User,
-    pub chat: Chat,
+impl<'a> CreateChatInput<'a> {
+    pub const fn new(chat: Chat, tx_manager: &'a mut TxManager) -> Self {
+        Self { chat, tx_manager }
+    }
 }
 
-impl Interactor<CreateUserAndChatInput> for CreateUserAndChat<'_> {
-    type Output = CreateUserAndChatOutput;
+impl Interactor<CreateChatInput<'_>> for CreateChat {
+    type Output = Chat;
     type Err = ErrorKind<Infallible>;
 
     #[instrument(skip_all)]
-    async fn execute(&mut self, CreateUserAndChatInput { user, chat }: CreateUserAndChatInput) -> Result<Self::Output, Self::Err> {
-        self.tx_manager.begin().await?;
+    async fn execute(&mut self, CreateChatInput { chat, tx_manager }: CreateChatInput<'_>) -> Result<Self::Output, Self::Err> {
+        tx_manager.begin().await?;
 
-        let user = match self.tx_manager.user_dao()?.insert_or_update(user).await {
+        let dao = tx_manager.chat_dao().unwrap();
+        let chat = match dao.insert_or_update(chat).await {
             Ok(val) => val,
             Err(err) => {
-                self.tx_manager.rollback().await?;
-                return Err(err);
-            }
-        };
-        event!(Level::INFO, "User created");
-
-        let chat = match self.tx_manager.chat_dao()?.insert_or_update(chat).await {
-            Ok(val) => val,
-            Err(err) => {
-                self.tx_manager.rollback().await?;
+                tx_manager.rollback().await?;
                 return Err(err);
             }
         };
         event!(Level::INFO, "Chat created");
 
-        self.tx_manager.commit().await?;
-
-        Ok(Self::Output { user, chat })
+        tx_manager.commit().await?;
+        Ok(chat)
     }
 }

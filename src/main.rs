@@ -23,7 +23,8 @@ use crate::{
             EditAudioById, EditVideoById, SendAudioById, SendAudioInFS, SendAudioPlaylistById, SendVideoById, SendVideoInFS,
             SendVideoPlaylistById,
         },
-        AddDownloadedAudio, AddDownloadedVideo, GetMediaInfoById, GetMediaInfoByURL, GetShortMediaByURLInfo, SearchMediaInfo,
+        AddDownloadedAudio, AddDownloadedVideo, CreateChat, GetDownloadedMedia, GetMediaInfoById, GetMediaInfoByURL,
+        GetShortMediaByURLInfo, SearchMediaInfo,
     },
     middlewares::ReactionMiddleware,
     services::get_cookies_from_directory,
@@ -66,6 +67,9 @@ fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
         .provide(instance(config.yt_pot_provider), App)
         .provide(instance(config.telegram_bot_api), App)
         .provide(|| Ok(Mutex::new(ContextV7::new())), App)
+        .provide(|| Ok(Client::new()), App)
+        .provide(|| Ok(GetDownloadedMedia::new()), Request)
+        .provide(|| Ok(CreateChat::new()), Request)
         .provide(
             |Inject(context): Inject<Mutex<ContextV7>>| Ok(AddDownloadedVideo::new(context)),
             Request,
@@ -130,7 +134,6 @@ fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
         .provide(|Inject(bot): Inject<Bot>| Ok(SendAudioPlaylistById::new(bot)), Request)
         .provide(|Inject(bot): Inject<Bot>| Ok(EditVideoById::new(bot)), Request)
         .provide(|Inject(bot): Inject<Bot>| Ok(EditAudioById::new(bot)), Request)
-        .provide(|| Ok(Client::new()), App)
         .provide_async(
             |Inject(database_cfg): Inject<DatabaseConfig>| async move {
                 let mut options = ConnectOptions::new(database_cfg.get_postgres_url());

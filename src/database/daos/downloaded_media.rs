@@ -23,10 +23,10 @@ where
     pub async fn insert_or_ignore(
         &self,
         DownloadedMedia {
-            id,
             file_id,
             url_or_id,
             media_type,
+            chat_tg_id,
             created_at,
         }: DownloadedMedia,
     ) -> Result<DownloadedMedia, ErrorKind<Infallible>> {
@@ -37,10 +37,10 @@ where
         };
 
         let model = ActiveModel {
-            id: Set(id),
             file_id: Set(file_id.into()),
             url_or_id: Set(url_or_id.into()),
             media_type: Set(media_type.into()),
+            chat_tg_id: Set(chat_tg_id.into()),
             created_at: Set(created_at),
         };
 

@@ -7,23 +7,28 @@ use sea_orm::entity::prelude::*;
 #[sea_orm(table_name = "downloaded_media")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(unique)]
     pub file_id: String,
     pub url_or_id: String,
     pub media_type: MediaType,
+    pub chat_tg_id: i64,
     pub created_at: TimeDateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::chat_downloaded_media::Entity")]
-    ChatDownloadedMedia,
+    #[sea_orm(
+        belongs_to = "super::chats::Entity",
+        from = "Column::ChatTgId",
+        to = "super::chats::Column::TgId",
+        on_update = "Cascade",
+        on_delete = "Cascade"
+    )]
+    Chats,
 }
 
-impl Related<super::chat_downloaded_media::Entity> for Entity {
+impl Related<super::chats::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::ChatDownloadedMedia.def()
+        Relation::Chats.def()
     }
 }
 

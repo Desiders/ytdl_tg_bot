@@ -3,11 +3,9 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "chat")]
+#[sea_orm(table_name = "chats")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(unique)]
     pub tg_id: i64,
     pub username: Option<String>,
     pub created_at: TimeDateTimeWithTimeZone,
@@ -16,13 +14,13 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::chat_downloaded_media::Entity")]
-    ChatDownloadedMedia,
+    #[sea_orm(has_many = "super::downloaded_media::Entity")]
+    DownloadedMedia,
 }
 
-impl Related<super::chat_downloaded_media::Entity> for Entity {
+impl Related<super::downloaded_media::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::ChatDownloadedMedia.def()
+        Relation::DownloadedMedia.def()
     }
 }
 

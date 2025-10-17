@@ -1,13 +1,13 @@
 use crate::{
     entities::ParseRangeError,
-    errors::FormatNotFound,
+    errors::{database::ErrorKind, FormatNotFound},
     interactors::download::{
         DownloadAudioErrorKind, DownloadAudioPlaylistErrorKind, DownloadVideoErrorKind, DownloadVideoPlaylistErrorKind,
     },
     services::ytdl,
 };
 
-use std::{borrow::Cow, fmt::Write, iter};
+use std::{borrow::Cow, fmt::Debug, fmt::Write, iter};
 use telers::errors::SessionErrorKind;
 
 pub fn format_error_report(err: &(impl std::error::Error + ?Sized)) -> String {
@@ -75,6 +75,15 @@ impl FormatErrorToMessage for ytdl::Error {
 }
 
 impl FormatErrorToMessage for ParseRangeError {
+    fn format(&self, _token: &str) -> Cow<'static, str> {
+        Cow::Owned(self.to_string())
+    }
+}
+
+impl<E> FormatErrorToMessage for ErrorKind<E>
+where
+    E: std::error::Error + Debug,
+{
     fn format(&self, _token: &str) -> Cow<'static, str> {
         Cow::Owned(self.to_string())
     }
