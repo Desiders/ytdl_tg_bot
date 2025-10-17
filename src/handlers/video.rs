@@ -1,12 +1,11 @@
 use crate::{
     config::{ChatConfig, YtDlpConfig},
-    database::TxManager,
     entities::{PreferredLanguages, Range, TgVideoInPlaylist, UrlWithParams, VideoAndFormat},
     handlers_utils::error,
     interactors::{
         download::{DownloadVideo, DownloadVideoInput, DownloadVideoPlaylist, DownloadVideoPlaylistInput},
         send_media::{SendVideoInFS, SendVideoInFSInput, SendVideoPlaylistById, SendVideoPlaylistByIdInput},
-        AddDownloadedMediaInput, AddDownloadedVideo, GetMedaInfoByURLInput, GetMediaInfoByURL, Interactor as _,
+        GetMedaInfoByURLInput, GetMediaInfoByURL, Interactor as _,
     },
     utils::{format_error_report, FormatErrorToMessage as _},
 };
@@ -29,8 +28,6 @@ pub async fn download(
     Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
     Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
     Inject(chat_cfg): Inject<ChatConfig>,
-    InjectTransient(mut tx_manager): InjectTransient<TxManager>,
-    InjectTransient(mut add_downloaded): InjectTransient<AddDownloadedVideo>,
     InjectTransient(mut get_media_info): InjectTransient<GetMediaInfoByURL>,
     InjectTransient(mut download): InjectTransient<DownloadVideo>,
     InjectTransient(mut download_playlist): InjectTransient<DownloadVideoPlaylist>,
@@ -96,7 +93,7 @@ pub async fn download(
                 return Ok(EventReturn::Finish);
             }
         };
-        let file_id = match send_media_in_fs
+        let _file_id = match send_media_in_fs
             .execute(SendVideoInFSInput::new(
                 chat_id,
                 Some(message_id),
@@ -121,12 +118,6 @@ pub async fn download(
                 return Ok(EventReturn::Finish);
             }
         };
-        if let Err(err) = add_downloaded
-            .execute(AddDownloadedMediaInput::new(file_id, video.id.into_boxed_str(), &mut tx_manager))
-            .await
-        {
-            event!(Level::ERROR, %err, "Add downloaded video err");
-        }
         return Ok(EventReturn::Finish);
     }
 
@@ -186,16 +177,6 @@ pub async fn download(
                         continue;
                     }
                 };
-                if let Err(err) = add_downloaded
-                    .execute(AddDownloadedMediaInput::new(
-                        file_id.clone(),
-                        video.id.clone().into_boxed_str(),
-                        &mut tx_manager,
-                    ))
-                    .await
-                {
-                    event!(Level::ERROR, %err, "Add downloaded video err");
-                }
                 playlist.push(TgVideoInPlaylist::new(file_id, index))
             }
             (playlist, errs)
@@ -245,8 +226,6 @@ pub async fn download_quite(
     Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
     Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
     Inject(chat_cfg): Inject<ChatConfig>,
-    InjectTransient(mut tx_manager): InjectTransient<TxManager>,
-    InjectTransient(mut add_downloaded): InjectTransient<AddDownloadedVideo>,
     InjectTransient(mut get_media_info): InjectTransient<GetMediaInfoByURL>,
     InjectTransient(mut download): InjectTransient<DownloadVideo>,
     InjectTransient(mut download_playlist): InjectTransient<DownloadVideoPlaylist>,
@@ -295,11 +274,7 @@ pub async fn download_quite(
                 return Ok(EventReturn::Finish);
             }
         };
-        if let Err(err) = tx_manager.begin().await {
-            event!(Level::ERROR, err = format_error_report(&err), "Begin transaction err");
-            return Ok(EventReturn::Finish);
-        }
-        let file_id = match send_media_in_fs
+        let _file_id = match send_media_in_fs
             .execute(SendVideoInFSInput::new(
                 chat_id,
                 Some(message_id),
@@ -319,12 +294,6 @@ pub async fn download_quite(
                 return Ok(EventReturn::Finish);
             }
         };
-        if let Err(err) = add_downloaded
-            .execute(AddDownloadedMediaInput::new(file_id, video.id.into_boxed_str(), &mut tx_manager))
-            .await
-        {
-            event!(Level::ERROR, %err, "Add downloaded video err");
-        }
         return Ok(EventReturn::Finish);
     }
 
@@ -375,16 +344,6 @@ pub async fn download_quite(
                         continue;
                     }
                 };
-                if let Err(err) = add_downloaded
-                    .execute(AddDownloadedMediaInput::new(
-                        file_id.clone(),
-                        video.id.clone().into_boxed_str(),
-                        &mut tx_manager,
-                    ))
-                    .await
-                {
-                    event!(Level::ERROR, %err, "Add downloaded video err");
-                }
                 playlist.push(TgVideoInPlaylist::new(file_id, index));
             }
             playlist
