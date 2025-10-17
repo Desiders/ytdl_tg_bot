@@ -39,3 +39,7 @@
     ```sh
     cargo run -- status
     ```
+- Generate entities
+    ```sh
+    sea-orm-cli generate entity -o ./models --date-time-crate time --with-copy-enums --with-prelude none
+    ```
