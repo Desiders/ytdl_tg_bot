@@ -14,7 +14,7 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: Uuid,
     pub chat_id: Uuid,
-    pub user_downloaded_media: Uuid,
+    pub downloaded_media: Uuid,
     pub created_at: OffsetDateTime,
 }
 
@@ -29,7 +29,7 @@ pub enum Relation {
     Chat,
     #[sea_orm(
         belongs_to = "downloaded_media::Entity",
-        from = "Column::UserDownloadedMedia",
+        from = "Column::DownloadedMedia",
         to = "downloaded_media::Column::Id",
         fk_name = "fk_chats_downloaded_media_media"
     )]
@@ -55,14 +55,14 @@ impl From<Model> for ChatDownloadedMedia {
         Model {
             id,
             chat_id,
-            user_downloaded_media,
+            downloaded_media,
             created_at,
         }: Model,
     ) -> Self {
         Self {
             id,
             chat_id,
-            user_downloaded_media,
+            downloaded_media,
             created_at,
         }
     }
