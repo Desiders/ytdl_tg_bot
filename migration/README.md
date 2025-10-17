@@ -41,5 +41,5 @@
     ```
 - Generate entities
     ```sh
-    sea-orm-cli generate entity -o ./models --date-time-crate time --with-copy-enums --with-prelude none
+    sea-orm-cli generate entity -o ../src/database/models --date-time-crate time --with-copy-enums --with-prelude none --compact-format && rm ../src/database/models/mod.rs
     ```

@@ -1,7 +1,6 @@
 mod tx_manager;
 
 pub mod daos;
-pub mod enums;
 pub mod migrations;
 pub mod models;
 
