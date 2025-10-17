@@ -43,13 +43,12 @@ impl<'a> GetMedaInfoByURLInput<'a> {
     }
 }
 
-impl Interactor for GetMediaInfoByURL {
-    type Input<'a> = GetMedaInfoByURLInput<'a>;
+impl Interactor<GetMedaInfoByURLInput<'_>> for GetMediaInfoByURL {
     type Output = VideosInYT;
     type Err = ytdl::Error;
 
     #[instrument(skip_all)]
-    async fn execute(&mut self, GetMedaInfoByURLInput { url, range }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
+    async fn execute(&mut self, GetMedaInfoByURLInput { url, range }: GetMedaInfoByURLInput<'_>) -> Result<Self::Output, Self::Err> {
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
@@ -97,13 +96,12 @@ impl<'a> GetMediaInfoByIdInput<'a> {
     }
 }
 
-impl Interactor for GetMediaInfoById {
-    type Input<'a> = GetMediaInfoByIdInput<'a>;
+impl Interactor<GetMediaInfoByIdInput<'_>> for GetMediaInfoById {
     type Output = VideosInYT;
     type Err = ytdl::Error;
 
     #[instrument(skip_all)]
-    async fn execute(&mut self, GetMediaInfoByIdInput { id, host, range }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
+    async fn execute(&mut self, GetMediaInfoByIdInput { id, host, range }: GetMediaInfoByIdInput<'_>) -> Result<Self::Output, Self::Err> {
         let cookie = self.cookies.get_path_by_host(host);
 
         event!(Level::DEBUG, "Getting media info");
@@ -143,13 +141,12 @@ impl<'a> GetShortMediaInfoByURLInput<'a> {
     }
 }
 
-impl Interactor for GetShortMediaByURLInfo {
-    type Input<'a> = GetShortMediaInfoByURLInput<'a>;
+impl Interactor<GetShortMediaInfoByURLInput<'_>> for GetShortMediaByURLInfo {
     type Output = Vec<BasicInfo>;
     type Err = GetVideoInfoErrorKind;
 
     #[instrument(skip_all)]
-    async fn execute(&mut self, GetShortMediaInfoByURLInput { url }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
+    async fn execute(&mut self, GetShortMediaInfoByURLInput { url }: GetShortMediaInfoByURLInput<'_>) -> Result<Self::Output, Self::Err> {
         event!(Level::DEBUG, "Getting media info");
         let res = get_video_info(&self.client, self.yt_toolkit_cfg.url.as_ref(), url.as_ref()).await?;
         event!(Level::INFO, "Got media info");
@@ -178,13 +175,12 @@ impl<'a> SearchMediaInfoInput<'a> {
     }
 }
 
-impl Interactor for SearchMediaInfo {
-    type Input<'a> = SearchMediaInfoInput<'a>;
+impl Interactor<SearchMediaInfoInput<'_>> for SearchMediaInfo {
     type Output = Vec<BasicInfo>;
     type Err = SearchVideoErrorKind;
 
     #[instrument(skip_all)]
-    async fn execute(&mut self, SearchMediaInfoInput { text }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
+    async fn execute(&mut self, SearchMediaInfoInput { text }: SearchMediaInfoInput<'_>) -> Result<Self::Output, Self::Err> {
         event!(Level::DEBUG, "Searching media info");
         let res = search_video(&self.client, self.yt_toolkit_cfg.url.as_ref(), text).await?;
         event!(Level::INFO, "Got media info");

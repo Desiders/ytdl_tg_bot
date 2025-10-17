@@ -32,8 +32,7 @@ pub struct SendVideoByIdInput<'a> {
     pub id: &'a str,
 }
 
-impl Interactor for SendVideoById {
-    type Input<'a> = SendVideoByIdInput<'a>;
+impl Interactor<SendVideoByIdInput<'_>> for SendVideoById {
     type Output = ();
     type Err = SessionErrorKind;
 
@@ -44,7 +43,7 @@ impl Interactor for SendVideoById {
             chat_id,
             reply_to_message_id,
             id,
-        }: Self::Input<'_>,
+        }: SendVideoByIdInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         event!(Level::DEBUG, "Video sending");
         send::with_retries(
@@ -79,8 +78,7 @@ pub struct SendAudioByIdInput<'a> {
     pub id: &'a str,
 }
 
-impl Interactor for SendAudioById {
-    type Input<'a> = SendAudioByIdInput<'a>;
+impl Interactor<SendAudioByIdInput<'_>> for SendAudioById {
     type Output = ();
     type Err = SessionErrorKind;
 
@@ -91,7 +89,7 @@ impl Interactor for SendAudioById {
             chat_id,
             reply_to_message_id,
             id,
-        }: Self::Input<'_>,
+        }: SendAudioByIdInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         event!(Level::DEBUG, "Audio sending");
         send::with_retries(
@@ -135,8 +133,7 @@ impl<'a> EditVideoByIdInput<'a> {
     }
 }
 
-impl Interactor for EditVideoById {
-    type Input<'a> = EditVideoByIdInput<'a>;
+impl Interactor<EditVideoByIdInput<'_>> for EditVideoById {
     type Output = ();
     type Err = SessionErrorKind;
 
@@ -147,7 +144,7 @@ impl Interactor for EditVideoById {
             inline_message_id,
             id,
             caption,
-        }: Self::Input<'_>,
+        }: EditVideoByIdInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         event!(Level::DEBUG, "Video editing");
         send::with_retries(
@@ -196,8 +193,7 @@ impl<'a> EditAudioByIdInput<'a> {
     }
 }
 
-impl Interactor for EditAudioById {
-    type Input<'a> = EditAudioByIdInput<'a>;
+impl Interactor<EditAudioByIdInput<'_>> for EditAudioById {
     type Output = ();
     type Err = SessionErrorKind;
 
@@ -208,7 +204,7 @@ impl Interactor for EditAudioById {
             inline_message_id,
             id,
             caption,
-        }: Self::Input<'_>,
+        }: EditAudioByIdInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         event!(Level::DEBUG, "Audio editing");
         send::with_retries(
@@ -252,8 +248,7 @@ impl SendVideoPlaylistByIdInput {
     }
 }
 
-impl Interactor for SendVideoPlaylistById {
-    type Input<'a> = SendVideoPlaylistByIdInput;
+impl Interactor<SendVideoPlaylistByIdInput> for SendVideoPlaylistById {
     type Output = ();
     type Err = SessionErrorKind;
 
@@ -264,7 +259,7 @@ impl Interactor for SendVideoPlaylistById {
             chat_id,
             reply_to_message_id,
             mut videos,
-        }: Self::Input<'_>,
+        }: SendVideoPlaylistByIdInput,
     ) -> Result<Self::Output, Self::Err> {
         videos.sort_by(|a, b| a.index.cmp(&b.index));
 
@@ -312,8 +307,7 @@ impl SendAudioPlaylistByIdInput {
     }
 }
 
-impl Interactor for SendAudioPlaylistById {
-    type Input<'a> = SendAudioPlaylistByIdInput;
+impl Interactor<SendAudioPlaylistByIdInput> for SendAudioPlaylistById {
     type Output = ();
     type Err = SessionErrorKind;
 
@@ -324,7 +318,7 @@ impl Interactor for SendAudioPlaylistById {
             chat_id,
             reply_to_message_id,
             mut audios,
-        }: Self::Input<'_>,
+        }: SendAudioPlaylistByIdInput,
     ) -> Result<Self::Output, Self::Err> {
         audios.sort_by(|a, b| a.index.cmp(&b.index));
 

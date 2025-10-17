@@ -28,13 +28,12 @@ pub struct CreateUserAndChatOutput {
     pub chat: Chat,
 }
 
-impl Interactor for CreateUserAndChat<'_> {
-    type Input<'a> = CreateUserAndChatInput;
+impl Interactor<CreateUserAndChatInput> for CreateUserAndChat<'_> {
     type Output = CreateUserAndChatOutput;
     type Err = ErrorKind<Infallible>;
 
     #[instrument(skip_all)]
-    async fn execute(&mut self, Self::Input { user, chat }: Self::Input<'_>) -> Result<Self::Output, Self::Err> {
+    async fn execute(&mut self, CreateUserAndChatInput { user, chat }: CreateUserAndChatInput) -> Result<Self::Output, Self::Err> {
         self.tx_manager.begin().await?;
 
         let user = match self.tx_manager.user_dao()?.insert_or_update(user).await {

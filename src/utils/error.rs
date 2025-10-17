@@ -2,8 +2,7 @@ use crate::{
     entities::ParseRangeError,
     errors::FormatNotFound,
     interactors::download::{
-        audio::{DownloadAudioErrorKind, DownloadAudioPlaylistErrorKind},
-        video::{DownloadVideoErrorKind, DownloadVideoPlaylistErrorKind},
+        DownloadAudioErrorKind, DownloadAudioPlaylistErrorKind, DownloadVideoErrorKind, DownloadVideoPlaylistErrorKind,
     },
     services::ytdl,
 };

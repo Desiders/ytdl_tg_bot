@@ -23,7 +23,7 @@ use crate::{
             EditAudioById, EditVideoById, SendAudioById, SendAudioInFS, SendAudioPlaylistById, SendVideoById, SendVideoInFS,
             SendVideoPlaylistById,
         },
-        GetMediaInfoById, GetMediaInfoByURL, GetShortMediaByURLInfo, SearchMediaInfo,
+        AddDownloadedAudio, AddDownloadedVideo, GetMediaInfoById, GetMediaInfoByURL, GetShortMediaByURLInfo, SearchMediaInfo,
     },
     middlewares::ReactionMiddleware,
     services::get_cookies_from_directory,
@@ -38,7 +38,7 @@ use froodi::{
 };
 use reqwest::Client;
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Mutex};
 use telers::{
     client::{
         telegram::{APIServer, BareFilesPathWrapper},
@@ -50,6 +50,7 @@ use telers::{
 };
 use tracing::{event, Level};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
+use uuid::ContextV7;
 
 fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
     let registry = RegistryBuilder::new()
@@ -64,6 +65,15 @@ fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
         .provide(instance(config.yt_toolkit), App)
         .provide(instance(config.yt_pot_provider), App)
         .provide(instance(config.telegram_bot_api), App)
+        .provide(|| Ok(Mutex::new(ContextV7::new())), App)
+        .provide(
+            |Inject(context): Inject<Mutex<ContextV7>>| Ok(AddDownloadedVideo::new(context)),
+            Request,
+        )
+        .provide(
+            |Inject(context): Inject<Mutex<ContextV7>>| Ok(AddDownloadedAudio::new(context)),
+            Request,
+        )
         .provide(
             |Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
              Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,

@@ -1,5 +1,6 @@
 use crate::{
     config::{ChatConfig, YtDlpConfig},
+    database::TxManager,
     entities::{AudioAndFormat, PreferredLanguages, Range, UrlWithParams, VideoAndFormat},
     handlers_utils::error,
     interactors::{
@@ -8,7 +9,8 @@ use crate::{
             EditAudioById, EditAudioByIdInput, EditVideoById, EditVideoByIdInput, SendAudioInFS, SendAudioInFSInput, SendVideoInFS,
             SendVideoInFSInput,
         },
-        GetMedaInfoByURLInput, GetMediaInfoById, GetMediaInfoByIdInput, GetMediaInfoByURL, Interactor as _,
+        AddDownloadedAudio, AddDownloadedMediaInput, AddDownloadedVideo, GetMedaInfoByURLInput, GetMediaInfoById, GetMediaInfoByIdInput,
+        GetMediaInfoByURL, Interactor as _,
     },
     utils::{format_error_report, FormatErrorToMessage as _},
 };
@@ -36,6 +38,9 @@ pub async fn download_by_url(
     Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
     Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
     Inject(chat_cfg): Inject<ChatConfig>,
+    InjectTransient(mut tx_manager): InjectTransient<TxManager>,
+    InjectTransient(mut add_downloaded_video): InjectTransient<AddDownloadedVideo>,
+    InjectTransient(mut add_downloaded_audio): InjectTransient<AddDownloadedAudio>,
     InjectTransient(mut get_media_info): InjectTransient<GetMediaInfoByURL>,
     InjectTransient(mut download_video): InjectTransient<DownloadVideo>,
     InjectTransient(mut download_audio): InjectTransient<DownloadAudio>,
@@ -116,7 +121,7 @@ pub async fn download_by_url(
             ))
             .await
         {
-            Ok((_, file_id)) => file_id,
+            Ok(val) => val,
             Err(err) => {
                 event!(Level::ERROR, err = format_error_report(&err), "Send video err");
                 let text = format!(
@@ -138,7 +143,12 @@ pub async fn download_by_url(
             );
             error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
         }
-
+        if let Err(err) = add_downloaded_video
+            .execute(AddDownloadedMediaInput::new(file_id, video.id.into_boxed_str(), &mut tx_manager))
+            .await
+        {
+            event!(Level::ERROR, %err, "Add downloaded video err");
+        }
         return Ok(EventReturn::Finish);
     }
 
@@ -180,7 +190,7 @@ pub async fn download_by_url(
         ))
         .await
     {
-        Ok((_, file_id)) => file_id,
+        Ok(val) => val,
         Err(err) => {
             event!(Level::ERROR, err = format_error_report(&err), "Send audio err");
             let text = format!(
@@ -202,7 +212,12 @@ pub async fn download_by_url(
         );
         error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
     }
-
+    if let Err(err) = add_downloaded_audio
+        .execute(AddDownloadedMediaInput::new(file_id, video.id.into_boxed_str(), &mut tx_manager))
+        .await
+    {
+        event!(Level::ERROR, %err, "Add downloaded audio err");
+    }
     Ok(EventReturn::Finish)
 }
 
@@ -216,6 +231,9 @@ pub async fn download_by_id(
     }: ChosenInlineResult,
     Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
     Inject(chat_cfg): Inject<ChatConfig>,
+    InjectTransient(mut tx_manager): InjectTransient<TxManager>,
+    InjectTransient(mut add_downloaded_video): InjectTransient<AddDownloadedVideo>,
+    InjectTransient(mut add_downloaded_audio): InjectTransient<AddDownloadedAudio>,
     InjectTransient(mut get_media_info): InjectTransient<GetMediaInfoById>,
     InjectTransient(mut download_video): InjectTransient<DownloadVideo>,
     InjectTransient(mut download_audio): InjectTransient<DownloadAudio>,
@@ -303,7 +321,7 @@ pub async fn download_by_id(
             ))
             .await
         {
-            Ok((_, file_id)) => file_id,
+            Ok(val) => val,
             Err(err) => {
                 event!(Level::ERROR, err = format_error_report(&err), "Send video err");
                 let text = format!(
@@ -325,7 +343,12 @@ pub async fn download_by_id(
             );
             error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
         }
-
+        if let Err(err) = add_downloaded_video
+            .execute(AddDownloadedMediaInput::new(file_id, video.id.into_boxed_str(), &mut tx_manager))
+            .await
+        {
+            event!(Level::ERROR, %err, "Add downloaded video err");
+        }
         return Ok(EventReturn::Finish);
     }
 
@@ -367,7 +390,7 @@ pub async fn download_by_id(
         ))
         .await
     {
-        Ok((_, file_id)) => file_id,
+        Ok(val) => val,
         Err(err) => {
             event!(Level::ERROR, err = format_error_report(&err), "Send audio err");
             let text = format!(
@@ -389,6 +412,11 @@ pub async fn download_by_id(
         );
         error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
     }
-
+    if let Err(err) = add_downloaded_audio
+        .execute(AddDownloadedMediaInput::new(file_id, video.id.into_boxed_str(), &mut tx_manager))
+        .await
+    {
+        event!(Level::ERROR, %err, "Add downloaded audio err");
+    }
     Ok(EventReturn::Finish)
 }
