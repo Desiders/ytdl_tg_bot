@@ -2,7 +2,7 @@ use std::convert::Infallible;
 
 use sea_orm::{ActiveValue::Set, ConnectionTrait, EntityTrait as _};
 
-use crate::{database::models::user_downloaded_media, entities::ChatDownloadedMedia, errors::database::ErrorKind};
+use crate::{database::models::chat_downloaded_media, entities::ChatDownloadedMedia, errors::database::ErrorKind};
 
 pub struct Dao<'a, Conn> {
     conn: &'a Conn,
@@ -26,16 +26,16 @@ where
         ChatDownloadedMedia {
             id,
             chat_id,
-            user_downloaded_media,
+            downloaded_media,
             created_at,
         }: ChatDownloadedMedia,
     ) -> Result<ChatDownloadedMedia, ErrorKind<Infallible>> {
-        use user_downloaded_media::{ActiveModel, Entity};
+        use chat_downloaded_media::{ActiveModel, Entity};
 
         let model = ActiveModel {
             id: Set(id),
             chat_id: Set(chat_id),
-            user_downloaded_media: Set(user_downloaded_media),
+            downloaded_media: Set(downloaded_media),
             created_at: Set(created_at),
         };
 
