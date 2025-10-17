@@ -84,8 +84,7 @@ impl<'a> DownloadVideoInput<'a> {
     }
 }
 
-impl Interactor for DownloadVideo {
-    type Input<'a> = DownloadVideoInput<'a>;
+impl Interactor<DownloadVideoInput<'_>> for DownloadVideo {
     type Output = VideoInFS;
     type Err = DownloadVideoErrorKind;
 
@@ -95,7 +94,7 @@ impl Interactor for DownloadVideo {
         DownloadVideoInput {
             video_and_format: VideoAndFormat { video, format },
             url,
-        }: Self::Input<'_>,
+        }: DownloadVideoInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let extension = format.get_extension();
         let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
@@ -299,8 +298,7 @@ impl<'a> DownloadVideoPlaylistInput<'a> {
     }
 }
 
-impl Interactor for DownloadVideoPlaylist {
-    type Input<'a> = DownloadVideoPlaylistInput<'a>;
+impl Interactor<DownloadVideoPlaylistInput<'_>> for DownloadVideoPlaylist {
     type Output = ();
     type Err = DownloadVideoPlaylistErrorKind;
 
@@ -311,7 +309,7 @@ impl Interactor for DownloadVideoPlaylist {
             url,
             videos_and_formats,
             sender,
-        }: Self::Input<'_>,
+        }: DownloadVideoPlaylistInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());

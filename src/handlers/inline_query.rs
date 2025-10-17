@@ -44,7 +44,6 @@ pub async fn select_by_url(
             } else {
                 event!(Level::ERROR, err = format_error_report(&err), "Get YT Toolkit media info error");
             }
-
             match get_media_info.execute(GetMedaInfoByURLInput::new(&url, &Range::default())).await {
                 Ok(val) => val.into_iter().map(Into::into).collect(),
                 Err(err) => {
@@ -102,7 +101,6 @@ pub async fn select_by_url(
             .cache_time(SELECT_INLINE_QUERY_CACHE_TIME),
     )
     .await?;
-
     Ok(EventReturn::Finish)
 }
 
@@ -177,6 +175,5 @@ pub async fn select_by_text(
             .cache_time(SELECT_INLINE_QUERY_CACHE_TIME),
     )
     .await?;
-
     Ok(EventReturn::Finish)
 }

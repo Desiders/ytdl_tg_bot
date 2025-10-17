@@ -60,9 +60,8 @@ impl<'a> SendVideoInFSInput<'a> {
     }
 }
 
-impl Interactor for SendVideoInFS {
-    type Input<'a> = SendVideoInFSInput<'a>;
-    type Output = (i64, Box<str>);
+impl Interactor<SendVideoInFSInput<'_>> for SendVideoInFS {
+    type Output = Box<str>;
     type Err = SessionErrorKind;
 
     #[instrument(skip_all, fields(name, width, height, with_delete))]
@@ -81,7 +80,7 @@ impl Interactor for SendVideoInFS {
             height,
             duration,
             with_delete,
-        }: Self::Input<'_>,
+        }: SendVideoInFSInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         event!(Level::DEBUG, "Video sending");
         let message = send::with_retries(
@@ -98,10 +97,13 @@ impl Interactor for SendVideoInFS {
             Some(SEND_TIMEOUT),
         )
         .await?;
-        event!(Level::INFO, "Video sent");
+        let message_id = message.id();
+        let file_id = message.video().unwrap().file_id.clone();
+        drop(message);
         drop(temp_dir);
 
-        let message_id = message.id();
+        event!(Level::INFO, "Video sent");
+
         if with_delete {
             tokio::spawn({
                 let bot = self.bot.clone();
@@ -113,7 +115,7 @@ impl Interactor for SendVideoInFS {
             });
         }
 
-        Ok((message_id, message.video().unwrap().file_id.clone()))
+        Ok(file_id)
     }
 }
 
@@ -162,9 +164,8 @@ impl<'a> SendAudioInFSInput<'a> {
     }
 }
 
-impl Interactor for SendAudioInFS {
-    type Input<'a> = SendAudioInFSInput<'a>;
-    type Output = (i64, Box<str>);
+impl Interactor<SendAudioInFSInput<'_>> for SendAudioInFS {
+    type Output = Box<str>;
     type Err = SessionErrorKind;
 
     #[instrument(skip_all, fields(name, uploader, with_delete))]
@@ -183,7 +184,7 @@ impl Interactor for SendAudioInFS {
             uploader,
             duration,
             with_delete,
-        }: Self::Input<'_>,
+        }: SendAudioInFSInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         event!(Level::DEBUG, "Audio sending");
         let message = send::with_retries(
@@ -199,10 +200,13 @@ impl Interactor for SendAudioInFS {
             Some(SEND_TIMEOUT),
         )
         .await?;
-        event!(Level::INFO, "Audio sent");
+        let message_id = message.id();
+        let file_id = message.audio().unwrap().file_id.clone();
+        drop(message);
         drop(temp_dir);
 
-        let message_id = message.id();
+        event!(Level::INFO, "Audio sent");
+
         if with_delete {
             tokio::spawn({
                 let bot = self.bot.clone();
@@ -214,6 +218,6 @@ impl Interactor for SendAudioInFS {
             });
         }
 
-        Ok((message_id, message.audio().unwrap().file_id.clone()))
+        Ok(file_id)
     }
 }

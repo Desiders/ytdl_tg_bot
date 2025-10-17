@@ -1,5 +1,11 @@
-pub mod audio;
-pub mod video;
+mod audio;
+mod video;
 
-pub use audio::{DownloadAudio, DownloadAudioInput, DownloadAudioPlaylist, DownloadAudioPlaylistInput};
-pub use video::{DownloadVideo, DownloadVideoInput, DownloadVideoPlaylist, DownloadVideoPlaylistInput};
+pub use audio::{
+    DownloadAudio, DownloadAudioErrorKind, DownloadAudioInput, DownloadAudioPlaylist, DownloadAudioPlaylistErrorKind,
+    DownloadAudioPlaylistInput,
+};
+pub use video::{
+    DownloadVideo, DownloadVideoErrorKind, DownloadVideoInput, DownloadVideoPlaylist, DownloadVideoPlaylistErrorKind,
+    DownloadVideoPlaylistInput,
+};

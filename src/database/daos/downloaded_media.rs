@@ -24,48 +24,39 @@ where
         &self,
         DownloadedMedia {
             id,
-            tg_id,
-            url,
-            id_in_url,
+            file_id,
+            url_or_id,
             media_type,
             created_at,
         }: DownloadedMedia,
     ) -> Result<DownloadedMedia, ErrorKind<Infallible>> {
         use downloaded_media::{
             ActiveModel,
-            Column::{MediaType, TgId},
+            Column::{MediaType, UrlOrId},
             Entity,
         };
 
         let model = ActiveModel {
             id: Set(id),
-            tg_id: Set(tg_id),
-            url: Set(url.into()),
-            id_in_url: Set(id_in_url.map(Into::into)),
+            file_id: Set(file_id.into()),
+            url_or_id: Set(url_or_id.into()),
             media_type: Set(media_type.into()),
             created_at: Set(created_at),
         };
 
         Entity::insert(model)
-            .on_conflict(OnConflict::columns([TgId, MediaType]).do_nothing().to_owned())
+            .on_conflict(OnConflict::columns([UrlOrId, MediaType]).do_nothing().to_owned())
             .exec_with_returning(self.conn)
             .await
             .map(Into::into)
             .map_err(Into::into)
     }
 
-    pub async fn get_by_id_or_url(
-        &self,
-        id_in_url: Option<Box<str>>,
-        url: Box<str>,
-    ) -> Result<Option<DownloadedMedia>, ErrorKind<Infallible>> {
-        use downloaded_media::{
-            Column::{IdInUrl, Url},
-            Entity,
-        };
+    pub async fn get_by_url_or_id(&self, url_or_id: Box<str>) -> Result<Option<DownloadedMedia>, ErrorKind<Infallible>> {
+        use downloaded_media::{Column::UrlOrId, Entity};
 
         Entity::find()
-            .filter(IdInUrl.eq(id_in_url.as_deref()).or(Url.eq(url.as_ref())))
+            .filter(UrlOrId.eq(url_or_id.as_ref()))
             .one(self.conn)
             .await
             .map(|val| val.map(Into::into))

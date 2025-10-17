@@ -1,5 +1,5 @@
-pub mod fs;
-pub mod id;
+mod fs;
+mod id;
 
 pub use fs::{SendAudioInFS, SendAudioInFSInput, SendVideoInFS, SendVideoInFSInput};
 pub use id::{
