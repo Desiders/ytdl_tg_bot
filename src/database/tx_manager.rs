@@ -62,7 +62,7 @@ impl TxManager {
     }
 
     #[inline]
-    pub fn user_downloaded_media_dao(&self) -> Result<chat_downloaded_media::Dao<DatabaseTransaction>, TransactionNotBegin> {
+    pub fn chat_downloaded_media_dao(&self) -> Result<chat_downloaded_media::Dao<DatabaseTransaction>, TransactionNotBegin> {
         Ok(chat_downloaded_media::Dao::new(
             self.transaction.as_ref().ok_or(TransactionNotBegin)?,
         ))
