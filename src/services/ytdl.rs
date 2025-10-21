@@ -277,7 +277,9 @@ pub async fn get_media_or_playlist_info(
     args.push("--extractor-args");
     args.push(&extractor_arg);
     args.push("--extractor-args");
-    args.push("youtube:player_client=default,mweb,web_music,web_creator;player_skip=configs,initial_data");
+    // Issue: https://github.com/yt-dlp/yt-dlp/pull/14157 (waiting for fix)
+    // args.push("youtube:player_client=default,mweb,web_music,web_creator;player_skip=configs,initial_data");
+    args.push("youtube:player_client=default,web_safari;player_skip=configs,initial_data;player_js_version=actual");
 
     if allow_playlist {
         args.push("--yes-playlist");
