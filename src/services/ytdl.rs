@@ -135,20 +135,29 @@ pub async fn download_video_to_path(
     args.push("--");
     args.push(url.as_ref());
 
-    let mut child = tokio::process::Command::new(executable_path.as_ref())
+    let child = tokio::process::Command::new(executable_path.as_ref())
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()?;
 
-    match tokio::time::timeout(Duration::from_secs(timeout), child.wait()).await {
-        Ok(Ok(exit_code)) => {
-            if exit_code.success() {
+    match tokio::time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
+        Ok(Ok(Output { status, stderr, .. })) => {
+            if status.success() {
                 Ok(())
             } else {
-                Err(io::Error::other(format!("Youtube-dl exited with status `{exit_code}`")))
+                match status.code() {
+                    Some(code) => Err(io::Error::other(format!(
+                        "Youtube-dl exited with code {code} and message: {}",
+                        String::from_utf8_lossy(&stderr),
+                    ))),
+                    None => Err(io::Error::other(format!(
+                        "Youtube-dl exited with and message: {}",
+                        String::from_utf8_lossy(&stderr),
+                    ))),
+                }
             }
         }
         Ok(Err(err)) => Err(err),
@@ -217,20 +226,29 @@ pub async fn download_audio_to_path(
     args.push("--");
     args.push(url.as_ref());
 
-    let mut child = tokio::process::Command::new(executable_path.as_ref())
+    let child = tokio::process::Command::new(executable_path.as_ref())
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()?;
 
-    match tokio::time::timeout(Duration::from_secs(timeout), child.wait()).await {
-        Ok(Ok(exit_code)) => {
-            if exit_code.success() {
+    match tokio::time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
+        Ok(Ok(Output { status, stderr, .. })) => {
+            if status.success() {
                 Ok(())
             } else {
-                Err(io::Error::other(format!("Youtube-dl exited with status `{exit_code}`")))
+                match status.code() {
+                    Some(code) => Err(io::Error::other(format!(
+                        "Youtube-dl exited with code {code} and message: {}",
+                        String::from_utf8_lossy(&stderr),
+                    ))),
+                    None => Err(io::Error::other(format!(
+                        "Youtube-dl exited with and message: {}",
+                        String::from_utf8_lossy(&stderr),
+                    ))),
+                }
             }
         }
         Ok(Err(err)) => Err(err),
@@ -302,16 +320,26 @@ pub async fn get_media_or_playlist_info(
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()?;
 
     let stdout = match tokio::time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
-        Ok(Ok(Output { status, stdout, .. })) => {
-            if !status.success() {
-                return Err(io::Error::other(format!("Youtube-dl exited with status `{:?}`", status.code())).into());
+        Ok(Ok(Output { status, stderr, stdout })) => {
+            if status.success() {
+                stdout
+            } else {
+                return match status.code() {
+                    Some(code) => Err(io::Error::other(format!(
+                        "Youtube-dl exited with code {code} and message: {}",
+                        String::from_utf8_lossy(&stderr),
+                    ))
+                    .into()),
+                    None => {
+                        Err(io::Error::other(format!("Youtube-dl exited with and message: {}", String::from_utf8_lossy(&stderr),)).into())
+                    }
+                };
             }
-            stdout
         }
         Ok(Err(err)) => return Err(err.into()),
         Err(_) => return Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out").into()),
