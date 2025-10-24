@@ -114,7 +114,7 @@ impl Interactor for DownloadVideo {
                     let yt_pot_provider_url = self.yt_pot_provider_cfg.url.clone();
                     let temp_dir_path = temp_dir.path().to_path_buf();
                     async move {
-                        let res = download_video_to_path(
+                        download_video_to_path(
                             yt_dlp_executable_path,
                             url,
                             yt_pot_provider_url,
@@ -123,9 +123,7 @@ impl Interactor for DownloadVideo {
                             DOWNLOAD_TIMEOUT,
                             cookie,
                         )
-                        .await;
-                        event!(Level::INFO, "Video downloaded");
-                        res
+                        .await
                     }
                 },
                 {
@@ -144,6 +142,7 @@ impl Interactor for DownloadVideo {
             if let Err(err) = download_res {
                 return Err(Self::Err::Ytdlp(err));
             }
+            event!(Level::INFO, "Video downloaded");
 
             return Ok(VideoInFS::new(file_path, thumbnail_path, temp_dir));
         }
@@ -335,7 +334,7 @@ impl Interactor for DownloadVideoPlaylist {
                         let yt_pot_provider_url = self.yt_pot_provider_cfg.url.clone();
                         let temp_dir_path = temp_dir.path().to_path_buf();
                         async move {
-                            let res = download_video_to_path(
+                            download_video_to_path(
                                 yt_dlp_executable_path,
                                 url,
                                 yt_pot_provider_url,
@@ -344,9 +343,7 @@ impl Interactor for DownloadVideoPlaylist {
                                 DOWNLOAD_TIMEOUT,
                                 cookie,
                             )
-                            .await;
-                            event!(Level::INFO, "Video downloaded");
-                            res
+                            .await
                         }
                     },
                     {
@@ -369,6 +366,7 @@ impl Interactor for DownloadVideoPlaylist {
                 }
 
                 let _guard = span.enter();
+                event!(Level::INFO, "Video downloaded");
                 sender.send((index, Ok(VideoInFS::new(file_path, thumbnail_path, temp_dir))))?;
                 continue;
             }
