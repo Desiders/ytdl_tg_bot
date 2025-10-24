@@ -82,7 +82,7 @@ impl Interactor<DownloadAudioInput<'_>> for DownloadAudio {
                 let yt_pot_provider_url = self.yt_pot_provider_cfg.url.clone();
                 let temp_dir_path = temp_dir.path().to_path_buf();
                 async move {
-                    let res = download_audio_to_path(
+                    download_audio_to_path(
                         yt_dlp_executable_path,
                         url,
                         yt_pot_provider_url,
@@ -92,9 +92,7 @@ impl Interactor<DownloadAudioInput<'_>> for DownloadAudio {
                         DOWNLOAD_TIMEOUT,
                         cookie,
                     )
-                    .await;
-                    event!(Level::INFO, "Audio downloaded");
-                    res
+                    .await
                 }
             },
             {
@@ -113,6 +111,7 @@ impl Interactor<DownloadAudioInput<'_>> for DownloadAudio {
         if let Err(err) = download_res {
             return Err(Self::Err::Ytdlp(err));
         }
+        event!(Level::INFO, "Audio downloaded");
 
         Ok(AudioInFS::new(file_path, thumbnail_path, temp_dir))
     }
@@ -201,7 +200,6 @@ impl Interactor<DownloadAudioPlaylistInput<'_>> for DownloadAudioPlaylist {
                             cookie,
                         )
                         .await;
-                        event!(Level::INFO, "Audio downloaded");
                         res
                     }
                 },
@@ -225,6 +223,7 @@ impl Interactor<DownloadAudioPlaylistInput<'_>> for DownloadAudioPlaylist {
             }
 
             let _guard = span.enter();
+            event!(Level::INFO, "Audio downloaded");
             sender.send((index, Ok(AudioInFS::new(file_path, thumbnail_path, temp_dir))))?;
         }
 
