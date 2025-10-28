@@ -31,8 +31,8 @@ use crate::{
     utils::{on_shutdown, on_startup},
 };
 use froodi::{
-    async_impl::{Container, RegistryBuilder},
-    instance,
+    async_impl::Container,
+    async_registry, instance, registry,
     telers::setup_async_default,
     DefaultScope::{App, Request},
     Inject, InstantiateErrorKind,
@@ -54,87 +54,78 @@ use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt
 use uuid::ContextV7;
 
 fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
-    let registry = RegistryBuilder::new()
-        .provide(instance(bot), App)
-        .provide(instance(cookies), App)
-        .provide(instance(config.bot), App)
-        .provide(instance(config.chat), App)
-        .provide(instance(config.blacklisted), App)
-        .provide(instance(config.logging), App)
-        .provide(instance(config.database), App)
-        .provide(instance(config.yt_dlp), App)
-        .provide(instance(config.yt_toolkit), App)
-        .provide(instance(config.yt_pot_provider), App)
-        .provide(instance(config.telegram_bot_api), App)
-        .provide(|| Ok(Mutex::new(ContextV7::new())), App)
-        .provide(|| Ok(Client::new()), App)
-        .provide(|| Ok(GetDownloadedMedia::new()), Request)
-        .provide(|| Ok(CreateChat::new()), Request)
-        .provide(
-            |Inject(context): Inject<Mutex<ContextV7>>| Ok(AddDownloadedVideo::new(context)),
-            Request,
-        )
-        .provide(
-            |Inject(context): Inject<Mutex<ContextV7>>| Ok(AddDownloadedAudio::new(context)),
-            Request,
-        )
-        .provide(
-            |Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
-             Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-             Inject(cookies): Inject<Cookies>| { Ok(GetMediaInfoByURL::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies)) },
-            Request,
-        )
-        .provide(
-            |Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
-             Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-             Inject(cookies): Inject<Cookies>| { Ok(GetMediaInfoById::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies)) },
-            Request,
-        )
-        .provide(
-            |Inject(client): Inject<Client>, Inject(yt_toolkit_cfg): Inject<YtToolkitConfig>| {
-                Ok(GetShortMediaByURLInfo::new(client, yt_toolkit_cfg))
-            },
-            Request,
-        )
-        .provide(
-            |Inject(client): Inject<Client>, Inject(yt_toolkit_cfg): Inject<YtToolkitConfig>| {
-                Ok(SearchMediaInfo::new(client, yt_toolkit_cfg))
-            },
-            Request,
-        )
-        .provide(
-            |Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
-             Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-             Inject(cookies): Inject<Cookies>| Ok(DownloadVideo::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies)),
-            Request,
-        )
-        .provide(
-            |Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
-             Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-             Inject(cookies): Inject<Cookies>| { Ok(DownloadVideoPlaylist::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies)) },
-            Request,
-        )
-        .provide(
-            |Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
-             Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-             Inject(cookies): Inject<Cookies>| Ok(DownloadAudio::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies)),
-            Request,
-        )
-        .provide(
-            |Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
-             Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-             Inject(cookies): Inject<Cookies>| { Ok(DownloadAudioPlaylist::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies)) },
-            Request,
-        )
-        .provide(|Inject(bot): Inject<Bot>| Ok(SendVideoInFS::new(bot)), Request)
-        .provide(|Inject(bot): Inject<Bot>| Ok(SendVideoById::new(bot)), Request)
-        .provide(|Inject(bot): Inject<Bot>| Ok(SendVideoPlaylistById::new(bot)), Request)
-        .provide(|Inject(bot): Inject<Bot>| Ok(SendAudioInFS::new(bot)), Request)
-        .provide(|Inject(bot): Inject<Bot>| Ok(SendAudioById::new(bot)), Request)
-        .provide(|Inject(bot): Inject<Bot>| Ok(SendAudioPlaylistById::new(bot)), Request)
-        .provide(|Inject(bot): Inject<Bot>| Ok(EditVideoById::new(bot)), Request)
-        .provide(|Inject(bot): Inject<Bot>| Ok(EditAudioById::new(bot)), Request)
-        .provide_async(
+    let sync_registry = registry! {
+        scope(App) [
+            provide(instance(bot)),
+            provide(instance(cookies)),
+            provide(instance(config.bot)),
+            provide(instance(config.chat)),
+            provide(instance(config.blacklisted)),
+            provide(instance(config.logging)),
+            provide(instance(config.database)),
+            provide(instance(config.yt_dlp)),
+            provide(instance(config.yt_toolkit)),
+            provide(instance(config.yt_pot_provider)),
+            provide(instance(config.telegram_bot_api)),
+
+            provide(|| Ok(Mutex::new(ContextV7::new()))),
+            provide(|| Ok(Client::new())),
+            provide(|| Ok(GetDownloadedMedia::new())),
+            provide(|| Ok(CreateChat::new())),
+
+            provide(|Inject(bot): Inject<Bot>| Ok(SendVideoInFS::new(bot))),
+            provide(|Inject(bot): Inject<Bot>| Ok(SendVideoById::new(bot))),
+            provide(|Inject(bot): Inject<Bot>| Ok(SendVideoPlaylistById::new(bot))),
+            provide(|Inject(bot): Inject<Bot>| Ok(SendAudioInFS::new(bot))),
+            provide(|Inject(bot): Inject<Bot>| Ok(SendAudioById::new(bot))),
+            provide(|Inject(bot): Inject<Bot>| Ok(SendAudioPlaylistById::new(bot))),
+            provide(|Inject(bot): Inject<Bot>| Ok(EditVideoById::new(bot))),
+            provide(|Inject(bot): Inject<Bot>| Ok(EditAudioById::new(bot))),
+            provide(|Inject(context): Inject<Mutex<ContextV7>>| Ok(AddDownloadedVideo::new(context))),
+            provide(|Inject(context): Inject<Mutex<ContextV7>>| Ok(AddDownloadedAudio::new(context))),
+            provide(|
+                Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
+                Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
+                Inject(cookies): Inject<Cookies>| Ok(GetMediaInfoByURL::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies))
+            ),
+            provide(|
+                Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
+                Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
+                Inject(cookies): Inject<Cookies>| Ok(GetMediaInfoById::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies))
+            ),
+            provide(
+                |Inject(client): Inject<Client>,
+                Inject(yt_toolkit_cfg): Inject<YtToolkitConfig>| Ok(GetShortMediaByURLInfo::new(client, yt_toolkit_cfg))
+            ),
+            provide(|
+                Inject(client): Inject<Client>,
+                Inject(yt_toolkit_cfg): Inject<YtToolkitConfig>| Ok(SearchMediaInfo::new(client, yt_toolkit_cfg))
+            ),
+            provide(|
+                Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
+                Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
+                Inject(cookies): Inject<Cookies>| Ok(DownloadVideo::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies))
+            ),
+            provide(|
+                Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
+                Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
+                Inject(cookies): Inject<Cookies>| Ok(DownloadVideoPlaylist::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies))
+            ),
+            provide(|
+                Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
+                Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
+                Inject(cookies): Inject<Cookies>| Ok(DownloadAudio::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies))
+            ),
+            provide(|
+                Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
+                Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
+                Inject(cookies): Inject<Cookies>| Ok(DownloadAudioPlaylist::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies))
+            ),
+        ],
+    };
+    let registry_with_sync = async_registry! {
+        provide(
+            App,
             |Inject(database_cfg): Inject<DatabaseConfig>| async move {
                 let mut options = ConnectOptions::new(database_cfg.get_postgres_url());
                 options.sqlx_logging(true);
@@ -150,13 +141,15 @@ fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
                     }
                 }
             },
-            App,
-        )
-        .provide_async(
-            |Inject(pool): Inject<DatabaseConnection>| async move { Ok(TxManager::new(pool)) },
+        ),
+        provide(
             Request,
-        );
-    Container::new(registry)
+            |Inject(pool): Inject<DatabaseConnection>| async move { Ok(TxManager::new(pool)) },
+        ),
+        sync = sync_registry,
+    };
+
+    Container::new(registry_with_sync)
 }
 
 #[tokio::main(flavor = "multi_thread")]
