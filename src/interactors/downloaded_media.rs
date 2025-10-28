@@ -38,12 +38,12 @@ impl AddDownloadedVideo {
     }
 }
 
-impl Interactor<AddDownloadedMediaInput<'_>> for AddDownloadedVideo {
+impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedVideo {
     type Output = ();
     type Err = ErrorKind<Infallible>;
 
     async fn execute(
-        &mut self,
+        self,
         AddDownloadedMediaInput {
             file_id,
             url_or_id,
@@ -79,12 +79,12 @@ impl AddDownloadedAudio {
     }
 }
 
-impl Interactor<AddDownloadedMediaInput<'_>> for AddDownloadedAudio {
+impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedAudio {
     type Output = ();
     type Err = ErrorKind<Infallible>;
 
     async fn execute(
-        &mut self,
+        self,
         AddDownloadedMediaInput {
             file_id,
             url_or_id,
@@ -129,12 +129,12 @@ impl<'a> GetDownloadedMediaInput<'a> {
     }
 }
 
-impl Interactor<GetDownloadedMediaInput<'_>> for GetDownloadedMedia {
+impl Interactor<GetDownloadedMediaInput<'_>> for &GetDownloadedMedia {
     type Output = Option<DownloadedMedia>;
     type Err = ErrorKind<Infallible>;
 
     async fn execute(
-        &mut self,
+        self,
         GetDownloadedMediaInput { url_or_id, tx_manager }: GetDownloadedMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         tx_manager.begin().await?;

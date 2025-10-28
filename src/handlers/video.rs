@@ -10,7 +10,7 @@ use crate::{
     utils::{format_error_report, FormatErrorToMessage as _},
 };
 
-use froodi::{Inject, InjectTransient};
+use froodi::Inject;
 use std::str::FromStr as _;
 use telers::{
     enums::ParseMode,
@@ -28,11 +28,11 @@ pub async fn download(
     Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
     Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
     Inject(chat_cfg): Inject<ChatConfig>,
-    InjectTransient(mut get_media_info): InjectTransient<GetMediaInfoByURL>,
-    InjectTransient(mut download): InjectTransient<DownloadVideo>,
-    InjectTransient(mut download_playlist): InjectTransient<DownloadVideoPlaylist>,
-    InjectTransient(mut send_media_in_fs): InjectTransient<SendVideoInFS>,
-    InjectTransient(mut send_playlist): InjectTransient<SendVideoPlaylistById>,
+    Inject(get_media_info): Inject<GetMediaInfoByURL>,
+    Inject(download): Inject<DownloadVideo>,
+    Inject(download_playlist): Inject<DownloadVideoPlaylist>,
+    Inject(send_media_in_fs): Inject<SendVideoInFS>,
+    Inject(send_playlist): Inject<SendVideoPlaylistById>,
 ) -> HandlerResult {
     event!(Level::DEBUG, "Got url");
 
@@ -226,11 +226,11 @@ pub async fn download_quite(
     Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
     Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
     Inject(chat_cfg): Inject<ChatConfig>,
-    InjectTransient(mut get_media_info): InjectTransient<GetMediaInfoByURL>,
-    InjectTransient(mut download): InjectTransient<DownloadVideo>,
-    InjectTransient(mut download_playlist): InjectTransient<DownloadVideoPlaylist>,
-    InjectTransient(mut send_media_in_fs): InjectTransient<SendVideoInFS>,
-    InjectTransient(mut send_playlist): InjectTransient<SendVideoPlaylistById>,
+    Inject(get_media_info): Inject<GetMediaInfoByURL>,
+    Inject(download): Inject<DownloadVideo>,
+    Inject(download_playlist): Inject<DownloadVideoPlaylist>,
+    Inject(send_media_in_fs): Inject<SendVideoInFS>,
+    Inject(send_playlist): Inject<SendVideoPlaylistById>,
 ) -> HandlerResult {
     event!(Level::DEBUG, "Got url");
 

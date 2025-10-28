@@ -9,7 +9,7 @@ use crate::{
     utils::format_error_report,
 };
 
-use froodi::InjectTransient;
+use froodi::Inject;
 use telers::{
     enums::ParseMode,
     event::{telegram::HandlerResult, EventReturn},
@@ -31,8 +31,8 @@ pub async fn select_by_url(
     bot: Bot,
     InlineQuery { id: query_id, .. }: InlineQuery,
     Extension(UrlWithParams { url, .. }): Extension<UrlWithParams>,
-    InjectTransient(mut get_short_media_info): InjectTransient<GetShortMediaByURLInfo>,
-    InjectTransient(mut get_media_info): InjectTransient<GetMediaInfoByURL>,
+    Inject(get_short_media_info): Inject<GetShortMediaByURLInfo>,
+    Inject(get_media_info): Inject<GetMediaInfoByURL>,
 ) -> HandlerResult {
     event!(Level::DEBUG, "Got url");
 
@@ -110,7 +110,7 @@ pub async fn select_by_text(
     InlineQuery {
         id: query_id, query: text, ..
     }: InlineQuery,
-    InjectTransient(mut search_media_info): InjectTransient<SearchMediaInfo>,
+    Inject(search_media_info): Inject<SearchMediaInfo>,
 ) -> HandlerResult {
     event!(Level::DEBUG, "Got text");
 
