@@ -3,9 +3,6 @@ name = "ytdl_tg_bot"
 version = "2.0.3"
 edition = "2021"
 
-[workspace]
-members = [".", "migration"]
-
 [dependencies]
 telers = { version = "1.0.0-alpha.27", features = ["default_signal", "rustls-tls"], default-features = false }
 tokio = { version = "1.36", features = ["rt-multi-thread", "process", "sync"], default-features = false }
@@ -13,7 +10,7 @@ tokio-util = { version = "0.7", default-features = false }
 nix = { version = "0.30", features = ["fs"], default-features = false }
 reqwest = { version = "0.12", features = ["rustls-tls", "charset"], default-features = false }
 sea-orm = { version = "1.1", features = ["macros", "sqlx-postgres", "runtime-tokio-rustls", "with-time", "with-uuid"], default-features = false }
-froodi = { version = "1.0.0-beta.9", features = ["async", "thread_safe", "telers"], default-features = false }
+froodi = { version = "1.0.0-alpha.1", features = ["async", "thread_safe", "telers"], default-features = false }
 serde = { version = "1.0", default-features = false }
 serde_json = {version = "1.0", default-features = false }
 bytes = { version = "1", default-features = false }
