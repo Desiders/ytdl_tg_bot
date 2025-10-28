@@ -13,7 +13,7 @@ use crate::{
     utils::{format_error_report, FormatErrorToMessage as _},
 };
 
-use froodi::{Inject, InjectTransient};
+use froodi::Inject;
 use std::str::FromStr as _;
 use telers::{
     enums::ParseMode,
@@ -36,13 +36,13 @@ pub async fn download_by_url(
     Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
     Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
     Inject(chat_cfg): Inject<ChatConfig>,
-    InjectTransient(mut get_media_info): InjectTransient<GetMediaInfoByURL>,
-    InjectTransient(mut download_video): InjectTransient<DownloadVideo>,
-    InjectTransient(mut download_audio): InjectTransient<DownloadAudio>,
-    InjectTransient(mut send_video_in_fs): InjectTransient<SendVideoInFS>,
-    InjectTransient(mut edit_video_by_id): InjectTransient<EditVideoById>,
-    InjectTransient(mut send_audio_in_fs): InjectTransient<SendAudioInFS>,
-    InjectTransient(mut edit_audio_by_id): InjectTransient<EditAudioById>,
+    Inject(get_media_info): Inject<GetMediaInfoByURL>,
+    Inject(download_video): Inject<DownloadVideo>,
+    Inject(download_audio): Inject<DownloadAudio>,
+    Inject(send_video_in_fs): Inject<SendVideoInFS>,
+    Inject(edit_video_by_id): Inject<EditVideoById>,
+    Inject(send_audio_in_fs): Inject<SendAudioInFS>,
+    Inject(edit_audio_by_id): Inject<EditAudioById>,
 ) -> HandlerResult {
     let inline_message_id = inline_message_id.as_deref().unwrap();
     let is_video = result_id.starts_with("video_");
@@ -214,13 +214,13 @@ pub async fn download_by_id(
     }: ChosenInlineResult,
     Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
     Inject(chat_cfg): Inject<ChatConfig>,
-    InjectTransient(mut get_media_info): InjectTransient<GetMediaInfoById>,
-    InjectTransient(mut download_video): InjectTransient<DownloadVideo>,
-    InjectTransient(mut download_audio): InjectTransient<DownloadAudio>,
-    InjectTransient(mut send_video_in_fs): InjectTransient<SendVideoInFS>,
-    InjectTransient(mut edit_video_by_id): InjectTransient<EditVideoById>,
-    InjectTransient(mut send_audio_in_fs): InjectTransient<SendAudioInFS>,
-    InjectTransient(mut edit_audio_by_id): InjectTransient<EditAudioById>,
+    Inject(get_media_info): Inject<GetMediaInfoById>,
+    Inject(download_video): Inject<DownloadVideo>,
+    Inject(download_audio): Inject<DownloadAudio>,
+    Inject(send_video_in_fs): Inject<SendVideoInFS>,
+    Inject(edit_video_by_id): Inject<EditVideoById>,
+    Inject(send_audio_in_fs): Inject<SendAudioInFS>,
+    Inject(edit_audio_by_id): Inject<EditAudioById>,
 ) -> HandlerResult {
     let inline_message_id = inline_message_id.as_deref().unwrap();
     let (result_prefix, video_id) = result_id.split_once('_').unwrap();

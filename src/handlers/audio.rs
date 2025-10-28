@@ -10,7 +10,7 @@ use crate::{
     utils::{format_error_report, FormatErrorToMessage as _},
 };
 
-use froodi::{Inject, InjectTransient};
+use froodi::Inject;
 use std::str::FromStr as _;
 use telers::{
     enums::ParseMode,
@@ -28,11 +28,11 @@ pub async fn download(
     Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
     Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
     Inject(chat_cfg): Inject<ChatConfig>,
-    InjectTransient(mut get_media_info): InjectTransient<GetMediaInfoByURL>,
-    InjectTransient(mut download): InjectTransient<DownloadAudio>,
-    InjectTransient(mut download_playlist): InjectTransient<DownloadAudioPlaylist>,
-    InjectTransient(mut send_media_in_fs): InjectTransient<SendAudioInFS>,
-    InjectTransient(mut send_playlist): InjectTransient<SendAudioPlaylistById>,
+    Inject(get_media_info): Inject<GetMediaInfoByURL>,
+    Inject(download): Inject<DownloadAudio>,
+    Inject(download_playlist): Inject<DownloadAudioPlaylist>,
+    Inject(send_media_in_fs): Inject<SendAudioInFS>,
+    Inject(send_playlist): Inject<SendAudioPlaylistById>,
 ) -> HandlerResult {
     event!(Level::DEBUG, "Got url");
 

@@ -23,12 +23,12 @@ impl<'a> CreateChatInput<'a> {
     }
 }
 
-impl Interactor<CreateChatInput<'_>> for CreateChat {
+impl Interactor<CreateChatInput<'_>> for &CreateChat {
     type Output = Chat;
     type Err = ErrorKind<Infallible>;
 
     #[instrument(skip_all)]
-    async fn execute(&mut self, CreateChatInput { chat, tx_manager }: CreateChatInput<'_>) -> Result<Self::Output, Self::Err> {
+    async fn execute(self, CreateChatInput { chat, tx_manager }: CreateChatInput<'_>) -> Result<Self::Output, Self::Err> {
         tx_manager.begin().await?;
 
         let dao = tx_manager.chat_dao().unwrap();

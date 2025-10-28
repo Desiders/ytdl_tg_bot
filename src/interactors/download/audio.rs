@@ -56,13 +56,13 @@ impl<'a> DownloadAudioInput<'a> {
     }
 }
 
-impl Interactor<DownloadAudioInput<'_>> for DownloadAudio {
+impl Interactor<DownloadAudioInput<'_>> for &DownloadAudio {
     type Output = AudioInFS;
     type Err = DownloadAudioErrorKind;
 
     #[instrument(skip_all, fields(extension = format.codec.get_extension(), %format))]
     async fn execute(
-        &mut self,
+        self,
         DownloadAudioInput {
             audio_and_format: AudioAndFormat { video, format },
             url,
@@ -157,13 +157,13 @@ impl<'a> DownloadAudioPlaylistInput<'a> {
     }
 }
 
-impl Interactor<DownloadAudioPlaylistInput<'_>> for DownloadAudioPlaylist {
+impl Interactor<DownloadAudioPlaylistInput<'_>> for &DownloadAudioPlaylist {
     type Output = ();
     type Err = DownloadAudioPlaylistErrorKind;
 
     #[instrument(skip_all)]
     async fn execute(
-        &mut self,
+        self,
         DownloadAudioPlaylistInput {
             url,
             audios_and_formats,

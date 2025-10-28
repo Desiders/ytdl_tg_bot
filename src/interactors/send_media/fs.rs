@@ -60,13 +60,13 @@ impl<'a> SendVideoInFSInput<'a> {
     }
 }
 
-impl Interactor<SendVideoInFSInput<'_>> for SendVideoInFS {
+impl Interactor<SendVideoInFSInput<'_>> for &SendVideoInFS {
     type Output = Box<str>;
     type Err = SessionErrorKind;
 
     #[instrument(skip_all, fields(name, width, height, with_delete))]
     async fn execute(
-        &mut self,
+        self,
         SendVideoInFSInput {
             chat_id,
             reply_to_message_id,
@@ -164,13 +164,13 @@ impl<'a> SendAudioInFSInput<'a> {
     }
 }
 
-impl Interactor<SendAudioInFSInput<'_>> for SendAudioInFS {
+impl Interactor<SendAudioInFSInput<'_>> for &SendAudioInFS {
     type Output = Box<str>;
     type Err = SessionErrorKind;
 
     #[instrument(skip_all, fields(name, uploader, with_delete))]
     async fn execute(
-        &mut self,
+        self,
         SendAudioInFSInput {
             chat_id,
             reply_to_message_id,

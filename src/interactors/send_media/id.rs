@@ -32,13 +32,13 @@ pub struct SendVideoByIdInput<'a> {
     pub id: &'a str,
 }
 
-impl Interactor<SendVideoByIdInput<'_>> for SendVideoById {
+impl Interactor<SendVideoByIdInput<'_>> for &SendVideoById {
     type Output = ();
     type Err = SessionErrorKind;
 
     #[instrument(skip_all)]
     async fn execute(
-        &mut self,
+        self,
         SendVideoByIdInput {
             chat_id,
             reply_to_message_id,
@@ -78,13 +78,13 @@ pub struct SendAudioByIdInput<'a> {
     pub id: &'a str,
 }
 
-impl Interactor<SendAudioByIdInput<'_>> for SendAudioById {
+impl Interactor<SendAudioByIdInput<'_>> for &SendAudioById {
     type Output = ();
     type Err = SessionErrorKind;
 
     #[instrument(skip_all)]
     async fn execute(
-        &mut self,
+        self,
         SendAudioByIdInput {
             chat_id,
             reply_to_message_id,
@@ -133,13 +133,13 @@ impl<'a> EditVideoByIdInput<'a> {
     }
 }
 
-impl Interactor<EditVideoByIdInput<'_>> for EditVideoById {
+impl Interactor<EditVideoByIdInput<'_>> for &EditVideoById {
     type Output = ();
     type Err = SessionErrorKind;
 
     #[instrument(skip_all)]
     async fn execute(
-        &mut self,
+        self,
         EditVideoByIdInput {
             inline_message_id,
             id,
@@ -193,13 +193,13 @@ impl<'a> EditAudioByIdInput<'a> {
     }
 }
 
-impl Interactor<EditAudioByIdInput<'_>> for EditAudioById {
+impl Interactor<EditAudioByIdInput<'_>> for &EditAudioById {
     type Output = ();
     type Err = SessionErrorKind;
 
     #[instrument(skip_all)]
     async fn execute(
-        &mut self,
+        self,
         EditAudioByIdInput {
             inline_message_id,
             id,
@@ -248,13 +248,13 @@ impl SendVideoPlaylistByIdInput {
     }
 }
 
-impl Interactor<SendVideoPlaylistByIdInput> for SendVideoPlaylistById {
+impl Interactor<SendVideoPlaylistByIdInput> for &SendVideoPlaylistById {
     type Output = ();
     type Err = SessionErrorKind;
 
     #[instrument(skip_all)]
     async fn execute(
-        &mut self,
+        self,
         SendVideoPlaylistByIdInput {
             chat_id,
             reply_to_message_id,
@@ -307,13 +307,13 @@ impl SendAudioPlaylistByIdInput {
     }
 }
 
-impl Interactor<SendAudioPlaylistByIdInput> for SendAudioPlaylistById {
+impl Interactor<SendAudioPlaylistByIdInput> for &SendAudioPlaylistById {
     type Output = ();
     type Err = SessionErrorKind;
 
     #[instrument(skip_all)]
     async fn execute(
-        &mut self,
+        self,
         SendAudioPlaylistByIdInput {
             chat_id,
             reply_to_message_id,
