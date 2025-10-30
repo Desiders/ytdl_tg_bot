@@ -146,7 +146,7 @@ fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
             Request,
             |Inject(pool): Inject<DatabaseConnection>| async move { Ok(TxManager::new(pool)) },
         ),
-        sync = sync_registry,
+        extend(sync_registry),
     };
 
     Container::new(registry_with_sync)
