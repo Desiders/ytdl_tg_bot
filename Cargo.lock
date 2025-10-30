@@ -439,9 +439,9 @@ dependencies = [
 
 [[package]]
 name = "froodi"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f4d756c546b6735917b9460fea30964ef1abec8be0b4edc4a7171ecdda4901d"
+checksum = "3a66d020e348b61f8e4da8d2b7484e0e2cae08dbc5c7f52c2bb27e5fb0a3dcde"
 dependencies = [
  "anyhow",
  "frunk",
