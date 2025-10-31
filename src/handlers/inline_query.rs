@@ -2,8 +2,9 @@ use crate::{
     entities::{Range, ShortInfo, UrlWithParams},
     handlers_utils::error,
     interactors::{
-        GetMedaInfoByURLInput, GetMediaInfoByURL, GetShortMediaByURLInfo, GetShortMediaInfoByURLInput, Interactor, SearchMediaInfo,
-        SearchMediaInfoInput,
+        GetShortMediaByURLInfo, GetShortMediaInfoByURLInput, GetUncachedVideoByURL, GetUncachedVideoByURLInput,
+        GetUncachedVideoByURLKind::{Empty, Playlist, Single},
+        Interactor, SearchMediaInfo, SearchMediaInfoInput,
     },
     services::yt_toolkit::GetVideoInfoErrorKind,
     utils::format_error_report,
@@ -32,7 +33,7 @@ pub async fn select_by_url(
     InlineQuery { id: query_id, .. }: InlineQuery,
     Extension(UrlWithParams { url, .. }): Extension<UrlWithParams>,
     Inject(get_short_media_info): Inject<GetShortMediaByURLInfo>,
-    Inject(get_media_info): Inject<GetMediaInfoByURL>,
+    Inject(get_media): Inject<GetUncachedVideoByURL>,
 ) -> HandlerResult {
     event!(Level::DEBUG, "Got url");
 
@@ -44,8 +45,10 @@ pub async fn select_by_url(
             } else {
                 event!(Level::ERROR, err = format_error_report(&err), "Get YT Toolkit media info error");
             }
-            match get_media_info.execute(GetMedaInfoByURLInput::new(&url, &Range::default())).await {
-                Ok(val) => val.into_iter().map(Into::into).collect(),
+            match get_media.execute(GetUncachedVideoByURLInput::new(&url, &Range::default())).await {
+                Ok(Single(media)) => vec![media.into()],
+                Ok(Playlist(playlist)) => playlist.into_iter().map(Into::into).collect(),
+                Ok(Empty) => vec![],
                 Err(err) => {
                     event!(Level::ERROR, err = format_error_report(&err), "Get info err");
                     error::occured_in_inline_query_occured(&bot, query_id.as_ref(), "Sorry, an error to get media info").await?;
@@ -55,8 +58,8 @@ pub async fn select_by_url(
         }
     };
     if videos.is_empty() {
-        event!(Level::WARN, "Playlist empty");
-        error::occured_in_inline_query_occured(&bot, &query_id, "Playlist empty").await?;
+        event!(Level::WARN, "Empty playlist");
+        error::occured_in_inline_query_occured(&bot, &query_id, "Playlist is empty").await?;
         return Ok(EventReturn::Finish);
     }
 
