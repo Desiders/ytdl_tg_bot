@@ -32,6 +32,16 @@ pub struct SendVideoByIdInput<'a> {
     pub id: &'a str,
 }
 
+impl<'a> SendVideoByIdInput<'a> {
+    pub const fn new(chat_id: i64, reply_to_message_id: Option<i64>, id: &'a str) -> Self {
+        Self {
+            chat_id,
+            reply_to_message_id,
+            id,
+        }
+    }
+}
+
 impl Interactor<SendVideoByIdInput<'_>> for &SendVideoById {
     type Output = ();
     type Err = SessionErrorKind;
@@ -49,7 +59,7 @@ impl Interactor<SendVideoByIdInput<'_>> for &SendVideoById {
         send::with_retries(
             &self.bot,
             SendVideo::new(chat_id, InputFile::id(id))
-                .reply_parameters_option(reply_to_message_id.map(ReplyParameters::new))
+                .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)))
                 .disable_notification(true)
                 .supports_streaming(true),
             2,
@@ -76,6 +86,16 @@ pub struct SendAudioByIdInput<'a> {
     pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
     pub id: &'a str,
+}
+
+impl<'a> SendAudioByIdInput<'a> {
+    pub const fn new(chat_id: i64, reply_to_message_id: Option<i64>, id: &'a str) -> Self {
+        Self {
+            chat_id,
+            reply_to_message_id,
+            id,
+        }
+    }
 }
 
 impl Interactor<SendAudioByIdInput<'_>> for &SendAudioById {

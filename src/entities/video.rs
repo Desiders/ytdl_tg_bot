@@ -103,6 +103,10 @@ impl VideosInYT {
     pub fn new(videos: impl Into<Vec<Video>>) -> Self {
         Self(videos.into())
     }
+
+    pub const fn len(&self) -> usize {
+        self.0.len()
+    }
 }
 
 impl IntoIterator for VideosInYT {
