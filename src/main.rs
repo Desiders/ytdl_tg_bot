@@ -23,8 +23,8 @@ use crate::{
             EditAudioById, EditVideoById, SendAudioById, SendAudioInFS, SendAudioPlaylistById, SendVideoById, SendVideoInFS,
             SendVideoPlaylistById,
         },
-        AddDownloadedAudio, AddDownloadedVideo, CreateChat, GetDownloadedMedia, GetMediaInfoById, GetMediaInfoByURL,
-        GetShortMediaByURLInfo, SearchMediaInfo,
+        AddDownloadedAudio, AddDownloadedVideo, CreateChat, GetAudioByURL, GetMediaInfoById, GetShortMediaByURLInfo, GetUncachedVideoByURL,
+        GetVideoByURL, SearchMediaInfo,
     },
     middlewares::ReactionMiddleware,
     services::get_cookies_from_directory,
@@ -70,7 +70,6 @@ fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
 
             provide(|| Ok(Mutex::new(ContextV7::new()))),
             provide(|| Ok(Client::new())),
-            provide(|| Ok(GetDownloadedMedia::new())),
             provide(|| Ok(CreateChat::new())),
 
             provide(|Inject(bot): Inject<Bot>| Ok(SendVideoInFS::new(bot))),
@@ -86,7 +85,17 @@ fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
             provide(|
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
                 Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-                Inject(cookies): Inject<Cookies>| Ok(GetMediaInfoByURL::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies))
+                Inject(cookies): Inject<Cookies>| Ok(GetUncachedVideoByURL::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies))
+            ),
+            provide(|
+                Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
+                Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
+                Inject(cookies): Inject<Cookies>| Ok(GetVideoByURL::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies))
+            ),
+            provide(|
+                Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
+                Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
+                Inject(cookies): Inject<Cookies>| Ok(GetAudioByURL::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies))
             ),
             provide(|
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
