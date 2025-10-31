@@ -1,7 +1,12 @@
 use sea_orm::{sea_query::OnConflict, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait as _, QueryFilter as _};
 use std::convert::Infallible;
 
-use crate::{database::models::downloaded_media, entities::DownloadedMedia, errors::database::ErrorKind};
+use crate::{
+    database::models::{downloaded_media, sea_orm_active_enums},
+    entities::DownloadedMedia,
+    errors::database::ErrorKind,
+    value_objects::MediaType,
+};
 
 pub struct Dao<'a, Conn> {
     conn: &'a Conn,
@@ -26,6 +31,7 @@ where
             file_id,
             url_or_id,
             media_type,
+            index_in_playlist,
             chat_tg_id,
             created_at,
         }: DownloadedMedia,
@@ -40,6 +46,7 @@ where
             file_id: Set(file_id.into()),
             url_or_id: Set(url_or_id.into()),
             media_type: Set(media_type.into()),
+            index_in_playlist: Set(index_in_playlist),
             chat_tg_id: Set(chat_tg_id.into()),
             created_at: Set(created_at),
         };
@@ -52,14 +59,22 @@ where
             .map_err(Into::into)
     }
 
-    pub async fn get_by_url_or_id(&self, url_or_id: Box<str>) -> Result<Option<DownloadedMedia>, ErrorKind<Infallible>> {
-        use downloaded_media::{Column::UrlOrId, Entity};
+    pub async fn get_by_url_or_id(&self, url_or_id: &str, media_type: MediaType) -> Result<Vec<DownloadedMedia>, ErrorKind<Infallible>> {
+        use downloaded_media::{
+            Column::{MediaType, UrlOrId},
+            Entity,
+        };
 
-        Entity::find()
-            .filter(UrlOrId.eq(url_or_id.as_ref()))
-            .one(self.conn)
-            .await
-            .map(|val| val.map(Into::into))
-            .map_err(Into::into)
+        Ok(Entity::find()
+            .filter(
+                UrlOrId
+                    .eq(url_or_id)
+                    .and(MediaType.eq(sea_orm_active_enums::MediaType::from(media_type))),
+            )
+            .all(self.conn)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
     }
 }
