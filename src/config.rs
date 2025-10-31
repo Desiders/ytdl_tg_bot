@@ -71,8 +71,8 @@ pub struct YtPotProviderConfig {
 #[derive(Deserialize, Clone, Debug)]
 pub struct TelegramBotApiConfig {
     pub url: Box<str>,
-    pub api_id: Box<str>,
-    pub api_hash: Box<str>,
+    // pub api_id: Box<str>,
+    // pub api_hash: Box<str>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
