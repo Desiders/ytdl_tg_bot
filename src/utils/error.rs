@@ -1,8 +1,9 @@
 use crate::{
     entities::ParseRangeError,
     errors::{database::ErrorKind, FormatNotFound},
-    interactors::download::{
-        DownloadAudioErrorKind, DownloadAudioPlaylistErrorKind, DownloadVideoErrorKind, DownloadVideoPlaylistErrorKind,
+    interactors::{
+        download::{DownloadAudioErrorKind, DownloadAudioPlaylistErrorKind, DownloadVideoErrorKind, DownloadVideoPlaylistErrorKind},
+        GetMediaByURLErrorKind,
     },
     services::ytdl,
 };
@@ -77,6 +78,15 @@ impl FormatErrorToMessage for ytdl::Error {
 impl FormatErrorToMessage for ParseRangeError {
     fn format(&self, _token: &str) -> Cow<'static, str> {
         Cow::Owned(self.to_string())
+    }
+}
+
+impl FormatErrorToMessage for GetMediaByURLErrorKind {
+    fn format(&self, token: &str) -> Cow<'static, str> {
+        match self {
+            GetMediaByURLErrorKind::Ytdl(error) => error.format(token),
+            GetMediaByURLErrorKind::Database(error_kind) => error_kind.format(token),
+        }
     }
 }
 

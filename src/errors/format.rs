@@ -16,5 +16,5 @@ pub enum Error<'a> {
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("Format not found for media for languages ")]
+#[error("Format not found for media")]
 pub struct FormatNotFound;
