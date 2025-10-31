@@ -38,13 +38,6 @@ impl MigrationTrait for Migration {
                     .col(tiny_integer(DownloadedMedia::IndexInPlaylist).default(0))
                     .col(big_integer(DownloadedMedia::ChatTgId))
                     .col(timestamp_with_time_zone(DownloadedMedia::CreatedAt).default(Expr::current_timestamp()))
-                    .foreign_key(
-                        ForeignKey::create()
-                            .from(DownloadedMedia::Table, DownloadedMedia::ChatTgId)
-                            .to(Chat::Table, Chat::TgId)
-                            .on_update(ForeignKeyAction::Cascade)
-                            .on_delete(ForeignKeyAction::Cascade),
-                    )
                     .index(
                         Index::create()
                             .name("idx_downloaded_media_url_media_type")
