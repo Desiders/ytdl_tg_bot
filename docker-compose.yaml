@@ -30,6 +30,8 @@ services:
       - yt_pot_provider_api
       - telegram_bot_api
     mem_limit: $BOT_MEM_LIMIT
+    profiles:
+      - default
 
   postgres:
     container_name: ytdl_tg_bot.postgres
@@ -54,6 +56,9 @@ services:
       timeout: 60s
       retries: 5
       start_period: 10s
+    profiles:
+      - default
+      - dev
 
   yt_toolkit_api:
     container_name: ytdl_tg_bot.yt_toolkit_api
@@ -65,6 +70,9 @@ services:
       - "8080"
     ports:
       - "127.0.0.1:${YT_TOOLKIT_PORT:-8080}:8080"
+    profiles:
+      - default
+      - dev
 
   yt_pot_provider_api:
     container_name: ytdl_tg_bot.yt_pot_provider_api
@@ -76,6 +84,9 @@ services:
       - "4416"
     ports:
       - "127.0.0.1:${YT_POT_PROVIDER_PORT:-4416}:4416"
+    profiles:
+      - default
+      - dev
 
   telegram_bot_api:
     container_name: ytdl_tg_bot.telegram_bot_api
@@ -93,6 +104,9 @@ services:
       - "8081"
     ports:
       - "127.0.0.1:${TELEGRAM_BOT_API_PORT:-8081}:8081"
+    profiles:
+      - default
+      - dev
 
 volumes:
   postgres.data: {}
