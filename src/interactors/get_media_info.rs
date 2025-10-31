@@ -1,28 +1,39 @@
 use crate::{
     config::{YtDlpConfig, YtPotProviderConfig, YtToolkitConfig},
-    entities::{yt_toolkit::BasicInfo, Cookies, Range, VideosInYT},
+    database::TxManager,
+    entities::{yt_toolkit::BasicInfo, Cookies, DownloadedMedia, Range, TgAudioInPlaylist, TgVideoInPlaylist, Video, VideosInYT},
+    errors::database::ErrorKind,
     interactors::Interactor,
     services::{
         get_media_or_playlist_info,
         yt_toolkit::{get_video_info, search_video, GetVideoInfoErrorKind, SearchVideoErrorKind},
         ytdl,
     },
+    value_objects::MediaType,
 };
 
 use reqwest::Client;
-use std::sync::Arc;
+use std::{convert::Infallible, sync::Arc};
 use tracing::{event, instrument, Level};
 use url::{Host, Url};
 
 const GET_INFO_TIMEOUT: u64 = 180;
 
-pub struct GetMediaInfoByURL {
+#[derive(Debug, thiserror::Error)]
+pub enum GetMediaByURLErrorKind {
+    #[error(transparent)]
+    Ytdl(#[from] ytdl::Error),
+    #[error(transparent)]
+    Database(#[from] ErrorKind<Infallible>),
+}
+
+pub struct GetVideoByURL {
     yt_dlp_cfg: Arc<YtDlpConfig>,
     yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
     cookies: Arc<Cookies>,
 }
 
-impl GetMediaInfoByURL {
+impl GetVideoByURL {
     pub const fn new(yt_dlp_cfg: Arc<YtDlpConfig>, yt_pot_provider_cfg: Arc<YtPotProviderConfig>, cookies: Arc<Cookies>) -> Self {
         Self {
             yt_dlp_cfg,
@@ -32,28 +43,71 @@ impl GetMediaInfoByURL {
     }
 }
 
-pub struct GetMedaInfoByURLInput<'a> {
+pub struct GetVideoByURLInput<'a> {
     pub url: &'a Url,
     pub range: &'a Range,
+    pub tx_manager: TxManager,
 }
 
-impl<'a> GetMedaInfoByURLInput<'a> {
-    pub const fn new(url: &'a Url, range: &'a Range) -> Self {
-        Self { url, range }
+impl<'a> GetVideoByURLInput<'a> {
+    pub const fn new(url: &'a Url, range: &'a Range, tx_manager: TxManager) -> Self {
+        Self { url, range, tx_manager }
     }
 }
 
-impl Interactor<GetMedaInfoByURLInput<'_>> for &GetMediaInfoByURL {
-    type Output = VideosInYT;
-    type Err = ytdl::Error;
+pub enum GetVideoByURLKind {
+    SingleCached(String),
+    PlaylistCached(Vec<TgVideoInPlaylist>),
+    SingleUncached(Video),
+    PlaylistUncached(VideosInYT),
+    Empty,
+}
 
-    #[instrument(skip_all)]
-    async fn execute(self, GetMedaInfoByURLInput { url, range }: GetMedaInfoByURLInput<'_>) -> Result<Self::Output, Self::Err> {
+impl Interactor<GetVideoByURLInput<'_>> for &GetVideoByURL {
+    type Output = GetVideoByURLKind;
+    type Err = GetMediaByURLErrorKind;
+
+    async fn execute(
+        self,
+        GetVideoByURLInput {
+            url,
+            range,
+            mut tx_manager,
+        }: GetVideoByURLInput<'_>,
+    ) -> Result<Self::Output, Self::Err> {
+        tx_manager.begin().await.map_err(ErrorKind::from)?;
+
+        let dao = tx_manager.downloaded_media_dao().unwrap();
+        let mut playlist = dao.get_by_url_or_id(url.as_str(), MediaType::Video).await?;
+
+        if playlist.len() == 1 {
+            let video = playlist.remove(0);
+            event!(Level::INFO, "Got cached media");
+            return Ok(Self::Output::SingleCached(video.file_id));
+        }
+        if playlist.len() > 1 {
+            playlist.sort_by_key(|DownloadedMedia { index_in_playlist, .. }| *index_in_playlist);
+            event!(Level::INFO, "Got cached playlist");
+            return Ok(Self::Output::PlaylistCached(
+                playlist
+                    .into_iter()
+                    .map(
+                        |DownloadedMedia {
+                             file_id,
+                             index_in_playlist,
+                             ..
+                         }| TgVideoInPlaylist::new(file_id.into_boxed_str(), index_in_playlist as usize),
+                    )
+                    .collect(),
+            ));
+        }
+
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
         event!(Level::DEBUG, "Getting media info");
-        let res = get_media_or_playlist_info(
+
+        let mut playlist = get_media_or_playlist_info(
             self.yt_dlp_cfg.executable_path.as_ref(),
             url,
             self.yt_pot_provider_cfg.url.as_ref(),
@@ -62,9 +116,192 @@ impl Interactor<GetMedaInfoByURLInput<'_>> for &GetMediaInfoByURL {
             range,
             cookie,
         )
-        .await;
-        event!(Level::INFO, "Got media info");
-        res
+        .await?;
+
+        if playlist.len() == 1 {
+            event!(Level::INFO, "Got media");
+            return Ok(Self::Output::SingleUncached(playlist.remove(0)));
+        }
+        if playlist.len() > 1 {
+            event!(Level::INFO, "Got playlist");
+            return Ok(Self::Output::PlaylistUncached(playlist));
+        }
+
+        event!(Level::WARN, "Empty playlist");
+        Ok(Self::Output::Empty)
+    }
+}
+
+pub struct GetAudioByURL {
+    yt_dlp_cfg: Arc<YtDlpConfig>,
+    yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
+    cookies: Arc<Cookies>,
+}
+
+impl GetAudioByURL {
+    pub const fn new(yt_dlp_cfg: Arc<YtDlpConfig>, yt_pot_provider_cfg: Arc<YtPotProviderConfig>, cookies: Arc<Cookies>) -> Self {
+        Self {
+            yt_dlp_cfg,
+            yt_pot_provider_cfg,
+            cookies,
+        }
+    }
+}
+
+pub struct GetAudioByURLInput<'a> {
+    pub url: &'a Url,
+    pub range: &'a Range,
+    pub tx_manager: TxManager,
+}
+
+impl<'a> GetAudioByURLInput<'a> {
+    pub const fn new(url: &'a Url, range: &'a Range, tx_manager: TxManager) -> Self {
+        Self { url, range, tx_manager }
+    }
+}
+
+pub enum GetAudioByURLKind {
+    SingleCached(String),
+    PlaylistCached(Vec<TgAudioInPlaylist>),
+    SingleUncached(Video),
+    PlaylistUncached(VideosInYT),
+    Empty,
+}
+
+impl Interactor<GetAudioByURLInput<'_>> for &GetAudioByURL {
+    type Output = GetAudioByURLKind;
+    type Err = GetMediaByURLErrorKind;
+
+    async fn execute(
+        self,
+        GetAudioByURLInput {
+            url,
+            range,
+            mut tx_manager,
+        }: GetAudioByURLInput<'_>,
+    ) -> Result<Self::Output, Self::Err> {
+        tx_manager.begin().await.map_err(ErrorKind::from)?;
+
+        let dao = tx_manager.downloaded_media_dao().unwrap();
+        let mut playlist = dao.get_by_url_or_id(url.as_str(), MediaType::Audio).await?;
+
+        if playlist.len() == 1 {
+            let video = playlist.remove(0);
+            event!(Level::INFO, "Got cached media");
+            return Ok(Self::Output::SingleCached(video.file_id));
+        }
+        if playlist.len() > 1 {
+            playlist.sort_by_key(|DownloadedMedia { index_in_playlist, .. }| *index_in_playlist);
+            event!(Level::INFO, "Got cached playlist");
+            return Ok(Self::Output::PlaylistCached(
+                playlist
+                    .into_iter()
+                    .map(
+                        |DownloadedMedia {
+                             file_id,
+                             index_in_playlist,
+                             ..
+                         }| TgAudioInPlaylist::new(file_id.into_boxed_str(), index_in_playlist as usize),
+                    )
+                    .collect(),
+            ));
+        }
+
+        let host = url.host();
+        let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
+
+        event!(Level::DEBUG, "Getting media info");
+
+        let mut playlist = get_media_or_playlist_info(
+            self.yt_dlp_cfg.executable_path.as_ref(),
+            url,
+            self.yt_pot_provider_cfg.url.as_ref(),
+            true,
+            GET_INFO_TIMEOUT,
+            range,
+            cookie,
+        )
+        .await?;
+
+        if playlist.len() == 1 {
+            event!(Level::INFO, "Got media");
+            return Ok(Self::Output::SingleUncached(playlist.remove(0)));
+        }
+        if playlist.len() > 1 {
+            event!(Level::INFO, "Got playlist");
+            return Ok(Self::Output::PlaylistUncached(playlist));
+        }
+
+        event!(Level::WARN, "Empty playlist");
+        Ok(Self::Output::Empty)
+    }
+}
+
+pub struct GetUncachedVideoByURL {
+    yt_dlp_cfg: Arc<YtDlpConfig>,
+    yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
+    cookies: Arc<Cookies>,
+}
+
+impl GetUncachedVideoByURL {
+    pub const fn new(yt_dlp_cfg: Arc<YtDlpConfig>, yt_pot_provider_cfg: Arc<YtPotProviderConfig>, cookies: Arc<Cookies>) -> Self {
+        Self {
+            yt_dlp_cfg,
+            yt_pot_provider_cfg,
+            cookies,
+        }
+    }
+}
+
+pub struct GetUncachedVideoByURLInput<'a> {
+    pub url: &'a Url,
+    pub range: &'a Range,
+}
+
+impl<'a> GetUncachedVideoByURLInput<'a> {
+    pub const fn new(url: &'a Url, range: &'a Range) -> Self {
+        Self { url, range }
+    }
+}
+
+pub enum GetUncachedVideoByURLKind {
+    Single(Video),
+    Playlist(VideosInYT),
+    Empty,
+}
+
+impl Interactor<GetUncachedVideoByURLInput<'_>> for &GetUncachedVideoByURL {
+    type Output = GetUncachedVideoByURLKind;
+    type Err = ytdl::Error;
+
+    async fn execute(self, GetUncachedVideoByURLInput { url, range }: GetUncachedVideoByURLInput<'_>) -> Result<Self::Output, Self::Err> {
+        let host = url.host();
+        let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
+
+        event!(Level::DEBUG, "Getting media info");
+
+        let mut playlist = get_media_or_playlist_info(
+            self.yt_dlp_cfg.executable_path.as_ref(),
+            url,
+            self.yt_pot_provider_cfg.url.as_ref(),
+            true,
+            GET_INFO_TIMEOUT,
+            range,
+            cookie,
+        )
+        .await?;
+
+        if playlist.len() == 1 {
+            event!(Level::INFO, "Got media");
+            return Ok(Self::Output::Single(playlist.remove(0)));
+        }
+        if playlist.len() > 1 {
+            event!(Level::INFO, "Got playlist");
+            return Ok(Self::Output::Playlist(playlist));
+        }
+
+        event!(Level::WARN, "Empty playlist");
+        Ok(Self::Output::Empty)
     }
 }
 
