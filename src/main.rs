@@ -11,25 +11,6 @@ mod services;
 mod utils;
 mod value_objects;
 
-use crate::{
-    config::{Config, DatabaseConfig, YtDlpConfig, YtPotProviderConfig, YtToolkitConfig},
-    database::TxManager,
-    entities::Cookies,
-    filters::{is_via_bot, text_contains_url, text_contains_url_with_reply, text_empty, url_is_blacklisted, url_is_skippable_by_param},
-    handlers::{audio, chosen_inline, inline_query, start, video},
-    interactors::{
-        download::{DownloadAudio, DownloadAudioPlaylist, DownloadVideo, DownloadVideoPlaylist},
-        send_media::{
-            EditAudioById, EditVideoById, SendAudioById, SendAudioInFS, SendAudioPlaylistById, SendVideoById, SendVideoInFS,
-            SendVideoPlaylistById,
-        },
-        AddDownloadedAudio, AddDownloadedVideo, CreateChat, GetAudioByURL, GetMediaInfoById, GetShortMediaByURLInfo, GetUncachedVideoByURL,
-        GetVideoByURL, SearchMediaInfo,
-    },
-    middlewares::ReactionMiddleware,
-    services::get_cookies_from_directory,
-    utils::{on_shutdown, on_startup},
-};
 use froodi::{
     async_impl::Container,
     async_registry, instance, registry,
@@ -53,6 +34,26 @@ use tracing::{event, Level};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
 use uuid::ContextV7;
 
+use crate::{
+    config::{Config, DatabaseConfig, YtDlpConfig, YtPotProviderConfig, YtToolkitConfig},
+    database::TxManager,
+    entities::Cookies,
+    filters::{is_via_bot, text_contains_url, text_contains_url_with_reply, text_empty, url_is_blacklisted, url_is_skippable_by_param},
+    handlers::{audio, chosen_inline, inline_query, start, video},
+    interactors::{
+        download::{DownloadAudio, DownloadAudioPlaylist, DownloadVideo, DownloadVideoPlaylist},
+        send_media::{
+            EditAudioById, EditVideoById, SendAudioById, SendAudioInFS, SendAudioPlaylistById, SendVideoById, SendVideoInFS,
+            SendVideoPlaylistById,
+        },
+        AddDownloadedAudio, AddDownloadedVideo, GetAudioByURL, GetMediaInfoById, GetShortMediaByURLInfo, GetUncachedVideoByURL,
+        GetVideoByURL, SaveChat, SearchMediaInfo,
+    },
+    middlewares::{CreateChatMiddleware, ReactionMiddleware},
+    services::get_cookies_from_directory,
+    utils::{on_shutdown, on_startup},
+};
+
 fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
     let sync_registry = registry! {
         scope(App) [
@@ -70,7 +71,7 @@ fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
 
             provide(|| Ok(Mutex::new(ContextV7::new()))),
             provide(|| Ok(Client::new())),
-            provide(|| Ok(CreateChat::new())),
+            provide(|| Ok(SaveChat::new())),
 
             provide(|Inject(bot): Inject<Bot>| Ok(SendVideoInFS::new(bot))),
             provide(|Inject(bot): Inject<Bot>| Ok(SendVideoById::new(bot))),
@@ -189,6 +190,7 @@ async fn main() {
     let router = Router::new("main");
     let mut router = setup_async_default(router, container.clone());
 
+    router.update.outer_middlewares.register(CreateChatMiddleware);
     router.message.register(start).filter(Command::many(["start", "help"]));
 
     let mut download_router = Router::new("download");
