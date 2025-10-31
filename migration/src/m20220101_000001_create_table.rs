@@ -35,6 +35,7 @@ impl MigrationTrait for Migration {
                     .col(string(DownloadedMedia::FileId).primary_key())
                     .col(string(DownloadedMedia::UrlOrId))
                     .col(enumeration(DownloadedMedia::MediaType, MediaType, MediaTypeVariants::iter()))
+                    .col(tiny_integer(DownloadedMedia::IndexInPlaylist).default(0))
                     .col(big_integer(DownloadedMedia::ChatTgId))
                     .col(timestamp_with_time_zone(DownloadedMedia::CreatedAt).default(Expr::current_timestamp()))
                     .foreign_key(
@@ -49,6 +50,7 @@ impl MigrationTrait for Migration {
                             .name("idx_downloaded_media_url_media_type")
                             .col(DownloadedMedia::UrlOrId)
                             .col(DownloadedMedia::MediaType)
+                            .col(DownloadedMedia::IndexInPlaylist)
                             .unique(),
                     )
                     .to_owned(),
@@ -96,7 +98,8 @@ enum DownloadedMedia {
     Table,
     FileId,
     UrlOrId,
-    ChatTgId,
     MediaType,
+    IndexInPlaylist,
+    ChatTgId,
     CreatedAt,
 }
