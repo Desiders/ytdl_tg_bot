@@ -29,7 +29,7 @@ where
             created_at,
             updated_at,
         }: Chat,
-    ) -> Result<Chat, ErrorKind<Infallible>> {
+    ) -> Result<(), ErrorKind<Infallible>> {
         use chats::{
             ActiveModel,
             Column::{TgId, UpdatedAt, Username},
@@ -45,9 +45,9 @@ where
 
         Entity::insert(model)
             .on_conflict(OnConflict::column(TgId).update_columns([Username, UpdatedAt]).to_owned())
-            .exec_with_returning(self.conn)
+            .exec_without_returning(self.conn)
             .await
-            .map(Into::into)
+            .map(|_| ())
             .map_err(Into::into)
     }
 }
