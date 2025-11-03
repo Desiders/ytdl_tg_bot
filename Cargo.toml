@@ -4,7 +4,7 @@ version = "2.0.3"
 edition = "2021"
 
 [dependencies]
-telers = { version = "1.0.0-alpha.27", features = ["default_signal", "rustls-tls"], default-features = false }
+telers = { version = "1.0.0-alpha.28", features = ["default_signal", "rustls-tls"], default-features = false }
 tokio = { version = "1.36", features = ["rt-multi-thread", "process", "sync"], default-features = false }
 tokio-util = { version = "0.7", default-features = false }
 nix = { version = "0.30", features = ["fs"], default-features = false }
