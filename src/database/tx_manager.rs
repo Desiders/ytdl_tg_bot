@@ -47,12 +47,12 @@ impl TxManager {
     }
 
     #[inline]
-    pub fn chat_dao(&self) -> Result<chat::Dao<DatabaseTransaction>, TransactionNotBegin> {
+    pub fn chat_dao(&self) -> Result<chat::Dao<'_, DatabaseTransaction>, TransactionNotBegin> {
         Ok(chat::Dao::new(self.transaction.as_ref().ok_or(TransactionNotBegin)?))
     }
 
     #[inline]
-    pub fn downloaded_media_dao(&self) -> Result<downloaded_media::Dao<DatabaseTransaction>, TransactionNotBegin> {
+    pub fn downloaded_media_dao(&self) -> Result<downloaded_media::Dao<'_, DatabaseTransaction>, TransactionNotBegin> {
         Ok(downloaded_media::Dao::new(self.transaction.as_ref().ok_or(TransactionNotBegin)?))
     }
 }
