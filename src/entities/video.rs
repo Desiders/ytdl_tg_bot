@@ -23,11 +23,11 @@ pub struct Thumbnail {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Video {
     pub id: String,
+    pub display_id: Option<String>,
     pub title: Option<String>,
     pub uploader: Option<String>,
     pub thumbnail: Option<String>,
     pub thumbnails: Option<Vec<Thumbnail>>,
-    pub webpage_url_domain: Option<String>,
     pub original_url: String,
     pub duration: Option<f64>,
     pub width: Option<i64>,
@@ -97,15 +97,12 @@ impl Video {
     }
 
     pub fn domain(&self) -> Option<String> {
-        match self.webpage_url_domain.as_ref() {
-            Some(domain) => Some(domain.clone()),
-            None => match Url::parse(&self.original_url) {
-                Ok(url) => match url.domain() {
-                    Some(domain) => Some(domain.to_owned()),
-                    None => None,
-                },
-                Err(_) => todo!(),
+        match Url::parse(&self.original_url) {
+            Ok(url) => match url.domain() {
+                Some(domain) => Some(domain.to_owned()),
+                None => None,
             },
+            Err(_) => None,
         }
     }
 }

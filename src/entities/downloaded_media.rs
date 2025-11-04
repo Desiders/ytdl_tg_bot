@@ -5,6 +5,7 @@ use time::OffsetDateTime;
 pub struct DownloadedMedia {
     pub file_id: String,
     pub id: String,
+    pub display_id: Option<String>,
     pub domain: Option<String>,
     pub media_type: MediaType,
     pub chat_tg_id: i64,
@@ -16,6 +17,7 @@ impl From<Model> for DownloadedMedia {
         Model {
             file_id,
             id,
+            display_id,
             domain,
             media_type,
             chat_tg_id,
@@ -25,6 +27,7 @@ impl From<Model> for DownloadedMedia {
         Self {
             file_id,
             id,
+            display_id,
             domain,
             media_type: media_type.into(),
             chat_tg_id,

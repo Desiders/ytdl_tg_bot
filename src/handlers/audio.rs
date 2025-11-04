@@ -143,6 +143,7 @@ pub async fn download(
                             .execute(AddDownloadedMediaInput::new(
                                 file_id.into(),
                                 media.id.clone(),
+                                media.display_id.clone(),
                                 media.domain(),
                                 chat_id,
                                 &mut tx_manager,

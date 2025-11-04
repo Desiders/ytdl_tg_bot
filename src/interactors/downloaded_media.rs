@@ -9,16 +9,25 @@ use tracing::{event, instrument, Level};
 pub struct AddDownloadedMediaInput<'a> {
     pub file_id: String,
     pub id: String,
+    pub display_id: Option<String>,
     pub domain: Option<String>,
     pub chat_tg_id: i64,
     pub tx_manager: &'a mut TxManager,
 }
 
 impl<'a> AddDownloadedMediaInput<'a> {
-    pub const fn new(file_id: String, id: String, domain: Option<String>, chat_tg_id: i64, tx_manager: &'a mut TxManager) -> Self {
+    pub const fn new(
+        file_id: String,
+        id: String,
+        display_id: Option<String>,
+        domain: Option<String>,
+        chat_tg_id: i64,
+        tx_manager: &'a mut TxManager,
+    ) -> Self {
         Self {
             file_id,
             id,
+            display_id,
             domain,
             chat_tg_id,
             tx_manager,
@@ -44,18 +53,13 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedVideo {
         AddDownloadedMediaInput {
             file_id,
             id,
+            display_id,
             domain,
             chat_tg_id,
             tx_manager,
         }: AddDownloadedMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
-        let normalized_domain = match domain {
-            Some(domain) => match domain.strip_prefix("www.") {
-                Some(domain) => Some(domain.to_owned()),
-                None => Some(domain),
-            },
-            None => None,
-        };
+        let normalized_domain = domain.map(|domain| domain.trim_start_matches("www.").to_owned());
 
         tx_manager.begin().await?;
 
@@ -63,6 +67,7 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedVideo {
         dao.insert_or_ignore(DownloadedMedia {
             file_id,
             id,
+            display_id,
             domain: normalized_domain,
             media_type: MediaType::Video,
             chat_tg_id,
@@ -94,18 +99,13 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedAudio {
         AddDownloadedMediaInput {
             file_id,
             id,
+            display_id,
             domain,
             chat_tg_id,
             tx_manager,
         }: AddDownloadedMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
-        let normalized_domain = match domain {
-            Some(domain) => match domain.strip_prefix("www.") {
-                Some(domain) => Some(domain.to_owned()),
-                None => Some(domain),
-            },
-            None => None,
-        };
+        let normalized_domain = domain.map(|domain| domain.trim_start_matches("www.").to_owned());
 
         tx_manager.begin().await?;
 
@@ -114,6 +114,7 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedAudio {
         dao.insert_or_ignore(DownloadedMedia {
             file_id,
             id,
+            display_id,
             domain: normalized_domain,
             media_type: MediaType::Audio,
             chat_tg_id,

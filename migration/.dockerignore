@@ -1,0 +1,13 @@
+README.md
+
+.gitignore
+.gitattributes
+
+.env
+.env.example
+
+.vscode/
+
+target/
+
+Dockerfile

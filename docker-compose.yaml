@@ -1,7 +1,7 @@
 services:
   bot:
     container_name: ytdl_tg_bot.bot
-    image: desiders/ytdl_tg_bot:2.0.3
+    image: desiders/ytdl_tg_bot:3.0.0
     restart: "unless-stopped"
     env_file:
       - ".env"
@@ -23,19 +23,23 @@ services:
         target: /app/yt-dlp
       - type: bind
         source: ./cookies
-        target: /app/cookies
+        target: /app/cookies 
     depends_on:
-      - postgres
-      - yt_toolkit_api
-      - yt_pot_provider_api
-      - telegram_bot_api
+      postgres:
+        condition: service_healthy
+      yt_toolkit_api:
+        condition: service_started
+      yt_pot_provider_api:
+        condition: service_started
+      telegram_bot_api:
+        condition: service_started
     mem_limit: $BOT_MEM_LIMIT
     profiles:
       - default
 
   postgres:
     container_name: ytdl_tg_bot.postgres
-    image: "postgres:17-alpine"
+    image: "postgres:18-alpine"
     hostname: ytdl_tg_bot.postgres
     restart: "unless-stopped"
     expose:
@@ -58,6 +62,7 @@ services:
       start_period: 10s
     profiles:
       - default
+      - migration
       - dev
 
   yt_toolkit_api:
@@ -107,6 +112,22 @@ services:
     profiles:
       - default
       - dev
+
+  migration:
+    container_name: ytdl_tg_bot.migration
+    image: desiders/ytdl_tg_bot.migration:1.0.0
+    restart: "no"
+    environment:
+      DATABASE_URL: $DATABASE_URL
+    build:
+      context: ./migration
+    networks:
+      - postgres.network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - migration
 
 volumes:
   postgres.data: {}

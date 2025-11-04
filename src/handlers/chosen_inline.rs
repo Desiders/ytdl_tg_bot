@@ -132,6 +132,7 @@ pub async fn download_by_url(
                         .execute(AddDownloadedMediaInput::new(
                             file_id.clone().into(),
                             media.id.clone(),
+                            media.display_id.clone(),
                             media.domain(),
                             chat_id,
                             &mut tx_manager,
@@ -237,6 +238,7 @@ pub async fn download_by_url(
                     .execute(AddDownloadedMediaInput::new(
                         file_id.clone().into(),
                         media.id.clone(),
+                        media.display_id.clone(),
                         media.domain(),
                         chat_id,
                         &mut tx_manager,
@@ -381,6 +383,7 @@ pub async fn download_by_id(
                         .execute(AddDownloadedMediaInput::new(
                             file_id.clone().into(),
                             media.id.clone(),
+                            media.display_id.clone(),
                             media.domain(),
                             chat_id,
                             &mut tx_manager,
@@ -486,6 +489,7 @@ pub async fn download_by_id(
                     .execute(AddDownloadedMediaInput::new(
                         file_id.clone().into(),
                         media.id.clone(),
+                        media.display_id.clone(),
                         media.domain(),
                         chat_id,
                         &mut tx_manager,

@@ -34,13 +34,14 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(string(DownloadedMedia::FileId).primary_key())
                     .col(string(DownloadedMedia::Id))
+                    .col(string_null(DownloadedMedia::DisplayId).default(Expr::null()))
                     .col(string_null(DownloadedMedia::Domain).default(Expr::null()))
                     .col(enumeration(DownloadedMedia::MediaType, MediaType, MediaTypeVariants::iter()))
                     .col(big_integer(DownloadedMedia::ChatTgId))
                     .col(timestamp_with_time_zone(DownloadedMedia::CreatedAt).default(Expr::current_timestamp()))
                     .index(
                         Index::create()
-                            .name("idx_downloaded_media_id_domain_media_type")
+                            .name("idx_downloaded_media_id_domain_type")
                             .col(DownloadedMedia::Id)
                             .col(DownloadedMedia::Domain)
                             .col(DownloadedMedia::MediaType)
@@ -91,6 +92,7 @@ enum DownloadedMedia {
     Table,
     FileId,
     Id,
+    DisplayId,
     Domain,
     MediaType,
     ChatTgId,
