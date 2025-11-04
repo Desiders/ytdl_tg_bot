@@ -2,41 +2,35 @@ use crate::{
     database::TxManager, entities::DownloadedMedia, errors::database::ErrorKind, interactors::Interactor, value_objects::MediaType,
 };
 
-use std::{
-    convert::Infallible,
-    sync::{Arc, Mutex},
-};
+use std::convert::Infallible;
 use time::OffsetDateTime;
 use tracing::{event, Level};
-use uuid::ContextV7;
 
 pub struct AddDownloadedMediaInput<'a> {
     pub file_id: String,
-    pub url_or_id: String,
-    pub index_in_playlist: i16,
+    pub id: String,
+    pub domain: Option<String>,
     pub chat_tg_id: i64,
     pub tx_manager: &'a mut TxManager,
 }
 
 impl<'a> AddDownloadedMediaInput<'a> {
-    pub const fn new(file_id: String, url_or_id: String, index_in_playlist: i16, chat_tg_id: i64, tx_manager: &'a mut TxManager) -> Self {
+    pub const fn new(file_id: String, id: String, domain: Option<String>, chat_tg_id: i64, tx_manager: &'a mut TxManager) -> Self {
         Self {
             file_id,
-            url_or_id,
-            index_in_playlist,
+            id,
+            domain,
             chat_tg_id,
             tx_manager,
         }
     }
 }
 
-pub struct AddDownloadedVideo {
-    context: Arc<Mutex<ContextV7>>,
-}
+pub struct AddDownloadedVideo {}
 
 impl AddDownloadedVideo {
-    pub const fn new(context: Arc<Mutex<ContextV7>>) -> Self {
-        Self { context }
+    pub const fn new() -> Self {
+        Self {}
     }
 }
 
@@ -48,8 +42,8 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedVideo {
         self,
         AddDownloadedMediaInput {
             file_id,
-            url_or_id,
-            index_in_playlist,
+            id,
+            domain,
             chat_tg_id,
             tx_manager,
         }: AddDownloadedMediaInput<'_>,
@@ -59,9 +53,9 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedVideo {
         let dao = tx_manager.downloaded_media_dao()?;
         dao.insert_or_ignore(DownloadedMedia {
             file_id,
-            url_or_id,
+            id,
+            domain,
             media_type: MediaType::Video,
-            index_in_playlist,
             chat_tg_id,
             created_at: OffsetDateTime::now_utc(),
         })
@@ -73,13 +67,11 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedVideo {
     }
 }
 
-pub struct AddDownloadedAudio {
-    context: Arc<Mutex<ContextV7>>,
-}
+pub struct AddDownloadedAudio {}
 
 impl AddDownloadedAudio {
-    pub const fn new(context: Arc<Mutex<ContextV7>>) -> Self {
-        Self { context }
+    pub const fn new() -> Self {
+        Self {}
     }
 }
 
@@ -91,8 +83,8 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedAudio {
         self,
         AddDownloadedMediaInput {
             file_id,
-            url_or_id,
-            index_in_playlist,
+            id,
+            domain,
             chat_tg_id,
             tx_manager,
         }: AddDownloadedMediaInput<'_>,
@@ -102,8 +94,8 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedAudio {
         let dao = tx_manager.downloaded_media_dao()?;
         dao.insert_or_ignore(DownloadedMedia {
             file_id,
-            url_or_id,
-            index_in_playlist,
+            id,
+            domain,
             media_type: MediaType::Audio,
             chat_tg_id,
             created_at: OffsetDateTime::now_utc(),

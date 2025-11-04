@@ -12,7 +12,7 @@ use std::{
     vec,
 };
 use tempfile::TempDir;
-use url::Host;
+use url::{Host, Url};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Thumbnail {
@@ -27,6 +27,7 @@ pub struct Video {
     pub uploader: Option<String>,
     pub thumbnail: Option<String>,
     pub thumbnails: Option<Vec<Thumbnail>>,
+    pub webpage_url_domain: Option<String>,
     pub original_url: String,
     pub duration: Option<f64>,
     pub width: Option<i64>,
@@ -93,6 +94,19 @@ impl Video {
             }
         }
         thumbnail_urls
+    }
+
+    pub fn domain(&self) -> Option<String> {
+        match self.webpage_url_domain.as_ref() {
+            Some(domain) => Some(domain.clone()),
+            None => match Url::parse(&self.original_url) {
+                Ok(url) => match url.domain() {
+                    Some(domain) => Some(domain.to_owned()),
+                    None => None,
+                },
+                Err(_) => todo!(),
+            },
+        }
     }
 }
 
