@@ -74,8 +74,10 @@ where
 
         Ok(Entity::find()
             .filter(MediaType.eq(sea_orm_active_enums::MediaType::from(media_type)))
-            .filter(Expr::cust_with_values("$1 LIKE '%' || id::text || '%'", [id_or_url]))
-            .filter(Expr::cust_with_values("$1 LIKE '%' || display_id::text || '%'", [id_or_url]))
+            .filter(
+                Expr::cust_with_values("$1 LIKE '%' || id::text || '%'", [id_or_url])
+                    .or(Expr::cust_with_values("$1 LIKE '%' || display_id::text || '%'", [id_or_url])),
+            )
             .filter(Domain.eq(domain))
             .one(self.conn)
             .await?
