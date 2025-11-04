@@ -7,9 +7,9 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub file_id: String,
-    pub url_or_id: String,
+    pub id: String,
+    pub domain: Option<String>,
     pub media_type: MediaType,
-    pub index_in_playlist: i16,
     pub chat_tg_id: i64,
     pub created_at: TimeDateTimeWithTimeZone,
 }
