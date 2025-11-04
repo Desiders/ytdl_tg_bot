@@ -115,7 +115,7 @@ impl Interactor<SendAudioByIdInput<'_>> for &SendAudioById {
         send::with_retries(
             &self.bot,
             SendAudio::new(chat_id, InputFile::id(id))
-                .reply_parameters_option(reply_to_message_id.map(ReplyParameters::new))
+                .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)))
                 .disable_notification(true),
             2,
             Some(SEND_TIMEOUT),
