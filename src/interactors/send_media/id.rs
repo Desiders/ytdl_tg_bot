@@ -255,15 +255,16 @@ impl SendVideoPlaylistById {
 pub struct SendVideoPlaylistByIdInput {
     pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
-    pub videos: Vec<TgVideoInPlaylist>,
+    pub playlist: Vec<TgVideoInPlaylist>,
 }
 
 impl SendVideoPlaylistByIdInput {
-    pub const fn new(chat_id: i64, reply_to_message_id: Option<i64>, videos: Vec<TgVideoInPlaylist>) -> Self {
+    pub fn new(chat_id: i64, reply_to_message_id: Option<i64>, mut playlist: Vec<TgVideoInPlaylist>) -> Self {
+        playlist.sort_by_key(|TgVideoInPlaylist { index, .. }| *index);
         Self {
             chat_id,
             reply_to_message_id,
-            videos,
+            playlist,
         }
     }
 }
@@ -278,16 +279,14 @@ impl Interactor<SendVideoPlaylistByIdInput> for &SendVideoPlaylistById {
         SendVideoPlaylistByIdInput {
             chat_id,
             reply_to_message_id,
-            mut videos,
+            playlist,
         }: SendVideoPlaylistByIdInput,
     ) -> Result<Self::Output, Self::Err> {
-        videos.sort_by(|a, b| a.index.cmp(&b.index));
-
         event!(Level::DEBUG, "Video playlist sending");
         send::media_groups(
             &self.bot,
             chat_id,
-            videos
+            playlist
                 .into_iter()
                 .map(|TgVideoInPlaylist { file_id, .. }| InputMediaVideo::new(InputFile::id(file_id.into_string())))
                 .collect(),
@@ -314,15 +313,16 @@ impl SendAudioPlaylistById {
 pub struct SendAudioPlaylistByIdInput {
     pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
-    pub audios: Vec<TgAudioInPlaylist>,
+    pub playlist: Vec<TgAudioInPlaylist>,
 }
 
 impl SendAudioPlaylistByIdInput {
-    pub const fn new(chat_id: i64, reply_to_message_id: Option<i64>, audios: Vec<TgAudioInPlaylist>) -> Self {
+    pub fn new(chat_id: i64, reply_to_message_id: Option<i64>, mut playlist: Vec<TgAudioInPlaylist>) -> Self {
+        playlist.sort_by_key(|TgAudioInPlaylist { index, .. }| *index);
         Self {
             chat_id,
             reply_to_message_id,
-            audios,
+            playlist,
         }
     }
 }
@@ -337,16 +337,14 @@ impl Interactor<SendAudioPlaylistByIdInput> for &SendAudioPlaylistById {
         SendAudioPlaylistByIdInput {
             chat_id,
             reply_to_message_id,
-            mut audios,
+            playlist,
         }: SendAudioPlaylistByIdInput,
     ) -> Result<Self::Output, Self::Err> {
-        audios.sort_by(|a, b| a.index.cmp(&b.index));
-
         event!(Level::DEBUG, "Audio playlist sending");
         send::media_groups(
             &self.bot,
             chat_id,
-            audios
+            playlist
                 .into_iter()
                 .map(|TgAudioInPlaylist { file_id, .. }| InputMediaAudio::new(InputFile::id(file_id.into_string())))
                 .collect(),

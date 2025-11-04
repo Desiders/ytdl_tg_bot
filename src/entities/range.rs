@@ -24,16 +24,6 @@ pub struct Range {
     pub step: i16,
 }
 
-impl Default for Range {
-    fn default() -> Self {
-        Range {
-            start: DEFAULT_START,
-            count: DEFAULT_COUNT,
-            step: DEFAULT_STEP,
-        }
-    }
-}
-
 impl Range {
     pub fn normalize(&mut self) {
         let count = ((self.count - self.start) / self.step).abs() + 1;
@@ -42,8 +32,26 @@ impl Range {
         }
     }
 
+    pub const fn get_element_count(&self) -> i16 {
+        ((self.count - self.start) / self.step).abs() + 1
+    }
+
+    pub const fn is_single_element(&self) -> bool {
+        self.get_element_count() == 1
+    }
+
     pub fn to_range_string(&self) -> String {
         format!("{}:{}:{}", self.start, self.count, self.step)
+    }
+}
+
+impl Default for Range {
+    fn default() -> Self {
+        Range {
+            start: DEFAULT_START,
+            count: DEFAULT_COUNT,
+            step: DEFAULT_STEP,
+        }
     }
 }
 
@@ -271,5 +279,29 @@ mod tests {
                 step: 2
             }
         );
+    }
+
+    #[test]
+    fn test_get_element_count() {
+        let range_a = Range {
+            start: 1,
+            count: 10,
+            step: 1,
+        };
+        let range_b = Range {
+            start: 1,
+            count: 10,
+            step: 2,
+        };
+
+        let range_c = Range {
+            start: 1,
+            count: 5,
+            step: 2,
+        };
+
+        assert_eq!(range_a.get_element_count(), 10);
+        assert_eq!(range_b.get_element_count(), 5);
+        assert_eq!(range_c.get_element_count(), 3);
     }
 }
