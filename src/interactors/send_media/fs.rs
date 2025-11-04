@@ -92,7 +92,7 @@ impl Interactor<SendVideoInFSInput<'_>> for &SendVideoInFS {
                 .duration_option(duration)
                 .thumbnail_option(thumbnail_path.map(InputFile::fs))
                 .supports_streaming(true)
-                .reply_parameters_option(reply_to_message_id.map(ReplyParameters::new)),
+                .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true))),
             2,
             Some(SEND_TIMEOUT),
         )
@@ -195,7 +195,7 @@ impl Interactor<SendAudioInFSInput<'_>> for &SendAudioInFS {
                 .duration_option(duration)
                 .performer_option(uploader)
                 .thumbnail_option(thumbnail_path.map(InputFile::fs))
-                .reply_parameters_option(reply_to_message_id.map(ReplyParameters::new)),
+                .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true))),
             2,
             Some(SEND_TIMEOUT),
         )
