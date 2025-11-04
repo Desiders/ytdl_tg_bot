@@ -31,6 +31,7 @@ where
             file_id,
             id,
             domain,
+            display_id,
             media_type,
             chat_tg_id,
             created_at,
@@ -45,6 +46,7 @@ where
         let model = ActiveModel {
             file_id: Set(file_id.into()),
             id: Set(id.into()),
+            display_id: Set(display_id.into()),
             domain: Set(domain.into()),
             media_type: Set(media_type.into()),
             chat_tg_id: Set(chat_tg_id.into()),
@@ -70,14 +72,13 @@ where
             Entity,
         };
 
-        let mut query = Entity::find()
+        Ok(Entity::find()
             .filter(MediaType.eq(sea_orm_active_enums::MediaType::from(media_type)))
-            .filter(Expr::cust_with_values("$1 LIKE '%' || id::text || '%'", [id_or_url]));
-
-        if let Some(domain) = domain {
-            query = query.filter(Domain.eq(domain));
-        }
-
-        Ok(query.one(self.conn).await?.map(Into::into))
+            .filter(Expr::cust_with_values("$1 LIKE '%' || id::text || '%'", [id_or_url]))
+            .filter(Expr::cust_with_values("$1 LIKE '%' || display_id::text || '%'", [id_or_url]))
+            .filter(Domain.eq(domain))
+            .one(self.conn)
+            .await?
+            .map(Into::into))
     }
 }

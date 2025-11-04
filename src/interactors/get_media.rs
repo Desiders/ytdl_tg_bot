@@ -88,10 +88,7 @@ impl Interactor<GetVideoByURLInput<'_>> for &GetVideoByURL {
         let dao = tx_manager.downloaded_media_dao().unwrap();
 
         if range.is_single_element() {
-            let normalized_domain = match domain {
-                Some(domain) => domain.strip_prefix("www."),
-                None => None,
-            };
+            let normalized_domain = domain.map(|domain| domain.trim_start_matches("www."));
 
             if let Some(media) = dao
                 .get_by_id_or_url_and_domain(id_or_url, normalized_domain, MediaType::Video)
@@ -123,10 +120,7 @@ impl Interactor<GetVideoByURLInput<'_>> for &GetVideoByURL {
         let mut uncached = vec![];
         for (index, media) in playlist.into_iter().enumerate() {
             let domain = media.domain();
-            let normalized_domain = match domain.as_deref() {
-                Some(domain) => domain.strip_prefix("www."),
-                None => None,
-            };
+            let normalized_domain = domain.as_deref().map(|domain| domain.trim_start_matches("www"));
 
             if let Some(DownloadedMedia { file_id, .. }) = dao
                 .get_by_id_or_url_and_domain(&media.id, normalized_domain, MediaType::Video)
@@ -217,10 +211,7 @@ impl Interactor<GetAudioByURLInput<'_>> for &GetAudioByURL {
         let dao = tx_manager.downloaded_media_dao().unwrap();
 
         if range.is_single_element() {
-            let normalized_domain = match domain {
-                Some(domain) => domain.strip_prefix("www."),
-                None => None,
-            };
+            let normalized_domain = domain.map(|domain| domain.trim_start_matches("www."));
 
             if let Some(media) = dao.get_by_id_or_url_and_domain(id, normalized_domain, MediaType::Audio).await? {
                 event!(Level::INFO, "Got cached media");
@@ -249,10 +240,7 @@ impl Interactor<GetAudioByURLInput<'_>> for &GetAudioByURL {
         let mut uncached = vec![];
         for (index, media) in playlist.into_iter().enumerate() {
             let domain = media.domain();
-            let normalized_domain = match domain.as_deref() {
-                Some(domain) => domain.strip_prefix("www."),
-                None => None,
-            };
+            let normalized_domain = domain.as_deref().map(|domain| domain.trim_start_matches("www."));
 
             if let Some(DownloadedMedia { file_id, .. }) = dao
                 .get_by_id_or_url_and_domain(&media.id, normalized_domain, MediaType::Audio)

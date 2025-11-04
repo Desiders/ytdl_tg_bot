@@ -8,6 +8,7 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub file_id: String,
     pub id: String,
+    pub display_id: Option<String>,
     pub domain: Option<String>,
     pub media_type: MediaType,
     pub chat_tg_id: i64,
