@@ -17,7 +17,7 @@ use reqwest::Client;
 use std::{fs::File, io, sync::Arc, time::Duration};
 use tempfile::TempDir;
 use tokio::{io::AsyncWriteExt as _, sync::mpsc, time::timeout};
-use tracing::{event, instrument, span, Instrument, Level};
+use tracing::{debug_span, event, instrument, span, Instrument, Level};
 use url::Url;
 
 const DOWNLOAD_TIMEOUT: u64 = 180;
@@ -160,24 +160,29 @@ impl Interactor<DownloadVideoInput<'_>> for &DownloadVideo {
             let (sender, mut receiver) = mpsc::unbounded_channel();
 
             let url = format.video_format.url.to_owned();
-            tokio::spawn(async move {
-                tokio::join!(
-                    async move {
-                        let _ = range_download_to_write(url, filesize, sender)
-                            .await
-                            .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
-                    },
-                    async move {
-                        let mut writer = tokio::fs::File::from_std(File::from(video_write_fd));
-                        while let Some(bytes) = receiver.recv().await {
-                            let _ = writer
-                                .write(&bytes)
+            tokio::spawn(
+                async move {
+                    tokio::join!(
+                        async move {
+                            let _ = range_download_to_write(url, filesize, sender)
                                 .await
-                                .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                                .inspect_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                        },
+                        async move {
+                            let mut writer = tokio::fs::File::from_std(File::from(video_write_fd));
+                            while let Some(bytes) = receiver.recv().await {
+                                if let Err(err) = writer.write(&bytes).await {
+                                    match err.kind() {
+                                        io::ErrorKind::BrokenPipe => break,
+                                        _ => event!(Level::ERROR, "{}", format_error_report(&err)),
+                                    }
+                                }
+                            }
                         }
-                    }
-                )
-            });
+                    )
+                }
+                .instrument(debug_span!("video_range")),
+            );
         } else {
             download_to_pipe(
                 video_write_fd,
@@ -193,24 +198,29 @@ impl Interactor<DownloadVideoInput<'_>> for &DownloadVideo {
             let (sender, mut receiver) = mpsc::unbounded_channel();
 
             let url = format.audio_format.url.to_owned();
-            tokio::spawn(async move {
-                tokio::join!(
-                    async move {
-                        let _ = range_download_to_write(url, filesize, sender)
-                            .await
-                            .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
-                    },
-                    async move {
-                        let mut writer = tokio::fs::File::from_std(File::from(audio_write_fd));
-                        while let Some(bytes) = receiver.recv().await {
-                            let _ = writer
-                                .write(&bytes)
+            tokio::spawn(
+                async move {
+                    tokio::join!(
+                        async move {
+                            let _ = range_download_to_write(url, filesize, sender)
                                 .await
-                                .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                                .inspect_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                        },
+                        async move {
+                            let mut writer = tokio::fs::File::from_std(File::from(audio_write_fd));
+                            while let Some(bytes) = receiver.recv().await {
+                                if let Err(err) = writer.write(&bytes).await {
+                                    match err.kind() {
+                                        io::ErrorKind::BrokenPipe => break,
+                                        _ => event!(Level::ERROR, "{}", format_error_report(&err)),
+                                    }
+                                }
+                            }
                         }
-                    }
-                )
-            });
+                    )
+                }
+                .instrument(debug_span!("audio_range")),
+            );
         } else {
             download_to_pipe(
                 audio_write_fd,

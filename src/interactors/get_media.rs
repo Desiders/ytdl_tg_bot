@@ -46,20 +46,26 @@ impl GetVideoByURL {
 pub struct GetVideoByURLInput<'a> {
     pub url: &'a Url,
     pub range: &'a Range,
-    pub tx_manager: TxManager,
+    pub id_or_url: &'a str,
+    pub domain: Option<&'a str>,
+    pub tx_manager: &'a mut TxManager,
 }
 
 impl<'a> GetVideoByURLInput<'a> {
-    pub const fn new(url: &'a Url, range: &'a Range, tx_manager: TxManager) -> Self {
-        Self { url, range, tx_manager }
+    pub const fn new(url: &'a Url, range: &'a Range, id_or_url: &'a str, domain: Option<&'a str>, tx_manager: &'a mut TxManager) -> Self {
+        Self {
+            url,
+            range,
+            id_or_url,
+            domain,
+            tx_manager,
+        }
     }
 }
 
 pub enum GetVideoByURLKind {
     SingleCached(String),
-    PlaylistCached(Vec<TgVideoInPlaylist>),
-    SingleUncached(Video),
-    PlaylistUncached(VideosInYT),
+    Playlist((Vec<TgVideoInPlaylist>, Vec<Video>)),
     Empty,
 }
 
@@ -72,34 +78,20 @@ impl Interactor<GetVideoByURLInput<'_>> for &GetVideoByURL {
         GetVideoByURLInput {
             url,
             range,
-            mut tx_manager,
+            id_or_url,
+            domain,
+            tx_manager,
         }: GetVideoByURLInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         tx_manager.begin().await.map_err(ErrorKind::from)?;
 
         let dao = tx_manager.downloaded_media_dao().unwrap();
-        let mut playlist = dao.get_by_url_or_id(url.as_str(), MediaType::Video).await?;
 
-        if playlist.len() == 1 {
-            let video = playlist.remove(0);
-            event!(Level::INFO, "Got cached media");
-            return Ok(Self::Output::SingleCached(video.file_id));
-        }
-        if playlist.len() > 1 {
-            playlist.sort_by_key(|DownloadedMedia { index_in_playlist, .. }| *index_in_playlist);
-            event!(Level::INFO, "Got cached playlist");
-            return Ok(Self::Output::PlaylistCached(
-                playlist
-                    .into_iter()
-                    .map(
-                        |DownloadedMedia {
-                             file_id,
-                             index_in_playlist,
-                             ..
-                         }| TgVideoInPlaylist::new(file_id.into_boxed_str(), index_in_playlist as usize),
-                    )
-                    .collect(),
-            ));
+        if range.is_single_element() {
+            if let Some(media) = dao.get_by_id_or_url_and_domain(id_or_url, domain, MediaType::Video).await? {
+                event!(Level::INFO, "Got cached media");
+                return Ok(Self::Output::SingleCached(media.file_id));
+            }
         }
 
         let host = url.host();
@@ -107,7 +99,7 @@ impl Interactor<GetVideoByURLInput<'_>> for &GetVideoByURL {
 
         event!(Level::DEBUG, "Getting media info");
 
-        let mut playlist = get_media_or_playlist_info(
+        let playlist = get_media_or_playlist_info(
             self.yt_dlp_cfg.executable_path.as_ref(),
             url,
             self.yt_pot_provider_cfg.url.as_ref(),
@@ -117,18 +109,36 @@ impl Interactor<GetVideoByURLInput<'_>> for &GetVideoByURL {
             cookie,
         )
         .await?;
+        let playlist_len = playlist.len();
 
-        if playlist.len() == 1 {
-            event!(Level::INFO, "Got media");
-            return Ok(Self::Output::SingleUncached(playlist.remove(0)));
+        let mut cached = vec![];
+        let mut uncached = vec![];
+        for (index, media) in playlist.into_iter().enumerate() {
+            if let Some(DownloadedMedia { file_id, .. }) = dao
+                .get_by_id_or_url_and_domain(&media.id, media.domain().as_deref(), MediaType::Video)
+                .await?
+            {
+                cached.push(TgVideoInPlaylist {
+                    file_id: file_id.into(),
+                    index,
+                });
+                continue;
+            }
+            uncached.push(media);
         }
-        if playlist.len() > 1 {
-            event!(Level::INFO, "Got playlist");
-            return Ok(Self::Output::PlaylistUncached(playlist));
+        if playlist_len == 0 {
+            event!(Level::WARN, "Empty playlist");
+            return Ok(Self::Output::Empty);
         }
 
-        event!(Level::WARN, "Empty playlist");
-        Ok(Self::Output::Empty)
+        event!(
+            Level::INFO,
+            playlist_len,
+            cached_len = cached.len(),
+            unchached_len = uncached.len(),
+            "Got media info"
+        );
+        Ok(Self::Output::Playlist((cached, uncached)))
     }
 }
 
@@ -151,20 +161,26 @@ impl GetAudioByURL {
 pub struct GetAudioByURLInput<'a> {
     pub url: &'a Url,
     pub range: &'a Range,
-    pub tx_manager: TxManager,
+    pub id: &'a str,
+    pub domain: Option<&'a str>,
+    pub tx_manager: &'a mut TxManager,
 }
 
 impl<'a> GetAudioByURLInput<'a> {
-    pub const fn new(url: &'a Url, range: &'a Range, tx_manager: TxManager) -> Self {
-        Self { url, range, tx_manager }
+    pub const fn new(url: &'a Url, range: &'a Range, id: &'a str, domain: Option<&'a str>, tx_manager: &'a mut TxManager) -> Self {
+        Self {
+            url,
+            range,
+            id,
+            domain,
+            tx_manager,
+        }
     }
 }
 
 pub enum GetAudioByURLKind {
     SingleCached(String),
-    PlaylistCached(Vec<TgAudioInPlaylist>),
-    SingleUncached(Video),
-    PlaylistUncached(VideosInYT),
+    Playlist((Vec<TgAudioInPlaylist>, Vec<Video>)),
     Empty,
 }
 
@@ -177,34 +193,20 @@ impl Interactor<GetAudioByURLInput<'_>> for &GetAudioByURL {
         GetAudioByURLInput {
             url,
             range,
-            mut tx_manager,
+            id,
+            domain,
+            tx_manager,
         }: GetAudioByURLInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         tx_manager.begin().await.map_err(ErrorKind::from)?;
 
         let dao = tx_manager.downloaded_media_dao().unwrap();
-        let mut playlist = dao.get_by_url_or_id(url.as_str(), MediaType::Audio).await?;
 
-        if playlist.len() == 1 {
-            let video = playlist.remove(0);
-            event!(Level::INFO, "Got cached media");
-            return Ok(Self::Output::SingleCached(video.file_id));
-        }
-        if playlist.len() > 1 {
-            playlist.sort_by_key(|DownloadedMedia { index_in_playlist, .. }| *index_in_playlist);
-            event!(Level::INFO, "Got cached playlist");
-            return Ok(Self::Output::PlaylistCached(
-                playlist
-                    .into_iter()
-                    .map(
-                        |DownloadedMedia {
-                             file_id,
-                             index_in_playlist,
-                             ..
-                         }| TgAudioInPlaylist::new(file_id.into_boxed_str(), index_in_playlist as usize),
-                    )
-                    .collect(),
-            ));
+        if range.is_single_element() {
+            if let Some(media) = dao.get_by_id_or_url_and_domain(id, domain, MediaType::Audio).await? {
+                event!(Level::INFO, "Got cached media");
+                return Ok(Self::Output::SingleCached(media.file_id));
+            }
         }
 
         let host = url.host();
@@ -212,7 +214,7 @@ impl Interactor<GetAudioByURLInput<'_>> for &GetAudioByURL {
 
         event!(Level::DEBUG, "Getting media info");
 
-        let mut playlist = get_media_or_playlist_info(
+        let playlist = get_media_or_playlist_info(
             self.yt_dlp_cfg.executable_path.as_ref(),
             url,
             self.yt_pot_provider_cfg.url.as_ref(),
@@ -222,18 +224,36 @@ impl Interactor<GetAudioByURLInput<'_>> for &GetAudioByURL {
             cookie,
         )
         .await?;
+        let playlist_len = playlist.len();
 
-        if playlist.len() == 1 {
-            event!(Level::INFO, "Got media");
-            return Ok(Self::Output::SingleUncached(playlist.remove(0)));
+        let mut cached = vec![];
+        let mut uncached = vec![];
+        for (index, media) in playlist.into_iter().enumerate() {
+            if let Some(DownloadedMedia { file_id, .. }) = dao
+                .get_by_id_or_url_and_domain(&media.id, media.domain().as_deref(), MediaType::Audio)
+                .await?
+            {
+                cached.push(TgAudioInPlaylist {
+                    file_id: file_id.into(),
+                    index,
+                });
+                continue;
+            }
+            uncached.push(media);
         }
-        if playlist.len() > 1 {
-            event!(Level::INFO, "Got playlist");
-            return Ok(Self::Output::PlaylistUncached(playlist));
+        if playlist_len == 0 {
+            event!(Level::WARN, "Empty playlist");
+            return Ok(Self::Output::Empty);
         }
 
-        event!(Level::WARN, "Empty playlist");
-        Ok(Self::Output::Empty)
+        event!(
+            Level::INFO,
+            playlist_len,
+            cached_len = cached.len(),
+            unchached_len = uncached.len(),
+            "Got media info"
+        );
+        Ok(Self::Output::Playlist((cached, uncached)))
     }
 }
 

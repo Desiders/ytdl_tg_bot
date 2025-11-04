@@ -72,6 +72,8 @@ fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
             provide(|| Ok(Mutex::new(ContextV7::new()))),
             provide(|| Ok(Client::new())),
             provide(|| Ok(SaveChat::new())),
+            provide(|| Ok(AddDownloadedVideo::new())),
+            provide(|| Ok(AddDownloadedAudio::new())),
 
             provide(|Inject(bot): Inject<Bot>| Ok(SendVideoInFS::new(bot))),
             provide(|Inject(bot): Inject<Bot>| Ok(SendVideoById::new(bot))),
@@ -81,8 +83,6 @@ fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
             provide(|Inject(bot): Inject<Bot>| Ok(SendAudioPlaylistById::new(bot))),
             provide(|Inject(bot): Inject<Bot>| Ok(EditVideoById::new(bot))),
             provide(|Inject(bot): Inject<Bot>| Ok(EditAudioById::new(bot))),
-            provide(|Inject(context): Inject<Mutex<ContextV7>>| Ok(AddDownloadedVideo::new(context))),
-            provide(|Inject(context): Inject<Mutex<ContextV7>>| Ok(AddDownloadedAudio::new(context))),
             provide(|
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
                 Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,

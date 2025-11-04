@@ -4,7 +4,7 @@ use crate::{
 
 use std::convert::Infallible;
 use time::OffsetDateTime;
-use tracing::{event, Level};
+use tracing::{event, instrument, Level};
 
 pub struct AddDownloadedMediaInput<'a> {
     pub file_id: String,
@@ -38,6 +38,7 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedVideo {
     type Output = ();
     type Err = ErrorKind<Infallible>;
 
+    #[instrument(skip_all, fields(%id, ?domain))]
     async fn execute(
         self,
         AddDownloadedMediaInput {
@@ -48,13 +49,21 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedVideo {
             tx_manager,
         }: AddDownloadedMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
+        let normalized_domain = match domain {
+            Some(domain) => match domain.strip_prefix("www.") {
+                Some(domain) => Some(domain.to_owned()),
+                None => Some(domain),
+            },
+            None => None,
+        };
+
         tx_manager.begin().await?;
 
         let dao = tx_manager.downloaded_media_dao()?;
         dao.insert_or_ignore(DownloadedMedia {
             file_id,
             id,
-            domain,
+            domain: normalized_domain,
             media_type: MediaType::Video,
             chat_tg_id,
             created_at: OffsetDateTime::now_utc(),
@@ -79,6 +88,7 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedAudio {
     type Output = ();
     type Err = ErrorKind<Infallible>;
 
+    #[instrument(skip_all, fields(%id, ?domain))]
     async fn execute(
         self,
         AddDownloadedMediaInput {
@@ -89,13 +99,22 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedAudio {
             tx_manager,
         }: AddDownloadedMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
+        let normalized_domain = match domain {
+            Some(domain) => match domain.strip_prefix("www.") {
+                Some(domain) => Some(domain.to_owned()),
+                None => Some(domain),
+            },
+            None => None,
+        };
+
         tx_manager.begin().await?;
 
         let dao = tx_manager.downloaded_media_dao()?;
+
         dao.insert_or_ignore(DownloadedMedia {
             file_id,
             id,
-            domain,
+            domain: normalized_domain,
             media_type: MediaType::Audio,
             chat_tg_id,
             created_at: OffsetDateTime::now_utc(),
