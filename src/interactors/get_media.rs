@@ -15,7 +15,7 @@ use crate::{
 use reqwest::Client;
 use std::{convert::Infallible, sync::Arc};
 use tracing::{event, instrument, Level};
-use url::{Host, Url};
+use url::Url;
 
 const GET_INFO_TIMEOUT: u64 = 180;
 
@@ -88,7 +88,15 @@ impl Interactor<GetVideoByURLInput<'_>> for &GetVideoByURL {
         let dao = tx_manager.downloaded_media_dao().unwrap();
 
         if range.is_single_element() {
-            if let Some(media) = dao.get_by_id_or_url_and_domain(id_or_url, domain, MediaType::Video).await? {
+            let normalized_domain = match domain {
+                Some(domain) => domain.strip_prefix("www."),
+                None => None,
+            };
+
+            if let Some(media) = dao
+                .get_by_id_or_url_and_domain(id_or_url, normalized_domain, MediaType::Video)
+                .await?
+            {
                 event!(Level::INFO, "Got cached media");
                 return Ok(Self::Output::SingleCached(media.file_id));
             }
@@ -114,8 +122,14 @@ impl Interactor<GetVideoByURLInput<'_>> for &GetVideoByURL {
         let mut cached = vec![];
         let mut uncached = vec![];
         for (index, media) in playlist.into_iter().enumerate() {
+            let domain = media.domain();
+            let normalized_domain = match domain.as_deref() {
+                Some(domain) => domain.strip_prefix("www."),
+                None => None,
+            };
+
             if let Some(DownloadedMedia { file_id, .. }) = dao
-                .get_by_id_or_url_and_domain(&media.id, media.domain().as_deref(), MediaType::Video)
+                .get_by_id_or_url_and_domain(&media.id, normalized_domain, MediaType::Video)
                 .await?
             {
                 cached.push(TgVideoInPlaylist {
@@ -203,7 +217,12 @@ impl Interactor<GetAudioByURLInput<'_>> for &GetAudioByURL {
         let dao = tx_manager.downloaded_media_dao().unwrap();
 
         if range.is_single_element() {
-            if let Some(media) = dao.get_by_id_or_url_and_domain(id, domain, MediaType::Audio).await? {
+            let normalized_domain = match domain {
+                Some(domain) => domain.strip_prefix("www."),
+                None => None,
+            };
+
+            if let Some(media) = dao.get_by_id_or_url_and_domain(id, normalized_domain, MediaType::Audio).await? {
                 event!(Level::INFO, "Got cached media");
                 return Ok(Self::Output::SingleCached(media.file_id));
             }
@@ -229,8 +248,14 @@ impl Interactor<GetAudioByURLInput<'_>> for &GetAudioByURL {
         let mut cached = vec![];
         let mut uncached = vec![];
         for (index, media) in playlist.into_iter().enumerate() {
+            let domain = media.domain();
+            let normalized_domain = match domain.as_deref() {
+                Some(domain) => domain.strip_prefix("www."),
+                None => None,
+            };
+
             if let Some(DownloadedMedia { file_id, .. }) = dao
-                .get_by_id_or_url_and_domain(&media.id, media.domain().as_deref(), MediaType::Audio)
+                .get_by_id_or_url_and_domain(&media.id, normalized_domain, MediaType::Audio)
                 .await?
             {
                 cached.push(TgAudioInPlaylist {
@@ -322,58 +347,6 @@ impl Interactor<GetUncachedVideoByURLInput<'_>> for &GetUncachedVideoByURL {
 
         event!(Level::WARN, "Empty playlist");
         Ok(Self::Output::Empty)
-    }
-}
-
-pub struct GetMediaInfoById {
-    yt_dlp_cfg: Arc<YtDlpConfig>,
-    yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
-    cookies: Arc<Cookies>,
-}
-
-impl GetMediaInfoById {
-    pub const fn new(yt_dlp_cfg: Arc<YtDlpConfig>, yt_pot_provider_cfg: Arc<YtPotProviderConfig>, cookies: Arc<Cookies>) -> Self {
-        Self {
-            yt_dlp_cfg,
-            yt_pot_provider_cfg,
-            cookies,
-        }
-    }
-}
-
-pub struct GetMediaInfoByIdInput<'a> {
-    pub id: &'a str,
-    pub host: &'a Host<&'a str>,
-    pub range: &'a Range,
-}
-
-impl<'a> GetMediaInfoByIdInput<'a> {
-    pub const fn new(id: &'a str, host: &'a Host<&'a str>, range: &'a Range) -> Self {
-        Self { id, host, range }
-    }
-}
-
-impl Interactor<GetMediaInfoByIdInput<'_>> for &GetMediaInfoById {
-    type Output = VideosInYT;
-    type Err = ytdl::Error;
-
-    #[instrument(skip_all)]
-    async fn execute(self, GetMediaInfoByIdInput { id, host, range }: GetMediaInfoByIdInput<'_>) -> Result<Self::Output, Self::Err> {
-        let cookie = self.cookies.get_path_by_host(host);
-
-        event!(Level::DEBUG, "Getting media info");
-        let res = get_media_or_playlist_info(
-            self.yt_dlp_cfg.executable_path.as_ref(),
-            format!("ytsearch:{id}"),
-            self.yt_pot_provider_cfg.url.as_ref(),
-            true,
-            GET_INFO_TIMEOUT,
-            range,
-            cookie,
-        )
-        .await;
-        event!(Level::INFO, "Got media info");
-        res
     }
 }
 
