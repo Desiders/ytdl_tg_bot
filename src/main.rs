@@ -20,7 +20,10 @@ use froodi::{
 };
 use reqwest::Client;
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
-use std::{borrow::Cow, sync::Mutex};
+use std::{
+    borrow::Cow,
+    sync::{Arc, Mutex},
+};
 use telers::{
     client::{
         telegram::{APIServer, BareFilesPathWrapper},
@@ -141,12 +144,22 @@ fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
                         Ok(database_conn)
                     }
                     Err(err) => {
-                        event!(Level::ERROR, %err, "Error creating database conn");
+                        event!(Level::ERROR, %err, "Create database conn err");
                         Err(InstantiateErrorKind::Custom(err.into()))
                     }
                 }
             },
-        ),
+            finalizer = |database_conn: Arc<DatabaseConnection>| async move {
+                match database_conn.close_by_ref().await {
+                    Ok(()) => {
+                        event!(Level::INFO, "Database conn closed");
+                    },
+                    Err(err) => {
+                        event!(Level::ERROR, %err, "Close database conn err");
+                    },
+                }
+            },
+         ),
         provide(
             Request,
             |Inject(pool): Inject<DatabaseConnection>| async move { Ok(TxManager::new(pool)) },
