@@ -4,12 +4,12 @@ use crate::{
     entities::{PreferredLanguages, Range, TgVideoInPlaylist, UrlWithParams, VideoAndFormat},
     handlers_utils::error,
     interactors::{
-        download::{DownloadVideo, DownloadVideoInput, DownloadVideoPlaylist, DownloadVideoPlaylistInput},
+        download::{DownloadVideoPlaylist, DownloadVideoPlaylistInput},
         send_media::{
             SendVideoById, SendVideoByIdInput, SendVideoInFS, SendVideoInFSInput, SendVideoPlaylistById, SendVideoPlaylistByIdInput,
         },
-        GetVideoByURL, GetVideoByURLInput,
-        GetVideoByURLKind::{Empty, PlaylistCached, PlaylistUncached, SingleCached, SingleUncached},
+        AddDownloadedMediaInput, AddDownloadedVideo, GetVideoByURL, GetVideoByURLInput,
+        GetVideoByURLKind::{Empty, Playlist, SingleCached},
         Interactor as _,
     },
     utils::{format_error_report, FormatErrorToMessage as _},
@@ -34,12 +34,12 @@ pub async fn download(
     Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
     Inject(chat_cfg): Inject<ChatConfig>,
     Inject(get_media): Inject<GetVideoByURL>,
-    Inject(download): Inject<DownloadVideo>,
     Inject(download_playlist): Inject<DownloadVideoPlaylist>,
     Inject(send_media_in_fs): Inject<SendVideoInFS>,
     Inject(send_media_by_id): Inject<SendVideoById>,
     Inject(send_playlist): Inject<SendVideoPlaylistById>,
-    InjectTransient(tx_manager): InjectTransient<TxManager>,
+    Inject(add_downloaded_media): Inject<AddDownloadedVideo>,
+    InjectTransient(mut tx_manager): InjectTransient<TxManager>,
 ) -> HandlerResult {
     event!(Level::DEBUG, "Got url");
 
@@ -62,7 +62,16 @@ pub async fn download(
         Some(raw_value) => PreferredLanguages::from_str(raw_value).unwrap(),
         None => PreferredLanguages::default(),
     };
-    match get_media.execute(GetVideoByURLInput::new(&url, &range, tx_manager)).await {
+    match get_media
+        .execute(GetVideoByURLInput::new(
+            &url,
+            &range,
+            url.as_str(),
+            url.domain().as_deref(),
+            &mut tx_manager,
+        ))
+        .await
+    {
         Ok(SingleCached(file_id)) => {
             if let Err(err) = send_media_by_id
                 .execute(SendVideoByIdInput::new(chat_id, Some(message_id), &file_id))
@@ -73,70 +82,9 @@ pub async fn download(
                 error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
             }
         }
-        Ok(PlaylistCached(playlist)) => {
-            if let Err(err) = send_playlist
-                .execute(SendVideoPlaylistByIdInput::new(chat_id, Some(message_id), playlist))
-                .await
-            {
-                event!(Level::ERROR, err = format_error_report(&err), "Send err");
-                let text = format!(
-                    "Sorry, an error to send playlist\n{}",
-                    expandable_blockquote(err.format(&bot.token))
-                );
-                error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
-            }
-        }
-        Ok(SingleUncached(media)) => {
-            let media_and_format = match VideoAndFormat::new_with_select_format(&media, yt_dlp_cfg.max_file_size, &preferred_languages) {
-                Ok(val) => val,
-                Err(err) => {
-                    event!(Level::ERROR, %err, "Select format err");
-                    let text = format!(
-                        "Sorry, an error to select a format\n{}",
-                        expandable_blockquote(err.format(&bot.token))
-                    );
-                    error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
-                    return Ok(EventReturn::Finish);
-                }
-            };
-            let media_in_fs = match download.execute(DownloadVideoInput::new(&url, media_and_format)).await {
-                Ok(val) => val,
-                Err(err) => {
-                    event!(Level::ERROR, err = format_error_report(&err), "Download err");
-                    let text = format!(
-                        "Sorry, an error to download media\n{}",
-                        expandable_blockquote(err.format(&bot.token))
-                    );
-                    error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
-                    return Ok(EventReturn::Finish);
-                }
-            };
-            let _file_id = match send_media_in_fs
-                .execute(SendVideoInFSInput::new(
-                    chat_id,
-                    Some(message_id),
-                    media_in_fs,
-                    media.title.as_deref().unwrap_or(media.id.as_ref()),
-                    media.width,
-                    media.height,
-                    #[allow(clippy::cast_possible_truncation)]
-                    media.duration.map(|duration| duration as i64),
-                    false,
-                ))
-                .await
-            {
-                Ok(val) => val,
-                Err(err) => {
-                    event!(Level::ERROR, err = format_error_report(&err), "Send err");
-                    let text = format!("Sorry, an error to send media\n{}", expandable_blockquote(err.format(&bot.token)));
-                    error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
-                    return Ok(EventReturn::Finish);
-                }
-            };
-        }
-        Ok(PlaylistUncached(videos)) => {
+        Ok(Playlist((cached, uncached))) => {
             let mut media_and_formats = vec![];
-            for media in videos.iter() {
+            for media in uncached.iter() {
                 media_and_formats.push(
                     match VideoAndFormat::new_with_select_format(media, yt_dlp_cfg.max_file_size, &preferred_languages) {
                         Ok(val) => val,
@@ -155,7 +103,7 @@ pub async fn download(
             let (download_playlist_input, mut video_in_fs_receiver) = DownloadVideoPlaylistInput::new(&url, media_and_formats);
             let download_playlist_handle = tokio::spawn({
                 let bot = bot.clone();
-                let videos = videos.clone();
+                let uncached = uncached.clone();
                 async move {
                     let mut playlist = vec![];
                     let mut errs = vec![];
@@ -168,7 +116,7 @@ pub async fn download(
                                 continue;
                             }
                         };
-                        let media = videos.get(index).unwrap();
+                        let media = uncached.get(index).unwrap();
                         let file_id = match send_media_in_fs
                             .execute(SendVideoInFSInput::new(
                                 chat_cfg.receiver_chat_id,
@@ -190,7 +138,19 @@ pub async fn download(
                                 continue;
                             }
                         };
-                        playlist.push(TgVideoInPlaylist::new(file_id, index))
+                        playlist.push(TgVideoInPlaylist::new(file_id.clone(), index));
+                        if let Err(err) = add_downloaded_media
+                            .execute(AddDownloadedMediaInput::new(
+                                file_id.into(),
+                                media.id.clone(),
+                                media.domain(),
+                                chat_id,
+                                &mut tx_manager,
+                            ))
+                            .await
+                        {
+                            event!(Level::ERROR, %err, "Add err");
+                        }
                     }
                     (playlist, errs)
                 }
@@ -217,7 +177,11 @@ pub async fn download(
                 }
             }
             if let Err(err) = send_playlist
-                .execute(SendVideoPlaylistByIdInput::new(chat_id, Some(message_id), playlist))
+                .execute(SendVideoPlaylistByIdInput::new(
+                    chat_id,
+                    Some(message_id),
+                    playlist.into_iter().chain(cached).collect(),
+                ))
                 .await
             {
                 event!(Level::ERROR, %err, "Send err");
@@ -252,12 +216,12 @@ pub async fn download_quite(
     Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
     Inject(chat_cfg): Inject<ChatConfig>,
     Inject(get_media): Inject<GetVideoByURL>,
-    Inject(download): Inject<DownloadVideo>,
     Inject(download_playlist): Inject<DownloadVideoPlaylist>,
     Inject(send_media_in_fs): Inject<SendVideoInFS>,
     Inject(send_media_by_id): Inject<SendVideoById>,
     Inject(send_playlist): Inject<SendVideoPlaylistById>,
-    InjectTransient(tx_manager): InjectTransient<TxManager>,
+    Inject(add_downloaded_media): Inject<AddDownloadedVideo>,
+    InjectTransient(mut tx_manager): InjectTransient<TxManager>,
 ) -> HandlerResult {
     event!(Level::DEBUG, "Got url");
 
@@ -278,7 +242,16 @@ pub async fn download_quite(
         Some(raw_value) => PreferredLanguages::from_str(raw_value).unwrap(),
         None => PreferredLanguages::default(),
     };
-    match get_media.execute(GetVideoByURLInput::new(&url, &range, tx_manager)).await {
+    match get_media
+        .execute(GetVideoByURLInput::new(
+            &url,
+            &range,
+            url.as_str(),
+            url.domain().as_deref(),
+            &mut tx_manager,
+        ))
+        .await
+    {
         Ok(SingleCached(file_id)) => {
             if let Err(err) = send_media_by_id
                 .execute(SendVideoByIdInput::new(chat_id, Some(message_id), &file_id))
@@ -287,53 +260,9 @@ pub async fn download_quite(
                 event!(Level::ERROR, %err, "Send err");
             }
         }
-        Ok(PlaylistCached(playlist)) => {
-            if let Err(err) = send_playlist
-                .execute(SendVideoPlaylistByIdInput::new(chat_id, Some(message_id), playlist))
-                .await
-            {
-                event!(Level::ERROR, %err, "Send playlist err");
-            }
-        }
-        Ok(SingleUncached(media)) => {
-            let media_and_format = match VideoAndFormat::new_with_select_format(&media, yt_dlp_cfg.max_file_size, &preferred_languages) {
-                Ok(val) => val,
-                Err(err) => {
-                    event!(Level::ERROR, %err, "Select format err");
-                    return Ok(EventReturn::Finish);
-                }
-            };
-            let media_in_fs = match download.execute(DownloadVideoInput::new(&url, media_and_format)).await {
-                Ok(val) => val,
-                Err(err) => {
-                    event!(Level::ERROR, err = format_error_report(&err), "Download err");
-                    return Ok(EventReturn::Finish);
-                }
-            };
-            let _file_id = match send_media_in_fs
-                .execute(SendVideoInFSInput::new(
-                    chat_id,
-                    Some(message_id),
-                    media_in_fs,
-                    media.title.as_deref().unwrap_or(media.id.as_ref()),
-                    media.width,
-                    media.height,
-                    #[allow(clippy::cast_possible_truncation)]
-                    media.duration.map(|duration| duration as i64),
-                    false,
-                ))
-                .await
-            {
-                Ok(val) => val,
-                Err(err) => {
-                    event!(Level::ERROR, err = format_error_report(&err), "Send err");
-                    return Ok(EventReturn::Finish);
-                }
-            };
-        }
-        Ok(PlaylistUncached(videos)) => {
+        Ok(Playlist((cached, uncached))) => {
             let mut media_and_formats = vec![];
-            for media in videos.iter() {
+            for media in uncached.iter() {
                 media_and_formats.push(
                     match VideoAndFormat::new_with_select_format(media, yt_dlp_cfg.max_file_size, &preferred_languages) {
                         Ok(val) => val,
@@ -346,7 +275,7 @@ pub async fn download_quite(
             }
             let (download_playlist_input, mut video_in_fs_receiver) = DownloadVideoPlaylistInput::new(&url, media_and_formats);
             let download_playlist_handle = tokio::spawn({
-                let videos = videos.clone();
+                let uncached = uncached.clone();
                 async move {
                     let mut playlist = vec![];
                     while let Some((index, res)) = video_in_fs_receiver.recv().await {
@@ -357,7 +286,7 @@ pub async fn download_quite(
                                 continue;
                             }
                         };
-                        let media = videos.get(index).unwrap();
+                        let media = uncached.get(index).unwrap();
                         let file_id = match send_media_in_fs
                             .execute(SendVideoInFSInput::new(
                                 chat_cfg.receiver_chat_id,
@@ -378,20 +307,36 @@ pub async fn download_quite(
                                 continue;
                             }
                         };
-                        playlist.push(TgVideoInPlaylist::new(file_id, index))
+                        playlist.push(TgVideoInPlaylist::new(file_id.clone(), index));
+                        if let Err(err) = add_downloaded_media
+                            .execute(AddDownloadedMediaInput::new(
+                                file_id.into(),
+                                media.id.clone(),
+                                media.domain(),
+                                chat_id,
+                                &mut tx_manager,
+                            ))
+                            .await
+                        {
+                            event!(Level::ERROR, %err, "Add err");
+                        }
                     }
                     playlist
                 }
             });
             if let Err(err) = download_playlist.execute(download_playlist_input).await {
-                event!(Level::ERROR, %err, "Download playlist err");
+                event!(Level::ERROR, %err, "Download err");
             }
             let playlist = download_playlist_handle.await.unwrap();
             if let Err(err) = send_playlist
-                .execute(SendVideoPlaylistByIdInput::new(chat_id, Some(message_id), playlist))
+                .execute(SendVideoPlaylistByIdInput::new(
+                    chat_id,
+                    Some(message_id),
+                    playlist.into_iter().chain(cached).collect(),
+                ))
                 .await
             {
-                event!(Level::ERROR, %err, "Send playlist err");
+                event!(Level::ERROR, %err, "Send err");
             }
         }
         Ok(Empty) => {
