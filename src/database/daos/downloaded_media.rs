@@ -42,12 +42,10 @@ where
             Entity,
         };
 
-        let normalized_domain = domain.map(|domain| domain.strip_prefix("www.").map(ToOwned::to_owned)).flatten();
-
         let model = ActiveModel {
             file_id: Set(file_id.into()),
             id: Set(id.into()),
-            domain: Set(normalized_domain.into()),
+            domain: Set(domain.into()),
             media_type: Set(media_type.into()),
             chat_tg_id: Set(chat_tg_id.into()),
             created_at: Set(created_at),
@@ -77,8 +75,7 @@ where
             .filter(Expr::cust_with_values("$1 LIKE '%' || id::text || '%'", [id_or_url]));
 
         if let Some(domain) = domain {
-            let normalized_domain = domain.strip_prefix("www.").unwrap_or(domain);
-            query = query.filter(Domain.eq(normalized_domain));
+            query = query.filter(Domain.eq(domain));
         }
 
         Ok(query.one(self.conn).await?.map(Into::into))

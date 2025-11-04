@@ -88,12 +88,10 @@ impl Interactor<GetVideoByURLInput<'_>> for &GetVideoByURL {
         let dao = tx_manager.downloaded_media_dao().unwrap();
 
         if range.is_single_element() {
-            event!(Level::TRACE, "1");
             if let Some(media) = dao.get_by_id_or_url_and_domain(id_or_url, domain, MediaType::Video).await? {
                 event!(Level::INFO, "Got cached media");
                 return Ok(Self::Output::SingleCached(media.file_id));
             }
-            event!(Level::TRACE, "2");
         }
 
         let host = url.host();
