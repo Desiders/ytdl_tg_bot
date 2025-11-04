@@ -46,8 +46,8 @@ use crate::{
             EditAudioById, EditVideoById, SendAudioById, SendAudioInFS, SendAudioPlaylistById, SendVideoById, SendVideoInFS,
             SendVideoPlaylistById,
         },
-        AddDownloadedAudio, AddDownloadedVideo, GetAudioByURL, GetMediaInfoById, GetShortMediaByURLInfo, GetUncachedVideoByURL,
-        GetVideoByURL, SaveChat, SearchMediaInfo,
+        AddDownloadedAudio, AddDownloadedVideo, GetAudioByURL, GetShortMediaByURLInfo, GetUncachedVideoByURL, GetVideoByURL, SaveChat,
+        SearchMediaInfo,
     },
     middlewares::{CreateChatMiddleware, ReactionMiddleware},
     services::get_cookies_from_directory,
@@ -97,11 +97,6 @@ fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
                 Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
                 Inject(cookies): Inject<Cookies>| Ok(GetAudioByURL::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies))
-            ),
-            provide(|
-                Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
-                Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-                Inject(cookies): Inject<Cookies>| Ok(GetMediaInfoById::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies))
             ),
             provide(
                 |Inject(client): Inject<Client>,
