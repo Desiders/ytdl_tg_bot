@@ -26,7 +26,7 @@ use telers::{
 };
 use tracing::{event, instrument, Level};
 
-#[instrument(skip_all, fields(%message_id = message.id(), %chat_id = message.chat().id(), %url = url.as_str(), ?params))]
+#[instrument(skip_all, fields(%message_id = message.id(), %url = url.as_str(), ?params))]
 pub async fn download(
     bot: Bot,
     message: Message,
@@ -145,7 +145,6 @@ pub async fn download(
                                 media.id.clone(),
                                 media.display_id.clone(),
                                 media.domain(),
-                                chat_id,
                                 &mut tx_manager,
                             ))
                             .await

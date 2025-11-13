@@ -136,7 +136,7 @@ fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
             App,
             |Inject(database_cfg): Inject<DatabaseConfig>| async move {
                 let mut options = ConnectOptions::new(database_cfg.get_postgres_url());
-                options.sqlx_logging(true);
+                options.sqlx_logging(false);
 
                 match Database::connect(options).await {
                     Ok(database_conn) => {

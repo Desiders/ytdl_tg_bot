@@ -11,7 +11,6 @@ pub struct Model {
     pub display_id: Option<String>,
     pub domain: Option<String>,
     pub media_type: MediaType,
-    pub chat_tg_id: i64,
     pub created_at: TimeDateTimeWithTimeZone,
 }
 
