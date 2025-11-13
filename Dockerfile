@@ -1,12 +1,13 @@
-FROM alpine:3.20 AS base
+FROM alpine:3.22 AS base
 RUN apk add --no-cache \
         ffmpeg \
         python3 \
+        deno \
         bash \
         curl \
     && rm -rf /var/cache/apk/*
 
-FROM rust:1.91-alpine3.20 AS build-deps
+FROM rust:1.91-alpine3.22 AS build-deps
 RUN apk add --no-cache musl-dev upx
 WORKDIR /usr/src/app
 COPY Cargo.toml Cargo.lock ./
