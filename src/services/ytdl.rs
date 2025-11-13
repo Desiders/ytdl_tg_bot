@@ -36,6 +36,8 @@ pub fn download_to_pipe(
     cookie: Option<&Cookie>,
 ) -> Result<Child, io::Error> {
     let mut args = vec![
+        "--js-runtimes",
+        "deno:deno",
         "--ignore-config",
         "--no-colors",
         "--socket-timeout",
@@ -93,6 +95,8 @@ pub async fn download_video_to_path(
     let output_dir_path = output_dir_path.as_ref().to_string_lossy();
 
     let mut args = vec![
+        "--js-runtimes",
+        "deno:deno",
         "--no-update",
         "--ignore-config",
         "--no-colors",
@@ -179,6 +183,8 @@ pub async fn download_audio_to_path(
     let output_dir_path = output_dir_path.as_ref().to_string_lossy();
 
     let mut args = vec![
+        "--js-runtimes",
+        "deno:deno",
         "--no-update",
         "--ignore-config",
         "--no-color",
@@ -269,6 +275,8 @@ pub async fn get_media_or_playlist_info(
     let range_string = range.to_range_string();
 
     let mut args = vec![
+        "--js-runtimes",
+        "deno:deno",
         "--no-update",
         "--ignore-config",
         "--no-color",
