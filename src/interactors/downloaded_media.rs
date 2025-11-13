@@ -11,7 +11,6 @@ pub struct AddDownloadedMediaInput<'a> {
     pub id: String,
     pub display_id: Option<String>,
     pub domain: Option<String>,
-    pub chat_tg_id: i64,
     pub tx_manager: &'a mut TxManager,
 }
 
@@ -21,7 +20,6 @@ impl<'a> AddDownloadedMediaInput<'a> {
         id: String,
         display_id: Option<String>,
         domain: Option<String>,
-        chat_tg_id: i64,
         tx_manager: &'a mut TxManager,
     ) -> Self {
         Self {
@@ -29,7 +27,6 @@ impl<'a> AddDownloadedMediaInput<'a> {
             id,
             display_id,
             domain,
-            chat_tg_id,
             tx_manager,
         }
     }
@@ -55,7 +52,6 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedVideo {
             id,
             display_id,
             domain,
-            chat_tg_id,
             tx_manager,
         }: AddDownloadedMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
@@ -70,7 +66,6 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedVideo {
             display_id,
             domain: normalized_domain,
             media_type: MediaType::Video,
-            chat_tg_id,
             created_at: OffsetDateTime::now_utc(),
         })
         .await?;
@@ -101,7 +96,6 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedAudio {
             id,
             display_id,
             domain,
-            chat_tg_id,
             tx_manager,
         }: AddDownloadedMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
@@ -117,7 +111,6 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedAudio {
             display_id,
             domain: normalized_domain,
             media_type: MediaType::Audio,
-            chat_tg_id,
             created_at: OffsetDateTime::now_utc(),
         })
         .await?;

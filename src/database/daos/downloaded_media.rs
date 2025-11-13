@@ -33,7 +33,6 @@ where
             domain,
             display_id,
             media_type,
-            chat_tg_id,
             created_at,
         }: DownloadedMedia,
     ) -> Result<(), ErrorKind<Infallible>> {
@@ -49,7 +48,6 @@ where
             display_id: Set(display_id.into()),
             domain: Set(domain.into()),
             media_type: Set(media_type.into()),
-            chat_tg_id: Set(chat_tg_id.into()),
             created_at: Set(created_at),
         };
 

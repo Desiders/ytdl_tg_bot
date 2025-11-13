@@ -8,7 +8,6 @@ pub struct DownloadedMedia {
     pub display_id: Option<String>,
     pub domain: Option<String>,
     pub media_type: MediaType,
-    pub chat_tg_id: i64,
     pub created_at: OffsetDateTime,
 }
 
@@ -20,7 +19,6 @@ impl From<Model> for DownloadedMedia {
             display_id,
             domain,
             media_type,
-            chat_tg_id,
             created_at,
         }: Model,
     ) -> Self {
@@ -30,7 +28,6 @@ impl From<Model> for DownloadedMedia {
             display_id,
             domain,
             media_type: media_type.into(),
-            chat_tg_id,
             created_at,
         }
     }

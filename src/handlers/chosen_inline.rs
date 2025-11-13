@@ -33,7 +33,6 @@ pub async fn download_by_url(
     ChosenInlineResult {
         result_id,
         inline_message_id,
-        from,
         ..
     }: ChosenInlineResult,
     Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
@@ -53,7 +52,6 @@ pub async fn download_by_url(
 ) -> HandlerResult {
     let inline_message_id = inline_message_id.as_deref().unwrap();
     let is_video = result_id.starts_with("video_");
-    let chat_id = from.id;
 
     Span::current()
         .record("inline_message_id", inline_message_id)
@@ -134,7 +132,6 @@ pub async fn download_by_url(
                             media.id.clone(),
                             media.display_id.clone(),
                             media.domain(),
-                            chat_id,
                             &mut tx_manager,
                         ))
                         .await
@@ -240,7 +237,6 @@ pub async fn download_by_url(
                         media.id.clone(),
                         media.display_id.clone(),
                         media.domain(),
-                        chat_id,
                         &mut tx_manager,
                     ))
                     .await
@@ -285,7 +281,6 @@ pub async fn download_by_id(
     ChosenInlineResult {
         result_id,
         inline_message_id,
-        from,
         ..
     }: ChosenInlineResult,
     Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
@@ -306,7 +301,6 @@ pub async fn download_by_id(
     let (result_prefix, video_id) = result_id.split_once('_').unwrap();
     let url = Url::parse(&format!("https://www.youtube.com/watch?v={video_id}")).unwrap();
     let is_video = result_prefix.starts_with("video");
-    let chat_id = from.id;
 
     Span::current()
         .record("inline_message_id", inline_message_id)
@@ -385,7 +379,6 @@ pub async fn download_by_id(
                             media.id.clone(),
                             media.display_id.clone(),
                             media.domain(),
-                            chat_id,
                             &mut tx_manager,
                         ))
                         .await
@@ -491,7 +484,6 @@ pub async fn download_by_id(
                         media.id.clone(),
                         media.display_id.clone(),
                         media.domain(),
-                        chat_id,
                         &mut tx_manager,
                     ))
                     .await
