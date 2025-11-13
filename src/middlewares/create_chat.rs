@@ -5,7 +5,7 @@ use telers::{
     middlewares::outer::{Middleware, MiddlewareResponse},
     Request,
 };
-use tracing::{event, instrument, span, Instrument, Level};
+use tracing::{event, instrument, Level};
 
 use crate::{
     database::TxManager,
@@ -30,19 +30,13 @@ impl Middleware for CreateChatMiddleware {
         let username = chat.username();
 
         let db_chat = Chat::new(chat_id, username.map(ToOwned::to_owned));
-        let container = container.clone();
 
-        tokio::spawn(
-            async move {
-                let save_chat = container.get::<SaveChat>().await.unwrap();
-                let mut tx_manager = container.get_transient::<TxManager>().await.unwrap();
+        let save_chat = container.get::<SaveChat>().await.unwrap();
+        let mut tx_manager = container.get_transient::<TxManager>().await.unwrap();
 
-                if let Err(err) = save_chat.execute(SaveChatInput::new(db_chat, &mut tx_manager)).await {
-                    event!(Level::ERROR, %err, "Save chat err");
-                }
-            }
-            .instrument(span!(Level::INFO, "call", chat_id, ?username)),
-        );
+        if let Err(err) = save_chat.execute(SaveChatInput::new(db_chat, &mut tx_manager)).await {
+            event!(Level::ERROR, %err, "Save chat err");
+        }
 
         Ok((request, EventReturn::Finish))
     }
