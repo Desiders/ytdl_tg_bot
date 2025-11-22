@@ -90,6 +90,7 @@ impl Interactor<DownloadAudioInput<'_>> for &DownloadAudio {
                         extension,
                         temp_dir_path,
                         DOWNLOAD_TIMEOUT,
+                        self.yt_dlp_cfg.max_file_size,
                         cookie,
                     )
                     .await
@@ -197,6 +198,7 @@ impl Interactor<DownloadAudioPlaylistInput<'_>> for &DownloadAudioPlaylist {
                             extension,
                             temp_dir_path,
                             DOWNLOAD_TIMEOUT,
+                            self.yt_dlp_cfg.max_file_size,
                             cookie,
                         )
                         .await;

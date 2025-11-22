@@ -117,9 +117,11 @@ impl Interactor<DownloadVideoInput<'_>> for &DownloadVideo {
                             yt_dlp_executable_path,
                             url,
                             yt_pot_provider_url,
+                            format.video_format.id,
                             extension,
                             temp_dir_path,
                             DOWNLOAD_TIMEOUT,
+                            self.yt_dlp_cfg.max_file_size,
                             cookie,
                         )
                         .await
@@ -154,7 +156,8 @@ impl Interactor<DownloadVideoInput<'_>> for &DownloadVideo {
         fcntl(&video_write_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(Self::Err::Pipe)?;
         fcntl(&audio_write_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(Self::Err::Pipe)?;
 
-        let mut merge_child = merge_streams(&video_read_fd, &audio_read_fd, extension, &file_path).map_err(Self::Err::Ffmpeg)?;
+        let mut merge_child = merge_streams(&video_read_fd, &audio_read_fd, extension, &file_path, self.yt_dlp_cfg.max_file_size)
+            .map_err(Self::Err::Ffmpeg)?;
 
         if let Some(filesize) = format.video_format.filesize_or_approx() {
             let (sender, mut receiver) = mpsc::unbounded_channel();
@@ -190,6 +193,7 @@ impl Interactor<DownloadVideoInput<'_>> for &DownloadVideo {
                 &video.original_url,
                 self.yt_pot_provider_cfg.url.as_ref(),
                 format.video_format.id,
+                self.yt_dlp_cfg.max_file_size,
                 cookie,
             )
             .map_err(Self::Err::Ytdlp)?;
@@ -228,6 +232,7 @@ impl Interactor<DownloadVideoInput<'_>> for &DownloadVideo {
                 &video.original_url,
                 self.yt_pot_provider_cfg.url.as_ref(),
                 format.audio_format.id,
+                self.yt_dlp_cfg.max_file_size,
                 cookie,
             )
             .map_err(Self::Err::Ytdlp)?;
@@ -346,9 +351,11 @@ impl Interactor<DownloadVideoPlaylistInput<'_>> for &DownloadVideoPlaylist {
                                 yt_dlp_executable_path,
                                 url,
                                 yt_pot_provider_url,
+                                format.video_format.id,
                                 extension,
                                 temp_dir_path,
                                 DOWNLOAD_TIMEOUT,
+                                self.yt_dlp_cfg.max_file_size,
                                 cookie,
                             )
                             .await
@@ -387,7 +394,8 @@ impl Interactor<DownloadVideoPlaylistInput<'_>> for &DownloadVideoPlaylist {
             fcntl(&video_write_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(Self::Err::Pipe)?;
             fcntl(&audio_write_fd, F_SETFD(FdFlag::FD_CLOEXEC)).map_err(Self::Err::Pipe)?;
 
-            let mut merge_child = merge_streams(&video_read_fd, &audio_read_fd, extension, &file_path).map_err(Self::Err::Ffmpeg)?;
+            let mut merge_child = merge_streams(&video_read_fd, &audio_read_fd, extension, &file_path, self.yt_dlp_cfg.max_file_size)
+                .map_err(Self::Err::Ffmpeg)?;
 
             let span = span.exit();
             if let Some(filesize) = format.video_format.filesize_or_approx() {
@@ -423,6 +431,7 @@ impl Interactor<DownloadVideoPlaylistInput<'_>> for &DownloadVideoPlaylist {
                     &video.original_url,
                     self.yt_pot_provider_cfg.url.as_ref(),
                     format.video_format.id,
+                    self.yt_dlp_cfg.max_file_size,
                     cookie,
                 )
                 .map_err(Self::Err::Ytdlp)?;
@@ -460,6 +469,7 @@ impl Interactor<DownloadVideoPlaylistInput<'_>> for &DownloadVideoPlaylist {
                     &video.original_url,
                     self.yt_pot_provider_cfg.url.as_ref(),
                     format.audio_format.id,
+                    self.yt_dlp_cfg.max_file_size,
                     cookie,
                 )
                 .map_err(Self::Err::Ytdlp)?;
