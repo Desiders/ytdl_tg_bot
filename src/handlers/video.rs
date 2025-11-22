@@ -21,7 +21,7 @@ use telers::{
     enums::ParseMode,
     event::{telegram::HandlerResult, EventReturn},
     types::Message,
-    utils::text::html_formatter::expandable_blockquote,
+    utils::text::{html_expandable_blockquote, html_quote},
     Bot, Extension,
 };
 use tracing::{event, instrument, Level};
@@ -51,7 +51,10 @@ pub async fn download(
             Ok(range) => range,
             Err(err) => {
                 event!(Level::ERROR, %err, "Parse range err");
-                let text = format!("Sorry, an error to parse range\n{}", expandable_blockquote(err.format(&bot.token)));
+                let text = format!(
+                    "Sorry, an error to parse range\n{}",
+                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                );
                 error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
                 return Ok(EventReturn::Finish);
             }
@@ -78,7 +81,10 @@ pub async fn download(
                 .await
             {
                 event!(Level::ERROR, err = format_error_report(&err), "Send err");
-                let text = format!("Sorry, an error to send media\n{}", expandable_blockquote(err.format(&bot.token)));
+                let text = format!(
+                    "Sorry, an error to send media\n{}",
+                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                );
                 error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
             }
         }
@@ -92,7 +98,7 @@ pub async fn download(
                             event!(Level::ERROR, %err, "Select format err");
                             let text = format!(
                                 "Sorry, an error to select a format\n{}",
-                                expandable_blockquote(err.format(&bot.token))
+                                html_expandable_blockquote(html_quote(err.format(&bot.token)))
                             );
                             error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
                             return Ok(EventReturn::Finish);
@@ -112,7 +118,7 @@ pub async fn download(
                             Ok(val) => val,
                             Err(err) => {
                                 event!(Level::ERROR, %err, "Download err");
-                                errs.push(err.format(&bot.token));
+                                errs.push(html_quote(err.format(&bot.token)));
                                 continue;
                             }
                         };
@@ -134,7 +140,7 @@ pub async fn download(
                             Ok(val) => val,
                             Err(err) => {
                                 event!(Level::ERROR, err = format_error_report(&err), "Send err");
-                                errs.push(err.format(&bot.token));
+                                errs.push(html_quote(err.format(&bot.token)));
                                 continue;
                             }
                         };
@@ -159,7 +165,7 @@ pub async fn download(
                 event!(Level::ERROR, %err, "Download err");
                 let text = format!(
                     "Sorry, an error to download playlist\n{}",
-                    expandable_blockquote(err.format(&bot.token))
+                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
                 );
                 if let Err(err) = error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await {
                     event!(Level::ERROR, %err);
@@ -169,7 +175,7 @@ pub async fn download(
             if !errors.is_empty() {
                 let mut text = "Sorry, some download/send media failed:\n".to_owned();
                 for (index, err) in errors.into_iter().enumerate() {
-                    text.push_str(&expandable_blockquote(format!("{index}. {err}")));
+                    text.push_str(&html_expandable_blockquote(format!("{}. {}", index, html_quote(err))));
                     text.push('\n');
                 }
                 if let Err(err) = error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await {
@@ -187,7 +193,7 @@ pub async fn download(
                 event!(Level::ERROR, %err, "Send err");
                 let text = format!(
                     "Sorry, an error to send playlist\n{}",
-                    expandable_blockquote(err.format(&bot.token))
+                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
                 );
                 if let Err(err) = error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await {
                     event!(Level::ERROR, %err);
@@ -201,7 +207,10 @@ pub async fn download(
         }
         Err(err) => {
             event!(Level::ERROR, err = format_error_report(&err), "Get err");
-            let text = format!("Sorry, an error to get info\n{}", expandable_blockquote(err.format(&bot.token)));
+            let text = format!(
+                "Sorry, an error to get info\n{}",
+                html_expandable_blockquote(html_quote(err.format(&bot.token)))
+            );
             error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
             return Ok(EventReturn::Finish);
         }

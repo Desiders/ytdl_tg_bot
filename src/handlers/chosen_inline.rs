@@ -21,7 +21,7 @@ use telers::{
     enums::ParseMode,
     event::{telegram::HandlerResult, EventReturn},
     types::ChosenInlineResult,
-    utils::text::{html_formatter::expandable_blockquote, html_text_link},
+    utils::text::{html_expandable_blockquote, html_quote, html_text_link},
     Bot, Extension,
 };
 use tracing::{event, instrument, Level, Span};
@@ -88,7 +88,7 @@ pub async fn download_by_url(
                                 event!(Level::ERROR, %err, "Select format err");
                                 let text = format!(
                                     "Sorry, an error to select a format\n{}",
-                                    expandable_blockquote(err.format(&bot.token))
+                                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
                                 );
                                 error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
                                 return Ok(EventReturn::Finish);
@@ -98,7 +98,10 @@ pub async fn download_by_url(
                         Ok(val) => val,
                         Err(err) => {
                             event!(Level::ERROR, err = format_error_report(&err), "Download err");
-                            let text = format!("Sorry, an error to download\n{}", expandable_blockquote(err.format(&bot.token)));
+                            let text = format!(
+                                "Sorry, an error to download\n{}",
+                                html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                            );
                             error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
                             return Ok(EventReturn::Finish);
                         }
@@ -120,7 +123,10 @@ pub async fn download_by_url(
                         Ok(file_id) => file_id,
                         Err(err) => {
                             event!(Level::ERROR, err = format_error_report(&err), "Send err");
-                            let text = format!("Sorry, an error to download\n{}", expandable_blockquote(err.format(&bot.token)));
+                            let text = format!(
+                                "Sorry, an error to download\n{}",
+                                html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                            );
                             error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
                             return Ok(EventReturn::Finish);
                         }
@@ -150,7 +156,7 @@ pub async fn download_by_url(
                 event!(Level::ERROR, err = format_error_report(&err), "Get info err");
                 let text = format!(
                     "Sorry, an error to get media info\n{}",
-                    expandable_blockquote(err.format(&bot.token))
+                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
                 );
                 error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
                 return Ok(EventReturn::Finish);
@@ -163,7 +169,7 @@ pub async fn download_by_url(
             event!(Level::ERROR, err = format_error_report(&err), "Edit err");
             let text = format!(
                 "Sorry, an error to edit the message\n{}",
-                expandable_blockquote(err.format(&bot.token))
+                html_expandable_blockquote(html_quote(err.format(&bot.token)))
             );
             error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
         }
@@ -194,7 +200,7 @@ pub async fn download_by_url(
                         event!(Level::ERROR, %err, "Select format err");
                         let text = format!(
                             "Sorry, an error to select a format\n{}",
-                            expandable_blockquote(err.format(&bot.token))
+                            html_expandable_blockquote(html_quote(err.format(&bot.token)))
                         );
                         error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
                         return Ok(EventReturn::Finish);
@@ -204,7 +210,10 @@ pub async fn download_by_url(
                     Ok(val) => val,
                     Err(err) => {
                         event!(Level::ERROR, err = format_error_report(&err), "Download err");
-                        let text = format!("Sorry, an error to download\n{}", expandable_blockquote(err.format(&bot.token)));
+                        let text = format!(
+                            "Sorry, an error to download\n{}",
+                            html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                        );
                         error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
                         return Ok(EventReturn::Finish);
                     }
@@ -226,7 +235,10 @@ pub async fn download_by_url(
                     Ok(file_id) => file_id,
                     Err(err) => {
                         event!(Level::ERROR, err = format_error_report(&err), "Send err");
-                        let text = format!("Sorry, an error to download\n{}", expandable_blockquote(err.format(&bot.token)));
+                        let text = format!(
+                            "Sorry, an error to download\n{}",
+                            html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                        );
                         error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
                         return Ok(EventReturn::Finish);
                     }
@@ -255,7 +267,7 @@ pub async fn download_by_url(
             event!(Level::ERROR, err = format_error_report(&err), "Get info err");
             let text = format!(
                 "Sorry, an error to get media info\n{}",
-                expandable_blockquote(err.format(&bot.token))
+                html_expandable_blockquote(html_quote(err.format(&bot.token)))
             );
             error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
             return Ok(EventReturn::Finish);
@@ -268,7 +280,7 @@ pub async fn download_by_url(
         event!(Level::ERROR, err = format_error_report(&err), "Edit err");
         let text = format!(
             "Sorry, an error to edit the message\n{}",
-            expandable_blockquote(err.format(&bot.token))
+            html_expandable_blockquote(html_quote(err.format(&bot.token)))
         );
         error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
     }
@@ -335,7 +347,7 @@ pub async fn download_by_id(
                                 event!(Level::ERROR, %err, "Select format err");
                                 let text = format!(
                                     "Sorry, an error to select a format\n{}",
-                                    expandable_blockquote(err.format(&bot.token))
+                                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
                                 );
                                 error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
                                 return Ok(EventReturn::Finish);
@@ -345,7 +357,10 @@ pub async fn download_by_id(
                         Ok(val) => val,
                         Err(err) => {
                             event!(Level::ERROR, err = format_error_report(&err), "Download err");
-                            let text = format!("Sorry, an error to download\n{}", expandable_blockquote(err.format(&bot.token)));
+                            let text = format!(
+                                "Sorry, an error to download\n{}",
+                                html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                            );
                             error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
                             return Ok(EventReturn::Finish);
                         }
@@ -367,7 +382,10 @@ pub async fn download_by_id(
                         Ok(file_id) => file_id,
                         Err(err) => {
                             event!(Level::ERROR, err = format_error_report(&err), "Send err");
-                            let text = format!("Sorry, an error to download\n{}", expandable_blockquote(err.format(&bot.token)));
+                            let text = format!(
+                                "Sorry, an error to download\n{}",
+                                html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                            );
                             error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
                             return Ok(EventReturn::Finish);
                         }
@@ -397,7 +415,7 @@ pub async fn download_by_id(
                 event!(Level::ERROR, err = format_error_report(&err), "Get info err");
                 let text = format!(
                     "Sorry, an error to get media info\n{}",
-                    expandable_blockquote(err.format(&bot.token))
+                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
                 );
                 error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
                 return Ok(EventReturn::Finish);
@@ -410,7 +428,7 @@ pub async fn download_by_id(
             event!(Level::ERROR, err = format_error_report(&err), "Edit err");
             let text = format!(
                 "Sorry, an error to edit the message\n{}",
-                expandable_blockquote(err.format(&bot.token))
+                html_expandable_blockquote(html_quote(err.format(&bot.token)))
             );
             error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
         }
@@ -441,7 +459,7 @@ pub async fn download_by_id(
                         event!(Level::ERROR, %err, "Select format err");
                         let text = format!(
                             "Sorry, an error to select a format\n{}",
-                            expandable_blockquote(err.format(&bot.token))
+                            html_expandable_blockquote(html_quote(err.format(&bot.token)))
                         );
                         error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
                         return Ok(EventReturn::Finish);
@@ -451,7 +469,10 @@ pub async fn download_by_id(
                     Ok(val) => val,
                     Err(err) => {
                         event!(Level::ERROR, err = format_error_report(&err), "Download err");
-                        let text = format!("Sorry, an error to download\n{}", expandable_blockquote(err.format(&bot.token)));
+                        let text = format!(
+                            "Sorry, an error to download\n{}",
+                            html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                        );
                         error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
                         return Ok(EventReturn::Finish);
                     }
@@ -473,7 +494,10 @@ pub async fn download_by_id(
                     Ok(file_id) => file_id,
                     Err(err) => {
                         event!(Level::ERROR, err = format_error_report(&err), "Send err");
-                        let text = format!("Sorry, an error to download\n{}", expandable_blockquote(err.format(&bot.token)));
+                        let text = format!(
+                            "Sorry, an error to download\n{}",
+                            html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                        );
                         error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
                         return Ok(EventReturn::Finish);
                     }
@@ -502,7 +526,7 @@ pub async fn download_by_id(
             event!(Level::ERROR, err = format_error_report(&err), "Get info err");
             let text = format!(
                 "Sorry, an error to get media info\n{}",
-                expandable_blockquote(err.format(&bot.token))
+                html_expandable_blockquote(html_quote(err.format(&bot.token)))
             );
             error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
             return Ok(EventReturn::Finish);
@@ -515,7 +539,7 @@ pub async fn download_by_id(
         event!(Level::ERROR, err = format_error_report(&err), "Edit err");
         let text = format!(
             "Sorry, an error to edit the message\n{}",
-            expandable_blockquote(err.format(&bot.token))
+            html_expandable_blockquote(html_quote(err.format(&bot.token)))
         );
         error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
     }
