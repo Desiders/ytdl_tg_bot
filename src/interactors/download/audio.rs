@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 use tracing::{event, instrument, span, Level};
 use url::Url;
 
-const DOWNLOAD_TIMEOUT: u64 = 180;
+const DOWNLOAD_TIMEOUT: u64 = 360;
 
 #[derive(thiserror::Error, Debug)]
 pub enum DownloadAudioErrorKind {

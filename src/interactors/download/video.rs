@@ -20,7 +20,7 @@ use tokio::{io::AsyncWriteExt as _, sync::mpsc, time::timeout};
 use tracing::{debug_span, event, instrument, span, Instrument, Level};
 use url::Url;
 
-const DOWNLOAD_TIMEOUT: u64 = 180;
+const DOWNLOAD_TIMEOUT: u64 = 360;
 const RANGE_CHUNK_SIZE: i32 = 1024 * 1024 * 10;
 
 #[derive(thiserror::Error, Debug)]
