@@ -33,8 +33,11 @@ pub fn download_to_pipe(
     url: impl AsRef<str>,
     pot_provider_api_url: impl AsRef<str>,
     format: impl AsRef<str>,
+    max_filesize: u32,
     cookie: Option<&Cookie>,
 ) -> Result<Child, io::Error> {
+    let max_filesize_str = max_filesize.to_string();
+
     let mut args = vec![
         "--js-runtimes",
         "deno:deno",
@@ -51,8 +54,8 @@ pub fn download_to_pipe(
         "--no-simulate",
         "--no-progress",
         "--no-check-formats",
-        "--http-chunk-size",
-        "10M",
+        "--max-filesize",
+        max_filesize_str.as_ref(),
         "-f",
         format.as_ref(),
     ];
@@ -88,11 +91,14 @@ pub async fn download_video_to_path(
     url: impl AsRef<str>,
     pot_provider_api_url: impl AsRef<str>,
     format: impl AsRef<str>,
+    output_extension: impl AsRef<str>,
     output_dir_path: impl AsRef<Path>,
     timeout: u64,
+    max_filesize: u32,
     cookie: Option<&Cookie>,
 ) -> Result<(), io::Error> {
     let output_dir_path = output_dir_path.as_ref().to_string_lossy();
+    let max_filesize_str = max_filesize.to_string();
 
     let mut args = vec![
         "--js-runtimes",
@@ -116,10 +122,12 @@ pub async fn download_video_to_path(
         "--embed-metadata",
         "--concurrent-fragments",
         "4",
-        "--http-chunk-size",
-        "10M",
+        "--max-filesize",
+        max_filesize_str.as_ref(),
         "-f",
         format.as_ref(),
+        "--merge-output-format",
+        output_extension.as_ref(),
     ];
 
     let extractor_arg = format!("youtubepot-bgutilhttp:base_url={}", pot_provider_api_url.as_ref());
@@ -178,9 +186,11 @@ pub async fn download_audio_to_path(
     output_extension: impl AsRef<str>,
     output_dir_path: impl AsRef<Path>,
     timeout: u64,
+    max_filesize: u32,
     cookie: Option<&Cookie>,
 ) -> Result<(), io::Error> {
     let output_dir_path = output_dir_path.as_ref().to_string_lossy();
+    let max_filesize_str = max_filesize.to_string();
 
     let mut args = vec![
         "--js-runtimes",
@@ -207,8 +217,8 @@ pub async fn download_audio_to_path(
         "--embed-metadata",
         "--concurrent-fragments",
         "4",
-        "--http-chunk-size",
-        "10M",
+        "--max-filesize",
+        max_filesize_str.as_ref(),
         "-f",
         format.as_ref(),
     ];

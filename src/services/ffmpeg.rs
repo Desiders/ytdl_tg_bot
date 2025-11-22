@@ -21,7 +21,10 @@ pub fn merge_streams(
     audio_fd: &OwnedFd,
     extension: impl AsRef<str>,
     output_path: impl AsRef<Path>,
+    max_file_size: u32,
 ) -> Result<tokio::process::Child, io::Error> {
+    let max_file_size_str = max_file_size.to_string();
+
     tokio::process::Command::new("ffmpeg")
         .args([
             "-y",
@@ -44,6 +47,8 @@ pub fn merge_streams(
             "-nostats",
             "-preset",
             "ultrafast",
+            "-fs",
+            max_file_size_str.as_ref(),
             "-f",
             extension.as_ref(),
             output_path.as_ref().to_string_lossy().as_ref(),
