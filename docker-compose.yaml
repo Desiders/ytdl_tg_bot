@@ -1,7 +1,7 @@
 services:
   bot:
     container_name: ytdl_tg_bot.bot
-    image: desiders/ytdl_tg_bot:3.0.2
+    image: desiders/ytdl_tg_bot:3.1.2
     restart: "unless-stopped"
     env_file:
       - ".env"
