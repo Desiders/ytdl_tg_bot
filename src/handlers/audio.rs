@@ -66,13 +66,7 @@ pub async fn download(
         None => PreferredLanguages::default(),
     };
     match get_media
-        .execute(GetAudioByURLInput::new(
-            &url,
-            &range,
-            url.as_str(),
-            url.domain().as_deref(),
-            &mut tx_manager,
-        ))
+        .execute(GetAudioByURLInput::new(&url, &range, url.as_str(), url.domain(), &mut tx_manager))
         .await
     {
         Ok(SingleCached(file_id)) => {
@@ -90,7 +84,7 @@ pub async fn download(
         }
         Ok(Playlist((cached, uncached))) => {
             let mut media_and_formats = vec![];
-            for media in uncached.iter() {
+            for media in &uncached {
                 media_and_formats.push(
                     match AudioAndFormat::new_with_select_format(media, yt_dlp_cfg.max_file_size, &preferred_languages) {
                         Ok(val) => val,
@@ -202,7 +196,7 @@ pub async fn download(
         }
         Ok(Empty) => {
             warn!("Empty playlist");
-            let text = format!("Playlist is empty");
+            let text = "Playlist is empty".to_string();
             error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
         }
         Err(err) => {
@@ -214,6 +208,6 @@ pub async fn download(
             error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
             return Ok(EventReturn::Finish);
         }
-    };
+    }
     Ok(EventReturn::Finish)
 }

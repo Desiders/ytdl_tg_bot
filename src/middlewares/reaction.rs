@@ -21,7 +21,7 @@ impl Middleware for ReactionMiddleware {
         let Some(message) = request.update.message() else {
             return next(request).await;
         };
-        let Some(domain) = request.extensions.get::<UrlWithParams>().map(|val| val.url.domain()).flatten() else {
+        let Some(domain) = request.extensions.get::<UrlWithParams>().and_then(|val| val.url.domain()) else {
             return next(request).await;
         };
         let container = request.extensions.get::<Container>().unwrap();

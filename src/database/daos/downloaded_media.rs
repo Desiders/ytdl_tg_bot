@@ -43,10 +43,10 @@ where
         };
 
         let model = ActiveModel {
-            file_id: Set(file_id.into()),
-            id: Set(id.into()),
-            display_id: Set(display_id.into()),
-            domain: Set(domain.into()),
+            file_id: Set(file_id),
+            id: Set(id),
+            display_id: Set(display_id),
+            domain: Set(domain),
             media_type: Set(media_type.into()),
             created_at: Set(created_at),
         };

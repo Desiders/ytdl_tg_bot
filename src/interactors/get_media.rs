@@ -296,7 +296,7 @@ impl<'a> GetUncachedVideoByURLInput<'a> {
 }
 
 pub enum GetUncachedVideoByURLKind {
-    Single(Video),
+    Single(Box<Video>),
     Playlist(VideosInYT),
     Empty,
 }
@@ -324,7 +324,7 @@ impl Interactor<GetUncachedVideoByURLInput<'_>> for &GetUncachedVideoByURL {
 
         if playlist.len() == 1 {
             info!("Got media");
-            return Ok(Self::Output::Single(playlist.remove(0)));
+            return Ok(Self::Output::Single(Box::new(playlist.remove(0))));
         }
         if playlist.len() > 1 {
             info!("Got playlist");

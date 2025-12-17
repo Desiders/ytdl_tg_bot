@@ -38,7 +38,7 @@ where
 
         let model = ActiveModel {
             tg_id: Set(tg_id),
-            username: Set(username.map(Into::into)),
+            username: Set(username),
             created_at: Set(created_at),
             updated_at: Set(updated_at),
         };
