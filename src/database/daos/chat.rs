@@ -2,7 +2,7 @@ use std::convert::Infallible;
 
 use sea_orm::{sea_query::OnConflict, ActiveValue::Set, ConnectionTrait, EntityTrait};
 
-use crate::{database::models::chats, entities::Chat, errors::database::ErrorKind};
+use crate::{database::models::chats, entities::Chat, errors::ErrorKind};
 
 pub struct Dao<'a, Conn> {
     conn: &'a Conn,

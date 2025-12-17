@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-
 use url::Url;
 
 #[derive(Clone)]
