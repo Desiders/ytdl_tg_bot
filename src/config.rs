@@ -25,6 +25,11 @@ pub struct BlacklistedConfig {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+pub struct DomainsWithReactions {
+    pub domains: Vec<String>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct LoggingConfig {
     pub dirs: Box<str>,
 }
@@ -86,6 +91,7 @@ pub struct Config {
     pub yt_toolkit: YtToolkitConfig,
     pub yt_pot_provider: YtPotProviderConfig,
     pub telegram_bot_api: TelegramBotApiConfig,
+    pub domains_with_reactions: DomainsWithReactions,
 }
 
 #[derive(Error, Debug)]
