@@ -21,7 +21,7 @@ use telers::{
     utils::text::{html_code, html_quote},
     Bot, Extension,
 };
-use tracing::{event, instrument, Level};
+use tracing::{debug, error, instrument, warn};
 use url::Host;
 use uuid::Uuid;
 
@@ -35,22 +35,22 @@ pub async fn select_by_url(
     Inject(get_short_media_info): Inject<GetShortMediaByURLInfo>,
     Inject(get_media): Inject<GetUncachedVideoByURL>,
 ) -> HandlerResult {
-    event!(Level::DEBUG, "Got url");
+    debug!("Got url");
 
     let videos: Vec<ShortInfo> = match get_short_media_info.execute(GetShortMediaInfoByURLInput::new(&url)).await {
         Ok(val) => val.into_iter().map(Into::into).collect(),
         Err(err) => {
             if let GetVideoInfoErrorKind::GetVideoId(err) = err {
-                event!(Level::WARN, %err, "Unsupported YT Toolkit URL");
+                warn!(%err, "Unsupported YT Toolkit URL");
             } else {
-                event!(Level::ERROR, err = format_error_report(&err), "Get YT Toolkit media info error");
+                error!(err = format_error_report(&err), "Get YT Toolkit media info error");
             }
             match get_media.execute(GetUncachedVideoByURLInput::new(&url, &Range::default())).await {
                 Ok(Single(media)) => vec![media.into()],
                 Ok(Playlist(playlist)) => playlist.into_iter().map(Into::into).collect(),
                 Ok(Empty) => vec![],
                 Err(err) => {
-                    event!(Level::ERROR, err = format_error_report(&err), "Get info err");
+                    error!(err = format_error_report(&err), "Get info err");
                     error::occured_in_inline_query_occured(&bot, query_id.as_ref(), "Sorry, an error to get media info").await?;
                     return Ok(EventReturn::Finish);
                 }
@@ -58,7 +58,7 @@ pub async fn select_by_url(
         }
     };
     if videos.is_empty() {
-        event!(Level::WARN, "Empty playlist");
+        warn!("Empty playlist");
         error::occured_in_inline_query_occured(&bot, &query_id, "Playlist is empty").await?;
         return Ok(EventReturn::Finish);
     }
@@ -115,7 +115,7 @@ pub async fn select_by_text(
     }: InlineQuery,
     Inject(search_media_info): Inject<SearchMediaInfo>,
 ) -> HandlerResult {
-    event!(Level::DEBUG, "Got text");
+    debug!("Got text");
 
     let videos: Vec<ShortInfo> = match search_media_info.execute(SearchMediaInfoInput::new(text.as_ref())).await {
         Ok(val) => val
@@ -126,13 +126,13 @@ pub async fn select_by_text(
             .map(|(_, video)| video)
             .collect(),
         Err(err) => {
-            event!(Level::ERROR, err = format_error_report(&err), "Search media info err");
+            error!(err = format_error_report(&err), "Search media info err");
             error::occured_in_inline_query_occured(&bot, query_id.as_ref(), "Sorry, an error to search media info").await?;
             return Ok(EventReturn::Finish);
         }
     };
     if videos.is_empty() {
-        event!(Level::WARN, "Playlist empty");
+        warn!("Playlist empty");
         error::occured_in_inline_query_occured(&bot, &query_id, "Playlist empty").await?;
         return Ok(EventReturn::Finish);
     }

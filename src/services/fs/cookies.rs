@@ -1,7 +1,7 @@
 use crate::entities::Cookies;
 
 use std::{io, path::Path};
-use tracing::{event, instrument, Level};
+use tracing::{debug, error, instrument, warn};
 use url::Host;
 
 #[instrument(skip_all)]
@@ -10,7 +10,7 @@ pub fn get_cookies_from_directory(path: impl AsRef<Path>) -> Result<Cookies, io:
     let mut cookies = Cookies::default();
 
     if !path.exists() {
-        event!(Level::WARN, "Cookies directory does not exist: {}", path.display());
+        warn!("Cookies directory does not exist: {}", path.display());
         return Ok(cookies);
     }
 
@@ -19,7 +19,7 @@ pub fn get_cookies_from_directory(path: impl AsRef<Path>) -> Result<Cookies, io:
 
         let file_type = entry.file_type()?;
         if !file_type.is_file() && !file_type.is_symlink() {
-            event!(Level::DEBUG, "Skipping non-file entry: {}", entry.path().display());
+            debug!("Skipping non-file entry: {}", entry.path().display());
             continue;
         }
 
@@ -30,16 +30,16 @@ pub fn get_cookies_from_directory(path: impl AsRef<Path>) -> Result<Cookies, io:
             };
             host
         } else {
-            event!(Level::ERROR, "Invalid cookie file name: {}", path.display());
+            error!("Invalid cookie file name: {}", path.display());
             continue;
         };
         if let Some(extension) = path.extension() {
             if extension != "txt" {
-                event!(Level::WARN, "Skipping non-txt cookie file: {host}");
+                warn!("Skipping non-txt cookie file: {host}");
                 continue;
             }
         } else {
-            event!(Level::WARN, "Skipping file without extension: {host}");
+            warn!("Skipping file without extension: {host}");
             continue;
         }
         cookies.add_cookie(host, path);

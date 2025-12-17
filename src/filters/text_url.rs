@@ -3,7 +3,7 @@ use crate::{config::BlacklistedConfig, entities::UrlWithParams};
 use froodi::async_impl::Container;
 use std::{collections::HashMap, future::Future, str::FromStr};
 use telers::{types::UpdateKind, Request};
-use tracing::{event, Level};
+use tracing::error;
 use url::Url;
 
 fn parse_params(param_block: &str) -> Vec<(Box<str>, Box<str>)> {
@@ -133,7 +133,7 @@ pub fn url_is_blacklisted(request: &mut Request) -> impl Future<Output = bool> {
         match container.get::<BlacklistedConfig>().await {
             Ok(cfg) => cfg.domains.iter().map(String::as_str).collect::<Vec<_>>().contains(&domain),
             Err(err) => {
-                event!(Level::ERROR, %err);
+                error!(%err);
                 return false;
             }
         }

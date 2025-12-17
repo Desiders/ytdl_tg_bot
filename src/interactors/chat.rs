@@ -2,7 +2,7 @@ use super::Interactor;
 use crate::{database::TxManager, entities::Chat, errors::ErrorKind};
 
 use std::convert::Infallible;
-use tracing::{event, instrument, Level};
+use tracing::{info, instrument};
 
 pub struct SaveChat {}
 
@@ -39,7 +39,7 @@ impl Interactor<SaveChatInput<'_>> for &SaveChat {
                 return Err(err);
             }
         };
-        event!(Level::INFO, "Chat saved");
+        info!("Chat saved");
 
         tx_manager.commit().await?;
         Ok(())

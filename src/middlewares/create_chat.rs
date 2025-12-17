@@ -5,7 +5,7 @@ use telers::{
     middlewares::outer::{Middleware, MiddlewareResponse},
     Request,
 };
-use tracing::{event, instrument, Level};
+use tracing::{error, instrument};
 
 use crate::{
     database::TxManager,
@@ -35,7 +35,7 @@ impl Middleware for CreateChatMiddleware {
         let mut tx_manager = container.get_transient::<TxManager>().await.unwrap();
 
         if let Err(err) = save_chat.execute(SaveChatInput::new(db_chat, &mut tx_manager)).await {
-            event!(Level::ERROR, %err, "Save chat err");
+            error!(%err, "Save chat err");
         }
 
         Ok((request, EventReturn::Finish))

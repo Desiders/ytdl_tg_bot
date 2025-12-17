@@ -33,7 +33,7 @@ use telers::{
     filters::{ChatType, Command, ContentType, Filter as _},
     Bot, Dispatcher, Router,
 };
-use tracing::{event, Level};
+use tracing::{error, info};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
 use uuid::ContextV7;
 
@@ -141,11 +141,11 @@ fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
 
                 match Database::connect(options).await {
                     Ok(database_conn) => {
-                        event!(Level::INFO, "Database conn created");
+                        info!("Database conn created");
                         Ok(database_conn)
                     }
                     Err(err) => {
-                        event!(Level::ERROR, %err, "Create database conn err");
+                        error!(%err, "Create database conn err");
                         Err(InstantiateErrorKind::Custom(err.into()))
                     }
                 }
@@ -153,10 +153,10 @@ fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
             finalizer = |database_conn: Arc<DatabaseConnection>| async move {
                 match database_conn.close_by_ref().await {
                     Ok(()) => {
-                        event!(Level::INFO, "Database conn closed");
+                        info!("Database conn closed");
                     },
                     Err(err) => {
-                        event!(Level::ERROR, %err, "Close database conn err");
+                        error!(%err, "Close database conn err");
                     },
                 }
             },
@@ -184,7 +184,7 @@ async fn main() {
 
     let cookies = get_cookies_from_directory(&*config.yt_dlp.cookies_path).unwrap_or_default();
 
-    event!(Level::INFO, hosts = ?cookies.get_hosts(), "Cookies loaded");
+    info!(hosts = ?cookies.get_hosts(), "Cookies loaded");
 
     let base_url = format!("{}/bot{{token}}/{{method_name}}", config.telegram_bot_api.url);
     let files_url = format!("{}/file{{token}}/{{path}}", config.telegram_bot_api.url);
@@ -259,10 +259,10 @@ async fn main() {
 
     match dispatcher.run_polling().await {
         Ok(()) => {
-            event!(Level::INFO, "Bot stopped");
+            info!("Bot stopped");
         }
         Err(err) => {
-            event!(Level::ERROR, error = %err, "Bot stopped");
+            error!(error = %err, "Bot stopped");
         }
     }
 

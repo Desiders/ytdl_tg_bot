@@ -8,7 +8,7 @@ use crate::{
 use std::{io, sync::Arc};
 use tempfile::TempDir;
 use tokio::sync::mpsc;
-use tracing::{event, instrument, span, Level};
+use tracing::{info, info_span, instrument};
 use url::Url;
 
 const DOWNLOAD_TIMEOUT: u64 = 360;
@@ -101,7 +101,7 @@ impl Interactor<DownloadAudioInput<'_>> for &DownloadAudio {
                 async move {
                     for thumbnail_url in thumbnail_urls {
                         if let Some(thumbnail_path) = download_thumbnail_to_path(thumbnail_url, &video.id, &temp_dir_path).await {
-                            event!(Level::INFO, "Thumbnail downloaded");
+                            info!("Thumbnail downloaded");
                             return Some(thumbnail_path);
                         }
                     }
@@ -112,7 +112,7 @@ impl Interactor<DownloadAudioInput<'_>> for &DownloadAudio {
         if let Err(err) = download_res {
             return Err(Self::Err::Ytdlp(err));
         }
-        event!(Level::INFO, "Audio downloaded");
+        info!("Audio downloaded");
 
         Ok(AudioInFS::new(file_path, thumbnail_path, temp_dir))
     }
@@ -177,7 +177,7 @@ impl Interactor<DownloadAudioPlaylistInput<'_>> for &DownloadAudioPlaylist {
         for (index, AudioAndFormat { video, format }) in audios_and_formats.into_iter().enumerate() {
             let extension = format.codec.get_extension();
 
-            let span = span!(Level::INFO, "iter", extension, %format).entered();
+            let span = info_span!("iter", extension, %format).entered();
             let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
             let file_path = temp_dir.path().join(format!("{video_id}.{extension}", video_id = video.id));
             let thumbnail_urls = video.thumbnail_urls(host.as_ref());
@@ -210,7 +210,7 @@ impl Interactor<DownloadAudioPlaylistInput<'_>> for &DownloadAudioPlaylist {
                     async move {
                         for thumbnail_url in thumbnail_urls {
                             if let Some(thumbnail_path) = download_thumbnail_to_path(thumbnail_url, &video.id, &temp_dir_path).await {
-                                event!(Level::INFO, "Thumbnail downloaded");
+                                info!("Thumbnail downloaded");
                                 return Some(thumbnail_path);
                             }
                         }
@@ -225,7 +225,7 @@ impl Interactor<DownloadAudioPlaylistInput<'_>> for &DownloadAudioPlaylist {
             }
 
             let _guard = span.enter();
-            event!(Level::INFO, "Audio downloaded");
+            info!("Audio downloaded");
             sender.send((index, Ok(AudioInFS::new(file_path, thumbnail_path, temp_dir))))?;
         }
 

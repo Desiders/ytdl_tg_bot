@@ -10,7 +10,7 @@ use telers::{
     types::{ChatIdKind, InputMedia, Message, ReplyParameters},
     Bot,
 };
-use tracing::{event, instrument, Level};
+use tracing::{error, instrument, warn};
 
 /// Sends a request to the Telegram Bot API with limited retries.
 /// # Arguments
@@ -52,14 +52,14 @@ where
             Err(err) => {
                 Err(match err {
                     SessionErrorKind::Telegram(TelegramErrorKind::RetryAfter { retry_after, .. }) => {
-                        event!(Level::WARN, "Sleeping for {retry_after:?} seconds");
+                        warn!("Sleeping for {retry_after:?} seconds");
 
                         backoff::Error::retry_after(err, Duration::from_secs_f32(retry_after))
                     }
                     SessionErrorKind::Telegram(TelegramErrorKind::ServerError { .. } | TelegramErrorKind::MigrateToChat { .. }) => {
                         cur_retry_count.fetch_add(1, Relaxed);
                         if cur_retry_count.load(Relaxed) > max_retries {
-                            event!(Level::ERROR, "Max retries exceeded");
+                            error!("Max retries exceeded");
                             backoff::Error::permanent(err)
                         } else {
                             backoff::Error::transient(err)
@@ -133,7 +133,7 @@ pub async fn media_groups(
             {
                 Ok(new_messages) => messages.extend(new_messages),
                 Err(_) => {
-                    event!(Level::WARN, "Skip {media_group_len} media count to send");
+                    warn!("Skip {media_group_len} media count to send");
                 }
             }
 
