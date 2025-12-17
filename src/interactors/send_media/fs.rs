@@ -11,7 +11,7 @@ use telers::{
     types::{InputFile, ReplyParameters},
     Bot,
 };
-use tracing::{event, instrument, Level};
+use tracing::{debug, error, info, instrument};
 
 const SEND_TIMEOUT: f32 = 180.0;
 
@@ -82,7 +82,7 @@ impl Interactor<SendVideoInFSInput<'_>> for &SendVideoInFS {
             with_delete,
         }: SendVideoInFSInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
-        event!(Level::DEBUG, "Video sending");
+        debug!("Video sending");
         let message = send::with_retries(
             &self.bot,
             SendVideo::new(chat_id, InputFile::fs_with_name(path, name))
@@ -102,14 +102,14 @@ impl Interactor<SendVideoInFSInput<'_>> for &SendVideoInFS {
         drop(message);
         drop(temp_dir);
 
-        event!(Level::INFO, "Video sent");
+        info!("Video sent");
 
         if with_delete {
             tokio::spawn({
                 let bot = self.bot.clone();
                 async move {
                     if let Err(err) = bot.send(DeleteMessage::new(chat_id, message_id)).await {
-                        event!(Level::ERROR, %err, "Delete message err");
+                        error!(%err, "Delete message err");
                     }
                 }
             });
@@ -186,7 +186,7 @@ impl Interactor<SendAudioInFSInput<'_>> for &SendAudioInFS {
             with_delete,
         }: SendAudioInFSInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
-        event!(Level::DEBUG, "Audio sending");
+        debug!("Audio sending");
         let message = send::with_retries(
             &self.bot,
             SendAudio::new(chat_id, InputFile::fs_with_name(path, name))
@@ -205,14 +205,14 @@ impl Interactor<SendAudioInFSInput<'_>> for &SendAudioInFS {
         drop(message);
         drop(temp_dir);
 
-        event!(Level::INFO, "Audio sent");
+        info!("Audio sent");
 
         if with_delete {
             tokio::spawn({
                 let bot = self.bot.clone();
                 async move {
                     if let Err(err) = bot.send(DeleteMessage::new(chat_id, message_id)).await {
-                        event!(Level::ERROR, %err, "Delete message err");
+                        error!(%err, "Delete message err");
                     }
                 }
             });

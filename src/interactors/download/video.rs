@@ -17,7 +17,7 @@ use reqwest::Client;
 use std::{fs::File, io, sync::Arc, time::Duration};
 use tempfile::TempDir;
 use tokio::{io::AsyncWriteExt as _, sync::mpsc, time::timeout};
-use tracing::{debug_span, event, instrument, span, Instrument, Level};
+use tracing::{debug, debug_span, error, info, info_span, instrument, trace, Instrument};
 use url::Url;
 
 const DOWNLOAD_TIMEOUT: u64 = 360;
@@ -104,7 +104,7 @@ impl Interactor<DownloadVideoInput<'_>> for &DownloadVideo {
         let thumbnail_urls = video.thumbnail_urls(host.as_ref());
 
         if format.format_ids_are_equal() {
-            event!(Level::DEBUG, "Formats are the same");
+            debug!("Formats are the same");
 
             let (download_res, thumbnail_path) = tokio::join!(
                 {
@@ -132,7 +132,7 @@ impl Interactor<DownloadVideoInput<'_>> for &DownloadVideo {
                     async move {
                         for thumbnail_url in thumbnail_urls {
                             if let Some(thumbnail_path) = download_thumbnail_to_path(thumbnail_url, &video.id, &temp_dir_path).await {
-                                event!(Level::INFO, "Thumbnail downloaded");
+                                info!("Thumbnail downloaded");
                                 return Some(thumbnail_path);
                             }
                         }
@@ -143,12 +143,12 @@ impl Interactor<DownloadVideoInput<'_>> for &DownloadVideo {
             if let Err(err) = download_res {
                 return Err(Self::Err::Ytdlp(err));
             }
-            event!(Level::INFO, "Video downloaded");
+            info!("Video downloaded");
 
             return Ok(VideoInFS::new(file_path, thumbnail_path, temp_dir));
         }
 
-        event!(Level::DEBUG, "Formats are different");
+        debug!("Formats are different");
 
         let (video_read_fd, video_write_fd) = pipe().map_err(Self::Err::Pipe)?;
         let (audio_read_fd, audio_write_fd) = pipe().map_err(Self::Err::Pipe)?;
@@ -169,7 +169,7 @@ impl Interactor<DownloadVideoInput<'_>> for &DownloadVideo {
                         async move {
                             let _ = range_download_to_write(url, filesize, sender)
                                 .await
-                                .inspect_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                                .inspect_err(|err| error!("{}", format_error_report(&err)));
                         },
                         async move {
                             let mut writer = tokio::fs::File::from_std(File::from(video_write_fd));
@@ -177,7 +177,7 @@ impl Interactor<DownloadVideoInput<'_>> for &DownloadVideo {
                                 if let Err(err) = writer.write(&bytes).await {
                                     match err.kind() {
                                         io::ErrorKind::BrokenPipe => break,
-                                        _ => event!(Level::ERROR, "{}", format_error_report(&err)),
+                                        _ => error!("{}", format_error_report(&err)),
                                     }
                                 }
                             }
@@ -208,7 +208,7 @@ impl Interactor<DownloadVideoInput<'_>> for &DownloadVideo {
                         async move {
                             let _ = range_download_to_write(url, filesize, sender)
                                 .await
-                                .inspect_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                                .inspect_err(|err| error!("{}", format_error_report(&err)));
                         },
                         async move {
                             let mut writer = tokio::fs::File::from_std(File::from(audio_write_fd));
@@ -216,7 +216,7 @@ impl Interactor<DownloadVideoInput<'_>> for &DownloadVideo {
                                 if let Err(err) = writer.write(&bytes).await {
                                     match err.kind() {
                                         io::ErrorKind::BrokenPipe => break,
-                                        _ => event!(Level::ERROR, "{}", format_error_report(&err)),
+                                        _ => error!("{}", format_error_report(&err)),
                                     }
                                 }
                             }
@@ -241,7 +241,7 @@ impl Interactor<DownloadVideoInput<'_>> for &DownloadVideo {
         let mut thumbnail_path = None;
         for thumbnail_url in thumbnail_urls {
             if let Some(path) = download_thumbnail_to_path(thumbnail_url, &video.id, temp_dir.path()).await {
-                event!(Level::INFO, "Thumbnail downloaded");
+                info!("Thumbnail downloaded");
                 thumbnail_path = Some(path);
                 break;
             }
@@ -266,7 +266,7 @@ impl Interactor<DownloadVideoInput<'_>> for &DownloadVideo {
             ))));
         }
 
-        event!(Level::INFO, "Video downloaded and merged");
+        info!("Video downloaded and merged");
 
         Ok(VideoInFS::new(file_path, thumbnail_path, temp_dir))
     }
@@ -331,13 +331,13 @@ impl Interactor<DownloadVideoPlaylistInput<'_>> for &DownloadVideoPlaylist {
         for (index, VideoAndFormat { video, format }) in videos_and_formats.iter().enumerate() {
             let extension = format.get_extension();
 
-            let span = span!(Level::INFO, "iter", extension, %format).entered();
+            let span = info_span!("iter", extension, %format).entered();
             let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
             let file_path = temp_dir.path().join(format!("{video_id}.{extension}", video_id = video.id));
             let thumbnail_urls = video.thumbnail_urls(host.as_ref());
 
             if format.format_ids_are_equal() {
-                event!(Level::DEBUG, "Formats are the same");
+                debug!("Formats are the same");
 
                 let span = span.exit();
                 let (download_res, thumbnail_path) = tokio::join!(
@@ -366,7 +366,7 @@ impl Interactor<DownloadVideoPlaylistInput<'_>> for &DownloadVideoPlaylist {
                         async move {
                             for thumbnail_url in thumbnail_urls {
                                 if let Some(thumbnail_path) = download_thumbnail_to_path(thumbnail_url, &video.id, &temp_dir_path).await {
-                                    event!(Level::INFO, "Thumbnail downloaded");
+                                    info!("Thumbnail downloaded");
                                     return Some(thumbnail_path);
                                 }
                             }
@@ -381,12 +381,12 @@ impl Interactor<DownloadVideoPlaylistInput<'_>> for &DownloadVideoPlaylist {
                 }
 
                 let _guard = span.enter();
-                event!(Level::INFO, "Video downloaded");
+                info!("Video downloaded");
                 sender.send((index, Ok(VideoInFS::new(file_path, thumbnail_path, temp_dir))))?;
                 continue;
             }
 
-            event!(Level::DEBUG, "Formats are different");
+            debug!("Formats are different");
 
             let (video_read_fd, video_write_fd) = pipe().map_err(Self::Err::Pipe)?;
             let (audio_read_fd, audio_write_fd) = pipe().map_err(Self::Err::Pipe)?;
@@ -408,15 +408,12 @@ impl Interactor<DownloadVideoPlaylistInput<'_>> for &DownloadVideoPlaylist {
                             async move {
                                 let _ = range_download_to_write(url, filesize, sender)
                                     .await
-                                    .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                                    .map_err(|err| error!("{}", format_error_report(&err)));
                             },
                             async move {
                                 let mut writer = tokio::fs::File::from_std(File::from(video_write_fd));
                                 while let Some(bytes) = receiver.recv().await {
-                                    let _ = writer
-                                        .write(&bytes)
-                                        .await
-                                        .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                                    let _ = writer.write(&bytes).await.map_err(|err| error!("{}", format_error_report(&err)));
                                 }
                             }
                         )
@@ -446,15 +443,12 @@ impl Interactor<DownloadVideoPlaylistInput<'_>> for &DownloadVideoPlaylist {
                             async move {
                                 let _ = range_download_to_write(url, filesize, sender)
                                     .await
-                                    .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                                    .map_err(|err| error!("{}", format_error_report(&err)));
                             },
                             async move {
                                 let mut writer = tokio::fs::File::from_std(File::from(audio_write_fd));
                                 while let Some(bytes) = receiver.recv().await {
-                                    let _ = writer
-                                        .write(&bytes)
-                                        .await
-                                        .map_err(|err| event!(Level::ERROR, "{}", format_error_report(&err)));
+                                    let _ = writer.write(&bytes).await.map_err(|err| error!("{}", format_error_report(&err)));
                                 }
                             }
                         )
@@ -478,7 +472,7 @@ impl Interactor<DownloadVideoPlaylistInput<'_>> for &DownloadVideoPlaylist {
             let mut thumbnail_path = None;
             for thumbnail_url in thumbnail_urls {
                 if let Some(path) = download_thumbnail_to_path(thumbnail_url, &video.id, temp_dir.path()).await {
-                    event!(Level::INFO, "Thumbnail downloaded");
+                    info!("Thumbnail downloaded");
                     thumbnail_path = Some(path);
                     break;
                 }
@@ -515,7 +509,7 @@ impl Interactor<DownloadVideoPlaylistInput<'_>> for &DownloadVideoPlaylist {
                 continue;
             }
 
-            event!(Level::INFO, "Video downloaded and merged");
+            info!("Video downloaded and merged");
 
             sender.send((index, Ok(VideoInFS::new(file_path, thumbnail_path, temp_dir))))?;
         }
@@ -537,7 +531,7 @@ async fn range_download_to_write(
     let mut end = RANGE_CHUNK_SIZE;
 
     loop {
-        event!(Level::TRACE, start, end, "Download chunk");
+        trace!(start, end, "Download chunk");
 
         #[allow(clippy::cast_possible_truncation)]
         if end >= filesize as i32 {

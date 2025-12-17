@@ -7,7 +7,7 @@ use telers::{
     types::ReactionTypeEmoji,
     Request,
 };
-use tracing::{event, Level};
+use tracing::error;
 
 use crate::{config::DomainsWithReactions, entities::UrlWithParams};
 
@@ -49,7 +49,7 @@ impl Middleware for ReactionMiddleware {
             {
                 Ok(_) => break,
                 Err(err) => {
-                    event!(Level::ERROR, %err, reaction, "Set reaction err");
+                    error!(%err, reaction, "Set reaction err");
                 }
             }
         }
@@ -60,7 +60,7 @@ impl Middleware for ReactionMiddleware {
             match bot.send(SetMessageReaction::new(chat_id, message_id)).await {
                 Ok(_) => {}
                 Err(err) => {
-                    event!(Level::ERROR, %err, "Unset reaction err");
+                    error!(%err, "Unset reaction err");
                 }
             }
         });

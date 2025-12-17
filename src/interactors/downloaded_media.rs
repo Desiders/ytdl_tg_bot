@@ -2,7 +2,7 @@ use crate::{database::TxManager, entities::DownloadedMedia, errors::ErrorKind, i
 
 use std::convert::Infallible;
 use time::OffsetDateTime;
-use tracing::{event, instrument, Level};
+use tracing::{info, instrument};
 
 pub struct AddDownloadedMediaInput<'a> {
     pub file_id: String,
@@ -67,7 +67,7 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedVideo {
             created_at: OffsetDateTime::now_utc(),
         })
         .await?;
-        event!(Level::INFO, "Downloaded media added");
+        info!("Downloaded media added");
 
         tx_manager.commit().await?;
         Ok(())
@@ -112,7 +112,7 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedAudio {
             created_at: OffsetDateTime::now_utc(),
         })
         .await?;
-        event!(Level::INFO, "Downloaded media added");
+        info!("Downloaded media added");
 
         tx_manager.commit().await?;
         Ok(())

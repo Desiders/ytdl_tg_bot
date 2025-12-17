@@ -12,7 +12,7 @@ use telers::{
     types::{InlineKeyboardMarkup, InputFile, InputMediaAudio, InputMediaVideo, ReplyParameters},
     Bot,
 };
-use tracing::{event, instrument, Level};
+use tracing::{debug, info, instrument};
 
 const SEND_TIMEOUT: f32 = 360.0;
 
@@ -55,7 +55,7 @@ impl Interactor<SendVideoByIdInput<'_>> for &SendVideoById {
             id,
         }: SendVideoByIdInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
-        event!(Level::DEBUG, "Video sending");
+        debug!("Video sending");
         send::with_retries(
             &self.bot,
             SendVideo::new(chat_id, InputFile::id(id))
@@ -66,7 +66,7 @@ impl Interactor<SendVideoByIdInput<'_>> for &SendVideoById {
             Some(SEND_TIMEOUT),
         )
         .await?;
-        event!(Level::INFO, "Video sent");
+        info!("Video sent");
 
         Ok(())
     }
@@ -111,7 +111,7 @@ impl Interactor<SendAudioByIdInput<'_>> for &SendAudioById {
             id,
         }: SendAudioByIdInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
-        event!(Level::DEBUG, "Audio sending");
+        debug!("Audio sending");
         send::with_retries(
             &self.bot,
             SendAudio::new(chat_id, InputFile::id(id))
@@ -121,7 +121,7 @@ impl Interactor<SendAudioByIdInput<'_>> for &SendAudioById {
             Some(SEND_TIMEOUT),
         )
         .await?;
-        event!(Level::INFO, "Audio sent");
+        info!("Audio sent");
 
         Ok(())
     }
@@ -166,7 +166,7 @@ impl Interactor<EditVideoByIdInput<'_>> for &EditVideoById {
             caption,
         }: EditVideoByIdInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
-        event!(Level::DEBUG, "Video editing");
+        debug!("Video editing");
         send::with_retries(
             &self.bot,
             EditMessageMedia::new(
@@ -181,7 +181,7 @@ impl Interactor<EditVideoByIdInput<'_>> for &EditVideoById {
             Some(SEND_TIMEOUT),
         )
         .await?;
-        event!(Level::INFO, "Video edited");
+        info!("Video edited");
 
         Ok(())
     }
@@ -226,7 +226,7 @@ impl Interactor<EditAudioByIdInput<'_>> for &EditAudioById {
             caption,
         }: EditAudioByIdInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
-        event!(Level::DEBUG, "Audio editing");
+        debug!("Audio editing");
         send::with_retries(
             &self.bot,
             EditMessageMedia::new(InputMediaAudio::new(InputFile::id(id)).caption(caption).parse_mode(ParseMode::HTML))
@@ -236,7 +236,7 @@ impl Interactor<EditAudioByIdInput<'_>> for &EditAudioById {
             Some(SEND_TIMEOUT),
         )
         .await?;
-        event!(Level::INFO, "Audio edited");
+        info!("Audio edited");
 
         Ok(())
     }
@@ -282,7 +282,7 @@ impl Interactor<SendVideoPlaylistByIdInput> for &SendVideoPlaylistById {
             playlist,
         }: SendVideoPlaylistByIdInput,
     ) -> Result<Self::Output, Self::Err> {
-        event!(Level::DEBUG, "Video playlist sending");
+        debug!("Video playlist sending");
         send::media_groups(
             &self.bot,
             chat_id,
@@ -294,7 +294,7 @@ impl Interactor<SendVideoPlaylistByIdInput> for &SendVideoPlaylistById {
             Some(SEND_TIMEOUT),
         )
         .await?;
-        event!(Level::INFO, "Video playlist sent");
+        info!("Video playlist sent");
 
         Ok(())
     }
@@ -340,7 +340,7 @@ impl Interactor<SendAudioPlaylistByIdInput> for &SendAudioPlaylistById {
             playlist,
         }: SendAudioPlaylistByIdInput,
     ) -> Result<Self::Output, Self::Err> {
-        event!(Level::DEBUG, "Audio playlist sending");
+        debug!("Audio playlist sending");
         send::media_groups(
             &self.bot,
             chat_id,
@@ -352,7 +352,7 @@ impl Interactor<SendAudioPlaylistByIdInput> for &SendAudioPlaylistById {
             Some(SEND_TIMEOUT),
         )
         .await?;
-        event!(Level::INFO, "Audio playlist sent");
+        info!("Audio playlist sent");
 
         Ok(())
     }

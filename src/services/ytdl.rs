@@ -9,7 +9,7 @@ use std::{
     process::{Child, Command, Output, Stdio},
     time::Duration,
 };
-use tracing::{event, instrument, Level};
+use tracing::{error, instrument, trace, warn};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -66,12 +66,12 @@ pub fn download_to_pipe(
 
     let cookie_path = cookie.map(|c| c.path.to_string_lossy());
     if let Some(cookie_path) = cookie_path.as_deref() {
-        event!(Level::TRACE, "Using cookies from: {}", cookie_path);
+        trace!("Using cookies from: {}", cookie_path);
 
         args.push("--cookies");
         args.push(cookie_path);
     } else {
-        event!(Level::TRACE, "No cookies provided");
+        trace!("No cookies provided");
     }
 
     args.push("--");
@@ -136,12 +136,12 @@ pub async fn download_video_to_path(
 
     let cookie_path = cookie.map(|c| c.path.to_string_lossy());
     if let Some(cookie_path) = cookie_path.as_deref() {
-        event!(Level::TRACE, "Using cookies from: {}", cookie_path);
+        trace!("Using cookies from: {}", cookie_path);
 
         args.push("--cookies");
         args.push(cookie_path);
     } else {
-        event!(Level::TRACE, "No cookies provided");
+        trace!("No cookies provided");
     }
 
     args.push("--");
@@ -231,12 +231,12 @@ pub async fn download_audio_to_path(
 
     let cookie_path = cookie.map(|c| c.path.to_string_lossy());
     if let Some(cookie_path) = cookie_path.as_deref() {
-        event!(Level::TRACE, "Using cookies from: {}", cookie_path);
+        trace!("Using cookies from: {}", cookie_path);
 
         args.push("--cookies");
         args.push(cookie_path);
     } else {
-        event!(Level::TRACE, "No cookies provided");
+        trace!("No cookies provided");
     }
 
     args.push("--");
@@ -323,12 +323,12 @@ pub async fn get_media_or_playlist_info(
 
     let cookie_path = cookie.map(|c| c.path.to_string_lossy());
     if let Some(cookie_path) = cookie_path.as_deref() {
-        event!(Level::TRACE, "Using cookies from: {}", cookie_path);
+        trace!("Using cookies from: {}", cookie_path);
 
         args.push("--cookies");
         args.push(cookie_path);
     } else {
-        event!(Level::TRACE, "No cookies provided");
+        trace!("No cookies provided");
     }
 
     args.push("--");

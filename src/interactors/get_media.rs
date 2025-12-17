@@ -14,7 +14,7 @@ use crate::{
 
 use reqwest::Client;
 use std::{convert::Infallible, sync::Arc};
-use tracing::{event, instrument, Level};
+use tracing::{debug, info, instrument, warn};
 use url::Url;
 
 const GET_INFO_TIMEOUT: u64 = 180;
@@ -94,7 +94,7 @@ impl Interactor<GetVideoByURLInput<'_>> for &GetVideoByURL {
                 .get_by_id_or_url_and_domain(id_or_url, normalized_domain, MediaType::Video)
                 .await?
             {
-                event!(Level::INFO, "Got cached media");
+                info!("Got cached media");
                 return Ok(Self::Output::SingleCached(media.file_id));
             }
         }
@@ -102,7 +102,7 @@ impl Interactor<GetVideoByURLInput<'_>> for &GetVideoByURL {
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
-        event!(Level::DEBUG, "Getting media info");
+        debug!("Getting media info");
 
         let playlist = get_media_or_playlist_info(
             self.yt_dlp_cfg.executable_path.as_ref(),
@@ -135,12 +135,11 @@ impl Interactor<GetVideoByURLInput<'_>> for &GetVideoByURL {
             uncached.push(media);
         }
         if playlist_len == 0 {
-            event!(Level::WARN, "Empty playlist");
+            warn!("Empty playlist");
             return Ok(Self::Output::Empty);
         }
 
-        event!(
-            Level::INFO,
+        info!(
             playlist_len,
             cached_len = cached.len(),
             unchached_len = uncached.len(),
@@ -214,7 +213,7 @@ impl Interactor<GetAudioByURLInput<'_>> for &GetAudioByURL {
             let normalized_domain = domain.map(|domain| domain.trim_start_matches("www."));
 
             if let Some(media) = dao.get_by_id_or_url_and_domain(id, normalized_domain, MediaType::Audio).await? {
-                event!(Level::INFO, "Got cached media");
+                info!("Got cached media");
                 return Ok(Self::Output::SingleCached(media.file_id));
             }
         }
@@ -222,7 +221,7 @@ impl Interactor<GetAudioByURLInput<'_>> for &GetAudioByURL {
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
-        event!(Level::DEBUG, "Getting media info");
+        debug!("Getting media info");
 
         let playlist = get_media_or_playlist_info(
             self.yt_dlp_cfg.executable_path.as_ref(),
@@ -255,12 +254,11 @@ impl Interactor<GetAudioByURLInput<'_>> for &GetAudioByURL {
             uncached.push(media);
         }
         if playlist_len == 0 {
-            event!(Level::WARN, "Empty playlist");
+            warn!("Empty playlist");
             return Ok(Self::Output::Empty);
         }
 
-        event!(
-            Level::INFO,
+        info!(
             playlist_len,
             cached_len = cached.len(),
             unchached_len = uncached.len(),
@@ -311,7 +309,7 @@ impl Interactor<GetUncachedVideoByURLInput<'_>> for &GetUncachedVideoByURL {
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
-        event!(Level::DEBUG, "Getting media info");
+        debug!("Getting media info");
 
         let mut playlist = get_media_or_playlist_info(
             self.yt_dlp_cfg.executable_path.as_ref(),
@@ -325,15 +323,15 @@ impl Interactor<GetUncachedVideoByURLInput<'_>> for &GetUncachedVideoByURL {
         .await?;
 
         if playlist.len() == 1 {
-            event!(Level::INFO, "Got media");
+            info!("Got media");
             return Ok(Self::Output::Single(playlist.remove(0)));
         }
         if playlist.len() > 1 {
-            event!(Level::INFO, "Got playlist");
+            info!("Got playlist");
             return Ok(Self::Output::Playlist(playlist));
         }
 
-        event!(Level::WARN, "Empty playlist");
+        warn!("Empty playlist");
         Ok(Self::Output::Empty)
     }
 }
@@ -365,9 +363,9 @@ impl Interactor<GetShortMediaInfoByURLInput<'_>> for &GetShortMediaByURLInfo {
 
     #[instrument(skip_all)]
     async fn execute(self, GetShortMediaInfoByURLInput { url }: GetShortMediaInfoByURLInput<'_>) -> Result<Self::Output, Self::Err> {
-        event!(Level::DEBUG, "Getting media info");
+        debug!("Getting media info");
         let res = get_video_info(&self.client, self.yt_toolkit_cfg.url.as_ref(), url.as_ref()).await?;
-        event!(Level::INFO, "Got media info");
+        info!("Got media info");
         Ok(res)
     }
 }
@@ -399,9 +397,9 @@ impl Interactor<SearchMediaInfoInput<'_>> for &SearchMediaInfo {
 
     #[instrument(skip_all)]
     async fn execute(self, SearchMediaInfoInput { text }: SearchMediaInfoInput<'_>) -> Result<Self::Output, Self::Err> {
-        event!(Level::DEBUG, "Searching media info");
+        debug!("Searching media info");
         let res = search_video(&self.client, self.yt_toolkit_cfg.url.as_ref(), text).await?;
-        event!(Level::INFO, "Got media info");
+        info!("Got media info");
         Ok(res)
     }
 }

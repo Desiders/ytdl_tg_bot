@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 use tokio::time::timeout;
-use tracing::{event, instrument, Level};
+use tracing::{error, instrument, warn};
 
 use crate::utils::format_error_report;
 
@@ -103,16 +103,16 @@ pub async fn download_thumbnail_to_path(url: impl AsRef<str>, id: impl AsRef<str
                 }
             }
             Ok(Err(err)) => {
-                event!(Level::ERROR, err = format_error_report(&err), "Failed to convert thumbnail");
+                error!(err = format_error_report(&err), "Failed to convert thumbnail");
                 None
             }
             Err(_) => {
-                event!(Level::WARN, "Convert thumbnail timed out");
+                warn!("Convert thumbnail timed out");
                 None
             }
         },
         Err(err) => {
-            event!(Level::ERROR, err = format_error_report(&err), "Failed to convert thumbnail");
+            error!(err = format_error_report(&err), "Failed to convert thumbnail");
             None
         }
     }

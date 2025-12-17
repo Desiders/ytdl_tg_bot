@@ -24,7 +24,7 @@ use telers::{
     utils::text::{html_expandable_blockquote, html_quote},
     Bot, Extension,
 };
-use tracing::{event, instrument, Level};
+use tracing::{debug, error, instrument, warn};
 
 #[instrument(skip_all, fields(%message_id = message.id(), %url = url.as_str(), ?params))]
 pub async fn download(
@@ -41,7 +41,7 @@ pub async fn download(
     Inject(add_downloaded_media): Inject<AddDownloadedVideo>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
 ) -> HandlerResult {
-    event!(Level::DEBUG, "Got url");
+    debug!("Got url");
 
     let message_id = message.id();
     let chat_id = message.chat().id();
@@ -50,7 +50,7 @@ pub async fn download(
         Some(raw_value) => match Range::from_str(raw_value) {
             Ok(range) => range,
             Err(err) => {
-                event!(Level::ERROR, %err, "Parse range err");
+                error!(%err, "Parse range err");
                 let text = format!(
                     "Sorry, an error to parse range\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -80,7 +80,7 @@ pub async fn download(
                 .execute(SendVideoByIdInput::new(chat_id, Some(message_id), &file_id))
                 .await
             {
-                event!(Level::ERROR, err = format_error_report(&err), "Send err");
+                error!(err = format_error_report(&err), "Send err");
                 let text = format!(
                     "Sorry, an error to send media\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -95,7 +95,7 @@ pub async fn download(
                     match VideoAndFormat::new_with_select_format(media, yt_dlp_cfg.max_file_size, &preferred_languages) {
                         Ok(val) => val,
                         Err(err) => {
-                            event!(Level::ERROR, %err, "Select format err");
+                            error!(%err, "Select format err");
                             let text = format!(
                                 "Sorry, an error to select a format\n{}",
                                 html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -117,7 +117,7 @@ pub async fn download(
                         let media_in_fs = match res {
                             Ok(val) => val,
                             Err(err) => {
-                                event!(Level::ERROR, %err, "Download err");
+                                error!(%err, "Download err");
                                 errs.push(html_quote(err.format(&bot.token)));
                                 continue;
                             }
@@ -139,7 +139,7 @@ pub async fn download(
                         {
                             Ok(val) => val,
                             Err(err) => {
-                                event!(Level::ERROR, err = format_error_report(&err), "Send err");
+                                error!(err = format_error_report(&err), "Send err");
                                 errs.push(html_quote(err.format(&bot.token)));
                                 continue;
                             }
@@ -155,20 +155,20 @@ pub async fn download(
                             ))
                             .await
                         {
-                            event!(Level::ERROR, %err, "Add err");
+                            error!(%err, "Add err");
                         }
                     }
                     (playlist, errs)
                 }
             });
             if let Err(err) = download_playlist.execute(download_playlist_input).await {
-                event!(Level::ERROR, %err, "Download err");
+                error!(%err, "Download err");
                 let text = format!(
                     "Sorry, an error to download playlist\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
                 );
                 if let Err(err) = error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await {
-                    event!(Level::ERROR, %err);
+                    error!(%err);
                 }
             }
             let (playlist, errors) = download_playlist_handle.await.unwrap();
@@ -179,7 +179,7 @@ pub async fn download(
                     text.push('\n');
                 }
                 if let Err(err) = error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await {
-                    event!(Level::ERROR, %err);
+                    error!(%err);
                 }
             }
             if let Err(err) = send_playlist
@@ -190,23 +190,23 @@ pub async fn download(
                 ))
                 .await
             {
-                event!(Level::ERROR, %err, "Send err");
+                error!(%err, "Send err");
                 let text = format!(
                     "Sorry, an error to send playlist\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
                 );
                 if let Err(err) = error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await {
-                    event!(Level::ERROR, %err);
+                    error!(%err);
                 }
             }
         }
         Ok(Empty) => {
-            event!(Level::WARN, "Empty playlist");
+            warn!("Empty playlist");
             let text = format!("Playlist is empty");
             error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
         }
         Err(err) => {
-            event!(Level::ERROR, err = format_error_report(&err), "Get err");
+            error!(err = format_error_report(&err), "Get err");
             let text = format!(
                 "Sorry, an error to get info\n{}",
                 html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -232,7 +232,7 @@ pub async fn download_quite(
     Inject(add_downloaded_media): Inject<AddDownloadedVideo>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
 ) -> HandlerResult {
-    event!(Level::DEBUG, "Got url");
+    debug!("Got url");
 
     let message_id = message.id();
     let chat_id = message.chat().id();
@@ -241,7 +241,7 @@ pub async fn download_quite(
         Some(raw_value) => match Range::from_str(raw_value) {
             Ok(range) => range,
             Err(err) => {
-                event!(Level::ERROR, %err, "Parse range err");
+                error!(%err, "Parse range err");
                 return Ok(EventReturn::Finish);
             }
         },
@@ -266,7 +266,7 @@ pub async fn download_quite(
                 .execute(SendVideoByIdInput::new(chat_id, Some(message_id), &file_id))
                 .await
             {
-                event!(Level::ERROR, %err, "Send err");
+                error!(%err, "Send err");
             }
         }
         Ok(Playlist((cached, uncached))) => {
@@ -276,7 +276,7 @@ pub async fn download_quite(
                     match VideoAndFormat::new_with_select_format(media, yt_dlp_cfg.max_file_size, &preferred_languages) {
                         Ok(val) => val,
                         Err(err) => {
-                            event!(Level::ERROR, %err, "Select format err");
+                            error!(%err, "Select format err");
                             return Ok(EventReturn::Finish);
                         }
                     },
@@ -291,7 +291,7 @@ pub async fn download_quite(
                         let media_in_fs = match res {
                             Ok(val) => val,
                             Err(err) => {
-                                event!(Level::ERROR, %err, "Download err");
+                                error!(%err, "Download err");
                                 continue;
                             }
                         };
@@ -312,7 +312,7 @@ pub async fn download_quite(
                         {
                             Ok(val) => val,
                             Err(err) => {
-                                event!(Level::ERROR, err = format_error_report(&err), "Send err");
+                                error!(err = format_error_report(&err), "Send err");
                                 continue;
                             }
                         };
@@ -327,14 +327,14 @@ pub async fn download_quite(
                             ))
                             .await
                         {
-                            event!(Level::ERROR, %err, "Add err");
+                            error!(%err, "Add err");
                         }
                     }
                     playlist
                 }
             });
             if let Err(err) = download_playlist.execute(download_playlist_input).await {
-                event!(Level::ERROR, %err, "Download err");
+                error!(%err, "Download err");
             }
             let playlist = download_playlist_handle.await.unwrap();
             if let Err(err) = send_playlist
@@ -345,14 +345,14 @@ pub async fn download_quite(
                 ))
                 .await
             {
-                event!(Level::ERROR, %err, "Send err");
+                error!(%err, "Send err");
             }
         }
         Ok(Empty) => {
-            event!(Level::WARN, "Empty playlist");
+            warn!("Empty playlist");
         }
         Err(err) => {
-            event!(Level::ERROR, err = format_error_report(&err), "Get err");
+            error!(err = format_error_report(&err), "Get err");
         }
     };
     Ok(EventReturn::Finish)

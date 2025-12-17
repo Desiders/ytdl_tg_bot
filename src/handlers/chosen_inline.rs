@@ -24,7 +24,7 @@ use telers::{
     utils::text::{html_expandable_blockquote, html_quote, html_text_link},
     Bot, Extension,
 };
-use tracing::{event, instrument, Level, Span};
+use tracing::{debug, error, instrument, Span};
 use url::Url;
 
 #[instrument(skip_all, fields(inline_message_id, is_video, url = url.as_str(), ?params))]
@@ -57,7 +57,7 @@ pub async fn download_by_url(
         .record("inline_message_id", inline_message_id)
         .record("is_video", is_video);
 
-    event!(Level::DEBUG, "Got url");
+    debug!("Got url");
 
     let preferred_languages = match params.get("lang") {
         Some(raw_value) => PreferredLanguages::from_str(raw_value).unwrap(),
@@ -85,7 +85,7 @@ pub async fn download_by_url(
                         match VideoAndFormat::new_with_select_format(&media, yt_dlp_cfg.max_file_size, &preferred_languages) {
                             Ok(val) => val,
                             Err(err) => {
-                                event!(Level::ERROR, %err, "Select format err");
+                                error!(%err, "Select format err");
                                 let text = format!(
                                     "Sorry, an error to select a format\n{}",
                                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -97,7 +97,7 @@ pub async fn download_by_url(
                     let media_in_fs = match download_video.execute(DownloadVideoInput::new(&url, media_and_format)).await {
                         Ok(val) => val,
                         Err(err) => {
-                            event!(Level::ERROR, err = format_error_report(&err), "Download err");
+                            error!(err = format_error_report(&err), "Download err");
                             let text = format!(
                                 "Sorry, an error to download\n{}",
                                 html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -122,7 +122,7 @@ pub async fn download_by_url(
                     {
                         Ok(file_id) => file_id,
                         Err(err) => {
-                            event!(Level::ERROR, err = format_error_report(&err), "Send err");
+                            error!(err = format_error_report(&err), "Send err");
                             let text = format!(
                                 "Sorry, an error to download\n{}",
                                 html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -142,18 +142,18 @@ pub async fn download_by_url(
                         ))
                         .await
                     {
-                        event!(Level::ERROR, %err, "Add err");
+                        error!(%err, "Add err");
                     }
                     file_id
                 }
             }
             Ok(GetVideoByURLKind::Empty) => {
-                event!(Level::ERROR, "Video not found");
+                error!("Video not found");
                 error::occured_in_chosen_inline_result(&bot, "Video not found", inline_message_id, Some(ParseMode::HTML)).await?;
                 return Ok(EventReturn::Finish);
             }
             Err(err) => {
-                event!(Level::ERROR, err = format_error_report(&err), "Get info err");
+                error!(err = format_error_report(&err), "Get info err");
                 let text = format!(
                     "Sorry, an error to get media info\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -166,7 +166,7 @@ pub async fn download_by_url(
             .execute(EditVideoByIdInput::new(inline_message_id, &file_id, &html_text_link("Link", url)))
             .await
         {
-            event!(Level::ERROR, err = format_error_report(&err), "Edit err");
+            error!(err = format_error_report(&err), "Edit err");
             let text = format!(
                 "Sorry, an error to edit the message\n{}",
                 html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -197,7 +197,7 @@ pub async fn download_by_url(
                 {
                     Ok(val) => val,
                     Err(err) => {
-                        event!(Level::ERROR, %err, "Select format err");
+                        error!(%err, "Select format err");
                         let text = format!(
                             "Sorry, an error to select a format\n{}",
                             html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -209,7 +209,7 @@ pub async fn download_by_url(
                 let media_in_fs = match download_audio.execute(DownloadAudioInput::new(&url, media_and_format)).await {
                     Ok(val) => val,
                     Err(err) => {
-                        event!(Level::ERROR, err = format_error_report(&err), "Download err");
+                        error!(err = format_error_report(&err), "Download err");
                         let text = format!(
                             "Sorry, an error to download\n{}",
                             html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -234,7 +234,7 @@ pub async fn download_by_url(
                 {
                     Ok(file_id) => file_id,
                     Err(err) => {
-                        event!(Level::ERROR, err = format_error_report(&err), "Send err");
+                        error!(err = format_error_report(&err), "Send err");
                         let text = format!(
                             "Sorry, an error to download\n{}",
                             html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -253,18 +253,18 @@ pub async fn download_by_url(
                     ))
                     .await
                 {
-                    event!(Level::ERROR, %err, "Add err");
+                    error!(%err, "Add err");
                 }
                 file_id
             }
         }
         Ok(GetAudioByURLKind::Empty) => {
-            event!(Level::ERROR, "Audio not found");
+            error!("Audio not found");
             error::occured_in_chosen_inline_result(&bot, "Audio not found", inline_message_id, Some(ParseMode::HTML)).await?;
             return Ok(EventReturn::Finish);
         }
         Err(err) => {
-            event!(Level::ERROR, err = format_error_report(&err), "Get info err");
+            error!(err = format_error_report(&err), "Get info err");
             let text = format!(
                 "Sorry, an error to get media info\n{}",
                 html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -277,7 +277,7 @@ pub async fn download_by_url(
         .execute(EditAudioByIdInput::new(inline_message_id, &file_id, &html_text_link("Link", url)))
         .await
     {
-        event!(Level::ERROR, err = format_error_report(&err), "Edit err");
+        error!(err = format_error_report(&err), "Edit err");
         let text = format!(
             "Sorry, an error to edit the message\n{}",
             html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -319,7 +319,7 @@ pub async fn download_by_id(
         .record("is_video", is_video)
         .record("video_id", video_id);
 
-    event!(Level::DEBUG, "Got url");
+    debug!("Got url");
 
     let preferred_languages = PreferredLanguages::default();
     if is_video {
@@ -344,7 +344,7 @@ pub async fn download_by_id(
                         match VideoAndFormat::new_with_select_format(&media, yt_dlp_cfg.max_file_size, &preferred_languages) {
                             Ok(val) => val,
                             Err(err) => {
-                                event!(Level::ERROR, %err, "Select format err");
+                                error!(%err, "Select format err");
                                 let text = format!(
                                     "Sorry, an error to select a format\n{}",
                                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -356,7 +356,7 @@ pub async fn download_by_id(
                     let media_in_fs = match download_video.execute(DownloadVideoInput::new(&url, media_and_format)).await {
                         Ok(val) => val,
                         Err(err) => {
-                            event!(Level::ERROR, err = format_error_report(&err), "Download err");
+                            error!(err = format_error_report(&err), "Download err");
                             let text = format!(
                                 "Sorry, an error to download\n{}",
                                 html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -381,7 +381,7 @@ pub async fn download_by_id(
                     {
                         Ok(file_id) => file_id,
                         Err(err) => {
-                            event!(Level::ERROR, err = format_error_report(&err), "Send err");
+                            error!(err = format_error_report(&err), "Send err");
                             let text = format!(
                                 "Sorry, an error to download\n{}",
                                 html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -401,18 +401,18 @@ pub async fn download_by_id(
                         ))
                         .await
                     {
-                        event!(Level::ERROR, %err, "Add err");
+                        error!(%err, "Add err");
                     }
                     file_id
                 }
             }
             Ok(GetVideoByURLKind::Empty) => {
-                event!(Level::ERROR, "Video not found");
+                error!("Video not found");
                 error::occured_in_chosen_inline_result(&bot, "Video not found", inline_message_id, Some(ParseMode::HTML)).await?;
                 return Ok(EventReturn::Finish);
             }
             Err(err) => {
-                event!(Level::ERROR, err = format_error_report(&err), "Get info err");
+                error!(err = format_error_report(&err), "Get info err");
                 let text = format!(
                     "Sorry, an error to get media info\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -425,7 +425,7 @@ pub async fn download_by_id(
             .execute(EditVideoByIdInput::new(inline_message_id, &file_id, &html_text_link("Link", url)))
             .await
         {
-            event!(Level::ERROR, err = format_error_report(&err), "Edit err");
+            error!(err = format_error_report(&err), "Edit err");
             let text = format!(
                 "Sorry, an error to edit the message\n{}",
                 html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -456,7 +456,7 @@ pub async fn download_by_id(
                 {
                     Ok(val) => val,
                     Err(err) => {
-                        event!(Level::ERROR, %err, "Select format err");
+                        error!(%err, "Select format err");
                         let text = format!(
                             "Sorry, an error to select a format\n{}",
                             html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -468,7 +468,7 @@ pub async fn download_by_id(
                 let media_in_fs = match download_audio.execute(DownloadAudioInput::new(&url, media_and_format)).await {
                     Ok(val) => val,
                     Err(err) => {
-                        event!(Level::ERROR, err = format_error_report(&err), "Download err");
+                        error!(err = format_error_report(&err), "Download err");
                         let text = format!(
                             "Sorry, an error to download\n{}",
                             html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -493,7 +493,7 @@ pub async fn download_by_id(
                 {
                     Ok(file_id) => file_id,
                     Err(err) => {
-                        event!(Level::ERROR, err = format_error_report(&err), "Send err");
+                        error!(err = format_error_report(&err), "Send err");
                         let text = format!(
                             "Sorry, an error to download\n{}",
                             html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -512,18 +512,18 @@ pub async fn download_by_id(
                     ))
                     .await
                 {
-                    event!(Level::ERROR, %err, "Add err");
+                    error!(%err, "Add err");
                 }
                 file_id
             }
         }
         Ok(GetAudioByURLKind::Empty) => {
-            event!(Level::ERROR, "Audio not found");
+            error!("Audio not found");
             error::occured_in_chosen_inline_result(&bot, "Audio not found", inline_message_id, Some(ParseMode::HTML)).await?;
             return Ok(EventReturn::Finish);
         }
         Err(err) => {
-            event!(Level::ERROR, err = format_error_report(&err), "Get info err");
+            error!(err = format_error_report(&err), "Get info err");
             let text = format!(
                 "Sorry, an error to get media info\n{}",
                 html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -536,7 +536,7 @@ pub async fn download_by_id(
         .execute(EditAudioByIdInput::new(inline_message_id, &file_id, &html_text_link("Link", url)))
         .await
     {
-        event!(Level::ERROR, err = format_error_report(&err), "Edit err");
+        error!(err = format_error_report(&err), "Edit err");
         let text = format!(
             "Sorry, an error to edit the message\n{}",
             html_expandable_blockquote(html_quote(err.format(&bot.token)))
