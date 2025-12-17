@@ -2,7 +2,7 @@ use crate::{
     config::{YtDlpConfig, YtPotProviderConfig, YtToolkitConfig},
     database::TxManager,
     entities::{yt_toolkit::BasicInfo, Cookies, DownloadedMedia, Range, TgAudioInPlaylist, TgVideoInPlaylist, Video, VideosInYT},
-    errors::database::ErrorKind,
+    errors::ErrorKind,
     interactors::Interactor,
     services::{
         get_media_or_playlist_info,

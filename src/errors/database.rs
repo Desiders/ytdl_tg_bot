@@ -1,4 +1,4 @@
-pub mod common;
-pub mod user;
+mod common;
 
-pub use common::{BeginError, CommitError, ErrorKind, RollbackError, TransactionNotBegin};
+pub mod user;
+pub use common::{BeginError, CommitError, RollbackError, TransactionNotBegin};

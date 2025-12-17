@@ -4,7 +4,7 @@ use std::convert::Infallible;
 use crate::{
     database::models::{downloaded_media, sea_orm_active_enums},
     entities::DownloadedMedia,
-    errors::database::ErrorKind,
+    errors::ErrorKind,
     value_objects::MediaType,
 };
 

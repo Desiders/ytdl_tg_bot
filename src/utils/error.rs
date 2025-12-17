@@ -1,6 +1,6 @@
 use crate::{
     entities::ParseRangeError,
-    errors::{database::ErrorKind, FormatNotFound},
+    errors::{ErrorKind, FormatNotFound},
     interactors::{
         download::{DownloadAudioErrorKind, DownloadAudioPlaylistErrorKind, DownloadVideoErrorKind, DownloadVideoPlaylistErrorKind},
         GetMediaByURLErrorKind,

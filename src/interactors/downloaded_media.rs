@@ -1,6 +1,4 @@
-use crate::{
-    database::TxManager, entities::DownloadedMedia, errors::database::ErrorKind, interactors::Interactor, value_objects::MediaType,
-};
+use crate::{database::TxManager, entities::DownloadedMedia, errors::ErrorKind, interactors::Interactor, value_objects::MediaType};
 
 use std::convert::Infallible;
 use time::OffsetDateTime;

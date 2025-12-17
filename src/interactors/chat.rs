@@ -1,5 +1,5 @@
 use super::Interactor;
-use crate::{database::TxManager, entities::Chat, errors::database::ErrorKind};
+use crate::{database::TxManager, entities::Chat, errors::ErrorKind};
 
 use std::convert::Infallible;
 use tracing::{event, instrument, Level};
