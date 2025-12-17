@@ -134,7 +134,7 @@ pub fn url_is_blacklisted(request: &mut Request) -> impl Future<Output = bool> {
             Ok(cfg) => cfg.domains.iter().map(String::as_str).collect::<Vec<_>>().contains(&domain),
             Err(err) => {
                 error!(%err);
-                return false;
+                false
             }
         }
     }

@@ -80,7 +80,7 @@ impl Video {
         format::Audios::from(formats)
     }
 
-    pub fn thumbnail_urls<'a>(&'a self, service_host: Option<&Host<&str>>) -> Vec<String> {
+    pub fn thumbnail_urls(&self, service_host: Option<&Host<&str>>) -> Vec<String> {
         let aspect_ratio = calculate_aspect_ratio(self.width, self.height);
         let aspect_kind = get_nearest_to_aspect(aspect_ratio);
         let mut thumbnail_urls = get_urls_by_aspect(service_host, &self.id, aspect_kind);
@@ -98,10 +98,7 @@ impl Video {
 
     pub fn domain(&self) -> Option<String> {
         match Url::parse(&self.original_url) {
-            Ok(url) => match url.domain() {
-                Some(domain) => Some(domain.to_owned()),
-                None => None,
-            },
+            Ok(url) => url.domain().map(ToOwned::to_owned),
             Err(_) => None,
         }
     }

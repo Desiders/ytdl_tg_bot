@@ -66,13 +66,7 @@ pub async fn download(
         None => PreferredLanguages::default(),
     };
     match get_media
-        .execute(GetVideoByURLInput::new(
-            &url,
-            &range,
-            url.as_str(),
-            url.domain().as_deref(),
-            &mut tx_manager,
-        ))
+        .execute(GetVideoByURLInput::new(&url, &range, url.as_str(), url.domain(), &mut tx_manager))
         .await
     {
         Ok(SingleCached(file_id)) => {
@@ -90,7 +84,7 @@ pub async fn download(
         }
         Ok(Playlist((cached, uncached))) => {
             let mut media_and_formats = vec![];
-            for media in uncached.iter() {
+            for media in &uncached {
                 media_and_formats.push(
                     match VideoAndFormat::new_with_select_format(media, yt_dlp_cfg.max_file_size, &preferred_languages) {
                         Ok(val) => val,
@@ -202,7 +196,7 @@ pub async fn download(
         }
         Ok(Empty) => {
             warn!("Empty playlist");
-            let text = format!("Playlist is empty");
+            let text = "Playlist is empty".to_string();
             error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
         }
         Err(err) => {
@@ -252,13 +246,7 @@ pub async fn download_quite(
         None => PreferredLanguages::default(),
     };
     match get_media
-        .execute(GetVideoByURLInput::new(
-            &url,
-            &range,
-            url.as_str(),
-            url.domain().as_deref(),
-            &mut tx_manager,
-        ))
+        .execute(GetVideoByURLInput::new(&url, &range, url.as_str(), url.domain(), &mut tx_manager))
         .await
     {
         Ok(SingleCached(file_id)) => {
@@ -271,7 +259,7 @@ pub async fn download_quite(
         }
         Ok(Playlist((cached, uncached))) => {
             let mut media_and_formats = vec![];
-            for media in uncached.iter() {
+            for media in &uncached {
                 media_and_formats.push(
                     match VideoAndFormat::new_with_select_format(media, yt_dlp_cfg.max_file_size, &preferred_languages) {
                         Ok(val) => val,
@@ -354,6 +342,6 @@ pub async fn download_quite(
         Err(err) => {
             error!(err = format_error_report(&err), "Get err");
         }
-    };
+    }
     Ok(EventReturn::Finish)
 }

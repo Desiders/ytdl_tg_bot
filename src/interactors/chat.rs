@@ -38,7 +38,7 @@ impl Interactor<SaveChatInput<'_>> for &SaveChat {
                 tx_manager.rollback().await?;
                 return Err(err);
             }
-        };
+        }
         info!("Chat saved");
 
         tx_manager.commit().await?;

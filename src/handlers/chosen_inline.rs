@@ -69,7 +69,7 @@ pub async fn download_by_url(
                 &url,
                 &Range::default(),
                 url.as_str(),
-                url.domain().as_deref(),
+                url.domain(),
                 &mut tx_manager,
             ))
             .await
@@ -181,7 +181,7 @@ pub async fn download_by_url(
             &url,
             &Range::default(),
             url.as_str(),
-            url.domain().as_deref(),
+            url.domain(),
             &mut tx_manager,
         ))
         .await
@@ -440,7 +440,7 @@ pub async fn download_by_id(
             &url,
             &Range::default(),
             url.as_str(),
-            url.domain().as_deref(),
+            url.domain(),
             &mut tx_manager,
         ))
         .await

@@ -46,7 +46,7 @@ pub async fn select_by_url(
                 error!(err = format_error_report(&err), "Get YT Toolkit media info error");
             }
             match get_media.execute(GetUncachedVideoByURLInput::new(&url, &Range::default())).await {
-                Ok(Single(media)) => vec![media.into()],
+                Ok(Single(media)) => vec![(*media).into()],
                 Ok(Playlist(playlist)) => playlist.into_iter().map(Into::into).collect(),
                 Ok(Empty) => vec![],
                 Err(err) => {

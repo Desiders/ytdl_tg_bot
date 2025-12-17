@@ -175,10 +175,10 @@ impl Interactor<DownloadVideoInput<'_>> for &DownloadVideo {
                             let mut writer = tokio::fs::File::from_std(File::from(video_write_fd));
                             while let Some(bytes) = receiver.recv().await {
                                 if let Err(err) = writer.write(&bytes).await {
-                                    match err.kind() {
-                                        io::ErrorKind::BrokenPipe => break,
-                                        _ => error!("{}", format_error_report(&err)),
+                                    if err.kind() == io::ErrorKind::BrokenPipe {
+                                        break;
                                     }
+                                    error!("{}", format_error_report(&err));
                                 }
                             }
                         }
@@ -214,10 +214,10 @@ impl Interactor<DownloadVideoInput<'_>> for &DownloadVideo {
                             let mut writer = tokio::fs::File::from_std(File::from(audio_write_fd));
                             while let Some(bytes) = receiver.recv().await {
                                 if let Err(err) = writer.write(&bytes).await {
-                                    match err.kind() {
-                                        io::ErrorKind::BrokenPipe => break,
-                                        _ => error!("{}", format_error_report(&err)),
+                                    if err.kind() == io::ErrorKind::BrokenPipe {
+                                        break;
                                     }
+                                    error!("{}", format_error_report(&err));
                                 }
                             }
                         }
