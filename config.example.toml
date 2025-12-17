@@ -11,6 +11,17 @@ receiver_chat_id = 123
 [blacklisted]
 domains = ["t.me", "2girls1cup.ca"]
 
+[domains_with_reactions]
+domains = [
+    "vk.com", "vkvideo.ru", "ok.ru", "rutube.ru", "max.ru", "m.vkvideo.ru",
+    "youtube.com", "youtu.be", "m.youtube.com", "music.youtube.com", "studio.youtube.com",
+    "vm.tiktok.com", "vt.tiktok.com", "tiktok.com", 
+    "instagram.com", "x.com", "facebook.com",
+    "rt.pornhub.com", "rt.pornhub.org", "pornhub.com",
+    "share.google", "drive.google.com",
+    "coub.com",
+]
+
 [yt_dlp]
 max_file_size = 5000000
 executable_path = "./yt-dlp/executable"

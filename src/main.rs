@@ -71,6 +71,7 @@ fn init_container(bot: Bot, config: Config, cookies: Cookies) -> Container {
             provide(instance(config.yt_toolkit)),
             provide(instance(config.yt_pot_provider)),
             provide(instance(config.telegram_bot_api)),
+            provide(instance(config.domains_with_reactions)),
 
             provide(|| Ok(Mutex::new(ContextV7::new()))),
             provide(|| Ok(Client::new())),

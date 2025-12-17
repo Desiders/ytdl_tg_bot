@@ -1,3 +1,4 @@
+use froodi::async_impl::Container;
 use telers::{
     errors::EventErrorKind,
     event::telegram::HandlerResponse,
@@ -7,6 +8,8 @@ use telers::{
     Request,
 };
 use tracing::{event, Level};
+
+use crate::{config::DomainsWithReactions, entities::UrlWithParams};
 
 static REACTIONS: [&str; 2] = ["👌", "👍"];
 
@@ -18,33 +21,40 @@ impl Middleware for ReactionMiddleware {
         let Some(message) = request.update.message() else {
             return next(request).await;
         };
+        let Some(domain) = request.extensions.get::<UrlWithParams>().map(|val| val.url.domain()).flatten() else {
+            return next(request).await;
+        };
+        let container = request.extensions.get::<Container>().unwrap();
+        let domains_with_reactions = container.get::<DomainsWithReactions>().await.unwrap();
+
+        if !domains_with_reactions
+            .domains
+            .contains(&domain.trim_start_matches("www.").to_owned())
+        {
+            return next(request).await;
+        }
+
         let bot = request.bot.clone();
         let message_id = message.id();
         let chat_id = message.chat().id();
 
-        let ((), resp) = tokio::join!(
+        for reaction in REACTIONS {
+            match bot
+                .send(
+                    SetMessageReaction::new(chat_id, message_id)
+                        .reaction(ReactionTypeEmoji::new(reaction))
+                        .is_big(false),
+                )
+                .await
             {
-                let bot = bot.clone();
-                async move {
-                    for reaction in REACTIONS {
-                        match bot
-                            .send(
-                                SetMessageReaction::new(chat_id, message_id)
-                                    .reaction(ReactionTypeEmoji::new(reaction))
-                                    .is_big(false),
-                            )
-                            .await
-                        {
-                            Ok(_) => break,
-                            Err(err) => {
-                                event!(Level::ERROR, %err, reaction, "Set reaction err");
-                            }
-                        }
-                    }
+                Ok(_) => break,
+                Err(err) => {
+                    event!(Level::ERROR, %err, reaction, "Set reaction err");
                 }
-            },
-            next(request)
-        );
+            }
+        }
+
+        let resp = next(request).await;
 
         tokio::spawn(async move {
             match bot.send(SetMessageReaction::new(chat_id, message_id)).await {
