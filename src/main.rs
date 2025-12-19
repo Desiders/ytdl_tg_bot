@@ -29,7 +29,7 @@ use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt
 use crate::{
     filters::{is_via_bot, text_contains_url, text_contains_url_with_reply, text_empty, url_is_blacklisted, url_is_skippable_by_param},
     handlers::{audio, chosen_inline, inline_query, start, video},
-    middlewares::{CreateChatMiddleware, ReactionMiddleware},
+    middlewares::{CreateChatMiddleware, ReactionMiddleware, ReplaceDomainsMiddleware},
     services::get_cookies_from_directory,
     utils::{on_shutdown, on_startup},
 };
@@ -66,6 +66,7 @@ async fn main() {
     router.message.register(start).filter(Command::many(["start", "help"]));
 
     let mut download_router = Router::new("download");
+    download_router.message.inner_middlewares.register(ReplaceDomainsMiddleware);
     download_router.message.inner_middlewares.register(ReactionMiddleware);
     download_router
         .message

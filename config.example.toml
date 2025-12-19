@@ -15,12 +15,17 @@ domains = ["t.me", "2girls1cup.ca"]
 domains = [
     "vk.com", "vkvideo.ru", "ok.ru", "rutube.ru", "max.ru", "m.vkvideo.ru",
     "youtube.com", "youtu.be", "m.youtube.com", "music.youtube.com", "studio.youtube.com",
-    "vm.tiktok.com", "vt.tiktok.com", "tiktok.com", 
-    "instagram.com", "x.com", "facebook.com",
     "rt.pornhub.com", "rt.pornhub.org", "pornhub.com",
+    "vm.tiktok.com", "vt.tiktok.com", "tiktok.com", 
+    "x.com", "facebook.com",
     "share.google", "drive.google.com",
+    "vxinstagram.com",
     "coub.com",
 ]
+
+[[replace_domains]]
+from = '^(?:.*\.)?instagram\.(tv|net|com|org)$|^instagr\.am$'
+to = "vxinstagram.com"
 
 [yt_dlp]
 max_file_size = 5000000

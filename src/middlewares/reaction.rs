@@ -9,7 +9,7 @@ use telers::{
 };
 use tracing::error;
 
-use crate::{config::DomainsWithReactions, entities::UrlWithParams};
+use crate::{config::DomainsWithReactionsConfig, entities::UrlWithParams};
 
 static REACTIONS: [&str; 2] = ["👌", "👍"];
 
@@ -25,7 +25,7 @@ impl Middleware for ReactionMiddleware {
             return next(request).await;
         };
         let container = request.extensions.get::<Container>().unwrap();
-        let domains_with_reactions = container.get::<DomainsWithReactions>().await.unwrap();
+        let domains_with_reactions = container.get::<DomainsWithReactionsConfig>().await.unwrap();
 
         if !domains_with_reactions
             .domains
