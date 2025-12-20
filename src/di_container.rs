@@ -42,6 +42,7 @@ pub(super) fn init(bot: Bot, config: Config, cookies: Cookies) -> Container {
             provide(instance(config.telegram_bot_api)),
             provide(instance(config.domains_with_reactions)),
             provide(instance(config.replace_domains)),
+            provide(instance(config.tracking_params)),
 
             provide(|| Ok(Mutex::new(ContextV7::new()))),
             provide(|| Ok(Client::new())),
