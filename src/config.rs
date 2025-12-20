@@ -98,6 +98,7 @@ pub struct Config {
     pub yt_pot_provider: YtPotProviderConfig,
     pub telegram_bot_api: TelegramBotApiConfig,
     pub domains_with_reactions: DomainsWithReactionsConfig,
+    #[serde(default)]
     pub replace_domains: Vec<ReplaceDomainsConfig>,
 }
 
