@@ -24,8 +24,9 @@ pub struct BlacklistedConfig {
     pub domains: Vec<String>,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Default, Deserialize, Clone, Debug)]
 pub struct DomainsWithReactionsConfig {
+    #[serde(default)]
     pub domains: Vec<String>,
 }
 
@@ -48,6 +49,12 @@ pub struct DatabaseConfig {
     pub user: Box<str>,
     pub password: Box<str>,
     pub database: Box<str>,
+}
+
+#[derive(Default, Deserialize, Clone, Debug)]
+pub struct TrackingParamsConfig {
+    #[serde(default)]
+    pub params: Vec<Box<str>>,
 }
 
 impl DatabaseConfig {
@@ -100,6 +107,8 @@ pub struct Config {
     pub domains_with_reactions: DomainsWithReactionsConfig,
     #[serde(default)]
     pub replace_domains: Vec<ReplaceDomainsConfig>,
+    #[serde(default)]
+    pub tracking_params: TrackingParamsConfig,
 }
 
 #[derive(Error, Debug)]
