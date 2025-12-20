@@ -54,3 +54,90 @@ url = "http://ytdl_tg_bot.telegram_bot_api:8081"
 # url = "https://api.telegram.org"
 api_id = "..."
 api_hash = "..."
+
+[tracking_params]
+params = [
+    # UTM
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "utm_id",
+    "utm_source_platform",
+    "utm_creative_format",
+    "utm_marketing_tactic",
+    # Google
+    "gclid",
+    "gclsrc",
+    "dclid",
+    "gbraid",
+    "wbraid",
+    "_ga",
+    "_gl",
+    # Facebook/Meta
+    "fbclid",
+    "fb_action_ids",
+    "fb_action_types",
+    "fb_source",
+    "fb_ref",
+    "action_object_map",
+    "action_type_map",
+    "action_ref_map",
+    # Instagram
+    "igshid",
+    "igsh",
+    "ig_rid",
+    # TikTok
+    "ttclid",
+    "tt_content",
+    "tt_medium",
+    # YouTube
+    "si",
+    "feature",
+    "kw",
+    # Twitter/X
+    "twclid",
+    "t",
+    "s",
+    # LinkedIn
+    "li_fat_id",
+    "lipi",
+    "licu",
+    "trk",
+    # Microsoft/Bing
+    "msclkid",
+    # Amazon
+    "tag",
+    "creative",
+    "creativeASIN",
+    "linkCode",
+    "ref",
+    "ref_",
+    # Email Marketing
+    "_ke",
+    "vero_id",
+    "vero_conv",
+    "mc_cid",
+    "mc_eid",
+    # HubSpot
+    "_hsenc",
+    "_hsmi",
+    "hmb_campaign",
+    "hmb_medium",
+    "hmb_source",
+    # Marketo
+    "mkt_tok",
+    # Reddit
+    "rdt_cid",
+    # Pinterest
+    "epik",
+    # Snapchat
+    "ScCid",
+    # Generic
+    "source",
+    "campaign",
+    "medium",
+    "content",
+    "term",
+]
