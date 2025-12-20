@@ -3,18 +3,6 @@
 version = 4
 
 [[package]]
-name = "ahash"
-version = "0.8.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
-dependencies = [
- "cfg-if",
- "once_cell",
- "version_check",
- "zerocopy",
-]
-
-[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -451,11 +439,10 @@ dependencies = [
 
 [[package]]
 name = "froodi"
-version = "1.0.0-beta.15"
+version = "1.0.0-beta.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1017636c25f724eea4491440de78284c319841f0aea97d29a5f9f7d8e0cf73c"
+checksum = "ff757adad3e214feea0ef20110f53363fdcf5c833a222d99e33ed84d562f3b4b"
 dependencies = [
- "ahash",
  "anyhow",
  "frunk",
  "parking_lot",
