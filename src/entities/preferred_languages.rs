@@ -28,7 +28,7 @@ impl FromStr for PreferredLanguages {
         }
 
         let languages: Box<[Box<str>]> = s
-            .split(',')
+            .split('|')
             .filter(|part| !part.is_empty())
             .map(|part| part.to_owned().into_boxed_str())
             .collect();
@@ -43,7 +43,7 @@ mod tests {
 
     #[test]
     fn test_parse_full_format() {
-        let languages: PreferredLanguages = "ru,en".parse().unwrap();
+        let languages: PreferredLanguages = "ru|en".parse().unwrap();
         assert_eq!(
             languages,
             PreferredLanguages {
@@ -54,13 +54,13 @@ mod tests {
 
     #[test]
     fn test_parse_with_empty_parts() {
-        let languages: PreferredLanguages = ",".parse().unwrap();
+        let languages: PreferredLanguages = "|".parse().unwrap();
         assert_eq!(languages, PreferredLanguages { languages: Box::new([]) });
     }
     
     #[test]
     fn test_parse_missing_step_value() {
-        let languages: PreferredLanguages = "ru,".parse().unwrap();
+        let languages: PreferredLanguages = "ru|".parse().unwrap();
         assert_eq!(
             languages,
             PreferredLanguages {
