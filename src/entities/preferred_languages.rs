@@ -26,16 +26,14 @@ impl FromStr for PreferredLanguages {
         if s.trim().is_empty() {
             return Ok(PreferredLanguages::default());
         }
-        let parts: Vec<&str> = s.split('|').collect();
 
-        let mut languages = Vec::with_capacity(parts.len());
-        for part in parts {
-            languages.push(part);
-        }
+        let languages: Box<[Box<str>]> = s
+            .split('|')
+            .filter(|part| !part.is_empty())
+            .map(|part| part.to_owned().into_boxed_str())
+            .collect();
 
-        Ok(Self {
-            languages: languages.into_iter().map(|val| val.to_owned().into_boxed_str()).collect(),
-        })
+        Ok(Self {languages})
     }
 }
 
@@ -45,7 +43,7 @@ mod tests {
 
     #[test]
     fn test_parse_full_format() {
-        let languages: PreferredLanguages = "ru,en".parse().unwrap();
+        let languages: PreferredLanguages = "ru|en".parse().unwrap();
         assert_eq!(
             languages,
             PreferredLanguages {
@@ -56,12 +54,13 @@ mod tests {
 
     #[test]
     fn test_parse_with_empty_parts() {
-        let languages: PreferredLanguages = ":".parse().unwrap();
+        let languages: PreferredLanguages = "|".parse().unwrap();
         assert_eq!(languages, PreferredLanguages { languages: Box::new([]) });
     }
+    
     #[test]
     fn test_parse_missing_step_value() {
-        let languages: PreferredLanguages = "ru,".parse().unwrap();
+        let languages: PreferredLanguages = "ru|".parse().unwrap();
         assert_eq!(
             languages,
             PreferredLanguages {
