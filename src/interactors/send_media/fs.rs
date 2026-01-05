@@ -4,7 +4,6 @@ use crate::{
     interactors::Interactor,
 };
 
-use std::path::Path;
 use std::sync::Arc;
 use telers::{
     errors::SessionErrorKind,
@@ -12,6 +11,7 @@ use telers::{
     types::{InputFile, ReplyParameters},
     Bot,
 };
+use crate::utils::sanitize_send_filename;
 use tracing::{debug, error, info, instrument};
 
 const SEND_TIMEOUT: f32 = 180.0;
@@ -106,35 +106,6 @@ impl<'a> SendAudioInFSInput<'a> {
     }
 }
 
-fn sanitize_send_filename(path: &Path, name: &str) -> String {
-    let actual_extension = path
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("")
-        .to_string();
-
-    if actual_extension.is_empty() {
-        return name.to_string();
-    }
-
-    let base_name = if let Some(pos) = name.rfind('.') {
-        let suffix = &name[pos + 1..];
-        if !suffix.is_empty() && suffix.len() <= 8 && suffix.chars().all(|c| c.is_ascii_alphanumeric()) {
-            &name[..pos]
-        } else {
-            name
-        }
-    } else {
-        name
-    };
-
-    if base_name.is_empty() {
-        format!("{}.{}", "file", actual_extension)
-    } else {
-        format!("{}.{}", base_name, actual_extension)
-    }
-}
-
 impl Interactor<SendVideoInFSInput<'_>> for &SendVideoInFS {
     type Output = Box<str>;
     type Err = SessionErrorKind;
@@ -207,7 +178,7 @@ impl Interactor<SendAudioInFSInput<'_>> for &SendAudioInFS {
         SendAudioInFSInput {
             chat_id,
             reply_to_message_id,
-            audio_in_fs: AudioInFS { path, temp_dir, .. },
+            audio_in_fs: AudioInFS { path, temp_dir, thumbnail_path },
             name,
             performer,
             title,
@@ -219,19 +190,12 @@ impl Interactor<SendAudioInFSInput<'_>> for &SendAudioInFS {
 
         let send_name = sanitize_send_filename(path.as_ref(), name);
 
-        let mut method = SendAudio::new(chat_id, InputFile::fs_with_name(path, &send_name))
+        let method = SendAudio::new(chat_id, InputFile::fs_with_name(path, &send_name))
             .disable_notification(true)
-            .duration_option(duration);
-
-        if let Some(p) = performer {
-            method = method.performer_option(Some(p.to_string()));
-        }
-        if let Some(t) = title {
-            method = method.title_option(Some(t.to_string()));
-        }
-        if let Some(reply_to) = reply_to_message_id {
-            method = method.reply_parameters_option(Some(ReplyParameters::new(reply_to).allow_sending_without_reply(true)));
-        }
+            .duration_option(duration)
+            .performer_option(performer.map(|p| p.to_string()))
+            .title_option(title.map(|t| t.to_string()))
+            .reply_parameters_option(reply_to_message_id.map(|r| ReplyParameters::new(r).allow_sending_without_reply(true)));
 
         let message = send::with_retries(&self.bot, method, 2, Some(SEND_TIMEOUT)).await?;
         let message_id = message.id();
@@ -260,6 +224,55 @@ impl Interactor<SendAudioInFSInput<'_>> for &SendAudioInFS {
 mod tests {
     use super::sanitize_send_filename;
     use std::path::Path;
+
+    #[test]
+    fn preserves_same_multi_extension_tar_gz() {
+        let path = Path::new("/tmp/archive.tar.gz");
+        let name = "backup.tar.gz";
+        assert_eq!(sanitize_send_filename(path, name), "backup.tar.gz");
+    }
+
+    #[test]
+    fn preserves_same_multi_extension_tag_gz() {
+        let path = Path::new("/tmp/archive.tag.gz");
+        let name = "release.tag.gz";
+        assert_eq!(sanitize_send_filename(path, name), "release.tag.gz");
+    }
+
+    #[test]
+    fn replaces_different_extension_with_last_component_of_multi_ext() {
+        let path = Path::new("/tmp/archive.tar.gz");
+        let name = "video.mp4";
+        assert_eq!(sanitize_send_filename(path, name), "video.gz");
+    }
+
+    #[test]
+    fn appends_last_extension_when_name_has_no_extension() {
+        let path = Path::new("/tmp/archive.tar.gz");
+        let name = "backup";
+        assert_eq!(sanitize_send_filename(path, name), "backup.gz");
+    }
+
+    #[test]
+    fn handles_name_with_single_part_that_matches_inner_of_multi_extension() {
+        let path = Path::new("/tmp/archive.tar.gz");
+        let name = "backup.tar";
+        assert_eq!(sanitize_send_filename(path, name), "backup.gz");
+    }
+
+    #[test]
+    fn keeps_non_alnum_suffix_and_appends_last_ext() {
+        let path = Path::new("/tmp/archive.tar.gz");
+        let name = "song.fake-ext";
+        assert_eq!(sanitize_send_filename(path, name), "song.fake-ext.gz");
+    }
+
+    #[test]
+    fn preserves_case_and_handles_uppercase_extension() {
+        let path = Path::new("/tmp/archive.TAR.GZ");
+        let name = "release.TAR.GZ";
+        assert_eq!(sanitize_send_filename(path, name), "release.TAR.GZ");
+    }
 
     #[test]
     fn keeps_name_if_path_has_no_extension() {
