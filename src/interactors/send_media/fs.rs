@@ -193,6 +193,7 @@ impl Interactor<SendAudioInFSInput<'_>> for &SendAudioInFS {
         let method = SendAudio::new(chat_id, InputFile::fs_with_name(path, &send_name))
             .disable_notification(true)
             .duration_option(duration)
+            .thumbnail_option(thumbnail_path.map(InputFile::fs))
             .performer_option(performer.map(|p| p.to_string()))
             .title_option(title.map(|t| t.to_string()))
             .reply_parameters_option(reply_to_message_id.map(|r| ReplyParameters::new(r).allow_sending_without_reply(true)));
