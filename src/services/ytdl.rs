@@ -9,7 +9,7 @@ use std::{
     process::{Child, Command, Output, Stdio},
     time::Duration,
 };
-use tracing::{error, instrument, trace, warn};
+use tracing::{instrument, trace, warn};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
