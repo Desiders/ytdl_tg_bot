@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod chat;
+pub mod chat_config;
 pub mod combined_format;
 pub mod cookies;
 pub mod downloaded_media;
@@ -13,6 +14,7 @@ pub mod yt_toolkit;
 
 pub use audio::{AudioAndFormat, AudioInFS, TgAudioInPlaylist};
 pub use chat::Chat;
+pub use chat_config::ChatConfig;
 pub use cookies::{Cookie, Cookies};
 pub use downloaded_media::DownloadedMedia;
 pub use preferred_languages::PreferredLanguages;
