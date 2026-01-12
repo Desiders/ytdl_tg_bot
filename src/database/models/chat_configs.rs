@@ -2,24 +2,29 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "chats")]
+#[sea_orm(table_name = "chat_configs")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub tg_id: i64,
-    pub username: Option<String>,
-    pub created_at: TimeDateTimeWithTimeZone,
+    pub cmd_random_enabled: bool,
     pub updated_at: TimeDateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_one = "super::chat_configs::Entity")]
-    ChatConfigs,
+    #[sea_orm(
+        belongs_to = "super::chats::Entity",
+        from = "Column::TgId",
+        to = "super::chats::Column::TgId",
+        on_update = "Cascade",
+        on_delete = "Cascade"
+    )]
+    Chats,
 }
 
-impl Related<super::chat_configs::Entity> for Entity {
+impl Related<super::chats::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::ChatConfigs.def()
+        Relation::Chats.def()
     }
 }
 
