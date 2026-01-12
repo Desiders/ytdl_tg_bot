@@ -76,8 +76,8 @@ pub struct SendAudioInFSInput<'a> {
     pub reply_to_message_id: Option<i64>,
     pub audio_in_fs: AudioInFS,
     pub name: &'a str,
-    pub performer: Option<&'a str>,
     pub title: Option<&'a str>,
+    pub performer: Option<&'a str>,
     pub duration: Option<i64>,
     pub with_delete: bool,
 }
@@ -88,8 +88,8 @@ impl<'a> SendAudioInFSInput<'a> {
         reply_to_message_id: Option<i64>,
         audio_in_fs: AudioInFS,
         name: &'a str,
-        performer: Option<&'a str>,
         title: Option<&'a str>,
+        performer: Option<&'a str>,
         duration: Option<i64>,
         with_delete: bool,
     ) -> Self {
