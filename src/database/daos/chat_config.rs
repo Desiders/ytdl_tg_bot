@@ -1,7 +1,7 @@
 use sea_orm::{sea_query::OnConflict, ActiveValue::Set, ConnectionTrait, EntityTrait};
 use std::convert::Infallible;
 
-use crate::{database::models::chats, entities::Chat, errors::ErrorKind};
+use crate::{database::models::chat_configs, entities::ChatConfig, errors::ErrorKind};
 
 pub struct Dao<'a, Conn> {
     conn: &'a Conn,
@@ -22,28 +22,26 @@ where
 {
     pub async fn insert_or_update(
         &self,
-        Chat {
+        ChatConfig {
             tg_id,
-            username,
-            created_at,
+            cmd_random_enabled,
             updated_at,
-        }: Chat,
-    ) -> Result<Chat, ErrorKind<Infallible>> {
-        use chats::{
+        }: ChatConfig,
+    ) -> Result<ChatConfig, ErrorKind<Infallible>> {
+        use chat_configs::{
             ActiveModel,
-            Column::{TgId, UpdatedAt, Username},
+            Column::{CmdRandomEnabled, TgId, UpdatedAt},
             Entity,
         };
 
         let model = ActiveModel {
             tg_id: Set(tg_id),
-            username: Set(username),
-            created_at: Set(created_at),
+            cmd_random_enabled: Set(cmd_random_enabled),
             updated_at: Set(updated_at),
         };
 
         Entity::insert(model)
-            .on_conflict(OnConflict::column(TgId).update_columns([Username, UpdatedAt]).to_owned())
+            .on_conflict(OnConflict::column(TgId).update_columns([CmdRandomEnabled, UpdatedAt]).to_owned())
             .exec_with_returning(self.conn)
             .await
             .map(Into::into)
