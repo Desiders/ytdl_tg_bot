@@ -2,7 +2,7 @@ use sea_orm::{AccessMode, DatabaseConnection, DatabaseTransaction, IsolationLeve
 use std::sync::Arc;
 
 use crate::{
-    database::daos::{chat, downloaded_media},
+    database::daos::{chat, chat_config, downloaded_media},
     errors::database::{BeginError, CommitError, RollbackError, TransactionNotBegin},
 };
 
@@ -49,6 +49,11 @@ impl TxManager {
     #[inline]
     pub fn chat_dao(&self) -> Result<chat::Dao<'_, DatabaseTransaction>, TransactionNotBegin> {
         Ok(chat::Dao::new(self.transaction.as_ref().ok_or(TransactionNotBegin)?))
+    }
+
+    #[inline]
+    pub fn chat_config_dao(&self) -> Result<chat_config::Dao<'_, DatabaseTransaction>, TransactionNotBegin> {
+        Ok(chat_config::Dao::new(self.transaction.as_ref().ok_or(TransactionNotBegin)?))
     }
 
     #[inline]
