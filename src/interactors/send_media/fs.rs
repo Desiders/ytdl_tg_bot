@@ -195,7 +195,7 @@ impl Interactor<SendAudioInFSInput<'_>> for &SendAudioInFS {
             .duration_option(duration)
             .thumbnail_option(thumbnail_path.map(InputFile::fs))
             .title_option(title)
-            .performer_option(performer.map(|p| p.to_string()))
+            .performer_option(performer)
             .reply_parameters_option(
                 reply_to_message_id
                     .map(|r| ReplyParameters::new(r).allow_sending_without_reply(true))
