@@ -19,13 +19,20 @@ pub struct ChatConfig {
     pub receiver_chat_id: i64,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Default, Deserialize, Clone, Debug)]
 pub struct BlacklistedConfig {
+    #[serde(default)]
     pub domains: Vec<String>,
 }
 
 #[derive(Default, Deserialize, Clone, Debug)]
 pub struct DomainsWithReactionsConfig {
+    #[serde(default)]
+    pub domains: Vec<String>,
+}
+
+#[derive(Default, Deserialize, Clone, Debug)]
+pub struct RandomCmdConfig {
     #[serde(default)]
     pub domains: Vec<String>,
 }
@@ -97,14 +104,18 @@ pub struct ReplaceDomainsConfig {
 pub struct Config {
     pub bot: BotConfig,
     pub chat: ChatConfig,
-    pub blacklisted: BlacklistedConfig,
     pub logging: LoggingConfig,
     pub database: DatabaseConfig,
     pub yt_dlp: YtDlpConfig,
     pub yt_toolkit: YtToolkitConfig,
     pub yt_pot_provider: YtPotProviderConfig,
     pub telegram_bot_api: TelegramBotApiConfig,
+    #[serde(default)]
+    pub blacklisted: BlacklistedConfig,
+    #[serde(default)]
     pub domains_with_reactions: DomainsWithReactionsConfig,
+    #[serde(default)]
+    pub random_cmd: RandomCmdConfig,
     #[serde(default)]
     pub replace_domains: Vec<ReplaceDomainsConfig>,
     #[serde(default)]

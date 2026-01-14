@@ -8,7 +8,8 @@ use crate::{
         send_media::{
             SendVideoById, SendVideoByIdInput, SendVideoInFS, SendVideoInFSInput, SendVideoPlaylistById, SendVideoPlaylistByIdInput,
         },
-        AddDownloadedMediaInput, AddDownloadedVideo, GetVideoByURL, GetVideoByURLInput,
+        AddDownloadedMediaInput, AddDownloadedVideo, GetRandomDownloadedMediaInput, GetRandomDownloadedVideo, GetVideoByURL,
+        GetVideoByURLInput,
         GetVideoByURLKind::{Empty, Playlist, SingleCached},
         Interactor as _,
     },
@@ -343,5 +344,40 @@ pub async fn download_quite(
             error!(err = format_error_report(&err), "Get err");
         }
     }
+    Ok(EventReturn::Finish)
+}
+
+#[instrument(skip_all, fields(%message_id = message.id()))]
+pub async fn random(
+    message: Message,
+    Inject(get_media): Inject<GetRandomDownloadedVideo>,
+    Inject(send_playlist): Inject<SendVideoPlaylistById>,
+    InjectTransient(mut tx_manager): InjectTransient<TxManager>,
+) -> HandlerResult {
+    let message_id = message.id();
+    let chat_id = message.chat().id();
+
+    match get_media.execute(GetRandomDownloadedMediaInput::new(1, &mut tx_manager)).await {
+        Ok(playlist) => {
+            if let Err(err) = send_playlist
+                .execute(SendVideoPlaylistByIdInput::new(
+                    chat_id,
+                    Some(message_id),
+                    playlist
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, media)| TgVideoInPlaylist::new(media.file_id, index))
+                        .collect(),
+                ))
+                .await
+            {
+                error!(%err, "Send err");
+            }
+        }
+        Err(err) => {
+            error!(err = format_error_report(&err), "Get err");
+        }
+    }
+
     Ok(EventReturn::Finish)
 }

@@ -1,6 +1,9 @@
-use crate::{database::TxManager, entities::DownloadedMedia, errors::ErrorKind, interactors::Interactor, value_objects::MediaType};
+use crate::{
+    config::RandomCmdConfig, database::TxManager, entities::DownloadedMedia, errors::ErrorKind, interactors::Interactor,
+    value_objects::MediaType,
+};
 
-use std::convert::Infallible;
+use std::{convert::Infallible, sync::Arc};
 use time::OffsetDateTime;
 use tracing::{info, instrument};
 
@@ -116,5 +119,76 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedAudio {
 
         tx_manager.commit().await?;
         Ok(())
+    }
+}
+
+pub struct GetRandomDownloadedMediaInput<'a> {
+    pub limit: u64,
+    pub tx_manager: &'a mut TxManager,
+}
+
+impl<'a> GetRandomDownloadedMediaInput<'a> {
+    pub const fn new(limit: u64, tx_manager: &'a mut TxManager) -> Self {
+        Self { limit, tx_manager }
+    }
+}
+
+pub struct GetRandomDownloadedVideo {
+    random_cfg: Arc<RandomCmdConfig>,
+}
+
+impl GetRandomDownloadedVideo {
+    pub const fn new(random_cfg: Arc<RandomCmdConfig>) -> Self {
+        Self { random_cfg }
+    }
+}
+
+impl Interactor<GetRandomDownloadedMediaInput<'_>> for &GetRandomDownloadedVideo {
+    type Output = Vec<DownloadedMedia>;
+    type Err = ErrorKind<Infallible>;
+
+    #[instrument(skip_all)]
+    async fn execute(
+        self,
+        GetRandomDownloadedMediaInput { limit, tx_manager }: GetRandomDownloadedMediaInput<'_>,
+    ) -> Result<Self::Output, Self::Err> {
+        tx_manager.begin().await?;
+
+        let dao = tx_manager.downloaded_media_dao()?;
+
+        let media = dao.get_random(limit, MediaType::Video, &self.random_cfg.domains).await?;
+        info!(len = media.len(), "Got random video");
+
+        Ok(media)
+    }
+}
+
+pub struct GetRandomDownloadedAudio {
+    random_cfg: Arc<RandomCmdConfig>,
+}
+
+impl GetRandomDownloadedAudio {
+    pub const fn new(random_cfg: Arc<RandomCmdConfig>) -> Self {
+        Self { random_cfg }
+    }
+}
+
+impl Interactor<GetRandomDownloadedMediaInput<'_>> for &GetRandomDownloadedAudio {
+    type Output = Vec<DownloadedMedia>;
+    type Err = ErrorKind<Infallible>;
+
+    #[instrument(skip_all)]
+    async fn execute(
+        self,
+        GetRandomDownloadedMediaInput { limit, tx_manager }: GetRandomDownloadedMediaInput<'_>,
+    ) -> Result<Self::Output, Self::Err> {
+        tx_manager.begin().await?;
+
+        let dao = tx_manager.downloaded_media_dao()?;
+
+        let media = dao.get_random(limit, MediaType::Audio, &self.random_cfg.domains).await?;
+        info!(len = media.len(), "Got random audio");
+
+        Ok(media)
     }
 }

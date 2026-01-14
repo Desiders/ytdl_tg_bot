@@ -10,6 +10,8 @@ async fn set_my_commands(bot: Bot) -> HandlerResult {
         BotCommand::new("start", "Start the bot"),
         BotCommand::new("vd", "Download a video"),
         BotCommand::new("ad", "Download an audio"),
+        BotCommand::new("rv", "Random a video"),
+        BotCommand::new("ra", "Random an audio"),
     ];
     bot.send(SetMyCommands::new(commands).scope(BotCommandScopeAllPrivateChats {}))
         .await?;

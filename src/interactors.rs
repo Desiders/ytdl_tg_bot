@@ -8,7 +8,10 @@ pub mod send_media;
 
 pub use base::Interactor;
 pub use chat::{SaveChat, SaveChatInput};
-pub use downloaded_media::{AddDownloadedAudio, AddDownloadedMediaInput, AddDownloadedVideo};
+pub use downloaded_media::{
+    AddDownloadedAudio, AddDownloadedMediaInput, AddDownloadedVideo, GetRandomDownloadedAudio, GetRandomDownloadedMediaInput,
+    GetRandomDownloadedVideo,
+};
 pub use get_media::{
     GetAudioByURL, GetAudioByURLInput, GetAudioByURLKind, GetMediaByURLErrorKind, GetShortMediaByURLInfo, GetShortMediaInfoByURLInput,
     GetUncachedVideoByURL, GetUncachedVideoByURLInput, GetUncachedVideoByURLKind, GetVideoByURL, GetVideoByURLInput, GetVideoByURLKind,

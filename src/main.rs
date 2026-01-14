@@ -27,7 +27,10 @@ use tracing::{error, info};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
 
 use crate::{
-    filters::{is_via_bot, text_contains_url, text_contains_url_with_reply, text_empty, url_is_blacklisted, url_is_skippable_by_param},
+    filters::{
+        is_via_bot, random_cmd_is_enabled, text_contains_url, text_contains_url_with_reply, text_empty, url_is_blacklisted,
+        url_is_skippable_by_param,
+    },
     handlers::{audio, chosen_inline, inline_query, start, video},
     middlewares::{CreateChatMiddleware, ReactionMiddleware, RemoveTrackingParamsMiddleware, ReplaceDomainsMiddleware},
     services::get_cookies_from_directory,
@@ -81,6 +84,18 @@ async fn main() {
         .filter(ContentType::one(ContentTypeEnum::Text))
         .filter(Command::many(["ad", "audio_download"]))
         .filter(text_contains_url_with_reply);
+    download_router
+        .message
+        .register(video::random)
+        .filter(ContentType::one(ContentTypeEnum::Text))
+        .filter(Command::many(["rv", "rnd_v", "rnd_video", "random_video"]))
+        .filter(random_cmd_is_enabled);
+    download_router
+        .message
+        .register(audio::random)
+        .filter(ContentType::one(ContentTypeEnum::Text))
+        .filter(Command::many(["ra", "rnd_a", "rnd_audio", "random_audio"]))
+        .filter(random_cmd_is_enabled);
     download_router
         .message
         .register(video::download)

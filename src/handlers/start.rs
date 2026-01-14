@@ -20,16 +20,17 @@ pub async fn start(
 ) -> HandlerResult {
     let bot_info = bot.send(GetMe {}).await?;
     let text = format!(
-        "Hi, {first_name}. I'm a bot that can help you download videos from YouTube and other resources.\n\n\
-        In a private chat, send me a video link and I will reply with a video.\n\
-        In a group chat, send <code>/vd</code> (<code>/video_download</code>) with a link or reply to the message with a link.\n\
-        If you want to download an audio, send <code>/ad</code> (<code>/audio_download</code>) instead of <code>/vd</code>.\n\n\
-        To download playlist use range download: <code>&lt;url&gt; [items=start:count:step]</code>.\n\
-        Select language: <code>&lt;url&gt; [lang=ru|en|en-US|en-GB]</code>.\n\n\
+        "Hi, {first_name}. I'm a bot that can help you download media from YouTube and other resources.\n\n\
+        In a private chat, send me a video link and I will reply with a file.\n\
+        In a group chat, send <code>/vd</code> (<code>/video_download</code>) with a link or reply to a message containing a link.\n\
+        If you want to download audio, send <code>/ad</code> (<code>/audio_download</code>) instead of <code>/vd</code>.\n\
+        You can also use <code>/rv</code> (<code>/random_video</code>) or <code>/ra</code> (<code>/random_audio</code>) to get random media.\n\n\
+        To download playlists, use range download: <code>&lt;url&gt; [items=start:stop:step]</code>.\n\
+        To select language, use: <code>&lt;url&gt; [lang=ru|en|en-US|en-GB]</code>.\n\n\
         You can use me in inline mode in any chat by typing <code>@{bot_username} </code><code>&lt;url&gt;</code>.\n\
-        If text is specified instead of the URL, a YouTube video search will be performed.\n\
-        * I'm download videos and audios in the best quality that less than {max_file_size_in_mb}MB.\n\
-        * The bot is open source, and you can find the source code {source_code}.",
+        If text is specified instead of a URL, a YouTube video search will be performed.\n\
+        * I download videos and audios in the best available quality under {max_file_size_in_mb}MB.\n\
+        * The bot is open source, and you can find the source code: {source_code}.",
         first_name = message
             .from()
             .as_ref()
