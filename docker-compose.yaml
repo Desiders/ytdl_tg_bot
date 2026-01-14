@@ -1,7 +1,7 @@
 services:
   bot:
     container_name: ytdl_tg_bot.bot
-    image: desiders/ytdl_tg_bot:3.3.2
+    image: desiders/ytdl_tg_bot:3.4.3
     restart: "unless-stopped"
     env_file:
       - ".env"
@@ -115,7 +115,7 @@ services:
 
   migration:
     container_name: ytdl_tg_bot.migration
-    image: desiders/ytdl_tg_bot.migration:1.1.0
+    image: desiders/ytdl_tg_bot.migration:1.2.0
     restart: "no"
     environment:
       DATABASE_URL: $DATABASE_URL

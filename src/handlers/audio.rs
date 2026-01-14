@@ -10,7 +10,7 @@ use crate::{
         },
         AddDownloadedAudio, AddDownloadedMediaInput, GetAudioByURL, GetAudioByURLInput,
         GetAudioByURLKind::{Empty, Playlist, SingleCached},
-        Interactor as _,
+        GetRandomDownloadedAudio, GetRandomDownloadedMediaInput, Interactor as _,
     },
     utils::{format_error_report, FormatErrorToMessage as _},
 };
@@ -209,5 +209,40 @@ pub async fn download(
             return Ok(EventReturn::Finish);
         }
     }
+    Ok(EventReturn::Finish)
+}
+
+#[instrument(skip_all, fields(%message_id = message.id()))]
+pub async fn random(
+    message: Message,
+    Inject(get_media): Inject<GetRandomDownloadedAudio>,
+    Inject(send_playlist): Inject<SendAudioPlaylistById>,
+    InjectTransient(mut tx_manager): InjectTransient<TxManager>,
+) -> HandlerResult {
+    let message_id = message.id();
+    let chat_id = message.chat().id();
+
+    match get_media.execute(GetRandomDownloadedMediaInput::new(1, &mut tx_manager)).await {
+        Ok(playlist) => {
+            if let Err(err) = send_playlist
+                .execute(SendAudioPlaylistByIdInput::new(
+                    chat_id,
+                    Some(message_id),
+                    playlist
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, media)| TgAudioInPlaylist::new(media.file_id, index))
+                        .collect(),
+                ))
+                .await
+            {
+                error!(%err, "Send err");
+            }
+        }
+        Err(err) => {
+            error!(err = format_error_report(&err), "Get err");
+        }
+    }
+
     Ok(EventReturn::Finish)
 }
