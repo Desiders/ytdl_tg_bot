@@ -1,4 +1,7 @@
-use sea_orm::{prelude::Expr, sea_query::OnConflict, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait as _, QueryFilter as _};
+use sea_orm::{
+    prelude::Expr, sea_query::OnConflict, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait as _, QueryFilter as _, QueryOrder,
+    QuerySelect,
+};
 use std::convert::Infallible;
 
 use crate::{
@@ -80,5 +83,28 @@ where
             .one(self.conn)
             .await?
             .map(Into::into))
+    }
+
+    pub async fn get_random(
+        &self,
+        limit: u64,
+        media_type: MediaType,
+        domains: &[String],
+    ) -> Result<Vec<DownloadedMedia>, ErrorKind<Infallible>> {
+        use downloaded_media::{
+            Column::{Domain, MediaType},
+            Entity,
+        };
+
+        Ok(Entity::find()
+            .filter(MediaType.eq(sea_orm_active_enums::MediaType::from(media_type)))
+            .filter(Domain.is_in(domains))
+            .order_by_desc(Expr::cust("RANDOM()"))
+            .limit(limit)
+            .all(self.conn)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
     }
 }

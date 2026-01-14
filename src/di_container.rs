@@ -12,7 +12,7 @@ use tracing::{error, info};
 use uuid::ContextV7;
 
 use crate::{
-    config::{Config, DatabaseConfig, YtDlpConfig, YtPotProviderConfig, YtToolkitConfig},
+    config::{Config, DatabaseConfig, RandomCmdConfig, YtDlpConfig, YtPotProviderConfig, YtToolkitConfig},
     database::TxManager,
     entities::Cookies,
     interactors::{
@@ -21,8 +21,8 @@ use crate::{
             EditAudioById, EditVideoById, SendAudioById, SendAudioInFS, SendAudioPlaylistById, SendVideoById, SendVideoInFS,
             SendVideoPlaylistById,
         },
-        AddDownloadedAudio, AddDownloadedVideo, GetAudioByURL, GetShortMediaByURLInfo, GetUncachedVideoByURL, GetVideoByURL, SaveChat,
-        SearchMediaInfo,
+        AddDownloadedAudio, AddDownloadedVideo, GetAudioByURL, GetRandomDownloadedAudio, GetRandomDownloadedVideo, GetShortMediaByURLInfo,
+        GetUncachedVideoByURL, GetVideoByURL, SaveChat, SearchMediaInfo,
     },
 };
 
@@ -41,6 +41,7 @@ pub(super) fn init(bot: Bot, config: Config, cookies: Cookies) -> Container {
             provide(instance(config.yt_pot_provider)),
             provide(instance(config.telegram_bot_api)),
             provide(instance(config.domains_with_reactions)),
+            provide(instance(config.random_cmd)),
             provide(instance(config.replace_domains)),
             provide(instance(config.tracking_params)),
 
@@ -58,6 +59,8 @@ pub(super) fn init(bot: Bot, config: Config, cookies: Cookies) -> Container {
             provide(|Inject(bot): Inject<Bot>| Ok(SendAudioPlaylistById::new(bot))),
             provide(|Inject(bot): Inject<Bot>| Ok(EditVideoById::new(bot))),
             provide(|Inject(bot): Inject<Bot>| Ok(EditAudioById::new(bot))),
+            provide(|Inject(random_cfg): Inject<RandomCmdConfig>| Ok(GetRandomDownloadedVideo::new(random_cfg))),
+            provide(|Inject(random_cfg): Inject<RandomCmdConfig>| Ok(GetRandomDownloadedAudio::new(random_cfg))),
             provide(|
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
                 Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,

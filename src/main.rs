@@ -83,6 +83,16 @@ async fn main() {
         .filter(text_contains_url_with_reply);
     download_router
         .message
+        .register(video::random)
+        .filter(ContentType::one(ContentTypeEnum::Text))
+        .filter(Command::many(["rv", "rnd_v", "rnd_video", "random_video"]));
+    download_router
+        .message
+        .register(audio::random)
+        .filter(ContentType::one(ContentTypeEnum::Text))
+        .filter(Command::many(["ra", "rnd_a", "rnd_audio", "random_audio"]));
+    download_router
+        .message
         .register(video::download)
         .filter(ChatType::one(ChatTypeEnum::Private))
         .filter(text_contains_url_with_reply)
