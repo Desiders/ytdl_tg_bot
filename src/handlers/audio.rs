@@ -222,7 +222,10 @@ pub async fn random(
     let message_id = message.id();
     let chat_id = message.chat().id();
 
-    match get_media.execute(GetRandomDownloadedMediaInput::new(1, &mut tx_manager)).await {
+    match get_media
+        .execute(GetRandomDownloadedMediaInput::new(1, None, &mut tx_manager))
+        .await
+    {
         Ok(playlist) => {
             if let Err(err) = send_playlist
                 .execute(SendAudioPlaylistByIdInput::new(
