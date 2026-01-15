@@ -1,5 +1,5 @@
 use crate::{
-    config::{YtDlpConfig, YtPotProviderConfig},
+    config::{TimeoutsConfig, YtDlpConfig, YtPotProviderConfig},
     entities::{Cookies, VideoAndFormat, VideoInFS},
     interactors::Interactor,
     services::{download_thumbnail_to_path, download_to_pipe, download_video_to_path, merge_streams},
@@ -20,7 +20,6 @@ use tokio::{io::AsyncWriteExt as _, sync::mpsc, time::timeout};
 use tracing::{debug, debug_span, error, info, info_span, instrument, trace, Instrument};
 use url::Url;
 
-const DOWNLOAD_TIMEOUT: u64 = 360;
 const RANGE_CHUNK_SIZE: i32 = 1024 * 1024 * 10;
 
 #[derive(thiserror::Error, Debug)]
@@ -61,14 +60,21 @@ pub struct DownloadVideo {
     yt_dlp_cfg: Arc<YtDlpConfig>,
     yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
     cookies: Arc<Cookies>,
+    timeouts_cfg: Arc<TimeoutsConfig>,
 }
 
 impl DownloadVideo {
-    pub const fn new(yt_dlp_cfg: Arc<YtDlpConfig>, yt_pot_provider_cfg: Arc<YtPotProviderConfig>, cookies: Arc<Cookies>) -> Self {
+    pub const fn new(
+        yt_dlp_cfg: Arc<YtDlpConfig>,
+        yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
+        cookies: Arc<Cookies>,
+        timeouts_cfg: Arc<TimeoutsConfig>,
+    ) -> Self {
         Self {
             yt_dlp_cfg,
             yt_pot_provider_cfg,
             cookies,
+            timeouts_cfg,
         }
     }
 }
@@ -120,7 +126,7 @@ impl Interactor<DownloadVideoInput<'_>> for &DownloadVideo {
                             format.video_format.id,
                             extension,
                             temp_dir_path,
-                            DOWNLOAD_TIMEOUT,
+                            self.timeouts_cfg.video_download,
                             self.yt_dlp_cfg.max_file_size,
                             cookie,
                         )
@@ -247,7 +253,7 @@ impl Interactor<DownloadVideoInput<'_>> for &DownloadVideo {
             }
         }
 
-        let exit_code = match timeout(Duration::from_secs(DOWNLOAD_TIMEOUT), merge_child.wait()).await {
+        let exit_code = match timeout(Duration::from_secs(self.timeouts_cfg.video_download), merge_child.wait()).await {
             Ok(Ok(exit_code)) => exit_code,
             Ok(Err(err)) => {
                 return Err(Self::Err::Ffmpeg(err));
@@ -276,14 +282,21 @@ pub struct DownloadVideoPlaylist {
     yt_dlp_cfg: Arc<YtDlpConfig>,
     yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
     cookies: Arc<Cookies>,
+    timeouts_cfg: Arc<TimeoutsConfig>,
 }
 
 impl DownloadVideoPlaylist {
-    pub const fn new(yt_dlp_cfg: Arc<YtDlpConfig>, yt_pot_provider_cfg: Arc<YtPotProviderConfig>, cookies: Arc<Cookies>) -> Self {
+    pub const fn new(
+        yt_dlp_cfg: Arc<YtDlpConfig>,
+        yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
+        cookies: Arc<Cookies>,
+        timeouts_cfg: Arc<TimeoutsConfig>,
+    ) -> Self {
         Self {
             yt_dlp_cfg,
             yt_pot_provider_cfg,
             cookies,
+            timeouts_cfg,
         }
     }
 }
@@ -354,7 +367,7 @@ impl Interactor<DownloadVideoPlaylistInput<'_>> for &DownloadVideoPlaylist {
                                 format.video_format.id,
                                 extension,
                                 temp_dir_path,
-                                DOWNLOAD_TIMEOUT,
+                                self.timeouts_cfg.video_download,
                                 self.yt_dlp_cfg.max_file_size,
                                 cookie,
                             )
@@ -478,7 +491,7 @@ impl Interactor<DownloadVideoPlaylistInput<'_>> for &DownloadVideoPlaylist {
                 }
             }
 
-            let exit_code = match timeout(Duration::from_secs(DOWNLOAD_TIMEOUT), merge_child.wait()).await {
+            let exit_code = match timeout(Duration::from_secs(self.timeouts_cfg.video_download), merge_child.wait()).await {
                 Ok(Ok(exit_code)) => exit_code,
                 Ok(Err(err)) => {
                     let _guard = span.enter();

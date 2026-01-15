@@ -1,5 +1,5 @@
 use crate::{
-    config::{YtDlpConfig, YtPotProviderConfig},
+    config::{TimeoutsConfig, YtDlpConfig, YtPotProviderConfig},
     entities::{AudioAndFormat, AudioInFS, Cookies},
     interactors::Interactor,
     services::{download_audio_to_path, download_thumbnail_to_path},
@@ -10,8 +10,6 @@ use tempfile::TempDir;
 use tokio::sync::mpsc;
 use tracing::{info, info_span, instrument};
 use url::Url;
-
-const DOWNLOAD_TIMEOUT: u64 = 360;
 
 #[derive(thiserror::Error, Debug)]
 pub enum DownloadAudioErrorKind {
@@ -33,14 +31,21 @@ pub struct DownloadAudio {
     yt_dlp_cfg: Arc<YtDlpConfig>,
     yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
     cookies: Arc<Cookies>,
+    timeouts_cfg: Arc<TimeoutsConfig>,
 }
 
 impl DownloadAudio {
-    pub const fn new(yt_dlp_cfg: Arc<YtDlpConfig>, yt_pot_provider_cfg: Arc<YtPotProviderConfig>, cookies: Arc<Cookies>) -> Self {
+    pub const fn new(
+        yt_dlp_cfg: Arc<YtDlpConfig>,
+        yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
+        cookies: Arc<Cookies>,
+        timeouts_cfg: Arc<TimeoutsConfig>,
+    ) -> Self {
         Self {
             yt_dlp_cfg,
             yt_pot_provider_cfg,
             cookies,
+            timeouts_cfg,
         }
     }
 }
@@ -89,7 +94,7 @@ impl Interactor<DownloadAudioInput<'_>> for &DownloadAudio {
                         format.id,
                         extension,
                         temp_dir_path,
-                        DOWNLOAD_TIMEOUT,
+                        self.timeouts_cfg.audio_download,
                         self.yt_dlp_cfg.max_file_size,
                         cookie,
                     )
@@ -122,14 +127,21 @@ pub struct DownloadAudioPlaylist {
     yt_dlp_cfg: Arc<YtDlpConfig>,
     yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
     cookies: Arc<Cookies>,
+    timeouts_cfg: Arc<TimeoutsConfig>,
 }
 
 impl DownloadAudioPlaylist {
-    pub const fn new(yt_dlp_cfg: Arc<YtDlpConfig>, yt_pot_provider_cfg: Arc<YtPotProviderConfig>, cookies: Arc<Cookies>) -> Self {
+    pub const fn new(
+        yt_dlp_cfg: Arc<YtDlpConfig>,
+        yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
+        cookies: Arc<Cookies>,
+        timeouts_cfg: Arc<TimeoutsConfig>,
+    ) -> Self {
         Self {
             yt_dlp_cfg,
             yt_pot_provider_cfg,
             cookies,
+            timeouts_cfg,
         }
     }
 }
@@ -197,7 +209,7 @@ impl Interactor<DownloadAudioPlaylistInput<'_>> for &DownloadAudioPlaylist {
                             format.id,
                             extension,
                             temp_dir_path,
-                            DOWNLOAD_TIMEOUT,
+                            self.timeouts_cfg.audio_download,
                             self.yt_dlp_cfg.max_file_size,
                             cookie,
                         )
