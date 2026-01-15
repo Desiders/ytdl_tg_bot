@@ -124,12 +124,17 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedAudio {
 
 pub struct GetRandomDownloadedMediaInput<'a> {
     pub limit: u64,
+    pub domains: Option<Vec<String>>,
     pub tx_manager: &'a mut TxManager,
 }
 
 impl<'a> GetRandomDownloadedMediaInput<'a> {
-    pub const fn new(limit: u64, tx_manager: &'a mut TxManager) -> Self {
-        Self { limit, tx_manager }
+    pub const fn new(limit: u64, domains: Option<Vec<String>>, tx_manager: &'a mut TxManager) -> Self {
+        Self {
+            limit,
+            domains,
+            tx_manager,
+        }
     }
 }
 
@@ -150,13 +155,19 @@ impl Interactor<GetRandomDownloadedMediaInput<'_>> for &GetRandomDownloadedVideo
     #[instrument(skip_all)]
     async fn execute(
         self,
-        GetRandomDownloadedMediaInput { limit, tx_manager }: GetRandomDownloadedMediaInput<'_>,
+        GetRandomDownloadedMediaInput {
+            limit,
+            domains,
+            tx_manager,
+        }: GetRandomDownloadedMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         tx_manager.begin().await?;
 
         let dao = tx_manager.downloaded_media_dao()?;
 
-        let media = dao.get_random(limit, MediaType::Video, &self.random_cfg.domains).await?;
+        let media = dao
+            .get_random(limit, MediaType::Video, domains.as_deref().unwrap_or(&self.random_cfg.domains))
+            .await?;
         info!(len = media.len(), "Got random video");
 
         Ok(media)
@@ -180,13 +191,19 @@ impl Interactor<GetRandomDownloadedMediaInput<'_>> for &GetRandomDownloadedAudio
     #[instrument(skip_all)]
     async fn execute(
         self,
-        GetRandomDownloadedMediaInput { limit, tx_manager }: GetRandomDownloadedMediaInput<'_>,
+        GetRandomDownloadedMediaInput {
+            limit,
+            domains,
+            tx_manager,
+        }: GetRandomDownloadedMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         tx_manager.begin().await?;
 
         let dao = tx_manager.downloaded_media_dao()?;
 
-        let media = dao.get_random(limit, MediaType::Audio, &self.random_cfg.domains).await?;
+        let media = dao
+            .get_random(limit, MediaType::Audio, domains.as_deref().unwrap_or(&self.random_cfg.domains))
+            .await?;
         info!(len = media.len(), "Got random audio");
 
         Ok(media)
