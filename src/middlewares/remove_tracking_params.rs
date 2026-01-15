@@ -1,3 +1,5 @@
+use crate::config::TrackingParamsConfig;
+
 use froodi::async_impl::Container;
 use telers::{
     errors::EventErrorKind,
@@ -6,8 +8,7 @@ use telers::{
     Request,
 };
 use tracing::debug;
-
-use crate::{config::TrackingParamsConfig, entities::UrlWithParams};
+use url::Url;
 
 #[derive(Clone)]
 pub struct RemoveTrackingParamsMiddleware;
@@ -17,7 +18,7 @@ impl Middleware for RemoveTrackingParamsMiddleware {
         let container = request.extensions.get::<Container>().unwrap();
         let tracking_params_cfg = container.get::<TrackingParamsConfig>().await.unwrap();
 
-        let Some(UrlWithParams { url, .. }) = request.extensions.get_mut::<UrlWithParams>() else {
+        let Some(url) = request.extensions.get_mut::<Url>() else {
             return next(request).await;
         };
 

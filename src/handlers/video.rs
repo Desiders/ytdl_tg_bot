@@ -1,7 +1,7 @@
 use crate::{
     config::{ChatConfig, YtDlpConfig},
     database::TxManager,
-    entities::{PreferredLanguages, Range, TgVideoInPlaylist, UrlWithParams, VideoAndFormat},
+    entities::{Params, PreferredLanguages, Range, TgVideoInPlaylist, VideoAndFormat},
     handlers_utils::error,
     interactors::{
         download::{DownloadVideoPlaylist, DownloadVideoPlaylistInput},
@@ -26,12 +26,14 @@ use telers::{
     Bot, Extension,
 };
 use tracing::{debug, error, instrument, warn};
+use url::Url;
 
 #[instrument(skip_all, fields(%message_id = message.id(), %url = url.as_str(), ?params))]
 pub async fn download(
     bot: Bot,
     message: Message,
-    Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
+    params: Params,
+    Extension(url): Extension<Url>,
     Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
     Inject(chat_cfg): Inject<ChatConfig>,
     Inject(get_media): Inject<GetVideoByURL>,
@@ -47,7 +49,7 @@ pub async fn download(
     let message_id = message.id();
     let chat_id = message.chat().id();
 
-    let range = match params.get("items") {
+    let range = match params.0.get("items") {
         Some(raw_value) => match Range::from_str(raw_value) {
             Ok(range) => range,
             Err(err) => {
@@ -62,7 +64,7 @@ pub async fn download(
         },
         None => Range::default(),
     };
-    let preferred_languages = match params.get("lang") {
+    let preferred_languages = match params.0.get("lang") {
         Some(raw_value) => PreferredLanguages::from_str(raw_value).unwrap(),
         None => PreferredLanguages::default(),
     };
@@ -216,7 +218,8 @@ pub async fn download(
 #[instrument(skip_all, fields(%message_id = message.id(), %url = url.as_str(), ?params))]
 pub async fn download_quite(
     message: Message,
-    Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
+    params: Params,
+    Extension(url): Extension<Url>,
     Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
     Inject(chat_cfg): Inject<ChatConfig>,
     Inject(get_media): Inject<GetVideoByURL>,
@@ -232,7 +235,7 @@ pub async fn download_quite(
     let message_id = message.id();
     let chat_id = message.chat().id();
 
-    let range = match params.get("items") {
+    let range = match params.0.get("items") {
         Some(raw_value) => match Range::from_str(raw_value) {
             Ok(range) => range,
             Err(err) => {
@@ -242,7 +245,7 @@ pub async fn download_quite(
         },
         None => Range::default(),
     };
-    let preferred_languages = match params.get("lang") {
+    let preferred_languages = match params.0.get("lang") {
         Some(raw_value) => PreferredLanguages::from_str(raw_value).unwrap(),
         None => PreferredLanguages::default(),
     };

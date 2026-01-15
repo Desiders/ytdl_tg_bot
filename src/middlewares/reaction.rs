@@ -1,3 +1,5 @@
+use crate::config::DomainsWithReactionsConfig;
+
 use froodi::async_impl::Container;
 use telers::{
     errors::EventErrorKind,
@@ -8,8 +10,7 @@ use telers::{
     Request,
 };
 use tracing::error;
-
-use crate::{config::DomainsWithReactionsConfig, entities::UrlWithParams};
+use url::Url;
 
 static REACTIONS: [&str; 2] = ["👌", "👍"];
 
@@ -21,7 +22,7 @@ impl Middleware for ReactionMiddleware {
         let Some(message) = request.update.message() else {
             return next(request).await;
         };
-        let Some(domain) = request.extensions.get::<UrlWithParams>().and_then(|val| val.url.domain()) else {
+        let Some(domain) = request.extensions.get::<Url>().and_then(|url| url.domain()) else {
             return next(request).await;
         };
         let container = request.extensions.get::<Container>().unwrap();

@@ -1,3 +1,5 @@
+use crate::config::ReplaceDomainsConfig;
+
 use froodi::async_impl::Container;
 use regex::Regex;
 use telers::{
@@ -7,8 +9,7 @@ use telers::{
     Request,
 };
 use tracing::info;
-
-use crate::{config::ReplaceDomainsConfig, entities::UrlWithParams};
+use url::Url;
 
 #[derive(Clone)]
 pub struct ReplaceDomainsMiddleware;
@@ -18,7 +19,7 @@ impl Middleware for ReplaceDomainsMiddleware {
         let container = request.extensions.get::<Container>().unwrap();
         let replace_domains = container.get::<Vec<ReplaceDomainsConfig>>().await.unwrap();
 
-        let Some(UrlWithParams { url, .. }) = request.extensions.get_mut::<UrlWithParams>() else {
+        let Some(url) = request.extensions.get_mut::<Url>() else {
             return next(request).await;
         };
         let Some(domain) = url.domain().map(ToOwned::to_owned) else {

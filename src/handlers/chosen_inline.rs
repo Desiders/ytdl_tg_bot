@@ -1,7 +1,7 @@
 use crate::{
-    config::{ChatConfig, YtDlpConfig},
+    config::{ChatConfig, Config, YtDlpConfig},
     database::TxManager,
-    entities::{AudioAndFormat, PreferredLanguages, Range, UrlWithParams, VideoAndFormat},
+    entities::{AudioAndFormat, Params, PreferredLanguages, Range, VideoAndFormat},
     handlers_utils::error,
     interactors::{
         download::{DownloadAudio, DownloadAudioInput, DownloadVideo, DownloadVideoInput},
@@ -30,14 +30,14 @@ use url::Url;
 #[instrument(skip_all, fields(inline_message_id, is_video, url = url.as_str(), ?params))]
 pub async fn download_by_url(
     bot: Bot,
+    params: Params,
     ChosenInlineResult {
         result_id,
         inline_message_id,
         ..
     }: ChosenInlineResult,
-    Extension(UrlWithParams { url, params }): Extension<UrlWithParams>,
-    Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
-    Inject(chat_cfg): Inject<ChatConfig>,
+    Extension(url): Extension<Url>,
+    Inject(cfg): Inject<Config>,
     Inject(get_video_by_url): Inject<GetVideoByURL>,
     Inject(get_audio_by_url): Inject<GetAudioByURL>,
     Inject(download_video): Inject<DownloadVideo>,
@@ -59,7 +59,7 @@ pub async fn download_by_url(
 
     debug!("Got url");
 
-    let preferred_languages = match params.get("lang") {
+    let preferred_languages = match params.0.get("lang") {
         Some(raw_value) => PreferredLanguages::from_str(raw_value).unwrap(),
         None => PreferredLanguages::default(),
     };
@@ -82,7 +82,7 @@ pub async fn download_by_url(
                 } else {
                     let media = uncached.remove(0);
                     let media_and_format =
-                        match VideoAndFormat::new_with_select_format(&media, yt_dlp_cfg.max_file_size, &preferred_languages) {
+                        match VideoAndFormat::new_with_select_format(&media, cfg.yt_dlp.max_file_size, &preferred_languages) {
                             Ok(val) => val,
                             Err(err) => {
                                 error!(%err, "Select format err");
@@ -108,7 +108,7 @@ pub async fn download_by_url(
                     };
                     let file_id = match send_video_in_fs
                         .execute(SendVideoInFSInput::new(
-                            chat_cfg.receiver_chat_id,
+                            cfg.chat.receiver_chat_id,
                             None,
                             media_in_fs,
                             media.title.as_deref().unwrap_or(media.id.as_ref()),
@@ -193,7 +193,7 @@ pub async fn download_by_url(
                 cached.file_id
             } else {
                 let media = uncached.remove(0);
-                let media_and_format = match AudioAndFormat::new_with_select_format(&media, yt_dlp_cfg.max_file_size, &preferred_languages)
+                let media_and_format = match AudioAndFormat::new_with_select_format(&media, cfg.yt_dlp.max_file_size, &preferred_languages)
                 {
                     Ok(val) => val,
                     Err(err) => {
@@ -220,7 +220,7 @@ pub async fn download_by_url(
                 };
                 let file_id = match send_audio_in_fs
                     .execute(SendAudioInFSInput::new(
-                        chat_cfg.receiver_chat_id,
+                        cfg.chat.receiver_chat_id,
                         None,
                         media_in_fs,
                         media.title.as_deref().unwrap_or(media.id.as_ref()),

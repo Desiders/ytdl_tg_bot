@@ -1,5 +1,5 @@
 use crate::{
-    entities::{Range, ShortInfo, UrlWithParams},
+    entities::{Range, ShortInfo},
     handlers_utils::error,
     interactors::{
         GetShortMediaByURLInfo, GetShortMediaInfoByURLInput, GetUncachedVideoByURL, GetUncachedVideoByURLInput,
@@ -22,7 +22,7 @@ use telers::{
     Bot, Extension,
 };
 use tracing::{debug, error, instrument, warn};
-use url::Host;
+use url::{Host, Url};
 use uuid::Uuid;
 
 const SELECT_INLINE_QUERY_CACHE_TIME: i64 = 86400; // 24 hours
@@ -31,7 +31,7 @@ const SELECT_INLINE_QUERY_CACHE_TIME: i64 = 86400; // 24 hours
 pub async fn select_by_url(
     bot: Bot,
     InlineQuery { id: query_id, .. }: InlineQuery,
-    Extension(UrlWithParams { url, .. }): Extension<UrlWithParams>,
+    Extension(url): Extension<Url>,
     Inject(get_short_media_info): Inject<GetShortMediaByURLInfo>,
     Inject(get_media): Inject<GetUncachedVideoByURL>,
 ) -> HandlerResult {
