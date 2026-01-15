@@ -19,6 +19,25 @@ pub struct ChatConfig {
     pub receiver_chat_id: i64,
 }
 
+#[derive(Deserialize, Clone, Debug)]
+pub struct TimeoutsConfig {
+    pub video_download: u64,
+    pub audio_download: u64,
+    pub send_by_fs: f32,
+    pub send_by_id: f32,
+}
+
+impl Default for TimeoutsConfig {
+    fn default() -> Self {
+        Self {
+            video_download: 420,
+            audio_download: 420,
+            send_by_fs: 210.0,
+            send_by_id: 360.0,
+        }
+    }
+}
+
 #[derive(Default, Deserialize, Clone, Debug)]
 pub struct BlacklistedConfig {
     #[serde(default)]
@@ -110,6 +129,8 @@ pub struct Config {
     pub yt_toolkit: YtToolkitConfig,
     pub yt_pot_provider: YtPotProviderConfig,
     pub telegram_bot_api: TelegramBotApiConfig,
+    #[serde(default)]
+    pub timeouts: TimeoutsConfig,
     #[serde(default)]
     pub blacklisted: BlacklistedConfig,
     #[serde(default)]
