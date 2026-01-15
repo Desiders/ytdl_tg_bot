@@ -1,4 +1,5 @@
 use crate::{
+    config::TimeoutsConfig,
     entities::{TgAudioInPlaylist, TgVideoInPlaylist},
     handlers_utils::send,
     interactors::Interactor,
@@ -14,15 +15,14 @@ use telers::{
 };
 use tracing::{debug, info, instrument};
 
-const SEND_TIMEOUT: f32 = 360.0;
-
 pub struct SendVideoById {
     bot: Arc<Bot>,
+    timeouts_cfg: Arc<TimeoutsConfig>,
 }
 
 impl SendVideoById {
-    pub const fn new(bot: Arc<Bot>) -> Self {
-        Self { bot }
+    pub const fn new(bot: Arc<Bot>, timeouts_cfg: Arc<TimeoutsConfig>) -> Self {
+        Self { bot, timeouts_cfg }
     }
 }
 
@@ -63,7 +63,7 @@ impl Interactor<SendVideoByIdInput<'_>> for &SendVideoById {
                 .disable_notification(true)
                 .supports_streaming(true),
             2,
-            Some(SEND_TIMEOUT),
+            Some(self.timeouts_cfg.send_by_id),
         )
         .await?;
         info!("Video sent");
@@ -74,11 +74,12 @@ impl Interactor<SendVideoByIdInput<'_>> for &SendVideoById {
 
 pub struct SendAudioById {
     bot: Arc<Bot>,
+    timeouts_cfg: Arc<TimeoutsConfig>,
 }
 
 impl SendAudioById {
-    pub const fn new(bot: Arc<Bot>) -> Self {
-        Self { bot }
+    pub const fn new(bot: Arc<Bot>, timeouts_cfg: Arc<TimeoutsConfig>) -> Self {
+        Self { bot, timeouts_cfg }
     }
 }
 
@@ -118,7 +119,7 @@ impl Interactor<SendAudioByIdInput<'_>> for &SendAudioById {
                 .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)))
                 .disable_notification(true),
             2,
-            Some(SEND_TIMEOUT),
+            Some(self.timeouts_cfg.send_by_id),
         )
         .await?;
         info!("Audio sent");
@@ -129,11 +130,12 @@ impl Interactor<SendAudioByIdInput<'_>> for &SendAudioById {
 
 pub struct EditVideoById {
     bot: Arc<Bot>,
+    timeouts_cfg: Arc<TimeoutsConfig>,
 }
 
 impl EditVideoById {
-    pub const fn new(bot: Arc<Bot>) -> Self {
-        Self { bot }
+    pub const fn new(bot: Arc<Bot>, timeouts_cfg: Arc<TimeoutsConfig>) -> Self {
+        Self { bot, timeouts_cfg }
     }
 }
 
@@ -178,7 +180,7 @@ impl Interactor<EditVideoByIdInput<'_>> for &EditVideoById {
             .inline_message_id(inline_message_id)
             .reply_markup(InlineKeyboardMarkup::new([[]])),
             2,
-            Some(SEND_TIMEOUT),
+            Some(self.timeouts_cfg.send_by_id),
         )
         .await?;
         info!("Video edited");
@@ -189,11 +191,12 @@ impl Interactor<EditVideoByIdInput<'_>> for &EditVideoById {
 
 pub struct EditAudioById {
     bot: Arc<Bot>,
+    timeouts_cfg: Arc<TimeoutsConfig>,
 }
 
 impl EditAudioById {
-    pub const fn new(bot: Arc<Bot>) -> Self {
-        Self { bot }
+    pub const fn new(bot: Arc<Bot>, timeouts_cfg: Arc<TimeoutsConfig>) -> Self {
+        Self { bot, timeouts_cfg }
     }
 }
 
@@ -233,7 +236,7 @@ impl Interactor<EditAudioByIdInput<'_>> for &EditAudioById {
                 .inline_message_id(inline_message_id)
                 .reply_markup(InlineKeyboardMarkup::new([[]])),
             2,
-            Some(SEND_TIMEOUT),
+            Some(self.timeouts_cfg.send_by_id),
         )
         .await?;
         info!("Audio edited");
@@ -244,11 +247,12 @@ impl Interactor<EditAudioByIdInput<'_>> for &EditAudioById {
 
 pub struct SendVideoPlaylistById {
     bot: Arc<Bot>,
+    timeouts_cfg: Arc<TimeoutsConfig>,
 }
 
 impl SendVideoPlaylistById {
-    pub const fn new(bot: Arc<Bot>) -> Self {
-        Self { bot }
+    pub const fn new(bot: Arc<Bot>, timeouts_cfg: Arc<TimeoutsConfig>) -> Self {
+        Self { bot, timeouts_cfg }
     }
 }
 
@@ -291,7 +295,7 @@ impl Interactor<SendVideoPlaylistByIdInput> for &SendVideoPlaylistById {
                 .map(|TgVideoInPlaylist { file_id, .. }| InputMediaVideo::new(InputFile::id(file_id.into_string())))
                 .collect(),
             reply_to_message_id,
-            Some(SEND_TIMEOUT),
+            Some(self.timeouts_cfg.send_by_id),
         )
         .await?;
         info!("Video playlist sent");
@@ -302,11 +306,12 @@ impl Interactor<SendVideoPlaylistByIdInput> for &SendVideoPlaylistById {
 
 pub struct SendAudioPlaylistById {
     bot: Arc<Bot>,
+    timeouts_cfg: Arc<TimeoutsConfig>,
 }
 
 impl SendAudioPlaylistById {
-    pub const fn new(bot: Arc<Bot>) -> Self {
-        Self { bot }
+    pub const fn new(bot: Arc<Bot>, timeouts_cfg: Arc<TimeoutsConfig>) -> Self {
+        Self { bot, timeouts_cfg }
     }
 }
 
@@ -349,7 +354,7 @@ impl Interactor<SendAudioPlaylistByIdInput> for &SendAudioPlaylistById {
                 .map(|TgAudioInPlaylist { file_id, .. }| InputMediaAudio::new(InputFile::id(file_id.into_string())))
                 .collect(),
             reply_to_message_id,
-            Some(SEND_TIMEOUT),
+            Some(self.timeouts_cfg.send_by_id),
         )
         .await?;
         info!("Audio playlist sent");

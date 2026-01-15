@@ -1,9 +1,11 @@
 use crate::{
+    config::TimeoutsConfig,
     entities::{AudioInFS, VideoInFS},
     handlers_utils::send,
     interactors::Interactor,
 };
 
+use crate::utils::sanitize_send_filename;
 use std::sync::Arc;
 use telers::{
     errors::SessionErrorKind,
@@ -11,18 +13,16 @@ use telers::{
     types::{InputFile, ReplyParameters},
     Bot,
 };
-use crate::utils::sanitize_send_filename;
 use tracing::{debug, error, info, instrument};
-
-const SEND_TIMEOUT: f32 = 180.0;
 
 pub struct SendVideoInFS {
     bot: Arc<Bot>,
+    timeouts_cfg: Arc<TimeoutsConfig>,
 }
 
 impl SendVideoInFS {
-    pub const fn new(bot: Arc<Bot>) -> Self {
-        Self { bot }
+    pub const fn new(bot: Arc<Bot>, timeouts_cfg: Arc<TimeoutsConfig>) -> Self {
+        Self { bot, timeouts_cfg }
     }
 }
 
@@ -63,11 +63,12 @@ impl<'a> SendVideoInFSInput<'a> {
 
 pub struct SendAudioInFS {
     bot: Arc<Bot>,
+    timeouts_cfg: Arc<TimeoutsConfig>,
 }
 
 impl SendAudioInFS {
-    pub const fn new(bot: Arc<Bot>) -> Self {
-        Self { bot }
+    pub const fn new(bot: Arc<Bot>, timeouts_cfg: Arc<TimeoutsConfig>) -> Self {
+        Self { bot, timeouts_cfg }
     }
 }
 
@@ -143,7 +144,7 @@ impl Interactor<SendVideoInFSInput<'_>> for &SendVideoInFS {
                 .supports_streaming(true)
                 .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true))),
             2,
-            Some(SEND_TIMEOUT),
+            Some(self.timeouts_cfg.send_by_fs),
         )
         .await?;
         let message_id = message.id();
@@ -178,7 +179,11 @@ impl Interactor<SendAudioInFSInput<'_>> for &SendAudioInFS {
         SendAudioInFSInput {
             chat_id,
             reply_to_message_id,
-            audio_in_fs: AudioInFS { path, temp_dir, thumbnail_path },
+            audio_in_fs: AudioInFS {
+                path,
+                temp_dir,
+                thumbnail_path,
+            },
             name,
             performer,
             title,
@@ -196,13 +201,9 @@ impl Interactor<SendAudioInFSInput<'_>> for &SendAudioInFS {
             .thumbnail_option(thumbnail_path.map(InputFile::fs))
             .title_option(title)
             .performer_option(performer)
-            .reply_parameters_option(
-                reply_to_message_id
-                    .map(|r| ReplyParameters::new(r).allow_sending_without_reply(true))
-            );
+            .reply_parameters_option(reply_to_message_id.map(|r| ReplyParameters::new(r).allow_sending_without_reply(true)));
 
-
-        let message = send::with_retries(&self.bot, method, 2, Some(SEND_TIMEOUT)).await?;
+        let message = send::with_retries(&self.bot, method, 2, Some(self.timeouts_cfg.send_by_fs)).await?;
         let message_id = message.id();
         let file_id = message.audio().unwrap().file_id.clone();
         drop(message);
