@@ -42,5 +42,5 @@ pub async fn occured_in_inline_query_occured(bot: &Bot, query_id: &str, text: &s
     let result = InlineQueryResultArticle::new(query_id, text, InputTextMessageContent::new(text));
     let results = [result];
 
-    bot.send(AnswerInlineQuery::new(query_id, results)).await.map(|_| ())
+    bot.send(AnswerInlineQuery::new(query_id, results).cache_time(0)).await.map(|_| ())
 }
