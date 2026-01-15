@@ -12,7 +12,7 @@ use tracing::{error, info};
 use uuid::ContextV7;
 
 use crate::{
-    config::{Config, DatabaseConfig, RandomCmdConfig, YtDlpConfig, YtPotProviderConfig, YtToolkitConfig},
+    config::{Config, DatabaseConfig, RandomCmdConfig, TimeoutsConfig, YtDlpConfig, YtPotProviderConfig, YtToolkitConfig},
     database::TxManager,
     entities::Cookies,
     interactors::{
@@ -33,6 +33,7 @@ pub(super) fn init(bot: Bot, config: Config, cookies: Cookies) -> Container {
             provide(instance(cookies)),
             provide(instance(config.bot)),
             provide(instance(config.chat)),
+            provide(instance(config.timeouts)),
             provide(instance(config.blacklisted)),
             provide(instance(config.logging)),
             provide(instance(config.database)),
@@ -51,16 +52,40 @@ pub(super) fn init(bot: Bot, config: Config, cookies: Cookies) -> Container {
             provide(|| Ok(AddDownloadedVideo::new())),
             provide(|| Ok(AddDownloadedAudio::new())),
 
-            provide(|Inject(bot): Inject<Bot>| Ok(SendVideoInFS::new(bot))),
-            provide(|Inject(bot): Inject<Bot>| Ok(SendVideoById::new(bot))),
-            provide(|Inject(bot): Inject<Bot>| Ok(SendVideoPlaylistById::new(bot))),
-            provide(|Inject(bot): Inject<Bot>| Ok(SendAudioInFS::new(bot))),
-            provide(|Inject(bot): Inject<Bot>| Ok(SendAudioById::new(bot))),
-            provide(|Inject(bot): Inject<Bot>| Ok(SendAudioPlaylistById::new(bot))),
-            provide(|Inject(bot): Inject<Bot>| Ok(EditVideoById::new(bot))),
-            provide(|Inject(bot): Inject<Bot>| Ok(EditAudioById::new(bot))),
             provide(|Inject(random_cfg): Inject<RandomCmdConfig>| Ok(GetRandomDownloadedVideo::new(random_cfg))),
             provide(|Inject(random_cfg): Inject<RandomCmdConfig>| Ok(GetRandomDownloadedAudio::new(random_cfg))),
+            provide(|
+                Inject(bot): Inject<Bot>,
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(EditVideoById::new(bot, timeouts_cfg))
+            ),
+            provide(|
+                Inject(bot): Inject<Bot>,
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(EditAudioById::new(bot, timeouts_cfg))
+            ),
+            provide(|
+                Inject(bot): Inject<Bot>,
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(SendVideoById::new(bot, timeouts_cfg))
+            ),
+            provide(|
+                Inject(bot): Inject<Bot>,
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(SendAudioById::new(bot, timeouts_cfg))
+            ),
+            provide(|
+                Inject(bot): Inject<Bot>,
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(SendVideoInFS::new(bot, timeouts_cfg))
+            ),
+            provide(|
+                Inject(bot): Inject<Bot>,
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(SendAudioInFS::new(bot, timeouts_cfg))
+            ),
+            provide(|
+                Inject(bot): Inject<Bot>,
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(SendVideoPlaylistById::new(bot, timeouts_cfg))
+            ),
+            provide(|
+                Inject(bot): Inject<Bot>,
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(SendAudioPlaylistById::new(bot, timeouts_cfg))
+            ),
             provide(|
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
                 Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
@@ -87,22 +112,26 @@ pub(super) fn init(bot: Bot, config: Config, cookies: Cookies) -> Container {
             provide(|
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
                 Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-                Inject(cookies): Inject<Cookies>| Ok(DownloadVideo::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies))
+                Inject(cookies): Inject<Cookies>,
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(DownloadVideo::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies, timeouts_cfg))
             ),
             provide(|
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
                 Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-                Inject(cookies): Inject<Cookies>| Ok(DownloadVideoPlaylist::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies))
+                Inject(cookies): Inject<Cookies>,
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(DownloadVideoPlaylist::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies, timeouts_cfg))
             ),
             provide(|
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
                 Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-                Inject(cookies): Inject<Cookies>| Ok(DownloadAudio::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies))
+                Inject(cookies): Inject<Cookies>,
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(DownloadAudio::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies, timeouts_cfg))
             ),
             provide(|
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
                 Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-                Inject(cookies): Inject<Cookies>| Ok(DownloadAudioPlaylist::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies))
+                Inject(cookies): Inject<Cookies>,
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(DownloadAudioPlaylist::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies, timeouts_cfg))
             ),
         ],
     };

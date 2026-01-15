@@ -8,6 +8,12 @@ dirs = "info,hyper=warn,reqwest=warn,tokio_util::codec=warn"
 [chat]
 receiver_chat_id = 123
 
+[timeouts]
+video_download = 420
+audio_download = 420
+send_by_fs = 210
+send_by_id = 360
+
 [blacklisted]
 domains = ["t.me", "2girls1cup.ca"]
 
