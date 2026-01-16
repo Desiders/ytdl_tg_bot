@@ -2,6 +2,7 @@ use crate::{database::models::downloaded_media::Model, value_objects::MediaType}
 
 use time::OffsetDateTime;
 
+#[derive(Debug)]
 pub struct DownloadedMedia {
     pub file_id: String,
     pub id: String,

@@ -1,5 +1,6 @@
 use crate::database::models::sea_orm_active_enums::MediaType as Model;
 
+#[derive(Debug)]
 pub enum MediaType {
     Video,
     Audio,

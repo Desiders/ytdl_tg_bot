@@ -99,8 +99,8 @@ impl<'a> SendAudioInFSInput<'a> {
             reply_to_message_id,
             audio_in_fs,
             name,
-            performer,
             title,
+            performer,
             duration,
             with_delete,
         }

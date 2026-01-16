@@ -33,7 +33,7 @@ impl FromStr for PreferredLanguages {
             .map(|part| part.to_owned().into_boxed_str())
             .collect();
 
-        Ok(Self {languages})
+        Ok(Self { languages })
     }
 }
 
@@ -57,7 +57,7 @@ mod tests {
         let languages: PreferredLanguages = "|".parse().unwrap();
         assert_eq!(languages, PreferredLanguages { languages: Box::new([]) });
     }
-    
+
     #[test]
     fn test_parse_missing_step_value() {
         let languages: PreferredLanguages = "ru|".parse().unwrap();

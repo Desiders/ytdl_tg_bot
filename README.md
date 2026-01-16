@@ -59,3 +59,14 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
   Example:
     - `https://youtube.com/playlist?yv2t=false`;
     - `https://youtube.com/playlist?some=some&yv2t_bot=false`.
+
+### 7. Random media
+- **Private chat**:
+  - Use the command `/rv` to get random video
+  - Use the command `/ra` to get random video
+
+  Supports domains specification to get media only from these sources.\
+  Format: `[/command] [domains=youtube.com|youtu.be]`.
+  Example:
+    - `/rv [domains=youtube.com|youtu.be]`,
+    - `/rv [domains=youtube.com]`.

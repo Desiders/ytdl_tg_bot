@@ -25,8 +25,9 @@ pub async fn start(
         In a group chat, send <code>/vd</code> (<code>/video_download</code>) with a link or reply to a message containing a link.\n\
         If you want to download audio, send <code>/ad</code> (<code>/audio_download</code>) instead of <code>/vd</code>.\n\
         You can also use <code>/rv</code> (<code>/random_video</code>) or <code>/ra</code> (<code>/random_audio</code>) to get random media.\n\n\
-        To download playlists, use range download: <code>&lt;url&gt; [items=start:stop:step]</code>.\n\
-        To select language, use: <code>&lt;url&gt; [lang=ru|en|en-US|en-GB]</code>.\n\n\
+        Params to download several media from playlist: <code>[items=start:stop:step]</code>.\n\
+        Params to select download media language: <code>[lang=ru|en|en-US|en-GB]</code>.\n\
+        Params to override used domains for <code>/rv</code> and <code>/ra</code>: <code>[domains=youtube.com|youtu.be]</code>.\n\n\
         You can use me in inline mode in any chat by typing <code>@{bot_username} </code><code>&lt;url&gt;</code>.\n\
         If text is specified instead of a URL, a YouTube video search will be performed.\n\
         * I download videos and audios in the best available quality under {max_file_size_in_mb}MB.\n\
