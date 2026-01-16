@@ -1,5 +1,5 @@
 use crate::{
-    config::{ChatConfig, YtDlpConfig},
+    config::Config,
     database::TxManager,
     entities::{AudioAndFormat, Domains, Params, PreferredLanguages, Range, TgAudioInPlaylist},
     handlers_utils::error,
@@ -33,8 +33,7 @@ pub async fn download(
     message: Message,
     params: Params,
     Extension(url): Extension<Url>,
-    Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
-    Inject(chat_cfg): Inject<ChatConfig>,
+    Inject(cfg): Inject<Config>,
     Inject(get_media): Inject<GetAudioByURL>,
     Inject(download_playlist): Inject<DownloadAudioPlaylist>,
     Inject(send_media_in_fs): Inject<SendAudioInFS>,
@@ -88,7 +87,7 @@ pub async fn download(
             let mut media_and_formats = vec![];
             for media in &uncached {
                 media_and_formats.push(
-                    match AudioAndFormat::new_with_select_format(media, yt_dlp_cfg.max_file_size, &preferred_languages) {
+                    match AudioAndFormat::new_with_select_format(media, cfg.yt_dlp.max_file_size, &preferred_languages) {
                         Ok(val) => val,
                         Err(err) => {
                             error!(%err, "Select format err");
@@ -121,7 +120,7 @@ pub async fn download(
                         let media = uncached.get(index).unwrap();
                         let file_id = match send_media_in_fs
                             .execute(SendAudioInFSInput::new(
-                                chat_cfg.receiver_chat_id,
+                                cfg.chat.receiver_chat_id,
                                 Some(message_id),
                                 media_in_fs,
                                 media.title.as_deref().unwrap_or(media.id.as_ref()),
