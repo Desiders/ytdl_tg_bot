@@ -1,11 +1,7 @@
 use std::path::Path;
 
 pub fn sanitize_send_filename(path: &Path, name: &str) -> String {
-    let actual_extension = path
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("")
-        .to_string();
+    let actual_extension = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_string();
 
     if actual_extension.is_empty() {
         return name.to_string();
@@ -23,12 +19,11 @@ pub fn sanitize_send_filename(path: &Path, name: &str) -> String {
     };
 
     if base_name.is_empty() {
-        format!("{}.{}", "file", actual_extension)
+        format!("file.{actual_extension}")
     } else {
-        format!("{}.{}", base_name, actual_extension)
+        format!("{base_name}.{actual_extension}")
     }
 }
-
 
 #[cfg(test)]
 mod tests {

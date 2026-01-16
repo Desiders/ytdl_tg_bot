@@ -25,7 +25,7 @@ impl Middleware for RemoveTrackingParamsMiddleware {
         let count_params_before = url.query_pairs().count();
         let params = url
             .query_pairs()
-            .filter(|(key, _)| tracking_params_cfg.params.iter().all(|val| &**val != &**key))
+            .filter(|(key, _)| tracking_params_cfg.params.iter().all(|val| **val != **key))
             .map(|(k, v)| (k.into_owned(), v.into_owned()))
             .collect::<Vec<_>>();
         url.query_pairs_mut().clear().extend_pairs(params);

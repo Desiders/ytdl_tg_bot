@@ -1,7 +1,7 @@
 use crate::{
     config::{ChatConfig, YtDlpConfig},
     database::TxManager,
-    entities::{AudioAndFormat, Params, PreferredLanguages, Range, TgAudioInPlaylist},
+    entities::{AudioAndFormat, Domains, Params, PreferredLanguages, Range, TgAudioInPlaylist},
     handlers_utils::error,
     interactors::{
         download::{DownloadAudioPlaylist, DownloadAudioPlaylistInput},
@@ -217,6 +217,7 @@ pub async fn download(
 #[instrument(skip_all, fields(%message_id = message.id()))]
 pub async fn random(
     message: Message,
+    params: Params,
     Inject(get_media): Inject<GetRandomDownloadedAudio>,
     Inject(send_playlist): Inject<SendAudioPlaylistById>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
@@ -224,8 +225,9 @@ pub async fn random(
     let message_id = message.id();
     let chat_id = message.chat().id();
 
+    let domains = params.0.get("domains").map(|raw_value| Domains::from_str(raw_value).unwrap());
     match get_media
-        .execute(GetRandomDownloadedMediaInput::new(1, None, &mut tx_manager))
+        .execute(GetRandomDownloadedMediaInput::new(1, domains.as_ref(), &mut tx_manager))
         .await
     {
         Ok(playlist) => {
