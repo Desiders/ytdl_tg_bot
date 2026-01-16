@@ -2,7 +2,7 @@ use std::{collections::HashMap, convert::Infallible, future::Future};
 use telers::{Extractor, Request};
 
 #[derive(Debug, Default, Clone)]
-pub struct Params(pub HashMap<Box<str>, Box<str>>);
+pub struct Params(pub HashMap<String, String>);
 
 impl Params {
     fn parse(text: &str) -> Self {
@@ -30,12 +30,12 @@ impl Params {
         }
     }
 
-    fn try_parse_content(content: &str) -> Option<HashMap<Box<str>, Box<str>>> {
-        let params: HashMap<Box<str>, Box<str>> = content
+    fn try_parse_content(content: &str) -> Option<HashMap<String, String>> {
+        let params: HashMap<String, String> = content
             .split(',')
             .filter_map(|param_str| {
                 let (key, value) = param_str.trim().split_once('=')?;
-                Some((key.trim().to_string().into_boxed_str(), value.trim().to_string().into_boxed_str()))
+                Some((key.trim().to_owned(), value.trim().to_owned()))
             })
             .collect();
 
