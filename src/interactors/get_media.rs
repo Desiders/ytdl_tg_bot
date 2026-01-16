@@ -86,8 +86,9 @@ impl Interactor<GetVideoByURLInput<'_>> for &GetVideoByURL {
         tx_manager.begin().await.map_err(ErrorKind::from)?;
 
         let dao = tx_manager.downloaded_media_dao().unwrap();
+        let is_single = range.is_single_element();
 
-        if range.is_single_element() {
+        if is_single {
             let normalized_domain = domain.map(|domain| domain.trim_start_matches("www."));
 
             if let Some(media) = dao
@@ -108,7 +109,7 @@ impl Interactor<GetVideoByURLInput<'_>> for &GetVideoByURL {
             self.yt_dlp_cfg.executable_path.as_ref(),
             url,
             self.yt_pot_provider_cfg.url.as_ref(),
-            true,
+            !is_single,
             GET_INFO_TIMEOUT,
             range,
             cookie,
@@ -208,8 +209,9 @@ impl Interactor<GetAudioByURLInput<'_>> for &GetAudioByURL {
         tx_manager.begin().await.map_err(ErrorKind::from)?;
 
         let dao = tx_manager.downloaded_media_dao().unwrap();
+        let is_single = range.is_single_element();
 
-        if range.is_single_element() {
+        if is_single {
             let normalized_domain = domain.map(|domain| domain.trim_start_matches("www."));
 
             if let Some(media) = dao.get_by_id_or_url_and_domain(id, normalized_domain, MediaType::Audio).await? {
@@ -227,7 +229,7 @@ impl Interactor<GetAudioByURLInput<'_>> for &GetAudioByURL {
             self.yt_dlp_cfg.executable_path.as_ref(),
             url,
             self.yt_pot_provider_cfg.url.as_ref(),
-            true,
+            !is_single,
             GET_INFO_TIMEOUT,
             range,
             cookie,
@@ -308,6 +310,7 @@ impl Interactor<GetUncachedVideoByURLInput<'_>> for &GetUncachedVideoByURL {
     async fn execute(self, GetUncachedVideoByURLInput { url, range }: GetUncachedVideoByURLInput<'_>) -> Result<Self::Output, Self::Err> {
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
+        let is_single = range.is_single_element();
 
         debug!("Getting media info");
 
@@ -315,7 +318,7 @@ impl Interactor<GetUncachedVideoByURLInput<'_>> for &GetUncachedVideoByURL {
             self.yt_dlp_cfg.executable_path.as_ref(),
             url,
             self.yt_pot_provider_cfg.url.as_ref(),
-            true,
+            !is_single,
             GET_INFO_TIMEOUT,
             range,
             cookie,
