@@ -26,25 +26,26 @@ use crate::{
     },
 };
 
-pub(super) fn init(bot: Bot, config: Config, cookies: Cookies) -> Container {
+pub(super) fn init(bot: Bot, cfg: Config, cookies: Cookies) -> Container {
     let sync_registry = registry! {
         scope(App) [
             provide(instance(bot)),
             provide(instance(cookies)),
-            provide(instance(config.bot)),
-            provide(instance(config.chat)),
-            provide(instance(config.timeouts)),
-            provide(instance(config.blacklisted)),
-            provide(instance(config.logging)),
-            provide(instance(config.database)),
-            provide(instance(config.yt_dlp)),
-            provide(instance(config.yt_toolkit)),
-            provide(instance(config.yt_pot_provider)),
-            provide(instance(config.telegram_bot_api)),
-            provide(instance(config.domains_with_reactions)),
-            provide(instance(config.random_cmd)),
-            provide(instance(config.replace_domains)),
-            provide(instance(config.tracking_params)),
+            provide(instance(cfg.clone())),
+            provide(instance(cfg.bot)),
+            provide(instance(cfg.chat)),
+            provide(instance(cfg.timeouts)),
+            provide(instance(cfg.blacklisted)),
+            provide(instance(cfg.logging)),
+            provide(instance(cfg.database)),
+            provide(instance(cfg.yt_dlp)),
+            provide(instance(cfg.yt_toolkit)),
+            provide(instance(cfg.yt_pot_provider)),
+            provide(instance(cfg.telegram_bot_api)),
+            provide(instance(cfg.domains_with_reactions)),
+            provide(instance(cfg.random_cmd)),
+            provide(instance(cfg.replace_domains)),
+            provide(instance(cfg.tracking_params)),
 
             provide(|| Ok(Mutex::new(ContextV7::new()))),
             provide(|| Ok(Client::new())),

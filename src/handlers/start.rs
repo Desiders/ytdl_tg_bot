@@ -1,4 +1,4 @@
-use crate::config::{BotConfig, YtDlpConfig};
+use crate::config::Config;
 
 use froodi::Inject;
 use telers::{
@@ -12,12 +12,7 @@ use telers::{
 use tracing::instrument;
 
 #[instrument(skip_all)]
-pub async fn start(
-    bot: Bot,
-    message: Message,
-    Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
-    Inject(bot_cfg): Inject<BotConfig>,
-) -> HandlerResult {
+pub async fn start(bot: Bot, message: Message, Inject(cfg): Inject<Config>) -> HandlerResult {
     let bot_info = bot.send(GetMe {}).await?;
     let text = format!(
         "Hi, {first_name}. I'm a bot that can help you download media from YouTube and other resources.\n\n\
@@ -37,8 +32,8 @@ pub async fn start(
             .as_ref()
             .map_or("Anonymous".to_owned(), |user| html_quote(user.first_name.as_ref())),
         bot_username = bot_info.username.expect("Bots always have a username"),
-        max_file_size_in_mb = yt_dlp_cfg.max_file_size / 1000 / 1000,
-        source_code = html_text_link("here", html_quote(&bot_cfg.src_url)),
+        max_file_size_in_mb = cfg.yt_dlp.max_file_size / 1000 / 1000,
+        source_code = html_text_link("here", html_quote(&cfg.bot.src_url)),
     );
 
     bot.send(

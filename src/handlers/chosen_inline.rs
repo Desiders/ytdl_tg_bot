@@ -1,5 +1,5 @@
 use crate::{
-    config::{ChatConfig, Config, YtDlpConfig},
+    config::Config,
     database::TxManager,
     entities::{AudioAndFormat, Params, PreferredLanguages, Range, VideoAndFormat},
     handlers_utils::error,
@@ -295,8 +295,7 @@ pub async fn download_by_id(
         inline_message_id,
         ..
     }: ChosenInlineResult,
-    Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
-    Inject(chat_cfg): Inject<ChatConfig>,
+    Inject(cfg): Inject<Config>,
     Inject(get_video_by_url): Inject<GetVideoByURL>,
     Inject(get_audio_by_url): Inject<GetAudioByURL>,
     Inject(download_video): Inject<DownloadVideo>,
@@ -341,7 +340,7 @@ pub async fn download_by_id(
                 } else {
                     let media = uncached.remove(0);
                     let media_and_format =
-                        match VideoAndFormat::new_with_select_format(&media, yt_dlp_cfg.max_file_size, &preferred_languages) {
+                        match VideoAndFormat::new_with_select_format(&media, cfg.yt_dlp.max_file_size, &preferred_languages) {
                             Ok(val) => val,
                             Err(err) => {
                                 error!(%err, "Select format err");
@@ -367,7 +366,7 @@ pub async fn download_by_id(
                     };
                     let file_id = match send_video_in_fs
                         .execute(SendVideoInFSInput::new(
-                            chat_cfg.receiver_chat_id,
+                            cfg.chat.receiver_chat_id,
                             None,
                             media_in_fs,
                             media.title.as_deref().unwrap_or(media.id.as_ref()),
@@ -452,7 +451,7 @@ pub async fn download_by_id(
                 cached.file_id
             } else {
                 let media = uncached.remove(0);
-                let media_and_format = match AudioAndFormat::new_with_select_format(&media, yt_dlp_cfg.max_file_size, &preferred_languages)
+                let media_and_format = match AudioAndFormat::new_with_select_format(&media, cfg.yt_dlp.max_file_size, &preferred_languages)
                 {
                     Ok(val) => val,
                     Err(err) => {
@@ -479,7 +478,7 @@ pub async fn download_by_id(
                 };
                 let file_id = match send_audio_in_fs
                     .execute(SendAudioInFSInput::new(
-                        chat_cfg.receiver_chat_id,
+                        cfg.chat.receiver_chat_id,
                         None,
                         media_in_fs,
                         media.title.as_deref().unwrap_or(media.id.as_ref()),
