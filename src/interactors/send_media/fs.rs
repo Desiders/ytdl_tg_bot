@@ -205,7 +205,11 @@ impl Interactor<SendAudioInFSInput<'_>> for &SendAudioInFS {
 
         let message = send::with_retries(&self.bot, method, 2, Some(self.timeouts_cfg.send_by_fs)).await?;
         let message_id = message.id();
-        let file_id = message.audio().unwrap().file_id.clone();
+        let file_id = message
+            .audio()
+            .map(|val| val.file_id.clone())
+            .or(message.voice().map(|val| val.file_id.clone()))
+            .unwrap();
         drop(message);
         drop(temp_dir);
 
