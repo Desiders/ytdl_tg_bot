@@ -67,7 +67,7 @@ services:
 
   yt_toolkit_api:
     container_name: ytdl_tg_bot.yt_toolkit_api
-    image: desiders/yt-toolkit-yt-info-api:0.3.0
+    image: ghcr.io/ikiovi/yt-toolkit/yt_toolkit_api:v1.0.0
     restart: "unless-stopped"
     networks:
       - yt_toolkit_api.network
