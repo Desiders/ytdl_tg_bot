@@ -25,7 +25,7 @@ domains = [
     "vm.tiktok.com", "vt.tiktok.com", "tiktok.com", 
     "x.com", "facebook.com",
     "share.google", "drive.google.com",
-    "vxinstagram.com",
+    "vxinstagram.com",  "fxtwitter.com", "fixupx.com", "fxbsky.app",
     "coub.com",
 ]
 
@@ -34,13 +34,25 @@ domains = [
     "vk.com", "vkvideo.ru", "ok.ru", "rutube.ru", "max.ru", "m.vkvideo.ru",
     "youtube.com", "youtu.be", "m.youtube.com", "music.youtube.com", "studio.youtube.com",
     "vm.tiktok.com", "vt.tiktok.com", "tiktok.com", 
-    "vxinstagram.com",
-    "coub.com",
+    "vxinstagram.com", "fxtwitter.com", "fixupx.com", "fxbsky.app"
+    "coub.com", 
 ]
 
 [[replace_domains]]
 from = '^(?:.*\.)?instagram\.(tv|net|com|org)$|^instagr\.am$'
 to = "vxinstagram.com"
+
+[[replace_domains]]
+from = '^(?:.*\.)?twitter\.com$'
+to = "fxtwitter.com"
+
+[[replace_domains]]
+from = '^(?:.*\.)?x\.com$'
+to = "fixupx.com"
+
+[[replace_domains]]
+from = '^(?:.*\.)?bsky\.app$'
+to = "fxbsky.app"
 
 [yt_dlp]
 max_file_size = 5000000
