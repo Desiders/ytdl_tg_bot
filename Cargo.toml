@@ -14,7 +14,7 @@ froodi = { version = "1.0.0-beta.16", features = ["async", "thread_safe", "teler
 serde = { version = "1.0", default-features = false }
 serde_json = {version = "1.0", default-features = false }
 bytes = { version = "1", default-features = false }
-url = { version = "2.5", default-features = false }
+url = { version = "2.5", features = ["serde"], default-features = false }
 uuid = { version = "1.18", features = ["v7", "fast-rng"], default-features = false }
 time = { version = "0.3", features = ["serde-human-readable"], default-features = false }
 tracing = { version = "0.1", default-features = false }
