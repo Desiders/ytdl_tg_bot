@@ -149,4 +149,11 @@ mod tests {
         assert_eq!(params.0.get("key").map(|v| v.as_ref()), Some("value"));
         assert_eq!(params.0.get("foo").map(|v| v.as_ref()), Some("bar"));
     }
+
+    #[test]
+    fn test_url_with_items() {
+        let params = Params::parse("https://www.youtube.com/playlist?list=... [items=:3:]");
+        assert_eq!(params.0.len(), 1);
+        assert_eq!(params.0.get("items").map(|v| v.as_ref()), Some(":3:"));
+    }
 }
