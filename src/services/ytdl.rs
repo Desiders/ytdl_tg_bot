@@ -1,325 +1,181 @@
-use crate::entities::{Cookie, Range, Video, VideosInYT};
+use crate::entities::{language::Language, Cookie, Playlist, Range};
 
-use serde::de::Error as _;
-use serde_json::Value;
+use serde::de::DeserializeOwned;
 use std::{
-    io,
-    os::fd::OwnedFd,
+    io::{self, BufRead as _},
     path::Path,
-    process::{Child, Command, Output, Stdio},
+    process::{Output, Stdio},
     time::Duration,
 };
-use tracing::{instrument, trace, warn};
+use tokio::{io::AsyncBufReadExt as _, sync::mpsc};
+use tracing::{error, instrument, trace};
+
+pub enum FormatStrategy {
+    VideoAndAudio,
+    AudioOnly,
+}
+
+impl FormatStrategy {
+    fn templates(&self) -> &[&str] {
+        match self {
+            Self::VideoAndAudio => &["bv{video_args}+ba{audio_args}/b{combined_args}"],
+            Self::AudioOnly => &["ba{audio_args}"],
+        }
+    }
+
+    fn fallbacks(&self) -> &[&str] {
+        match self {
+            Self::VideoAndAudio => &["bv*+ba", "b", "w"],
+            Self::AudioOnly => &["ba", "wa"],
+        }
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum ParseJsonErrorKind {
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 }
 
-/// Download stream to a pipe.
-/// This function forks a child process and executes `yt-dl` in it.
-/// The child process redirects its stdout to the pipe.
-/// # Errors
-/// Returns [`io::Error`] if the spawn child process fails
-/// # Returns
-/// Returns the child process
-#[instrument(skip_all)]
-pub fn download_to_pipe(
-    fd: OwnedFd,
-    executable_path: impl AsRef<str>,
-    url: impl AsRef<str>,
-    pot_provider_api_url: impl AsRef<str>,
-    format: impl AsRef<str>,
-    max_filesize: u32,
-    cookie: Option<&Cookie>,
-) -> Result<Child, io::Error> {
-    let max_filesize_str = max_filesize.to_string();
-
-    let mut args = vec![
-        "--js-runtimes",
-        "deno:deno",
-        "--ignore-config",
-        "--no-colors",
-        "--socket-timeout",
-        "5",
-        "--output",
-        "-",
-        "--no-playlist",
-        "--no-mtime",
-        "--no-write-comments",
-        "--quiet",
-        "--no-simulate",
-        "--no-progress",
-        "--no-check-formats",
-        "--fragment-retries",
-        "3",
-        "--max-filesize",
-        max_filesize_str.as_ref(),
-        "-f",
-        format.as_ref(),
-    ];
-
-    let extractor_arg = format!("youtubepot-bgutilhttp:base_url={}", pot_provider_api_url.as_ref());
-    args.push("--extractor-args");
-    args.push(&extractor_arg);
-
-    let cookie_path = cookie.map(|c| c.path.to_string_lossy());
-    if let Some(cookie_path) = cookie_path.as_deref() {
-        trace!("Using cookies from: {}", cookie_path);
-
-        args.push("--cookies");
-        args.push(cookie_path);
-    } else {
-        trace!("No cookies provided");
-    }
-
-    args.push("--");
-    args.push(url.as_ref());
-
-    Command::new(executable_path.as_ref())
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(fd))
-        .stderr(Stdio::inherit())
-        .spawn()
+#[derive(Debug, thiserror::Error)]
+pub enum GetInfoErrorKind {
+    #[error(transparent)]
+    Ndjson(#[from] ParseJsonErrorKind),
+    #[error("IO error: {0}")]
+    Io(#[from] io::Error),
 }
 
-#[instrument(skip_all)]
-pub async fn download_video_to_path(
-    executable_path: impl AsRef<str>,
-    url: impl AsRef<str>,
-    pot_provider_api_url: impl AsRef<str>,
-    format: impl AsRef<str>,
-    output_extension: impl AsRef<str>,
-    output_dir_path: impl AsRef<Path>,
-    timeout: u64,
-    max_filesize: u32,
-    cookie: Option<&Cookie>,
-) -> Result<(), io::Error> {
-    let output_dir_path = output_dir_path.as_ref().to_string_lossy();
-    let max_filesize_str = max_filesize.to_string();
+#[derive(Debug, thiserror::Error)]
+pub enum DownloadErrorKind {
+    #[error(transparent)]
+    Ndjson(#[from] ParseJsonErrorKind),
+    #[error("IO error: {0}")]
+    Io(#[from] io::Error),
+}
 
-    let mut args = vec![
-        "--js-runtimes",
-        "deno:deno",
-        "--no-update",
-        "--ignore-config",
-        "--no-colors",
-        "--socket-timeout",
-        "5",
-        "--paths",
-        output_dir_path.as_ref(),
-        "--output",
-        "%(id)s.%(ext)s",
-        "--no-playlist",
-        "--no-mtime",
-        "--no-write-comments",
-        "--quiet",
-        "--no-simulate",
-        "--no-progress",
-        "--no-check-formats",
-        "--embed-metadata",
-        "--fragment-retries",
-        "3",
-        "--concurrent-fragments",
-        "4",
-        "--max-filesize",
-        max_filesize_str.as_ref(),
-        "-f",
-        format.as_ref(),
-        "--merge-output-format",
-        output_extension.as_ref(),
-    ];
+fn parse_ndjson<T: DeserializeOwned>(input: &[u8]) -> Result<Vec<T>, ParseJsonErrorKind> {
+    use std::io::BufReader;
 
-    let extractor_arg = format!("youtubepot-bgutilhttp:base_url={}", pot_provider_api_url.as_ref());
-    args.push("--extractor-args");
-    args.push(&extractor_arg);
+    let lines = BufReader::new(input).lines();
+    let mut results = Vec::with_capacity(1);
+    for line in lines {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let item = serde_json::from_str(&line)?;
+        results.push(item);
+    }
+    Ok(results)
+}
 
-    let cookie_path = cookie.map(|c| c.path.to_string_lossy());
-    if let Some(cookie_path) = cookie_path.as_deref() {
-        trace!("Using cookies from: {}", cookie_path);
-
-        args.push("--cookies");
-        args.push(cookie_path);
-    } else {
-        trace!("No cookies provided");
+pub fn build_formats_string(strategy: FormatStrategy, heights: &[u32], audio_language: &Language) -> String {
+    fn push_if_some<T>(vec: &mut Vec<T>, value: Option<T>) {
+        if let Some(v) = value {
+            vec.push(v);
+        }
     }
 
-    args.push("--");
-    args.push(url.as_ref());
+    fn render_args(args: &[String]) -> String {
+        args.iter().map(|val| format!("[{val}]")).collect()
+    }
 
-    let child = tokio::process::Command::new(executable_path.as_ref())
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()?;
+    let templates = strategy.templates();
+    let fallbacks = strategy.fallbacks();
 
-    match tokio::time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
-        Ok(Ok(Output { status, stderr, .. })) => {
-            if status.success() {
-                Ok(())
-            } else {
-                match status.code() {
-                    Some(code) => Err(io::Error::other(format!(
-                        "Youtube-dl exited with code {code} and message: {}",
-                        String::from_utf8_lossy(&stderr),
-                    ))),
-                    None => Err(io::Error::other(format!(
-                        "Youtube-dl exited with and message: {}",
-                        String::from_utf8_lossy(&stderr),
-                    ))),
-                }
+    let mut formats = Vec::with_capacity(heights.len() * templates.len() + fallbacks.len());
+
+    match strategy {
+        FormatStrategy::AudioOnly => {
+            let mut audio_args = vec![];
+            push_if_some(
+                &mut audio_args,
+                audio_language.language.as_deref().map(|lang| format!("language^={lang}")),
+            );
+
+            for &template in templates {
+                let format = template.replace("{audio_args}", &render_args(&audio_args));
+                formats.push(format);
+            }
+
+            for &fallback in fallbacks {
+                formats.push(fallback.to_owned());
             }
         }
-        Ok(Err(err)) => Err(err),
-        Err(_) => Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out")),
-    }
-}
 
-#[instrument(skip_all)]
-pub async fn download_audio_to_path(
-    executable_path: impl AsRef<str>,
-    url: impl AsRef<str>,
-    pot_provider_api_url: impl AsRef<str>,
-    format: impl AsRef<str>,
-    output_extension: impl AsRef<str>,
-    output_dir_path: impl AsRef<Path>,
-    timeout: u64,
-    max_filesize: u32,
-    cookie: Option<&Cookie>,
-) -> Result<(), io::Error> {
-    let output_dir_path = output_dir_path.as_ref().to_string_lossy();
-    let max_filesize_str = max_filesize.to_string();
+        FormatStrategy::VideoAndAudio => {
+            for &height in heights {
+                let mut video_args = vec!["vcodec!=none".to_owned()];
+                let mut audio_args = vec![];
+                let mut combined_args = vec![];
 
-    let mut args = vec![
-        "--js-runtimes",
-        "deno:deno",
-        "--no-update",
-        "--ignore-config",
-        "--no-color",
-        "--socket-timeout",
-        "5",
-        "--paths",
-        output_dir_path.as_ref(),
-        "--output",
-        "%(id)s.%(ext)s",
-        "--extract-audio",
-        "--audio-format",
-        output_extension.as_ref(),
-        "--no-playlist",
-        "--no-mtime",
-        "--no-write-comments",
-        "--quiet",
-        "--no-simulate",
-        "--no-progress",
-        "--no-check-formats",
-        "--embed-metadata",
-        "--fragment-retries",
-        "3",
-        "--concurrent-fragments",
-        "4",
-        "--max-filesize",
-        max_filesize_str.as_ref(),
-        "-f",
-        format.as_ref(),
-    ];
+                push_if_some(&mut video_args, Some(format!("height<={height}")));
+                push_if_some(&mut combined_args, Some(format!("height<={height}")));
+                push_if_some(
+                    &mut audio_args,
+                    audio_language.language.as_deref().map(|lang| format!("language^={lang}")),
+                );
 
-    let extractor_arg = format!("youtubepot-bgutilhttp:base_url={}", pot_provider_api_url.as_ref());
-    args.push("--extractor-args");
-    args.push(&extractor_arg);
-    args.push("--extractor-args");
-    args.push("youtube:player_client=default,mweb,web_music,web_creator;player_skip=configs,initial_data");
+                for &template in templates {
+                    let format = template
+                        .replace("{video_args}", &render_args(&video_args))
+                        .replace("{audio_args}", &render_args(&audio_args))
+                        .replace("{combined_args}", &render_args(&combined_args));
 
-    let cookie_path = cookie.map(|c| c.path.to_string_lossy());
-    if let Some(cookie_path) = cookie_path.as_deref() {
-        trace!("Using cookies from: {}", cookie_path);
-
-        args.push("--cookies");
-        args.push(cookie_path);
-    } else {
-        trace!("No cookies provided");
-    }
-
-    args.push("--");
-    args.push(url.as_ref());
-
-    let child = tokio::process::Command::new(executable_path.as_ref())
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()?;
-
-    match tokio::time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
-        Ok(Ok(Output { status, stderr, .. })) => {
-            if status.success() {
-                Ok(())
-            } else {
-                match status.code() {
-                    Some(code) => Err(io::Error::other(format!(
-                        "Youtube-dl exited with code {code} and message: {}",
-                        String::from_utf8_lossy(&stderr),
-                    ))),
-                    None => Err(io::Error::other(format!(
-                        "Youtube-dl exited with and message: {}",
-                        String::from_utf8_lossy(&stderr),
-                    ))),
+                    formats.push(format);
                 }
             }
+
+            for &fallback in fallbacks {
+                formats.push(fallback.to_owned());
+            }
         }
-        Ok(Err(err)) => Err(err),
-        Err(_) => Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out")),
     }
+
+    formats.join(",")
 }
 
 #[instrument(skip_all)]
-pub async fn get_media_or_playlist_info(
-    executable_path: impl AsRef<str>,
-    url_or_id: impl AsRef<str>,
-    pot_provider_api_url: impl AsRef<str>,
+pub async fn get_media_info(
+    search: &str,
+    strategy: FormatStrategy,
+    audio_language: &Language,
+    executable_path: &str,
+    pot_provider_url: &str,
+    playlist_range: &Range,
     allow_playlist: bool,
     timeout: u64,
-    range: &Range,
     cookie: Option<&Cookie>,
-) -> Result<VideosInYT, Error> {
-    let range_string = range.to_range_string();
+) -> Result<Playlist, GetInfoErrorKind> {
+    use tokio::{process::Command, time};
+
+    let playlist_range = playlist_range.to_range_string();
+    let extractor_arg = format!("youtubepot-bgutilhttp:base_url={pot_provider_url}");
+
+    let heights = [2160, 1440, 1080, 720, 480, 360];
+    let formats = build_formats_string(strategy, &heights, audio_language);
 
     let mut args = vec![
         "--js-runtimes",
         "deno:deno",
-        "--no-update",
-        "--ignore-config",
-        "--no-color",
+        "--print",
+        "%()j",
         "--socket-timeout",
         "5",
-        "--output",
-        "%(id)s.%(ext)s",
-        "--no-mtime",
         "--no-write-comments",
-        "--no-write-thumbnail",
-        "--quiet",
-        "--skip-download",
-        "--simulate",
+        "--no-download",
         "--no-progress",
-        "--no-check-formats",
-        "--concurrent-fragments",
-        "4",
+        "--no-config",
+        "--no-color",
         "-I",
-        &range_string,
-        "-J",
+        &playlist_range,
+        "--format-sort",
+        "ext,quality,codec,source,lang",
+        "-f",
+        &formats,
     ];
-
-    let extractor_arg = format!("youtubepot-bgutilhttp:base_url={}", pot_provider_api_url.as_ref());
-    args.push("--extractor-args");
-    args.push(&extractor_arg);
-    args.push("--extractor-args");
-    args.push("youtube:player_client=default,mweb,web_music,web_creator;player_skip=configs,initial_data");
 
     if allow_playlist {
         args.push("--yes-playlist");
@@ -327,10 +183,14 @@ pub async fn get_media_or_playlist_info(
         args.push("--no-playlist");
     }
 
-    let cookie_path = cookie.map(|c| c.path.to_string_lossy());
-    if let Some(cookie_path) = cookie_path.as_deref() {
-        trace!("Using cookies from: {}", cookie_path);
+    args.push("--extractor-args");
+    args.push(&extractor_arg);
+    args.push("--extractor-args");
+    args.push("youtube:player_client=default,mweb,web_music,web_creator;player_skip=configs,initial_data");
 
+    let cookie_path = cookie.map(|val| val.path.to_string_lossy());
+    if let Some(cookie_path) = cookie_path.as_deref() {
+        trace!("Using cookies from: {cookie_path}");
         args.push("--cookies");
         args.push(cookie_path);
     } else {
@@ -338,9 +198,11 @@ pub async fn get_media_or_playlist_info(
     }
 
     args.push("--");
-    args.push(url_or_id.as_ref());
+    args.push(search);
 
-    let child = tokio::process::Command::new(executable_path.as_ref())
+    trace!("{args:?}");
+
+    let child = Command::new(executable_path)
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -348,42 +210,219 @@ pub async fn get_media_or_playlist_info(
         .kill_on_drop(true)
         .spawn()?;
 
-    let stdout = match tokio::time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
-        Ok(Ok(Output { status, stderr, stdout })) => {
+    match time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
+        Ok(Ok(Output { status, stdout, stderr })) => {
             if status.success() {
-                stdout
+                match parse_ndjson(&stdout) {
+                    Ok(val) => Ok(Playlist::new(val)),
+                    Err(err) => Err(err.into()),
+                }
             } else {
-                return match status.code() {
-                    Some(code) => Err(io::Error::other(format!(
-                        "Youtube-dl exited with code {code} and message: {}",
-                        String::from_utf8_lossy(&stderr),
-                    ))
-                    .into()),
-                    None => {
-                        Err(io::Error::other(format!("Youtube-dl exited with and message: {}", String::from_utf8_lossy(&stderr),)).into())
-                    }
-                };
+                let stderr = String::from_utf8_lossy(&stderr);
+                match status.code() {
+                    Some(code) => Err(io::Error::other(format!("Ytdlp exited with code {code} and message: {stderr}")).into()),
+                    None => Err(io::Error::other(format!("Ytdlp exited with and message: {stderr}")).into()),
+                }
             }
         }
-        Ok(Err(err)) => return Err(err.into()),
-        Err(_) => return Err(io::Error::new(io::ErrorKind::TimedOut, "Youtube-dl timed out").into()),
-    };
+        Ok(Err(err)) => Err(err.into()),
+        Err(_) => Err(io::Error::new(io::ErrorKind::TimedOut, "Ytdlp timed out").into()),
+    }
+}
 
-    let value: Value = serde_json::from_slice(&stdout)?;
-    if let Some("playlist") = value.get("_type").and_then(Value::as_str) {
-        let entries = value
-            .get("entries")
-            .and_then(Value::as_array)
-            .ok_or_else(|| serde_json::Error::custom("Missing or invalid playlist entries"))?;
+#[instrument(skip_all)]
+pub async fn download_media(
+    search: &str,
+    format_id: &str,
+    max_filesize: u32,
+    output_dir_path: &Path,
+    executable_path: &str,
+    pot_provider_url: &str,
+    timeout: u64,
+    cookie: Option<&Cookie>,
+    progress_sender: mpsc::UnboundedSender<String>,
+) -> Result<(), DownloadErrorKind> {
+    use tokio::{io::BufReader, process::Command, time};
 
-        let videos = entries
-            .iter()
-            .map(|entry| serde_json::from_value(entry.clone()))
-            .collect::<Result<Vec<Video>, _>>()?;
+    let output_dir_path = output_dir_path.to_string_lossy();
+    let max_filesize = max_filesize.to_string();
+    let extractor_arg = format!("youtubepot-bgutilhttp:base_url={pot_provider_url}");
 
-        Ok(VideosInYT::new(videos))
+    let mut args = vec![
+        "--js-runtimes",
+        "deno:deno",
+        "--socket-timeout",
+        "5",
+        "--fragment-retries",
+        "3",
+        "--concurrent-fragments",
+        "4",
+        "--newline",
+        "--progress-template",
+        "download-progress:%(progress._default_template)s",
+        "--progress-delta",
+        "3",
+        "--max-filesize",
+        &max_filesize,
+        "--add-metadata",
+        "--no-write-comments",
+        "--no-playlist",
+        "--no-config",
+        "--no-color",
+        "--paths",
+        &output_dir_path,
+        "--output",
+        "%(id)s.%(ext)s",
+        "-f",
+        &format_id,
+    ];
+
+    args.push("--extractor-args");
+    args.push(&extractor_arg);
+    args.push("--extractor-args");
+    args.push("youtube:player_client=default,mweb,web_music,web_creator;player_skip=configs,initial_data");
+
+    let cookie_path = cookie.map(|val| val.path.to_string_lossy());
+    if let Some(cookie_path) = cookie_path.as_deref() {
+        trace!("Using cookies from: {cookie_path}");
+        args.push("--cookies");
+        args.push(cookie_path);
     } else {
-        let video: Video = serde_json::from_value(value)?;
-        Ok(VideosInYT::new(vec![video]))
+        trace!("No cookies provided");
+    }
+
+    args.push("--");
+    args.push(search);
+
+    let mut child = Command::new(executable_path)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()?;
+
+    let stdout = child.stdout.take().unwrap();
+    let mut reader = BufReader::new(stdout).lines();
+
+    let ((), res) = tokio::join!(
+        async {
+            while let Ok(Some(line)) = reader.next_line().await {
+                if !line.starts_with("download-progress") {
+                    continue;
+                }
+                let Some((_, progress)) = line.split_once(':') else {
+                    continue;
+                };
+                if let Err(err) = progress_sender.send(progress.to_owned()) {
+                    error!(%err, "Send progress err");
+                    return;
+                }
+            }
+        },
+        async {
+            match time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
+                Ok(Ok(Output { status, stderr, .. })) => {
+                    if status.success() {
+                        Ok(())
+                    } else {
+                        let stderr = String::from_utf8_lossy(&stderr);
+                        match status.code() {
+                            Some(code) => Err(io::Error::other(format!("Ytdlp exited with code {code} and message: {stderr}")).into()),
+                            None => Err(io::Error::other(format!("Ytdlp exited with and message: {stderr}")).into()),
+                        }
+                    }
+                }
+                Ok(Err(err)) => Err(err.into()),
+                Err(_) => Err(io::Error::new(io::ErrorKind::TimedOut, "Ytdlp timed out").into()),
+            }
+        }
+    );
+    res
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn video_and_audio_builds_formats_for_each_height() {
+        let heights = [1080, 720];
+
+        let result = build_formats_string(FormatStrategy::VideoAndAudio, &heights, &Language::default());
+
+        assert_eq!(
+            result,
+            "bv[vcodec!=none,height<=1080]+ba[]/b[height<=1080],bv[vcodec!=none,height<=720]+ba[]/b[height<=720],bv*+ba,b,w"
+        );
+    }
+
+    #[test]
+    fn video_and_audio_audio_language_is_added_when_provided() {
+        let heights = [1080];
+
+        let result = build_formats_string(
+            FormatStrategy::VideoAndAudio,
+            &heights,
+            &Language {
+                language: Some("ru".to_owned()),
+            },
+        );
+
+        assert_eq!(result, "bv[vcodec!=none,height<=1080]+ba[language^=ru]/b[height<=1080],bv*+ba,b,w");
+    }
+
+    #[test]
+    fn video_and_audio_audio_language_is_not_added_when_none() {
+        let heights = [1080];
+
+        let result = build_formats_string(FormatStrategy::VideoAndAudio, &heights, &Language::default());
+
+        assert_eq!(result, "bv[vcodec!=none,height<=1080]+ba[]/b[height<=1080],bv*+ba,b,w");
+    }
+
+    #[test]
+    fn audio_only_builds_formats_correctly_without_heights() {
+        let result = build_formats_string(FormatStrategy::AudioOnly, &[], &Language::default());
+
+        assert_eq!(result, "ba[],ba,wa");
+    }
+
+    #[test]
+    fn audio_only_includes_language_if_provided() {
+        let result = build_formats_string(
+            FormatStrategy::AudioOnly,
+            &[],
+            &Language {
+                language: Some("en".to_owned()),
+            },
+        );
+
+        assert_eq!(result, "ba[language^=en],ba,wa");
+    }
+
+    #[test]
+    fn audio_only_multiple_languages_are_handled_correctly() {
+        let result = build_formats_string(
+            FormatStrategy::AudioOnly,
+            &[],
+            &Language {
+                language: Some("ru".to_owned()),
+            },
+        );
+
+        assert_eq!(result, "ba[language^=ru],ba,wa");
+    }
+
+    #[test]
+    fn video_and_audio_multiple_heights_preserve_order() {
+        let heights = [2160, 1080, 720];
+
+        let result = build_formats_string(FormatStrategy::VideoAndAudio, &heights, &Language::default());
+
+        assert_eq!(
+            result,
+            "bv[vcodec!=none,height<=2160]+ba[]/b[height<=2160],bv[vcodec!=none,height<=1080]+ba[]/b[height<=1080],bv[vcodec!=none,height<=720]+ba[]/b[height<=720],bv*+ba,b,w"
+        );
     }
 }
