@@ -37,11 +37,12 @@ where
             display_id,
             media_type,
             created_at,
+            audio_language,
         }: DownloadedMedia,
     ) -> Result<(), ErrorKind<Infallible>> {
         use downloaded_media::{
             ActiveModel,
-            Column::{Domain, Id, MediaType},
+            Column::{AudioLanguage, Domain, Id, MediaType},
             Entity,
         };
 
@@ -52,37 +53,42 @@ where
             domain: Set(domain),
             media_type: Set(media_type.into()),
             created_at: Set(created_at),
+            audio_language: Set(audio_language),
         };
 
         Entity::insert(model)
-            .on_conflict(OnConflict::columns([Id, Domain, MediaType]).do_nothing().to_owned())
+            .on_conflict(OnConflict::columns([Id, Domain, MediaType, AudioLanguage]).do_nothing().to_owned())
             .exec_without_returning(self.conn)
             .await
             .map(|_| ())
             .map_err(Into::into)
     }
 
-    pub async fn get_by_id_or_url_and_domain(
+    pub async fn get(
         &self,
-        id_or_url: &str,
+        search: &str,
         domain: Option<&str>,
+        audio_language: Option<&str>,
         media_type: MediaType,
     ) -> Result<Option<DownloadedMedia>, ErrorKind<Infallible>> {
         use downloaded_media::{
-            Column::{Domain, MediaType},
+            Column::{AudioLanguage, Domain, MediaType},
             Entity,
         };
 
-        Ok(Entity::find()
+        let mut query = Entity::find()
             .filter(MediaType.eq(sea_orm_active_enums::MediaType::from(media_type)))
             .filter(
-                Expr::cust_with_values("$1 LIKE '%' || id::text || '%'", [id_or_url])
-                    .or(Expr::cust_with_values("$1 LIKE '%' || display_id::text || '%'", [id_or_url])),
+                Expr::cust_with_values("$1 LIKE '%' || id::text || '%'", [search])
+                    .or(Expr::cust_with_values("$1 LIKE '%' || display_id::text || '%'", [search])),
             )
-            .filter(Domain.eq(domain))
-            .one(self.conn)
-            .await?
-            .map(Into::into))
+            .filter(Domain.eq(domain));
+
+        if let Some(lang) = audio_language {
+            query = query.filter(AudioLanguage.eq(lang));
+        }
+
+        Ok(query.one(self.conn).await?.map(Into::into))
     }
 
     pub async fn get_random(

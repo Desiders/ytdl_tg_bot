@@ -12,6 +12,7 @@ pub struct Model {
     pub domain: Option<String>,
     pub media_type: MediaType,
     pub created_at: TimeDateTimeWithTimeZone,
+    pub audio_language: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
