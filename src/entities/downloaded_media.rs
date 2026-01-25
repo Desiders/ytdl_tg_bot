@@ -10,6 +10,7 @@ pub struct DownloadedMedia {
     pub domain: Option<String>,
     pub media_type: MediaType,
     pub created_at: OffsetDateTime,
+    pub audio_language: Option<String>,
 }
 
 impl From<Model> for DownloadedMedia {
@@ -21,6 +22,7 @@ impl From<Model> for DownloadedMedia {
             domain,
             media_type,
             created_at,
+            audio_language,
         }: Model,
     ) -> Self {
         Self {
@@ -30,6 +32,7 @@ impl From<Model> for DownloadedMedia {
             domain,
             media_type: media_type.into(),
             created_at,
+            audio_language,
         }
     }
 }
