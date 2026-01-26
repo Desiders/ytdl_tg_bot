@@ -1,64 +1,55 @@
-use crate::{
-    config::TimeoutsConfig,
-    entities::{TgAudioInPlaylist, TgVideoInPlaylist},
-    handlers_utils::send,
-    interactors::Interactor,
-};
+use crate::{config::TimeoutsConfig, entities::MediaInPlaylist, handlers_utils::send, interactors::Interactor};
 
 use std::sync::Arc;
 use telers::{
     enums::ParseMode,
     errors::SessionErrorKind,
-    methods::{EditMessageMedia, SendAudio, SendVideo},
+    methods,
     types::{InlineKeyboardMarkup, InputFile, InputMediaAudio, InputMediaVideo, ReplyParameters},
     Bot,
 };
 use tracing::{debug, info, instrument};
 
-pub struct SendVideoById {
-    bot: Arc<Bot>,
-    timeouts_cfg: Arc<TimeoutsConfig>,
-}
-
-impl SendVideoById {
-    pub const fn new(bot: Arc<Bot>, timeouts_cfg: Arc<TimeoutsConfig>) -> Self {
-        Self { bot, timeouts_cfg }
-    }
-}
-
-pub struct SendVideoByIdInput<'a> {
+pub struct SendMediaInput<'a> {
     pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
     pub id: &'a str,
 }
 
-impl<'a> SendVideoByIdInput<'a> {
-    pub const fn new(chat_id: i64, reply_to_message_id: Option<i64>, id: &'a str) -> Self {
-        Self {
-            chat_id,
-            reply_to_message_id,
-            id,
-        }
-    }
+pub struct SendPlaylistInput {
+    pub chat_id: i64,
+    pub reply_to_message_id: Option<i64>,
+    pub playlist: Vec<MediaInPlaylist>,
 }
 
-impl Interactor<SendVideoByIdInput<'_>> for &SendVideoById {
+pub struct EditMediaInput<'a> {
+    pub inline_message_id: &'a str,
+    pub id: &'a str,
+    pub caption: &'a str,
+}
+
+pub struct SendVideo {
+    pub bot: Arc<Bot>,
+    pub timeouts_cfg: Arc<TimeoutsConfig>,
+}
+
+impl Interactor<SendMediaInput<'_>> for &SendVideo {
     type Output = ();
     type Err = SessionErrorKind;
 
     #[instrument(skip_all)]
     async fn execute(
         self,
-        SendVideoByIdInput {
+        SendMediaInput {
             chat_id,
             reply_to_message_id,
             id,
-        }: SendVideoByIdInput<'_>,
+        }: SendMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         debug!("Video sending");
         send::with_retries(
             &self.bot,
-            SendVideo::new(chat_id, InputFile::id(id))
+            methods::SendVideo::new(chat_id, InputFile::id(id))
                 .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)))
                 .disable_notification(true)
                 .supports_streaming(true),
@@ -72,50 +63,28 @@ impl Interactor<SendVideoByIdInput<'_>> for &SendVideoById {
     }
 }
 
-pub struct SendAudioById {
-    bot: Arc<Bot>,
-    timeouts_cfg: Arc<TimeoutsConfig>,
+pub struct SendAudio {
+    pub bot: Arc<Bot>,
+    pub timeouts_cfg: Arc<TimeoutsConfig>,
 }
 
-impl SendAudioById {
-    pub const fn new(bot: Arc<Bot>, timeouts_cfg: Arc<TimeoutsConfig>) -> Self {
-        Self { bot, timeouts_cfg }
-    }
-}
-
-pub struct SendAudioByIdInput<'a> {
-    pub chat_id: i64,
-    pub reply_to_message_id: Option<i64>,
-    pub id: &'a str,
-}
-
-impl<'a> SendAudioByIdInput<'a> {
-    pub const fn new(chat_id: i64, reply_to_message_id: Option<i64>, id: &'a str) -> Self {
-        Self {
-            chat_id,
-            reply_to_message_id,
-            id,
-        }
-    }
-}
-
-impl Interactor<SendAudioByIdInput<'_>> for &SendAudioById {
+impl Interactor<SendMediaInput<'_>> for &SendAudio {
     type Output = ();
     type Err = SessionErrorKind;
 
     #[instrument(skip_all)]
     async fn execute(
         self,
-        SendAudioByIdInput {
+        SendMediaInput {
             chat_id,
             reply_to_message_id,
             id,
-        }: SendAudioByIdInput<'_>,
+        }: SendMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         debug!("Audio sending");
         send::with_retries(
             &self.bot,
-            SendAudio::new(chat_id, InputFile::id(id))
+            methods::SendAudio::new(chat_id, InputFile::id(id))
                 .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)))
                 .disable_notification(true),
             2,
@@ -128,50 +97,28 @@ impl Interactor<SendAudioByIdInput<'_>> for &SendAudioById {
     }
 }
 
-pub struct EditVideoById {
-    bot: Arc<Bot>,
-    timeouts_cfg: Arc<TimeoutsConfig>,
+pub struct EditVideo {
+    pub bot: Arc<Bot>,
+    pub timeouts_cfg: Arc<TimeoutsConfig>,
 }
 
-impl EditVideoById {
-    pub const fn new(bot: Arc<Bot>, timeouts_cfg: Arc<TimeoutsConfig>) -> Self {
-        Self { bot, timeouts_cfg }
-    }
-}
-
-pub struct EditVideoByIdInput<'a> {
-    pub inline_message_id: &'a str,
-    pub id: &'a str,
-    pub caption: &'a str,
-}
-
-impl<'a> EditVideoByIdInput<'a> {
-    pub const fn new(inline_message_id: &'a str, id: &'a str, caption: &'a str) -> Self {
-        Self {
-            inline_message_id,
-            id,
-            caption,
-        }
-    }
-}
-
-impl Interactor<EditVideoByIdInput<'_>> for &EditVideoById {
+impl Interactor<EditMediaInput<'_>> for &EditVideo {
     type Output = ();
     type Err = SessionErrorKind;
 
     #[instrument(skip_all)]
     async fn execute(
         self,
-        EditVideoByIdInput {
+        EditMediaInput {
             inline_message_id,
             id,
             caption,
-        }: EditVideoByIdInput<'_>,
+        }: EditMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         debug!("Video editing");
         send::with_retries(
             &self.bot,
-            EditMessageMedia::new(
+            methods::EditMessageMedia::new(
                 InputMediaVideo::new(InputFile::id(id))
                     .caption(caption)
                     .supports_streaming(true)
@@ -189,50 +136,28 @@ impl Interactor<EditVideoByIdInput<'_>> for &EditVideoById {
     }
 }
 
-pub struct EditAudioById {
-    bot: Arc<Bot>,
-    timeouts_cfg: Arc<TimeoutsConfig>,
+pub struct EditAudio {
+    pub bot: Arc<Bot>,
+    pub timeouts_cfg: Arc<TimeoutsConfig>,
 }
 
-impl EditAudioById {
-    pub const fn new(bot: Arc<Bot>, timeouts_cfg: Arc<TimeoutsConfig>) -> Self {
-        Self { bot, timeouts_cfg }
-    }
-}
-
-pub struct EditAudioByIdInput<'a> {
-    pub inline_message_id: &'a str,
-    pub id: &'a str,
-    pub caption: &'a str,
-}
-
-impl<'a> EditAudioByIdInput<'a> {
-    pub const fn new(inline_message_id: &'a str, id: &'a str, caption: &'a str) -> Self {
-        Self {
-            inline_message_id,
-            id,
-            caption,
-        }
-    }
-}
-
-impl Interactor<EditAudioByIdInput<'_>> for &EditAudioById {
+impl Interactor<EditMediaInput<'_>> for &EditAudio {
     type Output = ();
     type Err = SessionErrorKind;
 
     #[instrument(skip_all)]
     async fn execute(
         self,
-        EditAudioByIdInput {
+        EditMediaInput {
             inline_message_id,
             id,
             caption,
-        }: EditAudioByIdInput<'_>,
+        }: EditMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         debug!("Audio editing");
         send::with_retries(
             &self.bot,
-            EditMessageMedia::new(InputMediaAudio::new(InputFile::id(id)).caption(caption).parse_mode(ParseMode::HTML))
+            methods::EditMessageMedia::new(InputMediaAudio::new(InputFile::id(id)).caption(caption).parse_mode(ParseMode::HTML))
                 .inline_message_id(inline_message_id)
                 .reply_markup(InlineKeyboardMarkup::new([[]])),
             2,
@@ -245,46 +170,23 @@ impl Interactor<EditAudioByIdInput<'_>> for &EditAudioById {
     }
 }
 
-pub struct SendVideoPlaylistById {
-    bot: Arc<Bot>,
-    timeouts_cfg: Arc<TimeoutsConfig>,
+pub struct SendVideoPlaylist {
+    pub bot: Arc<Bot>,
+    pub timeouts_cfg: Arc<TimeoutsConfig>,
 }
 
-impl SendVideoPlaylistById {
-    pub const fn new(bot: Arc<Bot>, timeouts_cfg: Arc<TimeoutsConfig>) -> Self {
-        Self { bot, timeouts_cfg }
-    }
-}
-
-pub struct SendVideoPlaylistByIdInput {
-    pub chat_id: i64,
-    pub reply_to_message_id: Option<i64>,
-    pub playlist: Vec<TgVideoInPlaylist>,
-}
-
-impl SendVideoPlaylistByIdInput {
-    pub fn new(chat_id: i64, reply_to_message_id: Option<i64>, mut playlist: Vec<TgVideoInPlaylist>) -> Self {
-        playlist.sort_by_key(|TgVideoInPlaylist { index, .. }| *index);
-        Self {
-            chat_id,
-            reply_to_message_id,
-            playlist,
-        }
-    }
-}
-
-impl Interactor<SendVideoPlaylistByIdInput> for &SendVideoPlaylistById {
+impl Interactor<SendPlaylistInput> for &SendVideoPlaylist {
     type Output = ();
     type Err = SessionErrorKind;
 
     #[instrument(skip_all)]
     async fn execute(
         self,
-        SendVideoPlaylistByIdInput {
+        SendPlaylistInput {
             chat_id,
             reply_to_message_id,
             playlist,
-        }: SendVideoPlaylistByIdInput,
+        }: SendPlaylistInput,
     ) -> Result<Self::Output, Self::Err> {
         debug!("Video playlist sending");
         send::media_groups(
@@ -292,7 +194,7 @@ impl Interactor<SendVideoPlaylistByIdInput> for &SendVideoPlaylistById {
             chat_id,
             playlist
                 .into_iter()
-                .map(|TgVideoInPlaylist { file_id, .. }| InputMediaVideo::new(InputFile::id(file_id.into_string())))
+                .map(|val| InputMediaVideo::new(InputFile::id(val.file_id)))
                 .collect(),
             reply_to_message_id,
             Some(self.timeouts_cfg.send_by_id),
@@ -304,46 +206,23 @@ impl Interactor<SendVideoPlaylistByIdInput> for &SendVideoPlaylistById {
     }
 }
 
-pub struct SendAudioPlaylistById {
-    bot: Arc<Bot>,
-    timeouts_cfg: Arc<TimeoutsConfig>,
+pub struct SendAudioPlaylist {
+    pub bot: Arc<Bot>,
+    pub timeouts_cfg: Arc<TimeoutsConfig>,
 }
 
-impl SendAudioPlaylistById {
-    pub const fn new(bot: Arc<Bot>, timeouts_cfg: Arc<TimeoutsConfig>) -> Self {
-        Self { bot, timeouts_cfg }
-    }
-}
-
-pub struct SendAudioPlaylistByIdInput {
-    pub chat_id: i64,
-    pub reply_to_message_id: Option<i64>,
-    pub playlist: Vec<TgAudioInPlaylist>,
-}
-
-impl SendAudioPlaylistByIdInput {
-    pub fn new(chat_id: i64, reply_to_message_id: Option<i64>, mut playlist: Vec<TgAudioInPlaylist>) -> Self {
-        playlist.sort_by_key(|TgAudioInPlaylist { index, .. }| *index);
-        Self {
-            chat_id,
-            reply_to_message_id,
-            playlist,
-        }
-    }
-}
-
-impl Interactor<SendAudioPlaylistByIdInput> for &SendAudioPlaylistById {
+impl Interactor<SendPlaylistInput> for &SendAudioPlaylist {
     type Output = ();
     type Err = SessionErrorKind;
 
     #[instrument(skip_all)]
     async fn execute(
         self,
-        SendAudioPlaylistByIdInput {
+        SendPlaylistInput {
             chat_id,
             reply_to_message_id,
             playlist,
-        }: SendAudioPlaylistByIdInput,
+        }: SendPlaylistInput,
     ) -> Result<Self::Output, Self::Err> {
         debug!("Audio playlist sending");
         send::media_groups(
@@ -351,7 +230,7 @@ impl Interactor<SendAudioPlaylistByIdInput> for &SendAudioPlaylistById {
             chat_id,
             playlist
                 .into_iter()
-                .map(|TgAudioInPlaylist { file_id, .. }| InputMediaAudio::new(InputFile::id(file_id.into_string())))
+                .map(|MediaInPlaylist { file_id, .. }| InputMediaAudio::new(InputFile::id(file_id)))
                 .collect(),
             reply_to_message_id,
             Some(self.timeouts_cfg.send_by_id),

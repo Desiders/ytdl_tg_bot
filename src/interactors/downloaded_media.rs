@@ -1,7 +1,7 @@
 use crate::{
     config::RandomCmdConfig,
     database::TxManager,
-    entities::{Domains, DownloadedMedia},
+    entities::{language::Language, Domains, DownloadedMedia},
     errors::ErrorKind,
     interactors::Interactor,
     value_objects::MediaType,
@@ -11,54 +11,32 @@ use std::{convert::Infallible, sync::Arc};
 use time::OffsetDateTime;
 use tracing::{info, instrument};
 
-pub struct AddDownloadedMediaInput<'a> {
+pub struct AddMediaInput<'a> {
     pub file_id: String,
     pub id: String,
     pub display_id: Option<String>,
     pub domain: Option<String>,
+    pub audio_language: Language,
     pub tx_manager: &'a mut TxManager,
 }
 
-impl<'a> AddDownloadedMediaInput<'a> {
-    pub const fn new(
-        file_id: String,
-        id: String,
-        display_id: Option<String>,
-        domain: Option<String>,
-        tx_manager: &'a mut TxManager,
-    ) -> Self {
-        Self {
-            file_id,
-            id,
-            display_id,
-            domain,
-            tx_manager,
-        }
-    }
-}
+pub struct AddVideo {}
 
-pub struct AddDownloadedVideo {}
-
-impl AddDownloadedVideo {
-    pub const fn new() -> Self {
-        Self {}
-    }
-}
-
-impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedVideo {
+impl Interactor<AddMediaInput<'_>> for &AddVideo {
     type Output = ();
     type Err = ErrorKind<Infallible>;
 
-    #[instrument(skip_all, fields(%id, ?domain))]
+    #[instrument(skip_all)]
     async fn execute(
         self,
-        AddDownloadedMediaInput {
+        AddMediaInput {
             file_id,
             id,
             display_id,
             domain,
+            audio_language,
             tx_manager,
-        }: AddDownloadedMediaInput<'_>,
+        }: AddMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let normalized_domain = domain.map(|domain| domain.trim_start_matches("www.").to_owned());
 
@@ -72,6 +50,7 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedVideo {
             domain: normalized_domain,
             media_type: MediaType::Video,
             created_at: OffsetDateTime::now_utc(),
+            audio_language: audio_language.language,
         })
         .await?;
         info!("Downloaded media added");
@@ -81,28 +60,23 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedVideo {
     }
 }
 
-pub struct AddDownloadedAudio {}
+pub struct AddAudio {}
 
-impl AddDownloadedAudio {
-    pub const fn new() -> Self {
-        Self {}
-    }
-}
-
-impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedAudio {
+impl Interactor<AddMediaInput<'_>> for &AddAudio {
     type Output = ();
     type Err = ErrorKind<Infallible>;
 
-    #[instrument(skip_all, fields(%id, ?domain))]
+    #[instrument(skip_all)]
     async fn execute(
         self,
-        AddDownloadedMediaInput {
+        AddMediaInput {
             file_id,
             id,
             display_id,
             domain,
+            audio_language,
             tx_manager,
-        }: AddDownloadedMediaInput<'_>,
+        }: AddMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let normalized_domain = domain.map(|domain| domain.trim_start_matches("www.").to_owned());
 
@@ -117,6 +91,7 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedAudio {
             domain: normalized_domain,
             media_type: MediaType::Audio,
             created_at: OffsetDateTime::now_utc(),
+            audio_language: audio_language.language,
         })
         .await?;
         info!("Downloaded media added");
@@ -126,44 +101,28 @@ impl Interactor<AddDownloadedMediaInput<'_>> for &AddDownloadedAudio {
     }
 }
 
-pub struct GetRandomDownloadedMediaInput<'a> {
+pub struct GetRandomMediaInput<'a> {
     pub limit: u64,
     pub domains: Option<&'a Domains>,
     pub tx_manager: &'a mut TxManager,
 }
 
-impl<'a> GetRandomDownloadedMediaInput<'a> {
-    pub const fn new(limit: u64, domains: Option<&'a Domains>, tx_manager: &'a mut TxManager) -> Self {
-        Self {
-            limit,
-            domains,
-            tx_manager,
-        }
-    }
+pub struct GetRandomVideo {
+    pub random_cfg: Arc<RandomCmdConfig>,
 }
 
-pub struct GetRandomDownloadedVideo {
-    random_cfg: Arc<RandomCmdConfig>,
-}
-
-impl GetRandomDownloadedVideo {
-    pub const fn new(random_cfg: Arc<RandomCmdConfig>) -> Self {
-        Self { random_cfg }
-    }
-}
-
-impl Interactor<GetRandomDownloadedMediaInput<'_>> for &GetRandomDownloadedVideo {
+impl Interactor<GetRandomMediaInput<'_>> for &GetRandomVideo {
     type Output = Vec<DownloadedMedia>;
     type Err = ErrorKind<Infallible>;
 
     #[instrument(skip_all, fields(%limit, ?domains))]
     async fn execute(
         self,
-        GetRandomDownloadedMediaInput {
+        GetRandomMediaInput {
             limit,
             domains,
             tx_manager,
-        }: GetRandomDownloadedMediaInput<'_>,
+        }: GetRandomMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         tx_manager.begin().await?;
 
@@ -182,28 +141,22 @@ impl Interactor<GetRandomDownloadedMediaInput<'_>> for &GetRandomDownloadedVideo
     }
 }
 
-pub struct GetRandomDownloadedAudio {
-    random_cfg: Arc<RandomCmdConfig>,
+pub struct GetRandomAudio {
+    pub random_cfg: Arc<RandomCmdConfig>,
 }
 
-impl GetRandomDownloadedAudio {
-    pub const fn new(random_cfg: Arc<RandomCmdConfig>) -> Self {
-        Self { random_cfg }
-    }
-}
-
-impl Interactor<GetRandomDownloadedMediaInput<'_>> for &GetRandomDownloadedAudio {
+impl Interactor<GetRandomMediaInput<'_>> for &GetRandomAudio {
     type Output = Vec<DownloadedMedia>;
     type Err = ErrorKind<Infallible>;
 
     #[instrument(skip_all, fields(%limit, ?domains))]
     async fn execute(
         self,
-        GetRandomDownloadedMediaInput {
+        GetRandomMediaInput {
             limit,
             domains,
             tx_manager,
-        }: GetRandomDownloadedMediaInput<'_>,
+        }: GetRandomMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         tx_manager.begin().await?;
 

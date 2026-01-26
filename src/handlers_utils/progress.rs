@@ -17,8 +17,13 @@ pub async fn new(bot: &Bot, chat_id: i64, reply_to_message_id: i64) -> Result<Me
 }
 
 pub async fn is_downloading(bot: &Bot, chat_id: i64, message_id: i64) -> Result<(), SessionErrorKind> {
-    bot.send(EditMessageText::new("📥 Downloading...").chat_id(chat_id).message_id(message_id))
-        .await?;
+    bot.send(
+        EditMessageText::new("📥 Downloading...")
+            .chat_id(chat_id)
+            .message_id(message_id)
+            .link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
+    )
+    .await?;
     Ok(())
 }
 
@@ -53,7 +58,8 @@ pub async fn is_sending_with_errors_or_all_errors(
         EditMessageText::new(text)
             .chat_id(chat_id)
             .message_id(message_id)
-            .parse_mode(ParseMode::HTML),
+            .parse_mode(ParseMode::HTML)
+            .link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
     )
     .await?;
     Ok(())
@@ -87,7 +93,8 @@ pub async fn is_error(bot: &Bot, chat_id: i64, message_id: i64, text: &str, pars
         EditMessageText::new(text)
             .chat_id(chat_id)
             .message_id(message_id)
-            .parse_mode_option(parse_mode),
+            .parse_mode_option(parse_mode)
+            .link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
     )
     .await?;
     Ok(())
@@ -103,7 +110,8 @@ pub async fn is_error_in_chosen_inline(
         EditMessageText::new(text)
             .inline_message_id(inline_message_id)
             .reply_markup(InlineKeyboardMarkup::new([[]]))
-            .parse_mode_option(parse_mode),
+            .parse_mode_option(parse_mode)
+            .link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
     )
     .await?;
     Ok(())
