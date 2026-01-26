@@ -1,22 +1,25 @@
 use crate::{
     config::Config,
     database::TxManager,
-    entities::{AudioAndFormat, Domains, Params, PreferredLanguages, Range, TgAudioInPlaylist},
-    handlers_utils::error,
+    entities::{language::Language, Domains, MediaInPlaylist, Params, Range},
+    handlers_utils::progress,
     interactors::{
-        download::{DownloadAudioPlaylist, DownloadAudioPlaylistInput},
-        send_media::{
-            SendAudioById, SendAudioByIdInput, SendAudioInFS, SendAudioInFSInput, SendAudioPlaylistById, SendAudioPlaylistByIdInput,
+        download::media::{DownloadAudioPlaylist, DownloadMediaPlaylistInput},
+        downloaded_media,
+        get_media::{
+            self,
+            GetMediaByURLKind::{Empty, Playlist, SingleCached},
         },
-        AddDownloadedAudio, AddDownloadedMediaInput, GetAudioByURL, GetAudioByURLInput,
-        GetAudioByURLKind::{Empty, Playlist, SingleCached},
-        GetRandomDownloadedAudio, GetRandomDownloadedMediaInput, Interactor as _,
+        send_media, Interactor as _,
     },
     utils::{format_error_report, FormatErrorToMessage as _},
 };
 
 use froodi::{Inject, InjectTransient};
-use std::str::FromStr as _;
+use std::{
+    str::FromStr as _,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 use telers::{
     enums::ParseMode,
     event::{telegram::HandlerResult, EventReturn},
@@ -34,12 +37,12 @@ pub async fn download(
     params: Params,
     Extension(url): Extension<Url>,
     Inject(cfg): Inject<Config>,
-    Inject(get_media): Inject<GetAudioByURL>,
+    Inject(get_media): Inject<get_media::GetAudioByURL>,
     Inject(download_playlist): Inject<DownloadAudioPlaylist>,
-    Inject(send_media_in_fs): Inject<SendAudioInFS>,
-    Inject(send_media_by_id): Inject<SendAudioById>,
-    Inject(send_playlist): Inject<SendAudioPlaylistById>,
-    Inject(add_downloaded_media): Inject<AddDownloadedAudio>,
+    Inject(send_media_in_fs): Inject<send_media::fs::SendAudio>,
+    Inject(send_media_by_id): Inject<send_media::id::SendAudio>,
+    Inject(send_playlist): Inject<send_media::id::SendAudioPlaylist>,
+    Inject(add_downloaded_media): Inject<downloaded_media::AddAudio>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
 ) -> HandlerResult {
     debug!("Got url");
@@ -47,8 +50,11 @@ pub async fn download(
     let message_id = message.id();
     let chat_id = message.chat().id();
 
-    let range = match params.0.get("items") {
-        Some(raw_value) => match Range::from_str(raw_value) {
+    let progress_message = progress::new(&bot, chat_id, message_id).await?;
+    let progress_message_id = progress_message.id();
+
+    let playlist_range = match params.0.get("items") {
+        Some(val) => match Range::from_str(val) {
             Ok(range) => range,
             Err(err) => {
                 error!(%err, "Parse range err");
@@ -56,60 +62,70 @@ pub async fn download(
                     "Sorry, an error to parse range\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
                 );
-                error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
+                let _ = progress::is_error(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
                 return Ok(EventReturn::Finish);
             }
         },
         None => Range::default(),
     };
-    let preferred_languages = match params.0.get("lang") {
-        Some(raw_value) => PreferredLanguages::from_str(raw_value).unwrap(),
-        None => PreferredLanguages::default(),
+    let audio_language = match params.0.get("lang") {
+        Some(raw_value) => Language::from_str(raw_value).unwrap(),
+        None => Language::default(),
     };
+
     match get_media
-        .execute(GetAudioByURLInput::new(&url, &range, url.as_str(), url.domain(), &mut tx_manager))
+        .execute(get_media::GetMediaByURLInput {
+            url: &url,
+            playlist_range: &playlist_range,
+            cache_search: url.as_str(),
+            domain: url.domain(),
+            audio_language: &audio_language,
+            tx_manager: &mut tx_manager,
+        })
         .await
     {
         Ok(SingleCached(file_id)) => {
             if let Err(err) = send_media_by_id
-                .execute(SendAudioByIdInput::new(chat_id, Some(message_id), &file_id))
+                .execute(send_media::id::SendMediaInput {
+                    chat_id,
+                    reply_to_message_id: Some(message_id),
+                    id: &file_id,
+                })
                 .await
             {
-                error!(%err, "Send err");
+                error!(err = format_error_report(&err), "Send err");
                 let text = format!(
                     "Sorry, an error to send media\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
                 );
-                error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
+                let _ = progress::is_error(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
             }
         }
-        Ok(Playlist((cached, uncached))) => {
-            let mut media_and_formats = vec![];
-            for media in &uncached {
-                media_and_formats.push(
-                    match AudioAndFormat::new_with_select_format(media, cfg.yt_dlp.max_file_size, &preferred_languages) {
-                        Ok(val) => val,
-                        Err(err) => {
-                            error!(%err, "Select format err");
-                            let text = format!(
-                                "Sorry, an error to select a format\n{}",
-                                html_expandable_blockquote(html_quote(err.format(&bot.token)))
-                            );
-                            error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
-                            return Ok(EventReturn::Finish);
-                        }
-                    },
-                );
-            }
-            let (download_playlist_input, mut video_in_fs_receiver) = DownloadAudioPlaylistInput::new(&url, media_and_formats);
-            let download_playlist_handle = tokio::spawn({
-                let bot = bot.clone();
-                let uncached = uncached.clone();
-                async move {
-                    let mut playlist = vec![];
-                    let mut errs = vec![];
-                    while let Some((index, res)) = video_in_fs_receiver.recv().await {
-                        let media_in_fs = match res {
+        Ok(Playlist { cached, uncached }) => {
+            let mut errs = vec![];
+            let uncached: Vec<_> = uncached
+                .into_iter()
+                .filter(|(media, formats)| {
+                    let is_empty = formats.is_empty();
+                    if is_empty {
+                        warn!(?media, "Formats not found");
+                        errs.push(html_quote("Formats not found"));
+                    }
+                    !is_empty
+                })
+                .map(|(media, mut formats)| (media, formats.remove(0)))
+                .collect();
+            let (cached_len, uncached_len) = (cached.len(), uncached.len());
+            let mut downloaded_playlist = Vec::with_capacity(cached_len + uncached_len);
+            downloaded_playlist.extend(cached);
+            let (input, mut media_receiver, mut progress_receiver) =
+                DownloadMediaPlaylistInput::new_with_progress(&url, uncached.as_slice());
+
+            let downloaded_media_count = AtomicUsize::new(cached_len);
+            tokio::join!(
+                async {
+                    while let Some((media_index, download_res)) = media_receiver.recv().await {
+                        let media_in_fs = match download_res {
                             Ok(val) => val,
                             Err(err) => {
                                 error!(%err, "Download err");
@@ -117,19 +133,19 @@ pub async fn download(
                                 continue;
                             }
                         };
-                        let media = uncached.get(index).unwrap();
+                        let (media, _) = &uncached[media_index];
+
                         let file_id = match send_media_in_fs
-                            .execute(SendAudioInFSInput::new(
-                                cfg.chat.receiver_chat_id,
-                                Some(message_id),
+                            .execute(send_media::fs::SendAudioInput {
+                                chat_id: cfg.chat.receiver_chat_id,
+                                reply_to_message_id: Some(message_id),
                                 media_in_fs,
-                                media.title.as_deref().unwrap_or(media.id.as_ref()),
-                                media.title.as_deref(),
-                                media.uploader.as_deref(),
-                                #[allow(clippy::cast_possible_truncation)]
-                                media.duration.map(|duration| duration as i64),
-                                true,
-                            ))
+                                name: media.title.as_deref().unwrap_or(media.id.as_ref()),
+                                title: media.title.as_deref(),
+                                performer: media.uploader.as_deref(),
+                                duration: media.duration.map(|val| val as i64),
+                                with_delete: true,
+                            })
                             .await
                         {
                             Ok(val) => val,
@@ -139,50 +155,63 @@ pub async fn download(
                                 continue;
                             }
                         };
-                        playlist.push(TgAudioInPlaylist::new(file_id.clone(), index));
+                        downloaded_playlist.push(MediaInPlaylist {
+                            file_id: file_id.clone().into(),
+                            playlist_index: media.playlist_index,
+                        });
+
                         if let Err(err) = add_downloaded_media
-                            .execute(AddDownloadedMediaInput::new(
-                                file_id.into(),
-                                media.id.clone(),
-                                media.display_id.clone(),
-                                media.domain(),
-                                &mut tx_manager,
-                            ))
+                            .execute(downloaded_media::AddMediaInput {
+                                file_id: file_id.into(),
+                                id: media.id.clone(),
+                                display_id: media.display_id.clone(),
+                                domain: media.webpage_url.host_str().map(ToOwned::to_owned),
+                                audio_language: audio_language.clone(),
+                                tx_manager: &mut tx_manager,
+                            })
                             .await
                         {
                             error!(%err, "Add err");
                         }
+
+                        downloaded_media_count.fetch_add(1, Ordering::SeqCst);
                     }
-                    (playlist, errs)
+                },
+                async {
+                    while let Some(progress_str) = progress_receiver.recv().await {
+                        let _ = progress::is_downloading_with_progress(
+                            &bot,
+                            chat_id,
+                            progress_message_id,
+                            progress_str,
+                            downloaded_media_count.load(Ordering::SeqCst),
+                            cached_len + uncached_len,
+                        )
+                        .await;
+                    }
+                },
+                async {
+                    let _ = progress::is_downloading(&bot, chat_id, progress_message_id).await;
+                    if let Err(err) = download_playlist.execute(input).await {
+                        error!(%err, "Download err");
+                        let text = format!(
+                            "Sorry, an error to download playlist\n{}",
+                            html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                        );
+                        let _ = progress::is_error(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
+                    }
                 }
-            });
-            if let Err(err) = download_playlist.execute(download_playlist_input).await {
-                error!(%err, "Download err");
-                let text = format!(
-                    "Sorry, an error to download playlist\n{}",
-                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
-                );
-                if let Err(err) = error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await {
-                    error!(%err);
-                }
-            }
-            let (playlist, errors) = download_playlist_handle.await.unwrap();
-            if !errors.is_empty() {
-                let mut text = "Sorry, some download/send media failed:\n".to_owned();
-                for (index, err) in errors.into_iter().enumerate() {
-                    text.push_str(&html_expandable_blockquote(format!("{}. {}", index, html_quote(err))));
-                    text.push('\n');
-                }
-                if let Err(err) = error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await {
-                    error!(%err);
-                }
-            }
+            );
+            let media_to_send_count = downloaded_playlist.len();
+            let _ = progress::is_sending_with_errors_or_all_errors(&bot, chat_id, progress_message_id, &errs, media_to_send_count).await;
+
+            downloaded_playlist.sort_by_key(|val| val.playlist_index);
             if let Err(err) = send_playlist
-                .execute(SendAudioPlaylistByIdInput::new(
+                .execute(send_media::id::SendPlaylistInput {
                     chat_id,
-                    Some(message_id),
-                    playlist.into_iter().chain(cached).collect(),
-                ))
+                    reply_to_message_id: Some(message_id),
+                    playlist: downloaded_playlist,
+                })
                 .await
             {
                 error!(%err, "Send err");
@@ -190,15 +219,17 @@ pub async fn download(
                     "Sorry, an error to send playlist\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
                 );
-                if let Err(err) = error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await {
-                    error!(%err);
+                let _ = progress::is_error(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
+            } else {
+                if errs.len() == 0 {
+                    let _ = progress::delete(&bot, chat_id, progress_message_id).await;
                 }
             }
         }
         Ok(Empty) => {
             warn!("Empty playlist");
-            let text = "Playlist is empty".to_string();
-            error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
+            let text = "Playlist is empty";
+            let _ = progress::is_error(&bot, chat_id, message_id, text, Some(ParseMode::HTML)).await;
         }
         Err(err) => {
             error!(err = format_error_report(&err), "Get err");
@@ -206,7 +237,7 @@ pub async fn download(
                 "Sorry, an error to get info\n{}",
                 html_expandable_blockquote(html_quote(err.format(&bot.token)))
             );
-            error::occured_in_message(&bot, chat_id, message_id, &text, Some(ParseMode::HTML)).await?;
+            let _ = progress::is_error(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
             return Ok(EventReturn::Finish);
         }
     }
@@ -217,29 +248,36 @@ pub async fn download(
 pub async fn random(
     message: Message,
     params: Params,
-    Inject(get_media): Inject<GetRandomDownloadedAudio>,
-    Inject(send_playlist): Inject<SendAudioPlaylistById>,
+    Inject(get_media): Inject<downloaded_media::GetRandomAudio>,
+    Inject(send_playlist): Inject<send_media::id::SendAudioPlaylist>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
 ) -> HandlerResult {
     let message_id = message.id();
     let chat_id = message.chat().id();
 
-    let domains = params.0.get("domains").map(|raw_value| Domains::from_str(raw_value).unwrap());
+    let domains = params.0.get("domains").map(|val| Domains::from_str(val).unwrap());
     match get_media
-        .execute(GetRandomDownloadedMediaInput::new(1, domains.as_ref(), &mut tx_manager))
+        .execute(downloaded_media::GetRandomMediaInput {
+            limit: 1,
+            domains: domains.as_ref(),
+            tx_manager: &mut tx_manager,
+        })
         .await
     {
         Ok(playlist) => {
             if let Err(err) = send_playlist
-                .execute(SendAudioPlaylistByIdInput::new(
+                .execute(send_media::id::SendPlaylistInput {
                     chat_id,
-                    Some(message_id),
-                    playlist
+                    reply_to_message_id: Some(message_id),
+                    playlist: playlist
                         .into_iter()
                         .enumerate()
-                        .map(|(index, media)| TgAudioInPlaylist::new(media.file_id, index))
+                        .map(|(index, media)| MediaInPlaylist {
+                            file_id: media.file_id,
+                            playlist_index: index.try_into().unwrap(),
+                        })
                         .collect(),
-                ))
+                })
                 .await
             {
                 error!(%err, "Send err");
@@ -249,6 +287,5 @@ pub async fn random(
             error!(err = format_error_report(&err), "Get err");
         }
     }
-
     Ok(EventReturn::Finish)
 }
