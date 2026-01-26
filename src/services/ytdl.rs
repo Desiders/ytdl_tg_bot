@@ -240,7 +240,7 @@ pub async fn download_media(
     pot_provider_url: &str,
     timeout: u64,
     cookie: Option<&Cookie>,
-    progress_sender: mpsc::UnboundedSender<String>,
+    progress_sender: Option<mpsc::UnboundedSender<String>>,
 ) -> Result<(), DownloadErrorKind> {
     use tokio::{io::BufReader, process::Command, time};
 
@@ -307,6 +307,9 @@ pub async fn download_media(
 
     let ((), res) = tokio::join!(
         async {
+            let Some(progress_sender) = progress_sender else {
+                return;
+            };
             while let Ok(Some(line)) = reader.next_line().await {
                 if !line.starts_with("download-progress") {
                     continue;

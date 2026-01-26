@@ -1,10 +1,7 @@
 use crate::{
     entities::ParseRangeError,
     errors::{ErrorKind, FormatNotFound},
-    interactors::{
-        download::{DownloadAudioErrorKind, DownloadAudioPlaylistErrorKind, DownloadVideoErrorKind, DownloadVideoPlaylistErrorKind},
-        GetMediaByURLErrorKind,
-    },
+    interactors::{download::media, get_media},
     services::ytdl,
 };
 
@@ -39,25 +36,13 @@ impl FormatErrorToMessage for SessionErrorKind {
     }
 }
 
-impl FormatErrorToMessage for DownloadAudioErrorKind {
+impl FormatErrorToMessage for media::DownloadMediaErrorKind {
     fn format(&self, _token: &str) -> Cow<'static, str> {
         Cow::Owned(self.to_string())
     }
 }
 
-impl FormatErrorToMessage for DownloadAudioPlaylistErrorKind {
-    fn format(&self, _token: &str) -> Cow<'static, str> {
-        Cow::Owned(self.to_string())
-    }
-}
-
-impl FormatErrorToMessage for DownloadVideoErrorKind {
-    fn format(&self, _token: &str) -> Cow<'static, str> {
-        Cow::Owned(self.to_string())
-    }
-}
-
-impl FormatErrorToMessage for DownloadVideoPlaylistErrorKind {
+impl FormatErrorToMessage for media::DownloadMediaPlaylistErrorKind {
     fn format(&self, _token: &str) -> Cow<'static, str> {
         Cow::Owned(self.to_string())
     }
@@ -69,7 +54,7 @@ impl FormatErrorToMessage for FormatNotFound {
     }
 }
 
-impl FormatErrorToMessage for ytdl::Error {
+impl FormatErrorToMessage for ytdl::GetInfoErrorKind {
     fn format(&self, _token: &str) -> Cow<'static, str> {
         Cow::Owned(self.to_string())
     }
@@ -81,11 +66,11 @@ impl FormatErrorToMessage for ParseRangeError {
     }
 }
 
-impl FormatErrorToMessage for GetMediaByURLErrorKind {
+impl FormatErrorToMessage for get_media::GetMediaByURLErrorKind {
     fn format(&self, token: &str) -> Cow<'static, str> {
         match self {
-            GetMediaByURLErrorKind::Ytdl(error) => error.format(token),
-            GetMediaByURLErrorKind::Database(error_kind) => error_kind.format(token),
+            get_media::GetMediaByURLErrorKind::GetInfo(err) => err.format(token),
+            get_media::GetMediaByURLErrorKind::Database(err) => err.format(token),
         }
     }
 }

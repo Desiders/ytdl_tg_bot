@@ -1,19 +1,9 @@
 mod base;
-mod chat;
-mod downloaded_media;
-mod get_media;
 
+pub mod chat;
 pub mod download;
+pub mod downloaded_media;
+pub mod get_media;
 pub mod send_media;
 
 pub use base::Interactor;
-pub use chat::{SaveChat, SaveChatInput};
-pub use downloaded_media::{
-    AddDownloadedAudio, AddDownloadedMediaInput, AddDownloadedVideo, GetRandomDownloadedAudio, GetRandomDownloadedMediaInput,
-    GetRandomDownloadedVideo,
-};
-pub use get_media::{
-    GetAudioByURL, GetAudioByURLInput, GetAudioByURLKind, GetMediaByURLErrorKind, GetShortMediaByURLInfo, GetShortMediaInfoByURLInput,
-    GetUncachedVideoByURL, GetUncachedVideoByURLInput, GetUncachedVideoByURLKind, GetVideoByURL, GetVideoByURLInput, GetVideoByURLKind,
-    SearchMediaInfo, SearchMediaInfoInput,
-};
