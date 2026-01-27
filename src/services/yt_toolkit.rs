@@ -21,7 +21,6 @@ pub enum GetVideoInfoErrorKind {
 #[instrument(skip_all)]
 pub async fn get_video_info(client: &Client, api_url: &str, url: &str) -> Result<Vec<BasicInfo>, GetVideoInfoErrorKind> {
     let id = get_video_id(url)?;
-
     match serde_json::from_str::<VideoInfoKind>(
         &client
             .get(format!("{api_url}/video"))
@@ -55,6 +54,5 @@ pub async fn search_video(client: &Client, api_url: &str, text: &str) -> Result<
             .text()
             .await?,
     )?;
-
     Ok(basic_search_info.into_iter().map(Into::into).collect())
 }

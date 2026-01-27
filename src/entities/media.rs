@@ -6,6 +6,13 @@ use url::Url;
 
 use crate::utils::AspectKind;
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct ShortMedia {
+    pub id: String,
+    pub title: Option<String>,
+    pub thumbnail: Option<Url>,
+}
+
 #[derive(Debug, Clone)]
 pub struct MediaFormat {
     pub format_id: String,
@@ -70,12 +77,12 @@ pub struct Media {
     pub uploader: Option<String>,
     pub duration: Option<f32>,
     pub playlist_index: i16,
-    pub thumbnail: Option<String>,
+    pub thumbnail: Option<Url>,
     pub thumbnails: Vec<Thumbnail>,
 }
 
 impl Media {
-    pub fn get_thumb_urls(&self, aspect_kind: Option<AspectKind>) -> Vec<String> {
+    pub fn get_thumb_urls(&self, aspect_kind: Option<AspectKind>) -> Vec<Url> {
         let mut urls = match self.webpage_url.host_str() {
             Some(host) => {
                 if host.contains("youtube") || host == "youtu.be" {
@@ -87,7 +94,7 @@ impl Media {
                     }
                     .into_iter()
                     .chain(Some("frame0"))
-                    .map(|fragment| format!("https://i.ytimg.com/vi/{}/{fragment}.jpg", self.id))
+                    .map(|fragment| Url::parse(&format!("https://i.ytimg.com/vi/{}/{fragment}.jpg", self.id)).unwrap())
                     .collect()
                 } else {
                     vec![]
@@ -96,12 +103,37 @@ impl Media {
             None => vec![],
         };
         if let Some(thumb_url) = &self.thumbnail {
-            urls.push(thumb_url.to_owned());
+            urls.push(thumb_url.clone());
         }
         for thumb in &self.thumbnails {
-            urls.push(thumb.url.to_string());
+            urls.push(thumb.url.clone());
         }
         urls
+    }
+
+    fn get_thumb_url_jpg(&self) -> Option<&Url> {
+        fn is_jpg_or_jpeg(url: &Url) -> bool {
+            let path = url.path().to_lowercase();
+            path.ends_with(".jpg") || path.ends_with(".jpeg")
+        }
+
+        if let Some(url) = &self.thumbnail {
+            if is_jpg_or_jpeg(url) {
+                return Some(url);
+            }
+        }
+        self.thumbnails.iter().map(|val| &val.url).find(|url| is_jpg_or_jpeg(url))
+    }
+}
+
+impl From<Media> for ShortMedia {
+    fn from(media: Media) -> Self {
+        let thumbnail = media.get_thumb_url_jpg().cloned();
+        Self {
+            id: media.id,
+            title: media.title,
+            thumbnail,
+        }
     }
 }
 
@@ -116,7 +148,7 @@ pub struct MediaWithFormat {
     pub language: Option<String>,
     pub uploader: Option<String>,
     pub duration: Option<f32>,
-    pub thumbnail: Option<String>,
+    pub thumbnail: Option<Url>,
     #[serde(default)]
     pub thumbnails: Vec<Thumbnail>,
 

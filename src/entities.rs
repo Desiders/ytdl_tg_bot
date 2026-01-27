@@ -17,6 +17,6 @@ pub use chat_config::ChatConfig;
 pub use cookies::{Cookie, Cookies};
 pub use domains::Domains;
 pub use downloaded_media::DownloadedMedia;
-pub use media::{Media, MediaFormat, MediaInFS, MediaInPlaylist, Playlist};
+pub use media::{Media, MediaFormat, MediaInFS, MediaInPlaylist, Playlist, ShortMedia};
 pub use params::Params;
 pub use range::{ParseRangeError, Range};
