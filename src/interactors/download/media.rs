@@ -146,7 +146,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
         let thumb_urls = media.get_thumb_urls(format.aspect_ration_kind());
         let mut thumn_is_downloaded = false;
         for thumb_url in thumb_urls {
-            match download_and_convert(&thumb_url, &thumb_file_path, "/usr/bin/ffmpeg", 5).await {
+            match download_and_convert(thumb_url.as_str(), &thumb_file_path, "/usr/bin/ffmpeg", 5).await {
                 Ok(()) => {
                     info!("Thumb downloaded");
                     thumn_is_downloaded = true;
@@ -217,7 +217,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
         let thumb_urls = media.get_thumb_urls(format.aspect_ration_kind());
         let mut thumn_is_downloaded = false;
         for thumb_url in thumb_urls {
-            match download_and_convert(&thumb_url, &thumb_file_path, "/usr/bin/ffmpeg", 5).await {
+            match download_and_convert(thumb_url.as_str(), &thumb_file_path, "/usr/bin/ffmpeg", 5).await {
                 Ok(()) => {
                     info!("Thumb downloaded");
                     thumn_is_downloaded = true;
@@ -294,7 +294,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
             let thumb_urls = media.get_thumb_urls(format.aspect_ration_kind());
             let mut thumn_is_downloaded = false;
             for thumb_url in thumb_urls {
-                match download_and_convert(&thumb_url, &thumb_file_path, "/usr/bin/ffmpeg", 5).await {
+                match download_and_convert(thumb_url.as_str(), &thumb_file_path, "/usr/bin/ffmpeg", 5).await {
                     Ok(()) => {
                         let _guard = span.enter();
                         info!("Thumb downloaded");
@@ -383,7 +383,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
             let thumb_urls = media.get_thumb_urls(format.aspect_ration_kind());
             let mut thumn_is_downloaded = false;
             for thumb_url in thumb_urls {
-                match download_and_convert(&thumb_url, &thumb_file_path, "/usr/bin/ffmpeg", 5).await {
+                match download_and_convert(thumb_url.as_str(), &thumb_file_path, "/usr/bin/ffmpeg", 5).await {
                     Ok(()) => {
                         let _guard = span.enter();
                         info!("Thumb downloaded");

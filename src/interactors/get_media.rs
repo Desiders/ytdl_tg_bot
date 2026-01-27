@@ -90,7 +90,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
-        debug!("Getting media info");
+        debug!("Getting media");
 
         let playlist = get_media_info(
             url.as_str(),
@@ -139,7 +139,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
             ?uncached,
             cached_len = cached.len(),
             unchached_len = uncached.len(),
-            "Got media info"
+            "Got media"
         );
         Ok(Self::Output::Playlist { cached, uncached })
     }
@@ -184,7 +184,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
-        debug!("Getting media info");
+        debug!("Getting media");
 
         let playlist = get_media_info(
             url.as_str(),
@@ -228,12 +228,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
             return Ok(Self::Output::Empty);
         }
 
-        info!(
-            playlist_len,
-            cached_len = cached.len(),
-            unchached_len = uncached.len(),
-            "Got media info"
-        );
+        info!(playlist_len, cached_len = cached.len(), unchached_len = uncached.len(), "Got media");
         Ok(Self::Output::Playlist { cached, uncached })
     }
 }
@@ -260,7 +255,7 @@ impl Interactor<GetUncachedMediaByURLInput<'_>> for &GetUncachedVideoByURL {
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
         let is_single_media = playlist_range.is_single_element();
 
-        debug!("Getting media info");
+        debug!("Getting media");
 
         let playlist = get_media_info(
             url.as_str(),
@@ -276,7 +271,7 @@ impl Interactor<GetUncachedMediaByURLInput<'_>> for &GetUncachedVideoByURL {
         .await?;
         let playlist_len = playlist.inner.len();
 
-        info!(playlist_len, "Got media info");
+        info!(playlist_len, "Got media");
         Ok(playlist)
     }
 }
@@ -296,9 +291,9 @@ impl Interactor<GetShortMediaByURLInput<'_>> for &GetShortMediaByURL {
 
     #[instrument(skip_all)]
     async fn execute(self, GetShortMediaByURLInput { url }: GetShortMediaByURLInput<'_>) -> Result<Self::Output, Self::Err> {
-        debug!("Getting media info");
+        debug!("Getting media");
         let res = get_video_info(&self.client, &self.yt_toolkit_cfg.url, url.as_str()).await?;
-        info!("Got media info");
+        info!("Got media");
         Ok(res)
     }
 }
@@ -318,9 +313,9 @@ impl Interactor<SearchMediaInfoInput<'_>> for &SearchMediaInfo {
 
     #[instrument(skip_all)]
     async fn execute(self, SearchMediaInfoInput { text }: SearchMediaInfoInput<'_>) -> Result<Self::Output, Self::Err> {
-        debug!("Searching media info");
+        debug!("Searching media");
         let res = search_video(&self.client, &self.yt_toolkit_cfg.url, text).await?;
-        info!("Got media info");
+        info!("Got media");
         Ok(res)
     }
 }
