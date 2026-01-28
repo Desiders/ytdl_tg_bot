@@ -1,16 +1,16 @@
 use crate::{
     config::Config,
     database::TxManager,
-    entities::{AudioAndFormat, Params, PreferredLanguages, Range, VideoAndFormat},
-    handlers_utils::error,
+    entities::{language::Language, Params, Range},
+    handlers_utils::progress,
     interactors::{
-        download::{DownloadAudio, DownloadAudioInput, DownloadVideo, DownloadVideoInput},
-        send_media::{
-            EditAudioById, EditAudioByIdInput, EditVideoById, EditVideoByIdInput, SendAudioInFS, SendAudioInFSInput, SendVideoInFS,
-            SendVideoInFSInput,
+        download::media,
+        downloaded_media,
+        get_media::{
+            self,
+            GetMediaByURLKind::{Empty, Playlist, SingleCached},
         },
-        AddDownloadedAudio, AddDownloadedMediaInput, AddDownloadedVideo, GetAudioByURL, GetAudioByURLInput, GetAudioByURLKind,
-        GetVideoByURL, GetVideoByURLInput, GetVideoByURLKind, Interactor as _,
+        send_media, Interactor as _,
     },
     utils::{format_error_report, FormatErrorToMessage as _},
 };
@@ -24,523 +24,391 @@ use telers::{
     utils::text::{html_expandable_blockquote, html_quote, html_text_link},
     Bot, Extension,
 };
-use tracing::{debug, error, instrument, Span};
+use tracing::{debug, error, instrument, warn, Span};
 use url::Url;
 
-#[instrument(skip_all, fields(inline_message_id, is_video, url = url.as_str(), ?params))]
-pub async fn download_by_url(
+#[instrument(skip_all, fields(inline_message_id, url = url.as_str(), ?params))]
+pub async fn download_video(
     bot: Bot,
     params: Params,
-    ChosenInlineResult {
-        result_id,
-        inline_message_id,
-        ..
-    }: ChosenInlineResult,
+    ChosenInlineResult { inline_message_id, .. }: ChosenInlineResult,
     Extension(url): Extension<Url>,
     Inject(cfg): Inject<Config>,
-    Inject(get_video_by_url): Inject<GetVideoByURL>,
-    Inject(get_audio_by_url): Inject<GetAudioByURL>,
-    Inject(download_video): Inject<DownloadVideo>,
-    Inject(download_audio): Inject<DownloadAudio>,
-    Inject(send_video_in_fs): Inject<SendVideoInFS>,
-    Inject(edit_video_by_id): Inject<EditVideoById>,
-    Inject(send_audio_in_fs): Inject<SendAudioInFS>,
-    Inject(edit_audio_by_id): Inject<EditAudioById>,
-    Inject(add_downloaded_video): Inject<AddDownloadedVideo>,
-    Inject(add_downloaded_audio): Inject<AddDownloadedAudio>,
+    Inject(get_media): Inject<get_media::GetVideoByURL>,
+    Inject(download_media): Inject<media::DownloadVideo>,
+    Inject(send_media_in_fs): Inject<send_media::fs::SendVideo>,
+    Inject(edit_media_by_id): Inject<send_media::id::EditVideo>,
+    Inject(add_downloaded_media): Inject<downloaded_media::AddVideo>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
 ) -> HandlerResult {
     let inline_message_id = inline_message_id.as_deref().unwrap();
-    let is_video = result_id.starts_with("video_");
 
-    Span::current()
-        .record("inline_message_id", inline_message_id)
-        .record("is_video", is_video);
+    Span::current().record("inline_message_id", inline_message_id);
 
     debug!("Got url");
 
-    let preferred_languages = match params.0.get("lang") {
-        Some(raw_value) => PreferredLanguages::from_str(raw_value).unwrap(),
-        None => PreferredLanguages::default(),
+    let playlist_range = Range::default();
+    let audio_language = match params.0.get("lang") {
+        Some(raw_value) => Language::from_str(raw_value).unwrap(),
+        None => Language::default(),
     };
-    if is_video {
-        let file_id = match get_video_by_url
-            .execute(GetVideoByURLInput::new(
-                &url,
-                &Range::default(),
-                url.as_str(),
-                url.domain(),
-                &mut tx_manager,
-            ))
-            .await
-        {
-            Ok(GetVideoByURLKind::SingleCached(file_id)) => file_id.into_boxed_str(),
-            Ok(GetVideoByURLKind::Playlist((mut cached, mut uncached))) => {
-                if cached.len() == 1 {
-                    let cached = cached.remove(0);
-                    cached.file_id
-                } else {
-                    let media = uncached.remove(0);
-                    let media_and_format =
-                        match VideoAndFormat::new_with_select_format(&media, cfg.yt_dlp.max_file_size, &preferred_languages) {
-                            Ok(val) => val,
-                            Err(err) => {
-                                error!(%err, "Select format err");
-                                let text = format!(
-                                    "Sorry, an error to select a format\n{}",
-                                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
-                                );
-                                error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
-                                return Ok(EventReturn::Finish);
-                            }
-                        };
-                    let media_in_fs = match download_video.execute(DownloadVideoInput::new(&url, media_and_format)).await {
-                        Ok(val) => val,
-                        Err(err) => {
-                            error!(err = format_error_report(&err), "Download err");
-                            let text = format!(
-                                "Sorry, an error to download\n{}",
-                                html_expandable_blockquote(html_quote(err.format(&bot.token)))
-                            );
-                            error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
-                            return Ok(EventReturn::Finish);
-                        }
-                    };
-                    let file_id = match send_video_in_fs
-                        .execute(SendVideoInFSInput::new(
-                            cfg.chat.receiver_chat_id,
-                            None,
-                            media_in_fs,
-                            media.title.as_deref().unwrap_or(media.id.as_ref()),
-                            media.width,
-                            media.height,
-                            #[allow(clippy::cast_possible_truncation)]
-                            media.duration.map(|duration| duration as i64),
-                            true,
-                        ))
-                        .await
-                    {
-                        Ok(file_id) => file_id,
-                        Err(err) => {
-                            error!(err = format_error_report(&err), "Send err");
-                            let text = format!(
-                                "Sorry, an error to download\n{}",
-                                html_expandable_blockquote(html_quote(err.format(&bot.token)))
-                            );
-                            error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
-                            return Ok(EventReturn::Finish);
-                        }
-                    };
-
-                    if let Err(err) = add_downloaded_video
-                        .execute(AddDownloadedMediaInput::new(
-                            file_id.clone().into(),
-                            media.id.clone(),
-                            media.display_id.clone(),
-                            media.domain(),
-                            &mut tx_manager,
-                        ))
-                        .await
-                    {
-                        error!(%err, "Add err");
-                    }
-                    file_id
-                }
-            }
-            Ok(GetVideoByURLKind::Empty) => {
-                error!("Video not found");
-                error::occured_in_chosen_inline_result(&bot, "Video not found", inline_message_id, Some(ParseMode::HTML)).await?;
-                return Ok(EventReturn::Finish);
-            }
-            Err(err) => {
-                error!(err = format_error_report(&err), "Get info err");
+    match get_media
+        .execute(get_media::GetMediaByURLInput {
+            url: &url,
+            playlist_range: &playlist_range,
+            cache_search: url.as_str(),
+            domain: url.domain(),
+            audio_language: &audio_language,
+            tx_manager: &mut tx_manager,
+        })
+        .await
+    {
+        Ok(SingleCached(file_id)) => {
+            if let Err(err) = edit_media_by_id
+                .execute(send_media::id::EditMediaInput {
+                    inline_message_id,
+                    id: &file_id,
+                    caption: &html_text_link("Link", url),
+                })
+                .await
+            {
+                error!(err = format_error_report(&err), "Edit err");
                 let text = format!(
-                    "Sorry, an error to get media info\n{}",
+                    "Sorry, an error to edit the message\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
                 );
-                error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
+                let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
+            }
+        }
+        Ok(Playlist { mut cached, .. }) if cached.len() > 0 => {
+            let media = cached.remove(0);
+            let file_id = media.file_id;
+
+            if let Err(err) = edit_media_by_id
+                .execute(send_media::id::EditMediaInput {
+                    inline_message_id,
+                    id: &file_id,
+                    caption: &html_text_link("Link", url),
+                })
+                .await
+            {
+                error!(err = format_error_report(&err), "Edit err");
+                let text = format!(
+                    "Sorry, an error to edit the message\n{}",
+                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                );
+                let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
+            }
+        }
+        Ok(Playlist { uncached, .. }) if uncached.len() > 0 => {
+            let mut uncached: Vec<_> = uncached
+                .into_iter()
+                .filter(|(media, formats)| {
+                    let is_empty = formats.is_empty();
+                    if is_empty {
+                        warn!(?media, "Formats not found");
+                    }
+                    !is_empty
+                })
+                .map(|(media, mut formats)| (media, formats.remove(0)))
+                .collect();
+            let (media, format) = uncached.remove(0);
+
+            let (input, mut progress_receiver) = media::DownloadMediaInput::new_with_progress(&url, &media, &format);
+
+            let ((), download_res) = tokio::join!(
+                async {
+                    while let Some(progress_str) = progress_receiver.recv().await {
+                        let _ = progress::is_downloading_with_progress_in_chosen_inline(&bot, inline_message_id, progress_str).await;
+                    }
+                },
+                async {
+                    let _ = progress::is_downloading_in_chosen_inline(&bot, inline_message_id).await;
+                    download_media.execute(input).await
+                }
+            );
+            let media_in_fs = match download_res {
+                Ok(val) => val,
+                Err(err) => {
+                    error!(%err, "Download err");
+                    let _ = progress::is_error_in_chosen_inline(
+                        &bot,
+                        inline_message_id,
+                        &html_quote(err.format(&bot.token)),
+                        Some(ParseMode::HTML),
+                    )
+                    .await;
+                    return Ok(EventReturn::Finish);
+                }
+            };
+
+            let _ = progress::is_sending_in_chosen_inline(&bot, inline_message_id).await;
+            let file_id = match send_media_in_fs
+                .execute(send_media::fs::SendVideoInput {
+                    chat_id: cfg.chat.receiver_chat_id,
+                    reply_to_message_id: None,
+                    media_in_fs,
+                    name: media.title.as_deref().unwrap_or(media.id.as_ref()),
+                    width: format.width,
+                    height: format.height,
+                    duration: media.duration.map(|val| val as i64),
+                    with_delete: true,
+                })
+                .await
+            {
+                Ok(val) => val,
+                Err(err) => {
+                    error!(err = format_error_report(&err), "Send err");
+                    let _ = progress::is_error_in_chosen_inline(
+                        &bot,
+                        inline_message_id,
+                        &html_quote(err.format(&bot.token)),
+                        Some(ParseMode::HTML),
+                    )
+                    .await;
+                    return Ok(EventReturn::Finish);
+                }
+            };
+
+            if let Err(err) = edit_media_by_id
+                .execute(send_media::id::EditMediaInput {
+                    inline_message_id,
+                    id: &file_id,
+                    caption: &html_text_link("Link", &url),
+                })
+                .await
+            {
+                error!(err = format_error_report(&err), "Edit err");
+                let text = format!(
+                    "Sorry, an error to edit the message\n{}",
+                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                );
+                let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
                 return Ok(EventReturn::Finish);
             }
-        };
-        if let Err(err) = edit_video_by_id
-            .execute(EditVideoByIdInput::new(inline_message_id, &file_id, &html_text_link("Link", url)))
-            .await
-        {
-            error!(err = format_error_report(&err), "Edit err");
-            let text = format!(
-                "Sorry, an error to edit the message\n{}",
-                html_expandable_blockquote(html_quote(err.format(&bot.token)))
-            );
-            error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
-        }
-        return Ok(EventReturn::Finish);
-    }
 
-    let file_id = match get_audio_by_url
-        .execute(GetAudioByURLInput::new(
-            &url,
-            &Range::default(),
-            url.as_str(),
-            url.domain(),
-            &mut tx_manager,
-        ))
-        .await
-    {
-        Ok(GetAudioByURLKind::SingleCached(file_id)) => file_id.into_boxed_str(),
-        Ok(GetAudioByURLKind::Playlist((mut cached, mut uncached))) => {
-            if cached.len() == 1 {
-                let cached = cached.remove(0);
-                cached.file_id
-            } else {
-                let media = uncached.remove(0);
-                let media_and_format = match AudioAndFormat::new_with_select_format(&media, cfg.yt_dlp.max_file_size, &preferred_languages)
-                {
-                    Ok(val) => val,
-                    Err(err) => {
-                        error!(%err, "Select format err");
-                        let text = format!(
-                            "Sorry, an error to select a format\n{}",
-                            html_expandable_blockquote(html_quote(err.format(&bot.token)))
-                        );
-                        error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
-                        return Ok(EventReturn::Finish);
-                    }
-                };
-                let media_in_fs = match download_audio.execute(DownloadAudioInput::new(&url, media_and_format)).await {
-                    Ok(val) => val,
-                    Err(err) => {
-                        error!(err = format_error_report(&err), "Download err");
-                        let text = format!(
-                            "Sorry, an error to download\n{}",
-                            html_expandable_blockquote(html_quote(err.format(&bot.token)))
-                        );
-                        error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
-                        return Ok(EventReturn::Finish);
-                    }
-                };
-                let file_id = match send_audio_in_fs
-                    .execute(SendAudioInFSInput::new(
-                        cfg.chat.receiver_chat_id,
-                        None,
-                        media_in_fs,
-                        media.title.as_deref().unwrap_or(media.id.as_ref()),
-                        media.title.as_deref(),
-                        media.uploader.as_deref(),
-                        #[allow(clippy::cast_possible_truncation)]
-                        media.duration.map(|duration| duration as i64),
-                        true,
-                    ))
-                    .await
-                {
-                    Ok(file_id) => file_id,
-                    Err(err) => {
-                        error!(err = format_error_report(&err), "Send err");
-                        let text = format!(
-                            "Sorry, an error to download\n{}",
-                            html_expandable_blockquote(html_quote(err.format(&bot.token)))
-                        );
-                        error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
-                        return Ok(EventReturn::Finish);
-                    }
-                };
-                if let Err(err) = add_downloaded_audio
-                    .execute(AddDownloadedMediaInput::new(
-                        file_id.clone().into(),
-                        media.id.clone(),
-                        media.display_id.clone(),
-                        media.domain(),
-                        &mut tx_manager,
-                    ))
-                    .await
-                {
-                    error!(%err, "Add err");
-                }
-                file_id
+            if let Err(err) = add_downloaded_media
+                .execute(downloaded_media::AddMediaInput {
+                    file_id: file_id.into(),
+                    id: media.id.clone(),
+                    display_id: media.display_id.clone(),
+                    domain: media.webpage_url.host_str().map(ToOwned::to_owned),
+                    audio_language: audio_language.clone(),
+                    tx_manager: &mut tx_manager,
+                })
+                .await
+            {
+                error!(%err, "Add err");
             }
         }
-        Ok(GetAudioByURLKind::Empty) => {
-            error!("Audio not found");
-            error::occured_in_chosen_inline_result(&bot, "Audio not found", inline_message_id, Some(ParseMode::HTML)).await?;
-            return Ok(EventReturn::Finish);
+        Ok(Empty) => {
+            warn!("Empty playlist");
+            let text = "Playlist is empty";
+            let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
         }
         Err(err) => {
-            error!(err = format_error_report(&err), "Get info err");
+            error!(err = format_error_report(&err), "Get err");
             let text = format!(
-                "Sorry, an error to get media info\n{}",
+                "Sorry, an error to get info\n{}",
                 html_expandable_blockquote(html_quote(err.format(&bot.token)))
             );
-            error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
+            let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
             return Ok(EventReturn::Finish);
         }
-    };
-    if let Err(err) = edit_audio_by_id
-        .execute(EditAudioByIdInput::new(inline_message_id, &file_id, &html_text_link("Link", url)))
-        .await
-    {
-        error!(err = format_error_report(&err), "Edit err");
-        let text = format!(
-            "Sorry, an error to edit the message\n{}",
-            html_expandable_blockquote(html_quote(err.format(&bot.token)))
-        );
-        error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
+        _ => unreachable!("Incorrect branch"),
     }
     Ok(EventReturn::Finish)
 }
 
-#[instrument(skip_all, fields(inline_message_id, is_video, video_id))]
-pub async fn download_by_id(
+#[instrument(skip_all, fields(inline_message_id, url = url.as_str(), ?params))]
+pub async fn download_audio(
     bot: Bot,
-    ChosenInlineResult {
-        result_id,
-        inline_message_id,
-        ..
-    }: ChosenInlineResult,
+    params: Params,
+    ChosenInlineResult { inline_message_id, .. }: ChosenInlineResult,
+    Extension(url): Extension<Url>,
     Inject(cfg): Inject<Config>,
-    Inject(get_video_by_url): Inject<GetVideoByURL>,
-    Inject(get_audio_by_url): Inject<GetAudioByURL>,
-    Inject(download_video): Inject<DownloadVideo>,
-    Inject(download_audio): Inject<DownloadAudio>,
-    Inject(send_video_in_fs): Inject<SendVideoInFS>,
-    Inject(edit_video_by_id): Inject<EditVideoById>,
-    Inject(send_audio_in_fs): Inject<SendAudioInFS>,
-    Inject(edit_audio_by_id): Inject<EditAudioById>,
-    Inject(add_downloaded_video): Inject<AddDownloadedVideo>,
-    Inject(add_downloaded_audio): Inject<AddDownloadedAudio>,
+    Inject(get_media): Inject<get_media::GetAudioByURL>,
+    Inject(download_media): Inject<media::DownloadAudio>,
+    Inject(send_media_in_fs): Inject<send_media::fs::SendAudio>,
+    Inject(edit_media_by_id): Inject<send_media::id::EditAudio>,
+    Inject(add_downloaded_media): Inject<downloaded_media::AddAudio>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
 ) -> HandlerResult {
     let inline_message_id = inline_message_id.as_deref().unwrap();
-    let (result_prefix, video_id) = result_id.split_once('_').unwrap();
-    let url = Url::parse(&format!("https://www.youtube.com/watch?v={video_id}")).unwrap();
-    let is_video = result_prefix.starts_with("video");
 
-    Span::current()
-        .record("inline_message_id", inline_message_id)
-        .record("is_video", is_video)
-        .record("video_id", video_id);
+    Span::current().record("inline_message_id", inline_message_id);
 
     debug!("Got url");
 
-    let preferred_languages = PreferredLanguages::default();
-    if is_video {
-        let file_id = match get_video_by_url
-            .execute(GetVideoByURLInput::new(
-                &url,
-                &Range::default(),
-                url.as_str(),
-                url.domain(),
-                &mut tx_manager,
-            ))
-            .await
-        {
-            Ok(GetVideoByURLKind::SingleCached(file_id)) => file_id.into_boxed_str(),
-            Ok(GetVideoByURLKind::Playlist((mut cached, mut uncached))) => {
-                if cached.len() == 1 {
-                    let cached = cached.remove(0);
-                    cached.file_id
-                } else {
-                    let media = uncached.remove(0);
-                    let media_and_format =
-                        match VideoAndFormat::new_with_select_format(&media, cfg.yt_dlp.max_file_size, &preferred_languages) {
-                            Ok(val) => val,
-                            Err(err) => {
-                                error!(%err, "Select format err");
-                                let text = format!(
-                                    "Sorry, an error to select a format\n{}",
-                                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
-                                );
-                                error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
-                                return Ok(EventReturn::Finish);
-                            }
-                        };
-                    let media_in_fs = match download_video.execute(DownloadVideoInput::new(&url, media_and_format)).await {
-                        Ok(val) => val,
-                        Err(err) => {
-                            error!(err = format_error_report(&err), "Download err");
-                            let text = format!(
-                                "Sorry, an error to download\n{}",
-                                html_expandable_blockquote(html_quote(err.format(&bot.token)))
-                            );
-                            error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
-                            return Ok(EventReturn::Finish);
-                        }
-                    };
-                    let file_id = match send_video_in_fs
-                        .execute(SendVideoInFSInput::new(
-                            cfg.chat.receiver_chat_id,
-                            None,
-                            media_in_fs,
-                            media.title.as_deref().unwrap_or(media.id.as_ref()),
-                            media.width,
-                            media.height,
-                            #[allow(clippy::cast_possible_truncation)]
-                            media.duration.map(|duration| duration as i64),
-                            true,
-                        ))
-                        .await
-                    {
-                        Ok(file_id) => file_id,
-                        Err(err) => {
-                            error!(err = format_error_report(&err), "Send err");
-                            let text = format!(
-                                "Sorry, an error to download\n{}",
-                                html_expandable_blockquote(html_quote(err.format(&bot.token)))
-                            );
-                            error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
-                            return Ok(EventReturn::Finish);
-                        }
-                    };
-
-                    if let Err(err) = add_downloaded_video
-                        .execute(AddDownloadedMediaInput::new(
-                            file_id.clone().into(),
-                            media.id.clone(),
-                            media.display_id.clone(),
-                            media.domain(),
-                            &mut tx_manager,
-                        ))
-                        .await
-                    {
-                        error!(%err, "Add err");
-                    }
-                    file_id
-                }
-            }
-            Ok(GetVideoByURLKind::Empty) => {
-                error!("Video not found");
-                error::occured_in_chosen_inline_result(&bot, "Video not found", inline_message_id, Some(ParseMode::HTML)).await?;
-                return Ok(EventReturn::Finish);
-            }
-            Err(err) => {
-                error!(err = format_error_report(&err), "Get info err");
+    let playlist_range = Range::default();
+    let audio_language = match params.0.get("lang") {
+        Some(raw_value) => Language::from_str(raw_value).unwrap(),
+        None => Language::default(),
+    };
+    match get_media
+        .execute(get_media::GetMediaByURLInput {
+            url: &url,
+            playlist_range: &playlist_range,
+            cache_search: url.as_str(),
+            domain: url.domain(),
+            audio_language: &audio_language,
+            tx_manager: &mut tx_manager,
+        })
+        .await
+    {
+        Ok(SingleCached(file_id)) => {
+            if let Err(err) = edit_media_by_id
+                .execute(send_media::id::EditMediaInput {
+                    inline_message_id,
+                    id: &file_id,
+                    caption: &html_text_link("Link", url),
+                })
+                .await
+            {
+                error!(err = format_error_report(&err), "Edit err");
                 let text = format!(
-                    "Sorry, an error to get media info\n{}",
+                    "Sorry, an error to edit the message\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
                 );
-                error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
+                let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
+            }
+        }
+        Ok(Playlist { mut cached, .. }) if cached.len() > 0 => {
+            let media = cached.remove(0);
+            let file_id = media.file_id;
+
+            if let Err(err) = edit_media_by_id
+                .execute(send_media::id::EditMediaInput {
+                    inline_message_id,
+                    id: &file_id,
+                    caption: &html_text_link("Link", url),
+                })
+                .await
+            {
+                error!(err = format_error_report(&err), "Edit err");
+                let text = format!(
+                    "Sorry, an error to edit the message\n{}",
+                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                );
+                let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
+            }
+        }
+        Ok(Playlist { uncached, .. }) if uncached.len() > 0 => {
+            let mut uncached: Vec<_> = uncached
+                .into_iter()
+                .filter(|(media, formats)| {
+                    let is_empty = formats.is_empty();
+                    if is_empty {
+                        warn!(?media, "Formats not found");
+                    }
+                    !is_empty
+                })
+                .map(|(media, mut formats)| (media, formats.remove(0)))
+                .collect();
+            let (media, format) = uncached.remove(0);
+
+            let (input, mut progress_receiver) = media::DownloadMediaInput::new_with_progress(&url, &media, &format);
+
+            let ((), download_res) = tokio::join!(
+                async {
+                    while let Some(progress_str) = progress_receiver.recv().await {
+                        let _ = progress::is_downloading_with_progress_in_chosen_inline(&bot, inline_message_id, progress_str).await;
+                    }
+                },
+                async {
+                    let _ = progress::is_downloading_in_chosen_inline(&bot, inline_message_id).await;
+                    download_media.execute(input).await
+                }
+            );
+            let media_in_fs = match download_res {
+                Ok(val) => val,
+                Err(err) => {
+                    error!(%err, "Download err");
+                    let _ = progress::is_error_in_chosen_inline(
+                        &bot,
+                        inline_message_id,
+                        &html_quote(err.format(&bot.token)),
+                        Some(ParseMode::HTML),
+                    )
+                    .await;
+                    return Ok(EventReturn::Finish);
+                }
+            };
+
+            let _ = progress::is_sending_in_chosen_inline(&bot, inline_message_id).await;
+            let file_id = match send_media_in_fs
+                .execute(send_media::fs::SendAudioInput {
+                    chat_id: cfg.chat.receiver_chat_id,
+                    reply_to_message_id: None,
+                    media_in_fs,
+                    name: media.title.as_deref().unwrap_or(media.id.as_ref()),
+                    title: media.title.as_deref(),
+                    performer: media.uploader.as_deref(),
+                    duration: media.duration.map(|val| val as i64),
+                    with_delete: true,
+                })
+                .await
+            {
+                Ok(val) => val,
+                Err(err) => {
+                    error!(err = format_error_report(&err), "Send err");
+                    let _ = progress::is_error_in_chosen_inline(
+                        &bot,
+                        inline_message_id,
+                        &html_quote(err.format(&bot.token)),
+                        Some(ParseMode::HTML),
+                    )
+                    .await;
+                    return Ok(EventReturn::Finish);
+                }
+            };
+
+            if let Err(err) = edit_media_by_id
+                .execute(send_media::id::EditMediaInput {
+                    inline_message_id,
+                    id: &file_id,
+                    caption: &html_text_link("Link", &url),
+                })
+                .await
+            {
+                error!(err = format_error_report(&err), "Edit err");
+                let text = format!(
+                    "Sorry, an error to edit the message\n{}",
+                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                );
+                let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
                 return Ok(EventReturn::Finish);
             }
-        };
-        if let Err(err) = edit_video_by_id
-            .execute(EditVideoByIdInput::new(inline_message_id, &file_id, &html_text_link("Link", url)))
-            .await
-        {
-            error!(err = format_error_report(&err), "Edit err");
-            let text = format!(
-                "Sorry, an error to edit the message\n{}",
-                html_expandable_blockquote(html_quote(err.format(&bot.token)))
-            );
-            error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
-        }
-        return Ok(EventReturn::Finish);
-    }
 
-    let file_id = match get_audio_by_url
-        .execute(GetAudioByURLInput::new(
-            &url,
-            &Range::default(),
-            url.as_str(),
-            url.domain(),
-            &mut tx_manager,
-        ))
-        .await
-    {
-        Ok(GetAudioByURLKind::SingleCached(file_id)) => file_id.into_boxed_str(),
-        Ok(GetAudioByURLKind::Playlist((mut cached, mut uncached))) => {
-            if cached.len() == 1 {
-                let cached = cached.remove(0);
-                cached.file_id
-            } else {
-                let media = uncached.remove(0);
-                let media_and_format = match AudioAndFormat::new_with_select_format(&media, cfg.yt_dlp.max_file_size, &preferred_languages)
-                {
-                    Ok(val) => val,
-                    Err(err) => {
-                        error!(%err, "Select format err");
-                        let text = format!(
-                            "Sorry, an error to select a format\n{}",
-                            html_expandable_blockquote(html_quote(err.format(&bot.token)))
-                        );
-                        error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
-                        return Ok(EventReturn::Finish);
-                    }
-                };
-                let media_in_fs = match download_audio.execute(DownloadAudioInput::new(&url, media_and_format)).await {
-                    Ok(val) => val,
-                    Err(err) => {
-                        error!(err = format_error_report(&err), "Download err");
-                        let text = format!(
-                            "Sorry, an error to download\n{}",
-                            html_expandable_blockquote(html_quote(err.format(&bot.token)))
-                        );
-                        error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
-                        return Ok(EventReturn::Finish);
-                    }
-                };
-                let file_id = match send_audio_in_fs
-                    .execute(SendAudioInFSInput::new(
-                        cfg.chat.receiver_chat_id,
-                        None,
-                        media_in_fs,
-                        media.title.as_deref().unwrap_or(media.id.as_ref()),
-                        media.title.as_deref(),
-                        media.uploader.as_deref(),
-                        #[allow(clippy::cast_possible_truncation)]
-                        media.duration.map(|duration| duration as i64),
-                        true,
-                    ))
-                    .await
-                {
-                    Ok(file_id) => file_id,
-                    Err(err) => {
-                        error!(err = format_error_report(&err), "Send err");
-                        let text = format!(
-                            "Sorry, an error to download\n{}",
-                            html_expandable_blockquote(html_quote(err.format(&bot.token)))
-                        );
-                        error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
-                        return Ok(EventReturn::Finish);
-                    }
-                };
-                if let Err(err) = add_downloaded_audio
-                    .execute(AddDownloadedMediaInput::new(
-                        file_id.clone().into(),
-                        media.id.clone(),
-                        media.display_id.clone(),
-                        media.domain(),
-                        &mut tx_manager,
-                    ))
-                    .await
-                {
-                    error!(%err, "Add err");
-                }
-                file_id
+            if let Err(err) = add_downloaded_media
+                .execute(downloaded_media::AddMediaInput {
+                    file_id: file_id.into(),
+                    id: media.id.clone(),
+                    display_id: media.display_id.clone(),
+                    domain: media.webpage_url.host_str().map(ToOwned::to_owned),
+                    audio_language: audio_language.clone(),
+                    tx_manager: &mut tx_manager,
+                })
+                .await
+            {
+                error!(%err, "Add err");
             }
         }
-        Ok(GetAudioByURLKind::Empty) => {
-            error!("Audio not found");
-            error::occured_in_chosen_inline_result(&bot, "Audio not found", inline_message_id, Some(ParseMode::HTML)).await?;
-            return Ok(EventReturn::Finish);
+        Ok(Empty) => {
+            warn!("Empty playlist");
+            let text = "Playlist is empty";
+            let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
         }
         Err(err) => {
-            error!(err = format_error_report(&err), "Get info err");
+            error!(err = format_error_report(&err), "Get err");
             let text = format!(
-                "Sorry, an error to get media info\n{}",
+                "Sorry, an error to get info\n{}",
                 html_expandable_blockquote(html_quote(err.format(&bot.token)))
             );
-            error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
+            let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
             return Ok(EventReturn::Finish);
         }
-    };
-    if let Err(err) = edit_audio_by_id
-        .execute(EditAudioByIdInput::new(inline_message_id, &file_id, &html_text_link("Link", url)))
-        .await
-    {
-        error!(err = format_error_report(&err), "Edit err");
-        let text = format!(
-            "Sorry, an error to edit the message\n{}",
-            html_expandable_blockquote(html_quote(err.format(&bot.token)))
-        );
-        error::occured_in_chosen_inline_result(&bot, &text, inline_message_id, Some(ParseMode::HTML)).await?;
+        _ => unreachable!("Incorrect branch"),
     }
     Ok(EventReturn::Finish)
 }

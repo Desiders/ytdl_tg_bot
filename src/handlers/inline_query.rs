@@ -14,7 +14,6 @@ use telers::{
     types::{
         InlineKeyboardButton, InlineKeyboardMarkup, InlineQuery, InlineQueryResult, InlineQueryResultArticle, InputTextMessageContent,
     },
-    utils::text::{html_code, html_quote},
     Bot, Extension,
 };
 use tracing::{debug, error, instrument, warn};
@@ -67,7 +66,6 @@ pub async fn select_by_url(
     let mut results: Vec<InlineQueryResult> = Vec::with_capacity(media_many.len());
     for media in media_many {
         let title = media.title.as_deref().unwrap_or("No name");
-        let title_html = html_code(html_quote(title));
         let thumbnail = media.thumbnail;
         let result_id = Uuid::new_v4();
 
@@ -75,12 +73,12 @@ pub async fn select_by_url(
             InlineQueryResultArticle::new(
                 format!("video_{result_id}"),
                 title,
-                InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
+                InputTextMessageContent::new("🔍 Preparing download...").parse_mode(ParseMode::HTML),
             )
             .thumbnail_url_option(thumbnail.clone())
             .description("Click to download video")
             .reply_markup(InlineKeyboardMarkup::new([[
-                InlineKeyboardButton::new("Downloading video...").callback_data("video_download")
+                InlineKeyboardButton::new("...").callback_data("video_download")
             ]]))
             .into(),
         );
@@ -88,12 +86,12 @@ pub async fn select_by_url(
             InlineQueryResultArticle::new(
                 format!("audio_{result_id}"),
                 "↑",
-                InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
+                InputTextMessageContent::new("🔍 Preparing download...").parse_mode(ParseMode::HTML),
             )
             .thumbnail_url_option(thumbnail)
             .description("Click to download audio")
             .reply_markup(InlineKeyboardMarkup::new([[
-                InlineKeyboardButton::new("Downloading audio...").callback_data("audio_download")
+                InlineKeyboardButton::new("...").callback_data("audio_download")
             ]]))
             .into(),
         );
@@ -144,7 +142,6 @@ pub async fn select_by_text(
     let mut results: Vec<InlineQueryResult> = Vec::with_capacity(media_many.len());
     for media in media_many {
         let title = media.title.as_deref().unwrap_or("No name");
-        let title_html = html_code(html_quote(title));
         let thumbnail = media.thumbnail;
         let id = &media.id;
 
@@ -152,12 +149,12 @@ pub async fn select_by_text(
             InlineQueryResultArticle::new(
                 format!("video_{id}"),
                 title,
-                InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
+                InputTextMessageContent::new("🔍 Preparing download...").parse_mode(ParseMode::HTML),
             )
             .thumbnail_url_option(thumbnail.clone())
             .description("Click to download video")
             .reply_markup(InlineKeyboardMarkup::new([[
-                InlineKeyboardButton::new("Downloading video...").callback_data("video_download")
+                InlineKeyboardButton::new("...").callback_data("video_download")
             ]]))
             .into(),
         );
@@ -165,12 +162,12 @@ pub async fn select_by_text(
             InlineQueryResultArticle::new(
                 format!("audio_{id}"),
                 "↑",
-                InputTextMessageContent::new(&title_html).parse_mode(ParseMode::HTML),
+                InputTextMessageContent::new("🔍 Preparing download...").parse_mode(ParseMode::HTML),
             )
             .thumbnail_url_option(thumbnail)
             .description("Click to download audio")
             .reply_markup(InlineKeyboardMarkup::new([[
-                InlineKeyboardButton::new("Downloading audio...").callback_data("audio_download")
+                InlineKeyboardButton::new("...").callback_data("audio_download")
             ]]))
             .into(),
         );

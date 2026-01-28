@@ -72,7 +72,7 @@ where
         media_type: MediaType,
     ) -> Result<Option<DownloadedMedia>, ErrorKind<Infallible>> {
         use downloaded_media::{
-            Column::{AudioLanguage, Domain, MediaType},
+            Column::{AudioLanguage, MediaType},
             Entity,
         };
 
@@ -81,11 +81,12 @@ where
             .filter(
                 Expr::cust_with_values("$1 LIKE '%' || id::text || '%'", [search])
                     .or(Expr::cust_with_values("$1 LIKE '%' || display_id::text || '%'", [search])),
-            )
-            .filter(Domain.eq(domain));
-
+            );
         if let Some(lang) = audio_language {
             query = query.filter(AudioLanguage.eq(lang));
+        }
+        if let Some(domain) = domain {
+            query = query.filter(Expr::cust_with_values("$1 ~* ('(^|\\.)' || domain || '$')", [domain]));
         }
 
         Ok(query.one(self.conn).await?.map(Into::into))

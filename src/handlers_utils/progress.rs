@@ -9,7 +9,7 @@ use telers::{
 
 pub async fn new(bot: &Bot, chat_id: i64, reply_to_message_id: i64) -> Result<Message, SessionErrorKind> {
     bot.send(
-        SendMessage::new(chat_id, "🔍 Preparing download…")
+        SendMessage::new(chat_id, "🔍 Preparing download...")
             .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
             .reply_parameters(ReplyParameters::new(reply_to_message_id).allow_sending_without_reply(true)),
     )
@@ -21,6 +21,17 @@ pub async fn is_downloading(bot: &Bot, chat_id: i64, message_id: i64) -> Result<
         EditMessageText::new("📥 Downloading...")
             .chat_id(chat_id)
             .message_id(message_id)
+            .link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
+    )
+    .await?;
+    Ok(())
+}
+
+pub async fn is_downloading_in_chosen_inline(bot: &Bot, inline_message_id: &str) -> Result<(), SessionErrorKind> {
+    bot.send(
+        EditMessageText::new("📥 Downloading...")
+            .inline_message_id(inline_message_id)
+            .reply_markup(InlineKeyboardMarkup::new([[]]))
             .link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
     )
     .await?;
@@ -65,6 +76,17 @@ pub async fn is_sending_with_errors_or_all_errors(
     Ok(())
 }
 
+pub async fn is_sending_in_chosen_inline(bot: &Bot, inline_message_id: &str) -> Result<(), SessionErrorKind> {
+    bot.send(
+        EditMessageText::new("📨 Sending...")
+            .inline_message_id(inline_message_id)
+            .reply_markup(InlineKeyboardMarkup::new([[]]))
+            .link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
+    )
+    .await?;
+    Ok(())
+}
+
 pub async fn is_downloading_with_progress(
     bot: &Bot,
     chat_id: i64,
@@ -85,6 +107,25 @@ pub async fn is_downloading_with_progress(
         )
     };
     bot.send(EditMessageText::new(text).chat_id(chat_id).message_id(message_id)).await?;
+    Ok(())
+}
+
+pub async fn is_downloading_with_progress_in_chosen_inline(
+    bot: &Bot,
+    inline_message_id: &str,
+    progress: String,
+) -> Result<(), SessionErrorKind> {
+    let text = format!(
+        "📥 Downloading...\n\n\
+        Media download progress: {progress}"
+    );
+    bot.send(
+        EditMessageText::new(text)
+            .inline_message_id(inline_message_id)
+            .reply_markup(InlineKeyboardMarkup::new([[]]))
+            .link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
+    )
+    .await?;
     Ok(())
 }
 
