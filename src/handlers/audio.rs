@@ -4,7 +4,7 @@ use crate::{
     entities::{language::Language, Domains, MediaInPlaylist, Params, Range},
     handlers_utils::progress,
     interactors::{
-        download::media::{DownloadAudioPlaylist, DownloadMediaPlaylistInput},
+        download::media,
         downloaded_media,
         get_media::{
             self,
@@ -38,7 +38,7 @@ pub async fn download(
     Extension(url): Extension<Url>,
     Inject(cfg): Inject<Config>,
     Inject(get_media): Inject<get_media::GetAudioByURL>,
-    Inject(download_playlist): Inject<DownloadAudioPlaylist>,
+    Inject(download_playlist): Inject<media::DownloadAudioPlaylist>,
     Inject(send_media_in_fs): Inject<send_media::fs::SendAudio>,
     Inject(send_media_by_id): Inject<send_media::id::SendAudio>,
     Inject(send_playlist): Inject<send_media::id::SendAudioPlaylist>,
@@ -119,7 +119,7 @@ pub async fn download(
             let mut downloaded_playlist = Vec::with_capacity(cached_len + uncached_len);
             downloaded_playlist.extend(cached);
             let (input, mut media_receiver, mut progress_receiver) =
-                DownloadMediaPlaylistInput::new_with_progress(&url, uncached.as_slice());
+                media::DownloadMediaPlaylistInput::new_with_progress(&url, uncached.as_slice());
 
             let downloaded_media_count = AtomicUsize::new(cached_len);
             tokio::join!(

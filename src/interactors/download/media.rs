@@ -31,13 +31,13 @@ pub enum DownloadMediaPlaylistErrorKind {
 
 pub struct DownloadMediaInput<'a> {
     url: &'a Url,
-    media: Media,
-    format: MediaFormat,
+    media: &'a Media,
+    format: &'a MediaFormat,
     progress_sender: Option<mpsc::UnboundedSender<String>>,
 }
 
 impl<'a> DownloadMediaInput<'a> {
-    pub fn new_with_progress(url: &'a Url, media: Media, format: MediaFormat) -> (Self, mpsc::UnboundedReceiver<String>) {
+    pub fn new_with_progress(url: &'a Url, media: &'a Media, format: &'a MediaFormat) -> (Self, mpsc::UnboundedReceiver<String>) {
         let (progress_sender, progress_receiver) = mpsc::unbounded_channel();
         (
             Self {
@@ -50,7 +50,7 @@ impl<'a> DownloadMediaInput<'a> {
         )
     }
 
-    pub fn new(url: &'a Url, media: Media, format: MediaFormat) -> Self {
+    pub fn new(url: &'a Url, media: &'a Media, format: &'a MediaFormat) -> Self {
         Self {
             url,
             media,

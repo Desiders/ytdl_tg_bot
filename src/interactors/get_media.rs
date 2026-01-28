@@ -172,8 +172,14 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
         let is_single_media = playlist_range.is_single_element();
 
         if is_single_media {
+            let normalized_domain = domain.map(|domain| domain.trim_start_matches("www."));
             if let Some(media) = dao
-                .get(cache_search, domain, audio_language.language.as_deref(), MediaType::Audio)
+                .get(
+                    cache_search,
+                    normalized_domain,
+                    audio_language.language.as_deref(),
+                    MediaType::Audio,
+                )
                 .await?
             {
                 info!("Got cached media");
