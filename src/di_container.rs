@@ -15,15 +15,7 @@ use crate::{
     config::{Config, DatabaseConfig, RandomCmdConfig, TimeoutsConfig, YtDlpConfig, YtPotProviderConfig, YtToolkitConfig},
     database::TxManager,
     entities::Cookies,
-    interactors::{
-        download::{DownloadAudio, DownloadAudioPlaylist, DownloadVideo, DownloadVideoPlaylist},
-        send_media::{
-            EditAudioById, EditVideoById, SendAudioById, SendAudioInFS, SendAudioPlaylistById, SendVideoById, SendVideoInFS,
-            SendVideoPlaylistById,
-        },
-        AddDownloadedAudio, AddDownloadedVideo, GetAudioByURL, GetRandomDownloadedAudio, GetRandomDownloadedVideo, GetShortMediaByURLInfo,
-        GetUncachedVideoByURL, GetVideoByURL, SaveChat, SearchMediaInfo,
-    },
+    interactors::{chat, download::media, downloaded_media, get_media, send_media},
 };
 
 pub(super) fn init(bot: Bot, cfg: Config, cookies: Cookies) -> Container {
@@ -49,90 +41,90 @@ pub(super) fn init(bot: Bot, cfg: Config, cookies: Cookies) -> Container {
 
             provide(|| Ok(Mutex::new(ContextV7::new()))),
             provide(|| Ok(Client::new())),
-            provide(|| Ok(SaveChat::new())),
-            provide(|| Ok(AddDownloadedVideo::new())),
-            provide(|| Ok(AddDownloadedAudio::new())),
+            provide(|| Ok(chat::SaveChat::new())),
+            provide(|| Ok(downloaded_media::AddVideo {})),
+            provide(|| Ok(downloaded_media::AddAudio {})),
 
-            provide(|Inject(random_cfg): Inject<RandomCmdConfig>| Ok(GetRandomDownloadedVideo::new(random_cfg))),
-            provide(|Inject(random_cfg): Inject<RandomCmdConfig>| Ok(GetRandomDownloadedAudio::new(random_cfg))),
+            provide(|Inject(random_cfg): Inject<RandomCmdConfig>| Ok(downloaded_media::GetRandomVideo { random_cfg })),
+            provide(|Inject(random_cfg): Inject<RandomCmdConfig>| Ok(downloaded_media::GetRandomAudio { random_cfg })),
             provide(|
                 Inject(bot): Inject<Bot>,
-                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(EditVideoById::new(bot, timeouts_cfg))
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(send_media::fs::SendVideo { bot, timeouts_cfg })
             ),
             provide(|
                 Inject(bot): Inject<Bot>,
-                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(EditAudioById::new(bot, timeouts_cfg))
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(send_media::fs::SendAudio { bot, timeouts_cfg })
             ),
             provide(|
                 Inject(bot): Inject<Bot>,
-                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(SendVideoById::new(bot, timeouts_cfg))
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(send_media::id::EditVideo { bot, timeouts_cfg })
             ),
             provide(|
                 Inject(bot): Inject<Bot>,
-                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(SendAudioById::new(bot, timeouts_cfg))
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(send_media::id::EditAudio { bot, timeouts_cfg })
             ),
             provide(|
                 Inject(bot): Inject<Bot>,
-                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(SendVideoInFS::new(bot, timeouts_cfg))
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(send_media::id::SendVideo { bot, timeouts_cfg })
             ),
             provide(|
                 Inject(bot): Inject<Bot>,
-                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(SendAudioInFS::new(bot, timeouts_cfg))
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(send_media::id::SendAudio { bot, timeouts_cfg })
             ),
             provide(|
                 Inject(bot): Inject<Bot>,
-                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(SendVideoPlaylistById::new(bot, timeouts_cfg))
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(send_media::id::SendVideoPlaylist { bot, timeouts_cfg })
             ),
             provide(|
                 Inject(bot): Inject<Bot>,
-                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(SendAudioPlaylistById::new(bot, timeouts_cfg))
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(send_media::id::SendAudioPlaylist { bot, timeouts_cfg })
             ),
             provide(|
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
                 Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-                Inject(cookies): Inject<Cookies>| Ok(GetUncachedVideoByURL::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies))
+                Inject(cookies): Inject<Cookies>| Ok(get_media::GetUncachedVideoByURL { yt_dlp_cfg, yt_pot_provider_cfg, cookies })
             ),
             provide(|
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
                 Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-                Inject(cookies): Inject<Cookies>| Ok(GetVideoByURL::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies))
+                Inject(cookies): Inject<Cookies>| Ok(get_media::GetVideoByURL { yt_dlp_cfg, yt_pot_provider_cfg, cookies })
             ),
             provide(|
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
                 Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-                Inject(cookies): Inject<Cookies>| Ok(GetAudioByURL::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies))
+                Inject(cookies): Inject<Cookies>| Ok(get_media::GetAudioByURL { yt_dlp_cfg, yt_pot_provider_cfg, cookies })
             ),
             provide(
                 |Inject(client): Inject<Client>,
-                Inject(yt_toolkit_cfg): Inject<YtToolkitConfig>| Ok(GetShortMediaByURLInfo::new(client, yt_toolkit_cfg))
+                Inject(yt_toolkit_cfg): Inject<YtToolkitConfig>| Ok(get_media::GetShortMediaByURL { client, yt_toolkit_cfg })
             ),
             provide(|
                 Inject(client): Inject<Client>,
-                Inject(yt_toolkit_cfg): Inject<YtToolkitConfig>| Ok(SearchMediaInfo::new(client, yt_toolkit_cfg))
+                Inject(yt_toolkit_cfg): Inject<YtToolkitConfig>| Ok(get_media::SearchMediaInfo { client, yt_toolkit_cfg })
             ),
             provide(|
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
                 Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-                Inject(cookies): Inject<Cookies>,
-                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(DownloadVideo::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies, timeouts_cfg))
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>,
+                Inject(cookies): Inject<Cookies>| Ok(media::DownloadVideo { yt_dlp_cfg, yt_pot_provider_cfg, timeouts_cfg, cookies })
             ),
             provide(|
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
                 Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-                Inject(cookies): Inject<Cookies>,
-                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(DownloadVideoPlaylist::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies, timeouts_cfg))
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>,
+                Inject(cookies): Inject<Cookies>| Ok(media::DownloadAudio { yt_dlp_cfg, yt_pot_provider_cfg, timeouts_cfg, cookies })
             ),
             provide(|
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
                 Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-                Inject(cookies): Inject<Cookies>,
-                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(DownloadAudio::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies, timeouts_cfg))
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>,
+                Inject(cookies): Inject<Cookies>| Ok(media::DownloadVideoPlaylist { yt_dlp_cfg, yt_pot_provider_cfg, timeouts_cfg, cookies })
             ),
             provide(|
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
                 Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-                Inject(cookies): Inject<Cookies>,
-                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(DownloadAudioPlaylist::new(yt_dlp_cfg, yt_pot_provider_cfg, cookies, timeouts_cfg))
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>,
+                Inject(cookies): Inject<Cookies>| Ok(media::DownloadAudioPlaylist { yt_dlp_cfg, yt_pot_provider_cfg, timeouts_cfg, cookies })
             ),
         ],
     };

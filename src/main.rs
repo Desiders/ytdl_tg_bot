@@ -19,7 +19,7 @@ use telers::{
         telegram::{APIServer, BareFilesPathWrapper},
         Reqwest,
     },
-    enums::{ChatType as ChatTypeEnum, ContentType as ContentTypeEnum},
+    enums,
     filters::{ChatType, Command, ContentType, Filter as _},
     Bot, Dispatcher, Router,
 };
@@ -28,8 +28,8 @@ use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt
 
 use crate::{
     filters::{
-        is_via_bot, random_cmd_is_enabled, text_contains_url, text_contains_url_with_reply, text_empty, url_is_blacklisted,
-        url_is_skippable_by_param,
+        is_audio_inline_result, is_via_bot, is_video_inline_result, random_cmd_is_enabled, text_contains_url, text_contains_url_with_reply,
+        text_empty, url_is_blacklisted, url_is_skippable_by_param,
     },
     handlers::{audio, chosen_inline, inline_query, start, video},
     middlewares::{CreateChatMiddleware, ReactionMiddleware, RemoveTrackingParamsMiddleware, ReplaceDomainsMiddleware},
@@ -75,36 +75,36 @@ async fn main() {
     download_router
         .message
         .register(video::download)
-        .filter(ContentType::one(ContentTypeEnum::Text))
+        .filter(ContentType::one(enums::ContentType::Text))
         .filter(Command::many(["vd", "video_download"]))
         .filter(text_contains_url_with_reply);
     download_router
         .message
         .register(audio::download)
-        .filter(ContentType::one(ContentTypeEnum::Text))
+        .filter(ContentType::one(enums::ContentType::Text))
         .filter(Command::many(["ad", "audio_download"]))
         .filter(text_contains_url_with_reply);
     download_router
         .message
         .register(video::random)
-        .filter(ContentType::one(ContentTypeEnum::Text))
-        .filter(Command::many(["rv", "rnd_v", "rnd_video", "random_video"]))
+        .filter(ContentType::one(enums::ContentType::Text))
+        .filter(Command::many(["rv", "random_video"]))
         .filter(random_cmd_is_enabled);
     download_router
         .message
         .register(audio::random)
-        .filter(ContentType::one(ContentTypeEnum::Text))
-        .filter(Command::many(["ra", "rnd_a", "rnd_audio", "random_audio"]))
+        .filter(ContentType::one(enums::ContentType::Text))
+        .filter(Command::many(["ra", "random_audio"]))
         .filter(random_cmd_is_enabled);
     download_router
         .message
         .register(video::download)
-        .filter(ChatType::one(ChatTypeEnum::Private))
+        .filter(ChatType::one(enums::ChatType::Private))
         .filter(text_contains_url_with_reply)
         .filter(is_via_bot.invert());
     download_router
         .message
-        .register(video::download_quite)
+        .register(video::download_quiet)
         .filter(text_contains_url)
         .filter(url_is_blacklisted.invert())
         .filter(url_is_skippable_by_param.invert())
@@ -119,12 +119,14 @@ async fn main() {
         .filter(text_empty.invert());
     download_router
         .chosen_inline_result
-        .register(chosen_inline::download_by_url)
-        .filter(text_contains_url);
+        .register(chosen_inline::download_video)
+        .filter(is_video_inline_result)
+        .filter(text_contains_url.or(text_empty.invert()));
     download_router
         .chosen_inline_result
-        .register(chosen_inline::download_by_id)
-        .filter(text_empty.invert());
+        .register(chosen_inline::download_audio)
+        .filter(is_audio_inline_result)
+        .filter(text_contains_url.or(text_empty.invert()));
 
     router.include(download_router);
 
