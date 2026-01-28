@@ -99,6 +99,8 @@ pub async fn download(
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
                 );
                 let _ = progress::is_error(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
+            } else {
+                let _ = progress::delete(&bot, chat_id, progress_message_id).await;
             }
         }
         Ok(Playlist { cached, uncached }) => {
