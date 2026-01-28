@@ -1,7 +1,6 @@
 use serde::Deserialize;
 use std::{collections::BTreeMap, fmt, path::PathBuf};
 use tempfile::TempDir;
-use tracing::trace;
 use url::Url;
 
 use crate::utils::AspectKind;
@@ -21,7 +20,7 @@ pub struct MediaFormat {
     pub width: Option<i64>,
     pub height: Option<i64>,
     pub aspect_ratio: Option<f32>,
-    pub filesize_approx: Option<u32>,
+    pub filesize_approx: Option<u64>,
 }
 
 impl MediaFormat {
@@ -126,6 +125,35 @@ impl Media {
     }
 }
 
+impl fmt::Display for Media {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(title) = &self.title {
+            write!(f, "{}", title)?;
+        } else {
+            write!(f, "Media {}", self.id)?;
+        }
+        if let Some(display_id) = &self.display_id {
+            write!(f, " ({})", display_id)?;
+        }
+        if let Some(uploader) = &self.uploader {
+            write!(f, " — {}", uploader)?;
+        }
+        if let Some(duration) = self.duration {
+            let mins = (duration / 60.0).floor() as u32;
+            let secs = (duration % 60.0).round() as u32;
+            write!(f, " [{}:{:02}]", mins, secs)?;
+        }
+        if let Some(lang) = &self.language {
+            write!(f, " [{}]", lang)?;
+        }
+        if self.playlist_index > 0 {
+            write!(f, " (#{})", self.playlist_index)?;
+        }
+
+        Ok(())
+    }
+}
+
 impl From<Media> for ShortMedia {
     fn from(media: Media) -> Self {
         let thumbnail = media.get_thumb_url_jpg().cloned();
@@ -158,7 +186,7 @@ pub struct MediaWithFormat {
     pub width: Option<i64>,
     pub height: Option<i64>,
     pub aspect_ratio: Option<f32>,
-    pub filesize_approx: Option<u32>,
+    pub filesize_approx: Option<u64>,
     pub filename: String,
     pub playlist_index: Option<i16>,
 }
@@ -171,8 +199,6 @@ pub struct Playlist {
 impl Playlist {
     pub fn new(media_with_formats: Vec<MediaWithFormat>) -> Self {
         use std::collections::btree_map::Entry::{Occupied, Vacant};
-
-        trace!("{media_with_formats:?}");
 
         let mut inner = BTreeMap::new();
 

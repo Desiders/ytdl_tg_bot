@@ -27,12 +27,16 @@ use telers::{
 use tracing::{debug, error, instrument, warn, Span};
 use url::Url;
 
-#[instrument(skip_all, fields(inline_message_id, url = url.as_str(), ?params))]
+#[instrument(skip_all, fields(inline_message_id, url, ?params))]
 pub async fn download_video(
     bot: Bot,
     params: Params,
-    ChosenInlineResult { inline_message_id, .. }: ChosenInlineResult,
-    Extension(url): Extension<Url>,
+    url_option: Option<Extension<Url>>,
+    ChosenInlineResult {
+        inline_message_id,
+        result_id,
+        ..
+    }: ChosenInlineResult,
     Inject(cfg): Inject<Config>,
     Inject(get_media): Inject<get_media::GetVideoByURL>,
     Inject(download_media): Inject<media::DownloadVideo>,
@@ -42,8 +46,18 @@ pub async fn download_video(
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
 ) -> HandlerResult {
     let inline_message_id = inline_message_id.as_deref().unwrap();
+    let url = match url_option {
+        Some(Extension(val)) => val,
+        None => {
+            tracing::trace!(result_id, vec = ?result_id.split_once('_'), "");
+            let (_, video_id) = result_id.split_once('_').expect("incorrect inline message ID");
+            Url::parse(&format!("https://www.youtube.com/watch?v={video_id}")).unwrap()
+        }
+    };
 
-    Span::current().record("inline_message_id", inline_message_id);
+    Span::current()
+        .record("inline_message_id", inline_message_id)
+        .record("url", url.as_str());
 
     debug!("Got url");
 
@@ -106,7 +120,7 @@ pub async fn download_video(
                 .filter(|(media, formats)| {
                     let is_empty = formats.is_empty();
                     if is_empty {
-                        warn!(?media, "Formats not found");
+                        warn!(%media, "Formats not found");
                     }
                     !is_empty
                 })
@@ -220,12 +234,12 @@ pub async fn download_video(
     Ok(EventReturn::Finish)
 }
 
-#[instrument(skip_all, fields(inline_message_id, url = url.as_str(), ?params))]
+#[instrument(skip_all, fields(inline_message_id, url, ?params))]
 pub async fn download_audio(
     bot: Bot,
     params: Params,
+    url_option: Option<Extension<Url>>,
     ChosenInlineResult { inline_message_id, .. }: ChosenInlineResult,
-    Extension(url): Extension<Url>,
     Inject(cfg): Inject<Config>,
     Inject(get_media): Inject<get_media::GetAudioByURL>,
     Inject(download_media): Inject<media::DownloadAudio>,
@@ -235,8 +249,17 @@ pub async fn download_audio(
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
 ) -> HandlerResult {
     let inline_message_id = inline_message_id.as_deref().unwrap();
+    let url = match url_option {
+        Some(Extension(val)) => val,
+        None => {
+            let (_, video_id) = inline_message_id.split_once('_').expect("incorrect inline message ID");
+            Url::parse(&format!("https://www.youtube.com/watch?v={video_id}")).unwrap()
+        }
+    };
 
-    Span::current().record("inline_message_id", inline_message_id);
+    Span::current()
+        .record("inline_message_id", inline_message_id)
+        .record("url", url.as_str());
 
     debug!("Got url");
 
@@ -299,7 +322,7 @@ pub async fn download_audio(
                 .filter(|(media, formats)| {
                     let is_empty = formats.is_empty();
                     if is_empty {
-                        warn!(?media, "Formats not found");
+                        warn!(%media, "Formats not found");
                     }
                     !is_empty
                 })

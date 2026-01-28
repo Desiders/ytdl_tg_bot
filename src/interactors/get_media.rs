@@ -134,13 +134,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
             return Ok(Self::Output::Empty);
         }
 
-        info!(
-            playlist_len,
-            ?uncached,
-            cached_len = cached.len(),
-            unchached_len = uncached.len(),
-            "Got media"
-        );
+        info!(playlist_len, cached_len = cached.len(), unchached_len = uncached.len(), "Got media");
         Ok(Self::Output::Playlist { cached, uncached })
     }
 }

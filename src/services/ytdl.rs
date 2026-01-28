@@ -154,7 +154,7 @@ pub async fn get_media_info(
     let playlist_range = playlist_range.to_range_string();
     let extractor_arg = format!("youtubepot-bgutilhttp:base_url={pot_provider_url}");
 
-    let heights = [2160, 1440, 1080, 720, 480, 360];
+    let heights = [2160, 1440, 1080, 720, 480, 360, 240, 144];
     let formats = build_formats_string(strategy, &heights, audio_language);
 
     let mut args = vec![
@@ -234,7 +234,7 @@ pub async fn get_media_info(
 pub async fn download_media(
     search: &str,
     format_id: &str,
-    max_filesize: u32,
+    max_filesize: u64,
     output_dir_path: &Path,
     executable_path: &str,
     pot_provider_url: &str,

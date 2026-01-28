@@ -108,7 +108,7 @@ pub async fn download(
                 .filter(|(media, formats)| {
                     let is_empty = formats.is_empty();
                     if is_empty {
-                        warn!(?media, "Formats not found");
+                        warn!(%media, "Formats not found");
                         errs.push(html_quote("Formats not found"));
                     }
                     !is_empty
