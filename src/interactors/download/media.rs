@@ -49,15 +49,6 @@ impl<'a> DownloadMediaInput<'a> {
             progress_receiver,
         )
     }
-
-    pub fn new(url: &'a Url, media: &'a Media, format: &'a MediaFormat) -> Self {
-        Self {
-            url,
-            media,
-            format,
-            progress_sender: None,
-        }
-    }
 }
 
 pub struct DownloadMediaPlaylistInput<'a> {
@@ -209,7 +200,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
         let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
         let executable_path = self.yt_dlp_cfg.executable_path.as_ref();
         let pot_provider_url = self.yt_pot_provider_cfg.url.as_ref();
-        let timeout = self.timeouts_cfg.video_download;
+        let timeout = self.timeouts_cfg.audio_download;
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
@@ -364,7 +355,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
         let max_file_size = self.yt_dlp_cfg.max_file_size;
         let executable_path = self.yt_dlp_cfg.executable_path.as_ref();
         let pot_provider_url = self.yt_pot_provider_cfg.url.as_ref();
-        let timeout = self.timeouts_cfg.video_download;
+        let timeout = self.timeouts_cfg.audio_download;
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 

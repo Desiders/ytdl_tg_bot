@@ -63,7 +63,7 @@ pub struct LoggingConfig {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct YtDlpConfig {
-    pub max_file_size: u32,
+    pub max_file_size: u64,
     pub executable_path: Box<str>,
     pub cookies_path: Box<str>,
 }
