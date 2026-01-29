@@ -2,11 +2,9 @@ mod media;
 
 pub mod chat;
 pub mod chat_config;
-pub mod combined_format;
 pub mod cookies;
 pub mod domains;
 pub mod downloaded_media;
-pub mod format;
 pub mod language;
 pub mod params;
 pub mod range;

@@ -1,5 +1,10 @@
 use serde::Deserialize;
-use std::{collections::BTreeMap, fmt, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    fmt,
+    hash::{Hash, Hasher},
+    path::PathBuf,
+};
 use tempfile::TempDir;
 use url::Url;
 
@@ -27,6 +32,20 @@ impl MediaFormat {
     #[inline]
     pub fn aspect_ration_kind(&self) -> Option<AspectKind> {
         self.aspect_ratio.map(AspectKind::new)
+    }
+}
+
+impl PartialEq for MediaFormat {
+    fn eq(&self, other: &Self) -> bool {
+        self.format_id == other.format_id && self.ext == other.ext && self.width == other.width && self.height == other.height
+    }
+}
+
+impl Eq for MediaFormat {}
+
+impl Hash for MediaFormat {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.format_id.hash(state);
     }
 }
 
@@ -68,10 +87,8 @@ impl fmt::Display for Thumbnail {
 pub struct Media {
     pub id: String,
     pub display_id: Option<String>,
-    pub original_url: Url,
     pub webpage_url: Url,
     pub title: Option<String>,
-    pub description: Option<String>,
     pub language: Option<String>,
     pub uploader: Option<String>,
     pub duration: Option<f32>,
@@ -169,10 +186,8 @@ impl From<Media> for ShortMedia {
 pub struct MediaWithFormat {
     pub id: String,
     pub display_id: Option<String>,
-    pub original_url: Url,
     pub webpage_url: Url,
     pub title: Option<String>,
-    pub description: Option<String>,
     pub language: Option<String>,
     pub uploader: Option<String>,
     pub duration: Option<f32>,
@@ -187,7 +202,6 @@ pub struct MediaWithFormat {
     pub height: Option<i64>,
     pub aspect_ratio: Option<f32>,
     pub filesize_approx: Option<u64>,
-    pub filename: String,
     pub playlist_index: Option<i16>,
 }
 
@@ -217,12 +231,19 @@ impl Playlist {
             .into_values()
             .map(|mut media_with_formats| {
                 let first = media_with_formats.remove(0);
-                let other = if media_with_formats.is_empty() {
-                    vec![first.clone().into()]
+                let mut formats = vec![];
+                if media_with_formats.is_empty() {
+                    formats.push(first.clone().into());
                 } else {
-                    media_with_formats.into_iter().map(Into::into).collect()
-                };
-                (first.into(), other)
+                    for media_with_format in media_with_formats {
+                        let format = media_with_format.into();
+                        if formats.contains(&format) {
+                            continue;
+                        }
+                        formats.push(format);
+                    }
+                }
+                (first.into(), formats)
             })
             .collect();
         inner.sort_by_key(|(val, _)| val.playlist_index);
@@ -249,10 +270,8 @@ impl From<MediaWithFormat> for Media {
         MediaWithFormat {
             id,
             display_id,
-            original_url,
             webpage_url,
             title,
-            description,
             language,
             uploader,
             duration,
@@ -265,10 +284,8 @@ impl From<MediaWithFormat> for Media {
         Self {
             id,
             display_id,
-            original_url,
             webpage_url,
             title,
-            description,
             language,
             uploader,
             duration,
