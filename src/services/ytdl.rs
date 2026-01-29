@@ -8,25 +8,25 @@ use std::{
     time::Duration,
 };
 use tokio::{io::AsyncBufReadExt as _, sync::mpsc};
-use tracing::{error, instrument, trace};
+use tracing::{error, instrument, trace, warn};
 
-pub enum FormatStrategy {
+pub enum FormatStrategy<'a> {
     VideoAndAudio,
-    AudioOnly,
+    AudioOnly { audio_ext: &'a str },
 }
 
-impl FormatStrategy {
+impl FormatStrategy<'_> {
     fn templates(&self) -> &[&str] {
         match self {
             Self::VideoAndAudio => &["bv{video_args}+ba{audio_args}/b{combined_args}"],
-            Self::AudioOnly => &["ba{audio_args}"],
+            Self::AudioOnly { .. } => &["ba{audio_args}"],
         }
     }
 
     fn fallbacks(&self) -> &[&str] {
         match self {
             Self::VideoAndAudio => &["bv*+ba", "b", "w"],
-            Self::AudioOnly => &["ba", "wa"],
+            Self::AudioOnly { .. } => &["ba", "wa", "ba*"],
         }
     }
 }
@@ -88,7 +88,7 @@ pub fn build_formats_string(strategy: FormatStrategy, heights: &[u32], audio_lan
     let mut formats = Vec::with_capacity(heights.len() * templates.len() + fallbacks.len());
 
     match strategy {
-        FormatStrategy::AudioOnly => {
+        FormatStrategy::AudioOnly { .. } => {
             let mut audio_args = vec![];
             push_if_some(
                 &mut audio_args,
@@ -140,7 +140,7 @@ pub fn build_formats_string(strategy: FormatStrategy, heights: &[u32], audio_lan
 #[instrument(skip_all)]
 pub async fn get_media_info(
     search: &str,
-    strategy: FormatStrategy,
+    strategy: FormatStrategy<'_>,
     audio_language: &Language,
     executable_path: &str,
     pot_provider_url: &str,
@@ -186,7 +186,7 @@ pub async fn get_media_info(
     args.push("--extractor-args");
     args.push(&extractor_arg);
     args.push("--extractor-args");
-    args.push("youtube:player_client=default,mweb,web_music,web_creator;player_skip=configs,initial_data");
+    args.push("youtube:player_client=default,mweb,web_music,web_creator;player_skip=configs,initial_data;use_ad_playback_context=true");
 
     let cookie_path = cookie.map(|val| val.path.to_string_lossy());
     if let Some(cookie_path) = cookie_path.as_deref() {
@@ -212,13 +212,16 @@ pub async fn get_media_info(
 
     match time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
         Ok(Ok(Output { status, stdout, stderr })) => {
+            let stderr = String::from_utf8_lossy(&stderr);
             if status.success() {
+                if !stderr.is_empty() {
+                    warn!(%stderr);
+                }
                 match parse_ndjson(&stdout) {
                     Ok(val) => Ok(Playlist::new(val)),
                     Err(err) => Err(err.into()),
                 }
             } else {
-                let stderr = String::from_utf8_lossy(&stderr);
                 match status.code() {
                     Some(code) => Err(io::Error::other(format!("Ytdlp exited with code {code} and message: {stderr}")).into()),
                     None => Err(io::Error::other(format!("Ytdlp exited with and message: {stderr}")).into()),
@@ -233,6 +236,7 @@ pub async fn get_media_info(
 #[instrument(skip_all)]
 pub async fn download_media(
     search: &str,
+    strategy: FormatStrategy<'_>,
     format_id: &str,
     max_filesize: u64,
     output_dir_path: &Path,
@@ -253,6 +257,10 @@ pub async fn download_media(
         "deno:deno",
         "--socket-timeout",
         "5",
+        "-R",
+        "3",
+        "--file-access-retries",
+        "2",
         "--fragment-retries",
         "3",
         "--concurrent-fragments",
@@ -277,10 +285,20 @@ pub async fn download_media(
         &format_id,
     ];
 
+    match strategy {
+        FormatStrategy::VideoAndAudio => {}
+        FormatStrategy::AudioOnly { audio_ext } => {
+            args.push("--embed-thumbnail");
+            args.push("--write-thumbnail");
+            args.push("--extract-audio");
+            args.extend(["--audio-format", audio_ext]);
+        }
+    };
+
     args.push("--extractor-args");
     args.push(&extractor_arg);
     args.push("--extractor-args");
-    args.push("youtube:player_client=default,mweb,web_music,web_creator;player_skip=configs,initial_data");
+    args.push("youtube:player_client=default,mweb,web_music,web_creator;player_skip=configs,initial_data;use_ad_playback_context=true");
 
     let cookie_path = cookie.map(|val| val.path.to_string_lossy());
     if let Some(cookie_path) = cookie_path.as_deref() {
@@ -326,10 +344,13 @@ pub async fn download_media(
         async {
             match time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
                 Ok(Ok(Output { status, stderr, .. })) => {
+                    let stderr = String::from_utf8_lossy(&stderr);
                     if status.success() {
+                        if !stderr.is_empty() {
+                            warn!(%stderr);
+                        }
                         Ok(())
                     } else {
-                        let stderr = String::from_utf8_lossy(&stderr);
                         match status.code() {
                             Some(code) => Err(io::Error::other(format!("Ytdlp exited with code {code} and message: {stderr}")).into()),
                             None => Err(io::Error::other(format!("Ytdlp exited with and message: {stderr}")).into()),
@@ -386,7 +407,7 @@ mod tests {
 
     #[test]
     fn audio_only_builds_formats_correctly_without_heights() {
-        let result = build_formats_string(FormatStrategy::AudioOnly, &[], &Language::default());
+        let result = build_formats_string(FormatStrategy::AudioOnly { audio_ext: "m4a" }, &[], &Language::default());
 
         assert_eq!(result, "ba[],ba,wa");
     }
@@ -394,7 +415,7 @@ mod tests {
     #[test]
     fn audio_only_includes_language_if_provided() {
         let result = build_formats_string(
-            FormatStrategy::AudioOnly,
+            FormatStrategy::AudioOnly { audio_ext: "m4a" },
             &[],
             &Language {
                 language: Some("en".to_owned()),
@@ -407,7 +428,7 @@ mod tests {
     #[test]
     fn audio_only_multiple_languages_are_handled_correctly() {
         let result = build_formats_string(
-            FormatStrategy::AudioOnly,
+            FormatStrategy::AudioOnly { audio_ext: "m4a" },
             &[],
             &Language {
                 language: Some("ru".to_owned()),
