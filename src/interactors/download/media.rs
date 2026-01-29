@@ -4,7 +4,7 @@ use crate::{
     interactors::Interactor,
     services::{
         download_and_convert,
-        ytdl::{self, download_media},
+        ytdl::{self, download_media, FormatStrategy},
     },
 };
 use std::{io, sync::Arc};
@@ -151,6 +151,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
 
         download_media(
             media.webpage_url.as_str(),
+            FormatStrategy::VideoAndAudio,
             format_id,
             max_file_size,
             output_dir_path,
@@ -195,8 +196,9 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
         let format_id = &format.format_id;
         let max_file_size = self.yt_dlp_cfg.max_file_size;
         let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
+        let audio_ext = "m4a";
         let output_dir_path = temp_dir.path();
-        let output_file_path = output_dir_path.join(format!("{}.{}", media.id, format.ext));
+        let output_file_path = output_dir_path.join(format!("{}.{audio_ext}", media.id));
         let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
         let executable_path = self.yt_dlp_cfg.executable_path.as_ref();
         let pot_provider_url = self.yt_pot_provider_cfg.url.as_ref();
@@ -222,6 +224,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
 
         download_media(
             media.webpage_url.as_str(),
+            FormatStrategy::AudioOnly { audio_ext },
             format_id,
             max_file_size,
             output_dir_path,
@@ -301,6 +304,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
 
             if let Err(err) = download_media(
                 media.webpage_url.as_str(),
+                FormatStrategy::VideoAndAudio,
                 format_id,
                 max_file_size,
                 output_dir_path,
@@ -358,6 +362,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
         let timeout = self.timeouts_cfg.audio_download;
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
+        let audio_ext = "m4a";
 
         for (index, (media, format)) in playlist.into_iter().enumerate() {
             let span = info_span!("iter", id = media.id, %format).entered();
@@ -365,7 +370,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
             let format_id = &format.format_id;
             let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
             let output_dir_path = temp_dir.path();
-            let output_file_path = output_dir_path.join(format!("{}.{}", media.id, format.ext));
+            let output_file_path = output_dir_path.join(format!("{}.{audio_ext}", media.id));
             let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
 
             debug!("Downloading audio");
@@ -390,6 +395,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
 
             if let Err(err) = download_media(
                 media.webpage_url.as_str(),
+                FormatStrategy::AudioOnly { audio_ext },
                 format_id,
                 max_file_size,
                 output_dir_path,

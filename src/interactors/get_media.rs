@@ -183,12 +183,13 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
 
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
+        let audio_ext = "m4a";
 
         debug!("Getting media");
 
         let playlist = get_media_info(
             url.as_str(),
-            FormatStrategy::AudioOnly,
+            FormatStrategy::AudioOnly { audio_ext },
             audio_language,
             &self.yt_dlp_cfg.executable_path,
             &self.yt_pot_provider_cfg.url,
