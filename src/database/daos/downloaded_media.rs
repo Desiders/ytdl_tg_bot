@@ -72,15 +72,23 @@ where
         media_type: MediaType,
     ) -> Result<Option<DownloadedMedia>, ErrorKind<Infallible>> {
         use downloaded_media::{
-            Column::{AudioLanguage, MediaType},
+            Column::{AudioLanguage, DisplayId, Id, MediaType},
             Entity,
         };
 
         let mut query = Entity::find()
             .filter(MediaType.eq(sea_orm_active_enums::MediaType::from(media_type)))
             .filter(
-                Expr::cust_with_values("$1 LIKE '%' || id::text || '%'", [search])
-                    .or(Expr::cust_with_values("$1 LIKE '%' || display_id::text || '%'", [search])),
+                // if `search` is ID
+                Expr::col(Id)
+                    .eq(search)
+                    .or(Expr::col(DisplayId).eq(search))
+                    // if `search` is URL
+                    .or(Expr::cust_with_values("$1 ~ ('(^|[/?&=])' || id::text || '([&?/]|$)')", [search]))
+                    .or(Expr::cust_with_values(
+                        "$1 ~ ('(^|[/?&=])' || display_id::text || '([&?/]|$)')",
+                        [search],
+                    )),
             );
         if let Some(lang) = audio_language {
             query = query.filter(AudioLanguage.eq(lang));

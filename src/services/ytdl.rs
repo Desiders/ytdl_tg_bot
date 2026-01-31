@@ -244,7 +244,7 @@ pub async fn download_media(
     pot_provider_url: &str,
     timeout: u64,
     cookie: Option<&Cookie>,
-    progress_sender: Option<mpsc::UnboundedSender<String>>,
+    progress_sender: Option<&mpsc::UnboundedSender<String>>,
 ) -> Result<(), DownloadErrorKind> {
     use tokio::{io::BufReader, process::Command, time};
 

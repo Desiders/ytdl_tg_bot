@@ -3,7 +3,7 @@ use telers::{
     errors::SessionErrorKind,
     methods::{AnswerInlineQuery, DeleteMessage, EditMessageText, SendMessage},
     types::{InlineKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent, LinkPreviewOptions, Message, ReplyParameters},
-    utils::text::{html_expandable_blockquote, html_quote},
+    utils::text::html_expandable_blockquote,
     Bot,
 };
 
@@ -42,25 +42,37 @@ pub async fn is_sending_with_errors_or_all_errors(
     bot: &Bot,
     chat_id: i64,
     message_id: i64,
-    errs: &[String],
+    media_errs: &[Vec<String>],
     media_to_send_count: usize,
 ) -> Result<(), SessionErrorKind> {
-    let text = match (errs.len(), media_to_send_count) {
+    let mut errs_text = String::new();
+    for (failed_media_index, format_errs) in media_errs.into_iter().enumerate() {
+        let mut format_errs_text = String::new();
+        for (format_err_index, format_err) in format_errs.into_iter().enumerate() {
+            format_errs_text.push_str(&format!("{}. {}\n", format_err_index + 1, format_err));
+        }
+        errs_text.push_str(&format!(
+            "{} media ({} download retries):\n",
+            failed_media_index + 1,
+            format_errs.len()
+        ));
+        errs_text.push_str(&html_expandable_blockquote(&format_errs_text));
+    }
+
+    let text = match (media_errs.len(), media_to_send_count) {
         (errs_count, media_to_send_count) if errs_count > 0 && media_to_send_count > 0 => {
-            let mut text = "📨 Sending...\n\n🧨 Error while downloading some media :(\n\n".to_owned();
-            for (index, err) in errs.into_iter().enumerate() {
-                text.push_str(&html_expandable_blockquote(format!("{}. {}", index + 1, html_quote(err))));
-                text.push('\n');
-            }
-            text
+            format!(
+                "📨 Sending...\n\n🧨 Error while downloading some media :(\n\n\
+                {}",
+                html_expandable_blockquote(&errs_text),
+            )
         }
         (errs_count, media_to_send_count) if errs_count > 0 && media_to_send_count == 0 => {
-            let mut text = "🧨 Error while downloading :(\n\n".to_owned();
-            for (index, err) in errs.into_iter().enumerate() {
-                text.push_str(&html_expandable_blockquote(format!("{}. {}", index + 1, html_quote(err))));
-                text.push('\n');
-            }
-            text
+            format!(
+                "🧨 Error while downloading :\n\n\
+                {}",
+                html_expandable_blockquote(&errs_text),
+            )
         }
         (_, _) => return Ok(()),
     };
@@ -156,6 +168,27 @@ pub async fn is_error_in_chosen_inline(
     )
     .await?;
     Ok(())
+}
+
+pub async fn is_errors_in_chosen_inline(
+    bot: &Bot,
+    inline_message_id: &str,
+    format_errs: &[String],
+    parse_mode: Option<ParseMode>,
+) -> Result<(), SessionErrorKind> {
+    let mut errs_text = String::new();
+    for (index, err) in format_errs.into_iter().enumerate() {
+        errs_text.push_str(&format!("{}. {}\n", index + 1, err));
+    }
+    errs_text.push_str(&format!("{} download retries:\n", format_errs.len()));
+    errs_text.push_str(&html_expandable_blockquote(&errs_text));
+
+    let text = format!(
+        "🧨 Error while downloading :(\n\n\
+        {}",
+        html_expandable_blockquote(&errs_text),
+    );
+    is_error_in_chosen_inline(bot, inline_message_id, &text, parse_mode).await
 }
 
 pub async fn is_error_in_inline_query(bot: &Bot, query_id: &str, text: &str) -> Result<(), SessionErrorKind> {

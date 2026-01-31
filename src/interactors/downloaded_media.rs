@@ -26,7 +26,7 @@ impl Interactor<AddMediaInput<'_>> for &AddVideo {
     type Output = ();
     type Err = ErrorKind<Infallible>;
 
-    #[instrument(skip_all)]
+    #[instrument(skip_all, fields(%id, ?display_id, ?domain))]
     async fn execute(
         self,
         AddMediaInput {
@@ -66,7 +66,7 @@ impl Interactor<AddMediaInput<'_>> for &AddAudio {
     type Output = ();
     type Err = ErrorKind<Infallible>;
 
-    #[instrument(skip_all)]
+    #[instrument(skip_all, fields(%id, ?display_id, ?domain))]
     async fn execute(
         self,
         AddMediaInput {
