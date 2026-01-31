@@ -94,7 +94,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
 
         let playlist = get_media_info(
             url.as_str(),
-            FormatStrategy::VideoAndAudio,
+            &FormatStrategy::VideoAndAudio,
             audio_language,
             &self.yt_dlp_cfg.executable_path,
             &self.yt_pot_provider_cfg.url,
@@ -184,7 +184,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
 
         let playlist = get_media_info(
             url.as_str(),
-            FormatStrategy::AudioOnly { audio_ext },
+            &FormatStrategy::AudioOnly { audio_ext },
             audio_language,
             &self.yt_dlp_cfg.executable_path,
             &self.yt_pot_provider_cfg.url,
@@ -255,7 +255,7 @@ impl Interactor<GetUncachedMediaByURLInput<'_>> for &GetUncachedVideoByURL {
 
         let playlist = get_media_info(
             url.as_str(),
-            FormatStrategy::VideoAndAudio,
+            &FormatStrategy::VideoAndAudio,
             audio_language,
             &self.yt_dlp_cfg.executable_path,
             &self.yt_pot_provider_cfg.url,

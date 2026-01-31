@@ -46,12 +46,11 @@ pub async fn download_video(
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
 ) -> HandlerResult {
     let inline_message_id = inline_message_id.as_deref().unwrap();
-    let url = match url_option {
-        Some(Extension(val)) => val,
-        None => {
-            let (_, video_id) = result_id.split_once('_').expect("incorrect inline message ID");
-            Url::parse(&format!("https://www.youtube.com/watch?v={video_id}")).unwrap()
-        }
+    let url = if let Some(Extension(val)) = url_option {
+        val
+    } else {
+        let (_, video_id) = result_id.split_once('_').expect("incorrect inline message ID");
+        Url::parse(&format!("https://www.youtube.com/watch?v={video_id}")).unwrap()
     };
 
     Span::current()
@@ -93,7 +92,7 @@ pub async fn download_video(
                 let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
             }
         }
-        Ok(Playlist { mut cached, .. }) if cached.len() > 0 => {
+        Ok(Playlist { mut cached, .. }) if !cached.is_empty() => {
             let media = cached.remove(0);
             let file_id = media.file_id;
 
@@ -113,7 +112,7 @@ pub async fn download_video(
                 let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
             }
         }
-        Ok(Playlist { mut uncached, .. }) if uncached.len() > 0 => {
+        Ok(Playlist { mut uncached, .. }) if !uncached.is_empty() => {
             let mut errs = vec![];
             let (media, formats) = uncached.remove(0);
 
@@ -122,7 +121,9 @@ pub async fn download_video(
             let ((), (), download_res) = tokio::join!(
                 async {
                     while let Some(progress_str) = progress_receiver.recv().await {
-                        if let Err(_) = progress::is_downloading_with_progress_in_chosen_inline(&bot, inline_message_id, progress_str).await
+                        if progress::is_downloading_with_progress_in_chosen_inline(&bot, inline_message_id, progress_str)
+                            .await
+                            .is_err()
                         {
                             break;
                         };
@@ -166,6 +167,7 @@ pub async fn download_video(
                     name: media.title.as_deref().unwrap_or(media.id.as_ref()),
                     width: format.width,
                     height: format.height,
+                    #[allow(clippy::cast_possible_truncation)]
                     duration: media.duration.map(|val| val as i64),
                     with_delete: true,
                 })
@@ -219,7 +221,7 @@ pub async fn download_video(
         Ok(Empty) => {
             warn!("Empty playlist");
             let text = "Playlist is empty";
-            let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
+            let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, text, Some(ParseMode::HTML)).await;
         }
         Err(err) => {
             error!(err = format_error_report(&err), "Get err");
@@ -250,12 +252,11 @@ pub async fn download_audio(
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
 ) -> HandlerResult {
     let inline_message_id = inline_message_id.as_deref().unwrap();
-    let url = match url_option {
-        Some(Extension(val)) => val,
-        None => {
-            let (_, video_id) = inline_message_id.split_once('_').expect("incorrect inline message ID");
-            Url::parse(&format!("https://www.youtube.com/watch?v={video_id}")).unwrap()
-        }
+    let url = if let Some(Extension(val)) = url_option {
+        val
+    } else {
+        let (_, video_id) = inline_message_id.split_once('_').expect("incorrect inline message ID");
+        Url::parse(&format!("https://www.youtube.com/watch?v={video_id}")).unwrap()
     };
 
     Span::current()
@@ -297,7 +298,7 @@ pub async fn download_audio(
                 let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
             }
         }
-        Ok(Playlist { mut cached, .. }) if cached.len() > 0 => {
+        Ok(Playlist { mut cached, .. }) if !cached.is_empty() => {
             let media = cached.remove(0);
             let file_id = media.file_id;
 
@@ -317,7 +318,7 @@ pub async fn download_audio(
                 let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
             }
         }
-        Ok(Playlist { mut uncached, .. }) if uncached.len() > 0 => {
+        Ok(Playlist { mut uncached, .. }) if !uncached.is_empty() => {
             let mut download_errs = vec![];
             let (media, formats) = uncached.remove(0);
 
@@ -326,7 +327,9 @@ pub async fn download_audio(
             let ((), (), download_res) = tokio::join!(
                 async {
                     while let Some(progress_str) = progress_receiver.recv().await {
-                        if let Err(_) = progress::is_downloading_with_progress_in_chosen_inline(&bot, inline_message_id, progress_str).await
+                        if progress::is_downloading_with_progress_in_chosen_inline(&bot, inline_message_id, progress_str)
+                            .await
+                            .is_err()
                         {
                             break;
                         };
@@ -370,6 +373,7 @@ pub async fn download_audio(
                     name: media.title.as_deref().unwrap_or(media.id.as_ref()),
                     title: media.title.as_deref(),
                     performer: media.uploader.as_deref(),
+                    #[allow(clippy::cast_possible_truncation)]
                     duration: media.duration.map(|val| val as i64),
                     with_delete: true,
                 })
@@ -423,7 +427,7 @@ pub async fn download_audio(
         Ok(Empty) => {
             warn!("Empty playlist");
             let text = "Playlist is empty";
-            let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
+            let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, text, Some(ParseMode::HTML)).await;
         }
         Err(err) => {
             error!(err = format_error_report(&err), "Get err");

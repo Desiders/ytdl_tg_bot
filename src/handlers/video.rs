@@ -124,6 +124,7 @@ pub async fn download(
                                 name: media.title.as_deref().unwrap_or(media.id.as_ref()),
                                 width: format.width,
                                 height: format.height,
+                                #[allow(clippy::cast_possible_truncation)]
                                 duration: media.duration.map(|val| val as i64),
                                 with_delete: true,
                             })
@@ -165,7 +166,7 @@ pub async fn download(
                 },
                 async {
                     while let Some(progress_str) = progress_receiver.recv().await {
-                        if let Err(_) = progress::is_downloading_with_progress(
+                        if progress::is_downloading_with_progress(
                             &bot,
                             chat_id,
                             progress_message_id,
@@ -174,6 +175,7 @@ pub async fn download(
                             cached_len + uncached_len,
                         )
                         .await
+                        .is_err()
                         {
                             break;
                         }
@@ -210,10 +212,8 @@ pub async fn download(
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
                 );
                 let _ = progress::is_error(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
-            } else {
-                if errs.len() == 0 {
-                    let _ = progress::delete(&bot, chat_id, progress_message_id).await;
-                }
+            } else if errs.is_empty() {
+                let _ = progress::delete(&bot, chat_id, progress_message_id).await;
             }
         }
         Ok(Empty) => {
@@ -306,6 +306,7 @@ pub async fn download_quiet(
                                 chat_id: cfg.chat.receiver_chat_id,
                                 reply_to_message_id: Some(message_id),
                                 media_in_fs,
+                                #[allow(clippy::cast_possible_truncation)]
                                 name: media.title.as_deref().unwrap_or(media.id.as_ref()),
                                 width: format.width,
                                 height: format.height,

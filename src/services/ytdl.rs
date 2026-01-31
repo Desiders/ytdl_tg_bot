@@ -71,7 +71,7 @@ fn parse_ndjson<T: DeserializeOwned>(input: &[u8]) -> Result<Vec<T>, ParseJsonEr
     Ok(results)
 }
 
-pub fn build_formats_string(strategy: FormatStrategy, heights: &[u32], audio_language: &Language) -> String {
+pub fn build_formats_string(strategy: &FormatStrategy, heights: &[u32], audio_language: &Language) -> String {
     fn push_if_some<T>(vec: &mut Vec<T>, value: Option<T>) {
         if let Some(v) = value {
             vec.push(v);
@@ -140,7 +140,7 @@ pub fn build_formats_string(strategy: FormatStrategy, heights: &[u32], audio_lan
 #[instrument(skip_all)]
 pub async fn get_media_info(
     search: &str,
-    strategy: FormatStrategy<'_>,
+    strategy: &FormatStrategy<'_>,
     audio_language: &Language,
     executable_path: &str,
     pot_provider_url: &str,
@@ -291,7 +291,7 @@ pub async fn download_media(
             args.push("--extract-audio");
             args.extend(["--audio-format", audio_ext]);
         }
-    };
+    }
 
     args.push("--extractor-args");
     args.push(&extractor_arg);
@@ -371,7 +371,7 @@ mod tests {
     fn video_and_audio_builds_formats_for_each_height() {
         let heights = [1080, 720];
 
-        let result = build_formats_string(FormatStrategy::VideoAndAudio, &heights, &Language::default());
+        let result = build_formats_string(&FormatStrategy::VideoAndAudio, &heights, &Language::default());
 
         assert_eq!(
             result,
@@ -384,7 +384,7 @@ mod tests {
         let heights = [1080];
 
         let result = build_formats_string(
-            FormatStrategy::VideoAndAudio,
+            &FormatStrategy::VideoAndAudio,
             &heights,
             &Language {
                 language: Some("ru".to_owned()),
@@ -398,14 +398,14 @@ mod tests {
     fn video_and_audio_audio_language_is_not_added_when_none() {
         let heights = [1080];
 
-        let result = build_formats_string(FormatStrategy::VideoAndAudio, &heights, &Language::default());
+        let result = build_formats_string(&FormatStrategy::VideoAndAudio, &heights, &Language::default());
 
         assert_eq!(result, "bv[vcodec!=none,height<=1080]+ba[]/b[height<=1080],bv*+ba,b,w");
     }
 
     #[test]
     fn audio_only_builds_formats_correctly_without_heights() {
-        let result = build_formats_string(FormatStrategy::AudioOnly { audio_ext: "m4a" }, &[], &Language::default());
+        let result = build_formats_string(&FormatStrategy::AudioOnly { audio_ext: "m4a" }, &[], &Language::default());
 
         assert_eq!(result, "ba[],ba,wa");
     }
@@ -413,7 +413,7 @@ mod tests {
     #[test]
     fn audio_only_includes_language_if_provided() {
         let result = build_formats_string(
-            FormatStrategy::AudioOnly { audio_ext: "m4a" },
+            &FormatStrategy::AudioOnly { audio_ext: "m4a" },
             &[],
             &Language {
                 language: Some("en".to_owned()),
@@ -426,7 +426,7 @@ mod tests {
     #[test]
     fn audio_only_multiple_languages_are_handled_correctly() {
         let result = build_formats_string(
-            FormatStrategy::AudioOnly { audio_ext: "m4a" },
+            &FormatStrategy::AudioOnly { audio_ext: "m4a" },
             &[],
             &Language {
                 language: Some("ru".to_owned()),
@@ -440,7 +440,7 @@ mod tests {
     fn video_and_audio_multiple_heights_preserve_order() {
         let heights = [2160, 1080, 720];
 
-        let result = build_formats_string(FormatStrategy::VideoAndAudio, &heights, &Language::default());
+        let result = build_formats_string(&FormatStrategy::VideoAndAudio, &heights, &Language::default());
 
         assert_eq!(
             result,
