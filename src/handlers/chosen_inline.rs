@@ -114,26 +114,24 @@ pub async fn download_video(
                 let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
             }
         }
-        Ok(Playlist { uncached, .. }) if uncached.len() > 0 => {
-            let mut uncached: Vec<_> = uncached
-                .into_iter()
-                .filter(|(media, formats)| {
-                    let is_empty = formats.is_empty();
-                    if is_empty {
-                        warn!(%media, "Formats not found");
-                    }
-                    !is_empty
-                })
-                .map(|(media, mut formats)| (media, formats.remove(0)))
-                .collect();
-            let (media, format) = uncached.remove(0);
+        Ok(Playlist { mut uncached, .. }) if uncached.len() > 0 => {
+            let mut errs = vec![];
+            let (media, formats) = uncached.remove(0);
 
-            let (input, mut progress_receiver) = media::DownloadMediaInput::new_with_progress(&url, &media, &format);
+            let (input, mut err_receiver, mut progress_receiver) = media::DownloadMediaInput::new_with_progress(&url, &media, formats);
 
-            let ((), download_res) = tokio::join!(
+            let ((), (), download_res) = tokio::join!(
                 async {
                     while let Some(progress_str) = progress_receiver.recv().await {
-                        let _ = progress::is_downloading_with_progress_in_chosen_inline(&bot, inline_message_id, progress_str).await;
+                        if let Err(_) = progress::is_downloading_with_progress_in_chosen_inline(&bot, inline_message_id, progress_str).await
+                        {
+                            break;
+                        };
+                    }
+                },
+                async {
+                    while let Some(err) = err_receiver.recv().await {
+                        errs.push(html_quote(err.format(&bot.token)));
                     }
                 },
                 async {
@@ -141,8 +139,12 @@ pub async fn download_video(
                     download_media.execute(input).await
                 }
             );
-            let media_in_fs = match download_res {
-                Ok(val) => val,
+            let (media_in_fs, format) = match download_res {
+                Ok(Some(val)) => val,
+                Ok(None) => {
+                    let _ = progress::is_errors_in_chosen_inline(&bot, inline_message_id, &errs, Some(ParseMode::HTML)).await;
+                    return Ok(EventReturn::Finish);
+                }
                 Err(err) => {
                     error!(%err, "Download err");
                     let _ = progress::is_error_in_chosen_inline(
@@ -316,26 +318,24 @@ pub async fn download_audio(
                 let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
             }
         }
-        Ok(Playlist { uncached, .. }) if uncached.len() > 0 => {
-            let mut uncached: Vec<_> = uncached
-                .into_iter()
-                .filter(|(media, formats)| {
-                    let is_empty = formats.is_empty();
-                    if is_empty {
-                        warn!(%media, "Formats not found");
-                    }
-                    !is_empty
-                })
-                .map(|(media, mut formats)| (media, formats.remove(0)))
-                .collect();
-            let (media, format) = uncached.remove(0);
+        Ok(Playlist { mut uncached, .. }) if uncached.len() > 0 => {
+            let mut download_errs = vec![];
+            let (media, formats) = uncached.remove(0);
 
-            let (input, mut progress_receiver) = media::DownloadMediaInput::new_with_progress(&url, &media, &format);
+            let (input, mut err_receiver, mut progress_receiver) = media::DownloadMediaInput::new_with_progress(&url, &media, formats);
 
-            let ((), download_res) = tokio::join!(
+            let ((), (), download_res) = tokio::join!(
                 async {
                     while let Some(progress_str) = progress_receiver.recv().await {
-                        let _ = progress::is_downloading_with_progress_in_chosen_inline(&bot, inline_message_id, progress_str).await;
+                        if let Err(_) = progress::is_downloading_with_progress_in_chosen_inline(&bot, inline_message_id, progress_str).await
+                        {
+                            break;
+                        };
+                    }
+                },
+                async {
+                    while let Some(err) = err_receiver.recv().await {
+                        download_errs.push(html_quote(err.format(&bot.token)));
                     }
                 },
                 async {
@@ -343,8 +343,12 @@ pub async fn download_audio(
                     download_media.execute(input).await
                 }
             );
-            let media_in_fs = match download_res {
-                Ok(val) => val,
+            let (media_in_fs, _format) = match download_res {
+                Ok(Some(val)) => val,
+                Ok(None) => {
+                    let _ = progress::is_errors_in_chosen_inline(&bot, inline_message_id, &download_errs, Some(ParseMode::HTML)).await;
+                    return Ok(EventReturn::Finish);
+                }
                 Err(err) => {
                     error!(%err, "Download err");
                     let _ = progress::is_error_in_chosen_inline(

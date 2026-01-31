@@ -104,39 +104,18 @@ pub async fn download(
             }
         }
         Ok(Playlist { cached, uncached }) => {
-            let mut errs = vec![];
-            let uncached: Vec<_> = uncached
-                .into_iter()
-                .filter(|(media, formats)| {
-                    let is_empty = formats.is_empty();
-                    if is_empty {
-                        warn!(%media, "Formats not found");
-                        errs.push(html_quote("Formats not found"));
-                    }
-                    !is_empty
-                })
-                .map(|(media, mut formats)| (media, formats.remove(0)))
-                .collect();
+            let mut send_err = None;
+            let mut download_errs: Vec<Vec<_>> = vec![];
             let (cached_len, uncached_len) = (cached.len(), uncached.len());
             let mut downloaded_playlist = Vec::with_capacity(cached_len + uncached_len);
             downloaded_playlist.extend(cached);
-            let (input, mut media_receiver, mut progress_receiver) =
-                media::DownloadMediaPlaylistInput::new_with_progress(&url, uncached.as_slice());
+            let (input, mut media_receiver, mut errs_receiver, mut progress_receiver) =
+                media::DownloadMediaPlaylistInput::new_with_progress(&url, uncached);
 
             let downloaded_media_count = AtomicUsize::new(cached_len);
             tokio::join!(
                 async {
-                    while let Some((media_index, download_res)) = media_receiver.recv().await {
-                        let media_in_fs = match download_res {
-                            Ok(val) => val,
-                            Err(err) => {
-                                error!(%err, "Download err");
-                                errs.push(html_quote(err.format(&bot.token)));
-                                continue;
-                            }
-                        };
-                        let (media, format) = &uncached[media_index];
-
+                    while let Some((media_in_fs, media, format)) = media_receiver.recv().await {
                         let file_id = match send_media_in_fs
                             .execute(send_media::fs::SendVideoInput {
                                 chat_id: cfg.chat.receiver_chat_id,
@@ -153,7 +132,7 @@ pub async fn download(
                             Ok(val) => val,
                             Err(err) => {
                                 error!(err = format_error_report(&err), "Send err");
-                                errs.push(html_quote(err.format(&bot.token)));
+                                send_err = Some(html_quote(err.format(&bot.token)));
                                 continue;
                             }
                         };
@@ -180,8 +159,13 @@ pub async fn download(
                     }
                 },
                 async {
+                    while let Some(errs) = errs_receiver.recv().await {
+                        download_errs.push(errs.into_iter().map(|err| html_quote(err.format(&bot.token))).collect());
+                    }
+                },
+                async {
                     while let Some(progress_str) = progress_receiver.recv().await {
-                        let _ = progress::is_downloading_with_progress(
+                        if let Err(_) = progress::is_downloading_with_progress(
                             &bot,
                             chat_id,
                             progress_message_id,
@@ -189,7 +173,10 @@ pub async fn download(
                             downloaded_media_count.load(Ordering::SeqCst),
                             cached_len + uncached_len,
                         )
-                        .await;
+                        .await
+                        {
+                            break;
+                        }
                     }
                 },
                 async {
@@ -204,6 +191,7 @@ pub async fn download(
                     }
                 }
             );
+            let errs = download_errs.into_iter().chain(send_err.map(|err| vec![err])).collect::<Vec<_>>();
             let media_to_send_count = downloaded_playlist.len();
             let _ = progress::is_sending_with_errors_or_all_errors(&bot, chat_id, progress_message_id, &errs, media_to_send_count).await;
 
@@ -304,37 +292,15 @@ pub async fn download_quiet(
             }
         }
         Ok(Playlist { cached, uncached }) => {
-            let mut errs = vec![];
-            let uncached: Vec<_> = uncached
-                .into_iter()
-                .filter(|(media, formats)| {
-                    let is_empty = formats.is_empty();
-                    if is_empty {
-                        warn!(%media, "Formats not found");
-                        errs.push(html_quote("Formats not found"));
-                    }
-                    !is_empty
-                })
-                .map(|(media, mut formats)| (media, formats.remove(0)))
-                .collect();
             let (cached_len, uncached_len) = (cached.len(), uncached.len());
             let mut downloaded_playlist = Vec::with_capacity(cached_len + uncached_len);
             downloaded_playlist.extend(cached);
-            let (input, mut media_receiver) = media::DownloadMediaPlaylistInput::new(&url, uncached.as_slice());
+            let (input, mut media_receiver) = media::DownloadMediaPlaylistInput::new(&url, uncached);
 
             let downloaded_media_count = AtomicUsize::new(cached_len);
             tokio::join!(
                 async {
-                    while let Some((media_index, download_res)) = media_receiver.recv().await {
-                        let media_in_fs = match download_res {
-                            Ok(val) => val,
-                            Err(err) => {
-                                error!(%err, "Download err");
-                                continue;
-                            }
-                        };
-                        let (media, format) = &uncached[media_index];
-
+                    while let Some((media_in_fs, media, format)) = media_receiver.recv().await {
                         let file_id = match send_media_in_fs
                             .execute(send_media::fs::SendVideoInput {
                                 chat_id: cfg.chat.receiver_chat_id,

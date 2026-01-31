@@ -54,6 +54,12 @@ impl FormatErrorToMessage for ytdl::GetInfoErrorKind {
     }
 }
 
+impl FormatErrorToMessage for ytdl::DownloadErrorKind {
+    fn format(&self, _token: &str) -> Cow<'static, str> {
+        Cow::Owned(self.to_string())
+    }
+}
+
 impl FormatErrorToMessage for ParseRangeError {
     fn format(&self, _token: &str) -> Cow<'static, str> {
         Cow::Owned(self.to_string())

@@ -15,10 +15,10 @@ use url::Url;
 
 #[derive(thiserror::Error, Debug)]
 pub enum DownloadMediaErrorKind {
-    #[error(transparent)]
-    Download(#[from] ytdl::DownloadErrorKind),
     #[error("Temp dir error: {0}")]
     TempDir(io::Error),
+    #[error("Channel error: {0}")]
+    Channel(#[from] mpsc::error::SendError<ytdl::DownloadErrorKind>),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -26,26 +26,40 @@ pub enum DownloadMediaPlaylistErrorKind {
     #[error("Temp dir error: {0}")]
     TempDir(io::Error),
     #[error("Channel error: {0}")]
-    Channel(#[from] mpsc::error::SendError<(usize, Result<MediaInFS, DownloadMediaErrorKind>)>),
+    ErrChannel(#[from] mpsc::error::SendError<Vec<ytdl::DownloadErrorKind>>),
+    #[error("Channel error: {0}")]
+    MediaChannel(#[from] mpsc::error::SendError<(MediaInFS, Media, MediaFormat)>),
 }
 
 pub struct DownloadMediaInput<'a> {
     url: &'a Url,
     media: &'a Media,
-    format: &'a MediaFormat,
+    formats: Vec<MediaFormat>,
+    err_sender: mpsc::UnboundedSender<ytdl::DownloadErrorKind>,
     progress_sender: Option<mpsc::UnboundedSender<String>>,
 }
 
 impl<'a> DownloadMediaInput<'a> {
-    pub fn new_with_progress(url: &'a Url, media: &'a Media, format: &'a MediaFormat) -> (Self, mpsc::UnboundedReceiver<String>) {
+    pub fn new_with_progress(
+        url: &'a Url,
+        media: &'a Media,
+        formats: Vec<MediaFormat>,
+    ) -> (
+        Self,
+        mpsc::UnboundedReceiver<ytdl::DownloadErrorKind>,
+        mpsc::UnboundedReceiver<String>,
+    ) {
+        let (err_sender, err_receiver) = mpsc::unbounded_channel();
         let (progress_sender, progress_receiver) = mpsc::unbounded_channel();
         (
             Self {
                 url,
                 media,
-                format,
+                formats,
+                err_sender,
                 progress_sender: Some(progress_sender),
             },
+            err_receiver,
             progress_receiver,
         )
     }
@@ -53,8 +67,9 @@ impl<'a> DownloadMediaInput<'a> {
 
 pub struct DownloadMediaPlaylistInput<'a> {
     url: &'a Url,
-    playlist: &'a [(Media, MediaFormat)],
-    media_sender: mpsc::UnboundedSender<(usize, Result<MediaInFS, DownloadMediaErrorKind>)>,
+    playlist: Vec<(Media, Vec<MediaFormat>)>,
+    media_sender: mpsc::UnboundedSender<(MediaInFS, Media, MediaFormat)>,
+    errs_sender: Option<mpsc::UnboundedSender<Vec<ytdl::DownloadErrorKind>>>,
     progress_sender: Option<mpsc::UnboundedSender<String>>,
 }
 
@@ -62,37 +77,39 @@ impl<'a> DownloadMediaPlaylistInput<'a> {
     #[allow(clippy::type_complexity)]
     pub fn new_with_progress(
         url: &'a Url,
-        playlist: &'a [(Media, MediaFormat)],
+        playlist: Vec<(Media, Vec<MediaFormat>)>,
     ) -> (
         Self,
-        mpsc::UnboundedReceiver<(usize, Result<MediaInFS, DownloadMediaErrorKind>)>,
+        mpsc::UnboundedReceiver<(MediaInFS, Media, MediaFormat)>,
+        mpsc::UnboundedReceiver<Vec<ytdl::DownloadErrorKind>>,
         mpsc::UnboundedReceiver<String>,
     ) {
         let (media_sender, media_receiver) = mpsc::unbounded_channel();
+        let (errs_sender, errs_receiver) = mpsc::unbounded_channel();
         let (progress_sender, progress_receiver) = mpsc::unbounded_channel();
         (
             Self {
                 url,
                 playlist,
                 media_sender,
+                errs_sender: Some(errs_sender),
                 progress_sender: Some(progress_sender),
             },
             media_receiver,
+            errs_receiver,
             progress_receiver,
         )
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn new(
-        url: &'a Url,
-        playlist: &'a [(Media, MediaFormat)],
-    ) -> (Self, mpsc::UnboundedReceiver<(usize, Result<MediaInFS, DownloadMediaErrorKind>)>) {
+    pub fn new(url: &'a Url, playlist: Vec<(Media, Vec<MediaFormat>)>) -> (Self, mpsc::UnboundedReceiver<(MediaInFS, Media, MediaFormat)>) {
         let (media_sender, media_receiver) = mpsc::unbounded_channel();
         (
             Self {
                 url,
                 playlist,
                 media_sender,
+                errs_sender: None,
                 progress_sender: None,
             },
             media_receiver,
@@ -108,7 +125,7 @@ pub struct DownloadVideo {
 }
 
 impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
-    type Output = MediaInFS;
+    type Output = Option<(MediaInFS, MediaFormat)>;
     type Err = DownloadMediaErrorKind;
 
     #[instrument(skip_all)]
@@ -117,58 +134,78 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
         DownloadMediaInput {
             url,
             media,
-            format,
+            formats,
+            err_sender,
             progress_sender,
         }: DownloadMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
-        let format_id = &format.format_id;
-        let max_file_size = self.yt_dlp_cfg.max_file_size;
         let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
         let output_dir_path = temp_dir.path();
-        let output_file_path = output_dir_path.join(format!("{}.{}", media.id, format.ext));
         let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
-        let executable_path = self.yt_dlp_cfg.executable_path.as_ref();
-        let pot_provider_url = self.yt_pot_provider_cfg.url.as_ref();
-        let timeout = self.timeouts_cfg.video_download;
-        let host = url.host();
-        let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
-        debug!("Downloading video");
-        let thumb_urls = media.get_thumb_urls(format.aspect_ration_kind());
         let mut thumn_is_downloaded = false;
-        for thumb_url in thumb_urls {
-            match download_and_convert(thumb_url.as_str(), &thumb_file_path, "/usr/bin/ffmpeg", 5).await {
-                Ok(()) => {
-                    info!("Thumb downloaded");
-                    thumn_is_downloaded = true;
-                    break;
-                }
-                Err(err) => {
-                    warn!(%err, "Download thumb err");
+        for format in formats {
+            let span = info_span!("iter", %format).entered();
+
+            let format_id = &format.format_id;
+            let max_file_size = self.yt_dlp_cfg.max_file_size;
+            let media_file_path = output_dir_path.join(format!("{}.{}", media.id, format.ext));
+            let executable_path = self.yt_dlp_cfg.executable_path.as_ref();
+            let pot_provider_url = self.yt_pot_provider_cfg.url.as_ref();
+            let timeout = self.timeouts_cfg.video_download;
+            let host = url.host();
+            let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
+
+            debug!("Downloading video");
+            let span = span.exit();
+
+            if !thumn_is_downloaded {
+                for thumb_url in media.get_thumb_urls(format.aspect_ration_kind()) {
+                    match download_and_convert(thumb_url.as_str(), &thumb_file_path, "/usr/bin/ffmpeg", 5).await {
+                        Ok(()) => {
+                            let _guard = span.enter();
+                            info!("Thumb downloaded");
+                            thumn_is_downloaded = true;
+                            break;
+                        }
+                        Err(err) => {
+                            let _guard = span.enter();
+                            warn!(%err, "Download thumb err");
+                        }
+                    }
                 }
             }
+
+            if let Err(err) = download_media(
+                media.webpage_url.as_str(),
+                FormatStrategy::VideoAndAudio,
+                format_id,
+                max_file_size,
+                output_dir_path,
+                executable_path,
+                pot_provider_url,
+                timeout,
+                cookie,
+                progress_sender.as_ref(),
+            )
+            .await
+            {
+                let _guard = span.enter();
+                error!(%err, "Download video err");
+                err_sender.send(err)?;
+                continue;
+            }
+            let _guard = span.enter();
+            info!("Video downloaded");
+
+            let media_in_fs = MediaInFS {
+                path: media_file_path,
+                thumb_path: if thumn_is_downloaded { Some(thumb_file_path) } else { None },
+                temp_dir,
+            };
+            return Ok(Some((media_in_fs, format)));
         }
-
-        download_media(
-            media.webpage_url.as_str(),
-            FormatStrategy::VideoAndAudio,
-            format_id,
-            max_file_size,
-            output_dir_path,
-            executable_path,
-            pot_provider_url,
-            timeout,
-            cookie,
-            progress_sender,
-        )
-        .await?;
-        info!("Video downloaded");
-
-        Ok(Self::Output {
-            path: output_file_path,
-            thumb_path: if thumn_is_downloaded { Some(thumb_file_path) } else { None },
-            temp_dir,
-        })
+        Ok(None)
     }
 }
 
@@ -180,7 +217,7 @@ pub struct DownloadAudio {
 }
 
 impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
-    type Output = MediaInFS;
+    type Output = Option<(MediaInFS, MediaFormat)>;
     type Err = DownloadMediaErrorKind;
 
     #[instrument(skip_all)]
@@ -189,59 +226,79 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
         DownloadMediaInput {
             url,
             media,
-            format,
+            formats,
+            err_sender,
             progress_sender,
         }: DownloadMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
-        let format_id = &format.format_id;
-        let max_file_size = self.yt_dlp_cfg.max_file_size;
         let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
         let audio_ext = "m4a";
         let output_dir_path = temp_dir.path();
-        let output_file_path = output_dir_path.join(format!("{}.{audio_ext}", media.id));
         let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
-        let executable_path = self.yt_dlp_cfg.executable_path.as_ref();
-        let pot_provider_url = self.yt_pot_provider_cfg.url.as_ref();
-        let timeout = self.timeouts_cfg.audio_download;
-        let host = url.host();
-        let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
-        debug!("Downloading audio");
-        let thumb_urls = media.get_thumb_urls(format.aspect_ration_kind());
         let mut thumn_is_downloaded = false;
-        for thumb_url in thumb_urls {
-            match download_and_convert(thumb_url.as_str(), &thumb_file_path, "/usr/bin/ffmpeg", 5).await {
-                Ok(()) => {
-                    info!("Thumb downloaded");
-                    thumn_is_downloaded = true;
-                    break;
-                }
-                Err(err) => {
-                    warn!(%err, "Download thumb err");
+        for format in formats {
+            let span = info_span!("iter", %format).entered();
+
+            let format_id = &format.format_id;
+            let max_file_size = self.yt_dlp_cfg.max_file_size;
+            let media_file_path = output_dir_path.join(format!("{}.{audio_ext}", media.id));
+            let executable_path = self.yt_dlp_cfg.executable_path.as_ref();
+            let pot_provider_url = self.yt_pot_provider_cfg.url.as_ref();
+            let timeout = self.timeouts_cfg.audio_download;
+            let host = url.host();
+            let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
+
+            debug!("Downloading audio");
+            let span = span.exit();
+
+            if !thumn_is_downloaded {
+                for thumb_url in media.get_thumb_urls(format.aspect_ration_kind()) {
+                    match download_and_convert(thumb_url.as_str(), &thumb_file_path, "/usr/bin/ffmpeg", 5).await {
+                        Ok(()) => {
+                            let _guard = span.enter();
+                            info!("Thumb downloaded");
+                            thumn_is_downloaded = true;
+                            break;
+                        }
+                        Err(err) => {
+                            let _guard = span.enter();
+                            warn!(%err, "Download thumb err");
+                        }
+                    }
                 }
             }
+
+            if let Err(err) = download_media(
+                media.webpage_url.as_str(),
+                FormatStrategy::AudioOnly { audio_ext },
+                format_id,
+                max_file_size,
+                output_dir_path,
+                executable_path,
+                pot_provider_url,
+                timeout,
+                cookie,
+                progress_sender.as_ref(),
+            )
+            .await
+            {
+                let _guard = span.enter();
+                error!(%err, "Download audio err");
+                err_sender.send(err)?;
+                continue;
+            }
+            let _guard = span.enter();
+            info!("Audio downloaded");
+
+            let media_in_fs = MediaInFS {
+                path: media_file_path,
+                thumb_path: if thumn_is_downloaded { Some(thumb_file_path) } else { None },
+                temp_dir,
+            };
+            return Ok(Some((media_in_fs, format)));
         }
-
-        download_media(
-            media.webpage_url.as_str(),
-            FormatStrategy::AudioOnly { audio_ext },
-            format_id,
-            max_file_size,
-            output_dir_path,
-            executable_path,
-            pot_provider_url,
-            timeout,
-            cookie,
-            progress_sender,
-        )
-        .await?;
-        info!("Audio downloaded");
-
-        Ok(Self::Output {
-            path: output_file_path,
-            thumb_path: if thumn_is_downloaded { Some(thumb_file_path) } else { None },
-            temp_dir,
-        })
+        Ok(None)
     }
 }
 
@@ -263,6 +320,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
             url,
             playlist,
             media_sender,
+            errs_sender,
             progress_sender,
         }: DownloadMediaPlaylistInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
@@ -273,62 +331,77 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
-        for (index, (media, format)) in playlist.into_iter().enumerate() {
-            let span = info_span!("iter", id = media.id, %format).entered();
-
-            let format_id = &format.format_id;
+        for (media, formats) in playlist {
             let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
             let output_dir_path = temp_dir.path();
-            let output_file_path = output_dir_path.join(format!("{}.{}", media.id, format.ext));
             let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
 
-            debug!("Downloading video");
-            let span = span.exit();
-
-            let thumb_urls = media.get_thumb_urls(format.aspect_ration_kind());
+            let mut errs = vec![];
+            let mut media_is_downloaded = false;
             let mut thumn_is_downloaded = false;
-            for thumb_url in thumb_urls {
-                match download_and_convert(thumb_url.as_str(), &thumb_file_path, "/usr/bin/ffmpeg", 5).await {
-                    Ok(()) => {
-                        let _guard = span.enter();
-                        info!("Thumb downloaded");
-                        thumn_is_downloaded = true;
-                        break;
-                    }
-                    Err(err) => {
-                        let _guard = span.enter();
-                        warn!(%err, "Download thumb err");
+            for format in formats {
+                let span = info_span!("iter", id = media.id, %format).entered();
+
+                let format_id = &format.format_id;
+                let media_file_path = output_dir_path.join(format!("{}.{}", media.id, format.ext));
+
+                debug!("Downloading video");
+                let span = span.exit();
+
+                if !thumn_is_downloaded {
+                    for thumb_url in media.get_thumb_urls(format.aspect_ration_kind()) {
+                        match download_and_convert(thumb_url.as_str(), &thumb_file_path, "/usr/bin/ffmpeg", 5).await {
+                            Ok(()) => {
+                                let _guard = span.enter();
+                                info!("Thumb downloaded");
+                                thumn_is_downloaded = true;
+                                break;
+                            }
+                            Err(err) => {
+                                let _guard = span.enter();
+                                warn!(%err, "Download thumb err");
+                            }
+                        }
                     }
                 }
-            }
 
-            if let Err(err) = download_media(
-                media.webpage_url.as_str(),
-                FormatStrategy::VideoAndAudio,
-                format_id,
-                max_file_size,
-                output_dir_path,
-                executable_path,
-                pot_provider_url,
-                timeout,
-                cookie,
-                progress_sender.clone(),
-            )
-            .await
-            {
+                if let Err(err) = download_media(
+                    media.webpage_url.as_str(),
+                    FormatStrategy::VideoAndAudio,
+                    format_id,
+                    max_file_size,
+                    output_dir_path,
+                    executable_path,
+                    pot_provider_url,
+                    timeout,
+                    cookie,
+                    progress_sender.as_ref(),
+                )
+                .await
+                {
+                    let _guard = span.enter();
+                    error!(%err, "Download video err");
+                    errs.push(err);
+                    continue;
+                }
+
                 let _guard = span.enter();
-                media_sender.send((index, Err(DownloadMediaErrorKind::Download(err))))?;
+                info!("Video downloaded");
+                media_is_downloaded = true;
+
+                let media_in_fs = MediaInFS {
+                    path: media_file_path,
+                    thumb_path: if thumn_is_downloaded { Some(thumb_file_path) } else { None },
+                    temp_dir,
+                };
+                media_sender.send((media_in_fs, media, format))?;
+                break;
             }
-
-            let _guard = span.enter();
-            info!("Video downloaded");
-
-            let media_in_fs = MediaInFS {
-                path: output_file_path,
-                thumb_path: if thumn_is_downloaded { Some(thumb_file_path) } else { None },
-                temp_dir,
-            };
-            media_sender.send((index, Ok(media_in_fs)))?;
+            if let Some(ref sender) = errs_sender {
+                if !media_is_downloaded {
+                    sender.send(errs)?;
+                }
+            }
         }
 
         Ok(())
@@ -353,6 +426,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
             url,
             playlist,
             media_sender,
+            errs_sender,
             progress_sender,
         }: DownloadMediaPlaylistInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
@@ -364,62 +438,77 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
         let audio_ext = "m4a";
 
-        for (index, (media, format)) in playlist.into_iter().enumerate() {
-            let span = info_span!("iter", id = media.id, %format).entered();
-
-            let format_id = &format.format_id;
+        for (media, formats) in playlist {
             let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
             let output_dir_path = temp_dir.path();
-            let output_file_path = output_dir_path.join(format!("{}.{audio_ext}", media.id));
+            let media_file_path = output_dir_path.join(format!("{}.{audio_ext}", media.id));
             let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
 
-            debug!("Downloading audio");
-            let span = span.exit();
-
-            let thumb_urls = media.get_thumb_urls(format.aspect_ration_kind());
+            let mut errs = vec![];
+            let mut media_is_downloaded = false;
             let mut thumn_is_downloaded = false;
-            for thumb_url in thumb_urls {
-                match download_and_convert(thumb_url.as_str(), &thumb_file_path, "/usr/bin/ffmpeg", 5).await {
-                    Ok(()) => {
-                        let _guard = span.enter();
-                        info!("Thumb downloaded");
-                        thumn_is_downloaded = true;
-                        break;
-                    }
-                    Err(err) => {
-                        let _guard = span.enter();
-                        warn!(%err, "Download thumb err");
+            for format in formats {
+                let span = info_span!("iter", id = media.id, %format).entered();
+
+                let format_id = &format.format_id;
+
+                debug!("Downloading audio");
+                let span = span.exit();
+
+                if !thumn_is_downloaded {
+                    for thumb_url in media.get_thumb_urls(format.aspect_ration_kind()) {
+                        match download_and_convert(thumb_url.as_str(), &thumb_file_path, "/usr/bin/ffmpeg", 5).await {
+                            Ok(()) => {
+                                let _guard = span.enter();
+                                info!("Thumb downloaded");
+                                thumn_is_downloaded = true;
+                                break;
+                            }
+                            Err(err) => {
+                                let _guard = span.enter();
+                                warn!(%err, "Download thumb err");
+                            }
+                        }
                     }
                 }
-            }
 
-            if let Err(err) = download_media(
-                media.webpage_url.as_str(),
-                FormatStrategy::AudioOnly { audio_ext },
-                format_id,
-                max_file_size,
-                output_dir_path,
-                executable_path,
-                pot_provider_url,
-                timeout,
-                cookie,
-                progress_sender.clone(),
-            )
-            .await
-            {
+                if let Err(err) = download_media(
+                    media.webpage_url.as_str(),
+                    FormatStrategy::AudioOnly { audio_ext },
+                    format_id,
+                    max_file_size,
+                    output_dir_path,
+                    executable_path,
+                    pot_provider_url,
+                    timeout,
+                    cookie,
+                    progress_sender.as_ref(),
+                )
+                .await
+                {
+                    let _guard = span.enter();
+                    error!(%err, "Download audio err");
+                    errs.push(err);
+                    continue;
+                }
+
                 let _guard = span.enter();
-                media_sender.send((index, Err(DownloadMediaErrorKind::Download(err))))?;
+                info!("Audio downloaded");
+                media_is_downloaded = true;
+
+                let media_in_fs = MediaInFS {
+                    path: media_file_path,
+                    thumb_path: if thumn_is_downloaded { Some(thumb_file_path) } else { None },
+                    temp_dir,
+                };
+                media_sender.send((media_in_fs, media, format))?;
+                break;
             }
-
-            let _guard = span.enter();
-            info!("Audio downloaded");
-
-            let media_in_fs = MediaInFS {
-                path: output_file_path,
-                thumb_path: if thumn_is_downloaded { Some(thumb_file_path) } else { None },
-                temp_dir,
-            };
-            media_sender.send((index, Ok(media_in_fs)))?;
+            if let Some(ref sender) = errs_sender {
+                if !media_is_downloaded {
+                    sender.send(errs)?;
+                }
+            }
         }
 
         Ok(())

@@ -109,9 +109,9 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
         let mut cached = vec![];
         let mut uncached = vec![];
         for (media, mut formats) in playlist.inner {
-            let domain = media.webpage_url.as_str();
+            let domain = media.webpage_url.domain();
             if let Some(DownloadedMedia { file_id, .. }) = dao
-                .get(&media.id, Some(domain), audio_language.language.as_deref(), MediaType::Video)
+                .get(&media.id, domain, audio_language.language.as_deref(), MediaType::Video)
                 .await?
             {
                 cached.push(MediaInPlaylist {
@@ -149,6 +149,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
     type Output = GetMediaByURLKind;
     type Err = GetMediaByURLErrorKind;
 
+    #[instrument(skip_all)]
     async fn execute(
         self,
         GetMediaByURLInput {
@@ -166,14 +167,8 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
         let is_single_media = playlist_range.is_single_element();
 
         if is_single_media {
-            let normalized_domain = domain.map(|domain| domain.trim_start_matches("www."));
             if let Some(media) = dao
-                .get(
-                    cache_search,
-                    normalized_domain,
-                    audio_language.language.as_deref(),
-                    MediaType::Audio,
-                )
+                .get(cache_search, domain, audio_language.language.as_deref(), MediaType::Audio)
                 .await?
             {
                 info!("Got cached media");
@@ -204,9 +199,9 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
         let mut cached = vec![];
         let mut uncached = vec![];
         for (media, mut formats) in playlist.inner {
-            let domain = media.webpage_url.as_str();
+            let domain = media.webpage_url.domain();
             if let Some(DownloadedMedia { file_id, .. }) = dao
-                .get(&media.id, Some(domain), audio_language.language.as_deref(), MediaType::Audio)
+                .get(&media.id, domain, audio_language.language.as_deref(), MediaType::Audio)
                 .await?
             {
                 cached.push(MediaInPlaylist {
