@@ -11,7 +11,7 @@ use tracing::{error, instrument};
 use crate::{
     database::TxManager,
     entities::{Chat, ChatConfig},
-    interactors::{Interactor as _, SaveChat, SaveChatInput},
+    interactors::{chat, Interactor as _},
 };
 
 #[derive(Clone)]
@@ -34,11 +34,11 @@ impl Middleware for CreateChatMiddleware {
         let db_chat = Chat::new(chat_id, username.map(ToOwned::to_owned));
         let db_chat_config = ChatConfig::new(chat_id, cmd_random_enabled);
 
-        let save_chat = container.get::<SaveChat>().await.unwrap();
+        let save_chat = container.get::<chat::SaveChat>().await.unwrap();
         let mut tx_manager = container.get_transient::<TxManager>().await.unwrap();
 
         match save_chat
-            .execute(SaveChatInput::new(db_chat, db_chat_config, &mut tx_manager))
+            .execute(chat::SaveChatInput::new(db_chat, db_chat_config, &mut tx_manager))
             .await
         {
             Ok((_, chat_config)) => {

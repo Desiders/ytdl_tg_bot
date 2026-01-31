@@ -21,7 +21,7 @@ pub async fn start(bot: Bot, message: Message, Inject(cfg): Inject<Config>) -> H
         If you want to download audio, send <code>/ad</code> (<code>/audio_download</code>) instead of <code>/vd</code>.\n\
         You can also use <code>/rv</code> (<code>/random_video</code>) or <code>/ra</code> (<code>/random_audio</code>) to get random media.\n\n\
         Params to download several media from playlist: <code>[items=start:stop:step]</code>.\n\
-        Params to select download media language: <code>[lang=ru|en|en-US|en-GB]</code>.\n\
+        Params to select audio language: <code>[lang=ru]</code>.\n\
         Params to override used domains for <code>/rv</code> and <code>/ra</code>: <code>[domains=youtube.com|youtu.be]</code>.\n\n\
         You can use me in inline mode in any chat by typing <code>@{bot_username} </code><code>&lt;url&gt;</code>.\n\
         If text is specified instead of a URL, a YouTube video search will be performed.\n\
