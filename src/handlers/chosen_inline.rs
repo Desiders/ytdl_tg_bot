@@ -49,7 +49,6 @@ pub async fn download_video(
     let url = match url_option {
         Some(Extension(val)) => val,
         None => {
-            tracing::trace!(result_id, vec = ?result_id.split_once('_'), "");
             let (_, video_id) = result_id.split_once('_').expect("incorrect inline message ID");
             Url::parse(&format!("https://www.youtube.com/watch?v={video_id}")).unwrap()
         }

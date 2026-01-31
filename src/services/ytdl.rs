@@ -200,8 +200,6 @@ pub async fn get_media_info(
     args.push("--");
     args.push(search);
 
-    trace!("{args:?}");
-
     let child = Command::new(executable_path)
         .args(args)
         .stdin(Stdio::null())
