@@ -46,9 +46,9 @@ pub async fn is_sending_with_errors_or_all_errors(
     media_to_send_count: usize,
 ) -> Result<(), SessionErrorKind> {
     let mut errs_text = String::new();
-    for (failed_media_index, format_errs) in media_errs.into_iter().enumerate() {
+    for (failed_media_index, format_errs) in media_errs.iter().enumerate() {
         let mut format_errs_text = String::new();
-        for (format_err_index, format_err) in format_errs.into_iter().enumerate() {
+        for (format_err_index, format_err) in format_errs.iter().enumerate() {
             format_errs_text.push_str(&format!("{}. {}\n", format_err_index + 1, format_err));
         }
         errs_text.push_str(&format!(
@@ -177,7 +177,7 @@ pub async fn is_errors_in_chosen_inline(
     parse_mode: Option<ParseMode>,
 ) -> Result<(), SessionErrorKind> {
     let mut errs_text = String::new();
-    for (index, err) in format_errs.into_iter().enumerate() {
+    for (index, err) in format_errs.iter().enumerate() {
         errs_text.push_str(&format!("{}. {}\n", index + 1, err));
     }
     errs_text.push_str(&format!("{} download retries:\n", format_errs.len()));

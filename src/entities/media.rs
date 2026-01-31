@@ -3,7 +3,7 @@ use std::{
     collections::BTreeMap,
     fmt,
     hash::{Hash, Hasher},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 use tempfile::TempDir;
 use url::Url;
@@ -50,16 +50,17 @@ impl Hash for MediaFormat {
 }
 
 impl fmt::Display for MediaFormat {
+    #[allow(clippy::cast_precision_loss)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} [{}]", self.format_id, self.ext)?;
         if let Some(note) = &self.format_note {
-            write!(f, " - {}", note)?;
+            write!(f, " - {note}")?;
         }
         if let (Some(w), Some(h)) = (self.width, self.height) {
-            write!(f, " {}x{}", w, h)?;
+            write!(f, " {w}x{h}")?;
         }
         let size_mb = self.filesize_approx.unwrap_or(0) as f32 / (1024.0 * 1024.0);
-        write!(f, " (~{:.2} MB)", size_mb)?;
+        write!(f, " (~{size_mb:.2} MB)")?;
         Ok(())
     }
 }
@@ -74,9 +75,9 @@ pub struct Thumbnail {
 impl fmt::Display for Thumbnail {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let size_str = match (self.width, self.height) {
-            (Some(w), Some(h)) => format!("{}x{}", w, h),
-            (Some(w), None) => format!("{}x?", w),
-            (None, Some(h)) => format!("?x{}", h),
+            (Some(w), Some(h)) => format!("{w}x{h}"),
+            (Some(w), None) => format!("{w}x?"),
+            (None, Some(h)) => format!("?x{h}"),
             (None, None) => "?x?".to_string(),
         };
         write!(f, "{} [{}]", self.url, size_str)
@@ -129,8 +130,9 @@ impl Media {
 
     fn get_thumb_url_jpg(&self) -> Option<&Url> {
         fn is_jpg_or_jpeg(url: &Url) -> bool {
-            let path = url.path().to_lowercase();
-            path.ends_with(".jpg") || path.ends_with(".jpeg")
+            Path::new(url.path())
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("jpg") || ext.eq_ignore_ascii_case("jpeg"))
         }
 
         if let Some(url) = &self.thumbnail {
@@ -143,25 +145,26 @@ impl Media {
 }
 
 impl fmt::Display for Media {
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(title) = &self.title {
-            write!(f, "{}", title)?;
+            write!(f, "{title}")?;
         } else {
             write!(f, "Media {}", self.id)?;
         }
         if let Some(display_id) = &self.display_id {
-            write!(f, " ({})", display_id)?;
+            write!(f, " ({display_id})")?;
         }
         if let Some(uploader) = &self.uploader {
-            write!(f, " — {}", uploader)?;
+            write!(f, " — {uploader}")?;
         }
         if let Some(duration) = self.duration {
             let mins = (duration / 60.0).floor() as u32;
             let secs = (duration % 60.0).round() as u32;
-            write!(f, " [{}:{:02}]", mins, secs)?;
+            write!(f, " [{mins}:{secs:02}]")?;
         }
         if let Some(lang) = &self.language {
-            write!(f, " [{}]", lang)?;
+            write!(f, " [{lang}]")?;
         }
         if self.playlist_index > 0 {
             write!(f, " (#{})", self.playlist_index)?;
