@@ -242,7 +242,11 @@ pub async fn download_audio(
     bot: Bot,
     params: Params,
     url_option: Option<Extension<Url>>,
-    ChosenInlineResult { inline_message_id, .. }: ChosenInlineResult,
+    ChosenInlineResult {
+        inline_message_id,
+        result_id,
+        ..
+    }: ChosenInlineResult,
     Inject(cfg): Inject<Config>,
     Inject(get_media): Inject<get_media::GetAudioByURL>,
     Inject(download_media): Inject<media::DownloadAudio>,
@@ -255,7 +259,7 @@ pub async fn download_audio(
     let url = if let Some(Extension(val)) = url_option {
         val
     } else {
-        let (_, video_id) = inline_message_id.split_once('_').expect("incorrect inline message ID");
+        let (_, video_id) = result_id.split_once('_').expect("incorrect inline message ID");
         Url::parse(&format!("https://www.youtube.com/watch?v={video_id}")).unwrap()
     };
 
