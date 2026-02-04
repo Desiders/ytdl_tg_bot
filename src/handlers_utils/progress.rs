@@ -16,29 +16,19 @@ pub async fn new(bot: &Bot, chat_id: i64, reply_to_message_id: i64) -> Result<Me
     .await
 }
 
-pub async fn is_downloading(bot: &Bot, chat_id: i64, message_id: i64) -> Result<(), SessionErrorKind> {
+pub async fn is_sending(bot: &Bot, chat_id: i64, message_id: i64) -> Result<(), SessionErrorKind> {
     bot.send(
-        EditMessageText::new("📥 Downloading...")
+        EditMessageText::new("📨 Sending...")
             .chat_id(chat_id)
             .message_id(message_id)
+            .parse_mode(ParseMode::HTML)
             .link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
     )
     .await?;
     Ok(())
 }
 
-pub async fn is_downloading_in_chosen_inline(bot: &Bot, inline_message_id: &str) -> Result<(), SessionErrorKind> {
-    bot.send(
-        EditMessageText::new("📥 Downloading...")
-            .inline_message_id(inline_message_id)
-            .reply_markup(InlineKeyboardMarkup::new([[]]))
-            .link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
-    )
-    .await?;
-    Ok(())
-}
-
-pub async fn is_sending_with_errors_or_all_errors(
+pub async fn is_errors_if_exist(
     bot: &Bot,
     chat_id: i64,
     message_id: i64,
@@ -62,14 +52,14 @@ pub async fn is_sending_with_errors_or_all_errors(
     let text = match (media_errs.len(), media_to_send_count) {
         (errs_count, media_to_send_count) if errs_count > 0 && media_to_send_count > 0 => {
             format!(
-                "📨 Sending...\n\n🧨 Error while downloading some media :(\n\n\
+                "🧨 Error while downloading some media :(\n\n\
                 {}",
                 html_expandable_blockquote(&errs_text),
             )
         }
         (errs_count, media_to_send_count) if errs_count > 0 && media_to_send_count == 0 => {
             format!(
-                "🧨 Error while downloading :\n\n\
+                "🧨 Error while downloading :(\n\n\
                 {}",
                 html_expandable_blockquote(&errs_text),
             )

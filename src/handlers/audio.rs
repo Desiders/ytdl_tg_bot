@@ -116,6 +116,7 @@ pub async fn download(
             tokio::join!(
                 async {
                     while let Some((media_in_fs, media, _format)) = media_receiver.recv().await {
+                        let _ = progress::is_sending(&bot, chat_id, progress_message_id).await;
                         let file_id = match send_media_in_fs
                             .execute(send_media::fs::SendAudioInput {
                                 chat_id: cfg.chat.receiver_chat_id,
@@ -181,7 +182,6 @@ pub async fn download(
                     }
                 },
                 async {
-                    let _ = progress::is_downloading(&bot, chat_id, progress_message_id).await;
                     if let Err(err) = download_playlist.execute(input).await {
                         error!(%err, "Download err");
                         let text = format!(
@@ -194,7 +194,7 @@ pub async fn download(
             );
             let errs = download_errs.into_iter().chain(send_err.map(|err| vec![err])).collect::<Vec<_>>();
             let media_to_send_count = downloaded_playlist.len();
-            let _ = progress::is_sending_with_errors_or_all_errors(&bot, chat_id, progress_message_id, &errs, media_to_send_count).await;
+            let _ = progress::is_errors_if_exist(&bot, chat_id, progress_message_id, &errs, media_to_send_count).await;
 
             downloaded_playlist.sort_by_key(|val| val.playlist_index);
             if let Err(err) = send_playlist
