@@ -270,7 +270,6 @@ pub async fn download_media(
         "3",
         "--max-filesize",
         &max_filesize,
-        "--add-metadata",
         "--no-write-comments",
         "--no-playlist",
         "--no-config",
@@ -284,7 +283,9 @@ pub async fn download_media(
     ];
 
     match strategy {
-        FormatStrategy::VideoAndAudio => {}
+        FormatStrategy::VideoAndAudio => {
+            args.push("--add-metadata");
+        }
         FormatStrategy::AudioOnly { audio_ext } => {
             args.push("--embed-thumbnail");
             args.push("--write-thumbnail");
