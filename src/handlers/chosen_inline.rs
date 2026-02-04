@@ -134,10 +134,7 @@ pub async fn download_video(
                         errs.push(html_quote(err.format(&bot.token)));
                     }
                 },
-                async {
-                    let _ = progress::is_downloading_in_chosen_inline(&bot, inline_message_id).await;
-                    download_media.execute(input).await
-                }
+                async { download_media.execute(input).await }
             );
             let (media_in_fs, format) = match download_res {
                 Ok(Some(val)) => val,
@@ -344,10 +341,7 @@ pub async fn download_audio(
                         download_errs.push(html_quote(err.format(&bot.token)));
                     }
                 },
-                async {
-                    let _ = progress::is_downloading_in_chosen_inline(&bot, inline_message_id).await;
-                    download_media.execute(input).await
-                }
+                async { download_media.execute(input).await }
             );
             let (media_in_fs, _format) = match download_res {
                 Ok(Some(val)) => val,
