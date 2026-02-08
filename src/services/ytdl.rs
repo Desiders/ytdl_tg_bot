@@ -107,9 +107,9 @@ pub fn build_formats_string(strategy: &FormatStrategy, heights: &[u32], audio_la
 
         FormatStrategy::VideoAndAudio => {
             for &height in heights {
-                let mut video_args = vec!["vcodec!=none".to_owned()];
+                let mut video_args = vec!["vcodec!=none".to_owned(), "vcodec!*=av01".to_owned()];
                 let mut audio_args = vec![];
-                let mut combined_args = vec![];
+                let mut combined_args = vec!["vcodec!*=av01".to_owned()];
 
                 push_if_some(&mut video_args, Some(format!("height<={height}")));
                 push_if_some(&mut combined_args, Some(format!("height<={height}")));
