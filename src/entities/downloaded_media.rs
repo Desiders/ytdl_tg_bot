@@ -13,6 +13,26 @@ pub struct DownloadedMedia {
     pub audio_language: Option<String>,
 }
 
+#[derive(Debug)]
+pub struct DownloadedMediaCount {
+    pub count: i64,
+}
+
+#[derive(Debug)]
+pub struct DownloadedMediaByDomainCount {
+    pub domain: String,
+    pub count: i64,
+}
+
+#[derive(Debug)]
+pub struct DownloadedMediaStats {
+    pub last_day: DownloadedMediaCount,
+    pub last_week: DownloadedMediaCount,
+    pub last_month: DownloadedMediaCount,
+    pub total: DownloadedMediaCount,
+    pub top_domains: Vec<DownloadedMediaByDomainCount>,
+}
+
 impl From<Model> for DownloadedMedia {
     fn from(
         Model {

@@ -1,7 +1,7 @@
 use crate::{
     config::RandomCmdConfig,
     database::TxManager,
-    entities::{language::Language, Domains, DownloadedMedia},
+    entities::{language::Language, ChatStats, Domains, DownloadedMedia, DownloadedMediaStats},
     errors::ErrorKind,
     interactors::Interactor,
     value_objects::MediaType,
@@ -172,5 +172,39 @@ impl Interactor<GetRandomMediaInput<'_>> for &GetRandomAudio {
         info!(len = media.len(), "Got random audio");
 
         Ok(media)
+    }
+}
+
+pub struct GetStats {}
+
+pub struct GetStatsInput<'a> {
+    pub top_domains_limit: u64,
+    pub tx_manager: &'a mut TxManager,
+}
+
+impl Interactor<GetStatsInput<'_>> for &GetStats {
+    type Output = (DownloadedMediaStats, ChatStats);
+    type Err = ErrorKind<Infallible>;
+
+    #[instrument(skip_all)]
+    async fn execute(
+        self,
+        GetStatsInput {
+            top_domains_limit,
+            tx_manager,
+        }: GetStatsInput<'_>,
+    ) -> Result<Self::Output, Self::Err> {
+        tx_manager.begin().await?;
+
+        let dao = tx_manager.downloaded_media_dao()?;
+        let media_stats = dao.get_stats(top_domains_limit).await?;
+        info!(?media_stats, "Got media stats");
+
+        let dao = tx_manager.chat_dao()?;
+        let chat_stats = dao.get_stats().await?;
+        info!(?chat_stats, "Got chat stats");
+
+        tx_manager.commit().await?;
+        Ok((media_stats, chat_stats))
     }
 }

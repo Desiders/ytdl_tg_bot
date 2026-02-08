@@ -31,7 +31,7 @@ use crate::{
         is_audio_inline_result, is_via_bot, is_video_inline_result, random_cmd_is_enabled, text_contains_url, text_contains_url_with_reply,
         text_empty, url_is_blacklisted, url_is_skippable_by_param,
     },
-    handlers::{audio, chosen_inline, inline_query, start, video},
+    handlers::{audio, chosen_inline, inline_query, start, stats, video},
     middlewares::{CreateChatMiddleware, ReactionMiddleware, RemoveTrackingParamsMiddleware, ReplaceDomainsMiddleware},
     services::get_cookies_from_directory,
     utils::{on_shutdown, on_startup},
@@ -67,6 +67,7 @@ async fn main() {
 
     router.update.outer_middlewares.register(CreateChatMiddleware);
     router.message.register(start).filter(Command::many(["start", "help"]));
+    router.message.register(stats).filter(Command::one("stats"));
 
     let mut download_router = Router::new("download");
     download_router.message.inner_middlewares.register(RemoveTrackingParamsMiddleware);
