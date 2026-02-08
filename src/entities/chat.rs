@@ -21,6 +21,11 @@ impl Chat {
     }
 }
 
+#[derive(Debug)]
+pub struct ChatStats {
+    pub count: i64,
+}
+
 impl From<Model> for Chat {
     fn from(
         Model {

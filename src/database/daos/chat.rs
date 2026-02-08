@@ -1,7 +1,11 @@
-use sea_orm::{sea_query::OnConflict, ActiveValue::Set, ConnectionTrait, EntityTrait};
+use sea_orm::{prelude::Expr, sea_query::OnConflict, ActiveValue::Set, ConnectionTrait, EntityTrait, FromQueryResult, QuerySelect as _};
 use std::convert::Infallible;
 
-use crate::{database::models::chats, entities::Chat, errors::ErrorKind};
+use crate::{
+    database::models::chats,
+    entities::{Chat, ChatStats},
+    errors::ErrorKind,
+};
 
 pub struct Dao<'a, Conn> {
     conn: &'a Conn,
@@ -48,5 +52,19 @@ where
             .await
             .map(Into::into)
             .map_err(Into::into)
+    }
+
+    pub async fn get_stats(&self) -> Result<ChatStats, ErrorKind<Infallible>> {
+        use chats::{Column::TgId, Entity};
+
+        #[derive(Default, Debug, FromQueryResult)]
+        pub struct CountResult {
+            pub count: i64,
+        }
+
+        let query = Entity::find().select_only().expr_as(Expr::col(TgId).count(), "count");
+        let count = query.into_model::<CountResult>().one(self.conn).await?.unwrap_or_default().count;
+
+        Ok(ChatStats { count })
     }
 }
