@@ -44,6 +44,7 @@ pub(super) fn init(bot: Bot, cfg: Config, cookies: Cookies) -> Container {
             provide(|| Ok(chat::SaveChat::new())),
             provide(|| Ok(downloaded_media::AddVideo {})),
             provide(|| Ok(downloaded_media::AddAudio {})),
+            provide(|| Ok(downloaded_media::GetStats {})),
 
             provide(|Inject(random_cfg): Inject<RandomCmdConfig>| Ok(downloaded_media::GetRandomVideo { random_cfg })),
             provide(|Inject(random_cfg): Inject<RandomCmdConfig>| Ok(downloaded_media::GetRandomAudio { random_cfg })),

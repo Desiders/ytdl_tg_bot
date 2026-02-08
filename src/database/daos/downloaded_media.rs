@@ -1,12 +1,13 @@
 use sea_orm::{
-    prelude::Expr, sea_query::OnConflict, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait as _, QueryFilter as _, QueryOrder,
-    QuerySelect,
+    prelude::Expr, sea_query::OnConflict, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait as _, FromQueryResult,
+    QueryFilter as _, QueryOrder, QuerySelect,
 };
 use std::convert::Infallible;
+use time::{Duration, OffsetDateTime};
 
 use crate::{
     database::models::{downloaded_media, sea_orm_active_enums},
-    entities::DownloadedMedia,
+    entities::{DownloadedMedia, DownloadedMediaByDomainCount, DownloadedMediaCount, DownloadedMediaStats},
     errors::ErrorKind,
     value_objects::MediaType,
 };
@@ -121,5 +122,67 @@ where
             .into_iter()
             .map(Into::into)
             .collect())
+    }
+
+    pub async fn get_stats(&self, top_domains_limit: u64) -> Result<DownloadedMediaStats, ErrorKind<Infallible>> {
+        use downloaded_media::{
+            Column::{CreatedAt, Domain, FileId},
+            Entity,
+        };
+
+        #[derive(Default, Debug, FromQueryResult)]
+        pub struct CountResult {
+            pub count: i64,
+        }
+
+        #[derive(Debug, FromQueryResult)]
+        pub struct DomainCountResult {
+            pub domain: String,
+            pub count: i64,
+        }
+
+        async fn count_by_period<Conn>(conn: &Conn, since: Option<OffsetDateTime>) -> Result<DownloadedMediaCount, ErrorKind<Infallible>>
+        where
+            Conn: ConnectionTrait,
+        {
+            let mut query = Entity::find().select_only().expr_as(Expr::col(FileId).count(), "count");
+            if let Some(since) = since {
+                query = query.filter(Expr::col(CreatedAt).gte(since));
+            }
+            let count = query.into_model::<CountResult>().one(conn).await?.unwrap_or_default().count;
+            Ok(DownloadedMediaCount { count })
+        }
+
+        let now = OffsetDateTime::now_utc();
+
+        let count_total = count_by_period(self.conn, None).await?;
+        let count_last_day = count_by_period(self.conn, Some(now - Duration::days(1))).await?;
+        let count_last_week = count_by_period(self.conn, Some(now - Duration::days(7))).await?;
+        let count_last_month = count_by_period(self.conn, Some(now - Duration::days(30))).await?;
+        let top_domains = Entity::find()
+            .select_only()
+            .column(Domain)
+            .expr_as(Expr::col(Domain).count(), "count")
+            .filter(Expr::col(Domain).is_not_null())
+            .group_by(Domain)
+            .order_by_desc(Expr::col("count"))
+            .limit(Some(top_domains_limit))
+            .into_model::<DomainCountResult>()
+            .all(self.conn)
+            .await?
+            .into_iter()
+            .map(|val| DownloadedMediaByDomainCount {
+                domain: val.domain,
+                count: val.count,
+            })
+            .collect();
+
+        Ok(DownloadedMediaStats {
+            last_day: count_last_day,
+            last_week: count_last_week,
+            last_month: count_last_month,
+            total: count_total,
+            top_domains,
+        })
     }
 }
