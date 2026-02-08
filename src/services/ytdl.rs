@@ -200,6 +200,8 @@ pub async fn get_media_info(
     args.push("--");
     args.push(search);
 
+    trace!(?args, "Ytdlp args");
+
     let child = Command::new(executable_path)
         .args(args)
         .stdin(Stdio::null())
@@ -310,6 +312,8 @@ pub async fn download_media(
 
     args.push("--");
     args.push(search);
+
+    trace!(?args, "Ytdlp args");
 
     let mut child = Command::new(executable_path)
         .args(args)
