@@ -55,7 +55,7 @@ pub enum DownloadErrorKind {
     Io(#[from] io::Error),
 }
 
-fn parse_ndjson<T: DeserializeOwned>(input: &[u8]) -> Result<Vec<T>, ParseJsonErrorKind> {
+fn parse_ndjson<T: DeserializeOwned>(input: &[u8]) -> Result<Vec<(T, String)>, ParseJsonErrorKind> {
     use std::io::BufReader;
 
     let lines = BufReader::new(input).lines();
@@ -66,7 +66,7 @@ fn parse_ndjson<T: DeserializeOwned>(input: &[u8]) -> Result<Vec<T>, ParseJsonEr
             continue;
         }
         let item = serde_json::from_str(&line)?;
-        results.push(item);
+        results.push((item, line));
     }
     Ok(results)
 }
@@ -235,11 +235,11 @@ pub async fn get_media_info(
 
 #[instrument(skip_all)]
 pub async fn download_media(
-    search: &str,
     strategy: FormatStrategy<'_>,
     format_id: &str,
     max_filesize: u64,
     output_dir_path: &Path,
+    info_file_path: &Path,
     executable_path: &str,
     pot_provider_url: &str,
     timeout: u64,
@@ -249,6 +249,7 @@ pub async fn download_media(
     use tokio::{io::BufReader, process::Command, time};
 
     let output_dir_path = output_dir_path.to_string_lossy();
+    let info_file_path = info_file_path.to_string_lossy();
     let max_filesize = max_filesize.to_string();
     let extractor_arg = format!("youtubepot-bgutilhttp:base_url={pot_provider_url}");
 
@@ -280,6 +281,8 @@ pub async fn download_media(
         &output_dir_path,
         "--output",
         "%(id)s.%(ext)s",
+        "--load-info-json",
+        &info_file_path,
         "-f",
         &format_id,
     ];
@@ -309,9 +312,6 @@ pub async fn download_media(
     } else {
         trace!("No cookies provided");
     }
-
-    args.push("--");
-    args.push(search);
 
     trace!(?args, "Ytdlp args");
 
