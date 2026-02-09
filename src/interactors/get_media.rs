@@ -1,7 +1,10 @@
 use crate::{
     config::{YtDlpConfig, YtPotProviderConfig, YtToolkitConfig},
     database::TxManager,
-    entities::{language::Language, yt_toolkit::BasicInfo, Cookies, DownloadedMedia, Media, MediaFormat, MediaInPlaylist, Playlist, Range},
+    entities::{
+        language::Language, yt_toolkit::BasicInfo, Cookies, DownloadedMedia, Media, MediaFormat, MediaInPlaylist, Playlist, Range,
+        RawMediaWithFormat,
+    },
     errors::ErrorKind,
     interactors::Interactor,
     services::{
@@ -45,7 +48,7 @@ pub enum GetMediaByURLKind {
     SingleCached(String),
     Playlist {
         cached: Vec<MediaInPlaylist>,
-        uncached: Vec<(Media, Vec<MediaFormat>)>,
+        uncached: Vec<(Media, Vec<(MediaFormat, RawMediaWithFormat)>)>,
     },
     Empty,
 }
@@ -120,7 +123,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
                 });
                 continue;
             }
-            formats.retain(|format| {
+            formats.retain(|(format, _)| {
                 if let Some(val) = format.filesize_approx {
                     val <= self.yt_dlp_cfg.max_file_size
                 } else {
@@ -210,7 +213,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
                 });
                 continue;
             }
-            formats.retain(|format| {
+            formats.retain(|(format, _)| {
                 if let Some(val) = format.filesize_approx {
                     val <= self.yt_dlp_cfg.max_file_size
                 } else {
