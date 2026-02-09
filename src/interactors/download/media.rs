@@ -1,13 +1,13 @@
 use crate::{
     config::{TimeoutsConfig, YtDlpConfig, YtPotProviderConfig},
-    entities::{Cookies, Media, MediaFormat, MediaInFS},
+    entities::{Cookies, Media, MediaFormat, MediaInFS, RawMediaWithFormat},
     interactors::Interactor,
     services::{
         download_and_convert,
         ytdl::{self, download_media, FormatStrategy},
     },
 };
-use std::{io, sync::Arc};
+use std::{fs, io, sync::Arc};
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, info_span, instrument, warn};
@@ -17,6 +17,8 @@ use url::Url;
 pub enum DownloadMediaErrorKind {
     #[error("Temp dir error: {0}")]
     TempDir(io::Error),
+    #[error("Info file error: {0}")]
+    InfoFile(io::Error),
     #[error("Channel error: {0}")]
     Channel(#[from] mpsc::error::SendError<ytdl::DownloadErrorKind>),
 }
@@ -25,6 +27,8 @@ pub enum DownloadMediaErrorKind {
 pub enum DownloadMediaPlaylistErrorKind {
     #[error("Temp dir error: {0}")]
     TempDir(io::Error),
+    #[error("Info file error: {0}")]
+    InfoFile(io::Error),
     #[error("Channel error: {0}")]
     ErrChannel(#[from] mpsc::error::SendError<Vec<ytdl::DownloadErrorKind>>),
     #[error("Channel error: {0}")]
@@ -34,7 +38,7 @@ pub enum DownloadMediaPlaylistErrorKind {
 pub struct DownloadMediaInput<'a> {
     url: &'a Url,
     media: &'a Media,
-    formats: Vec<MediaFormat>,
+    formats: Vec<(MediaFormat, RawMediaWithFormat)>,
     err_sender: mpsc::UnboundedSender<ytdl::DownloadErrorKind>,
     progress_sender: Option<mpsc::UnboundedSender<String>>,
 }
@@ -43,7 +47,7 @@ impl<'a> DownloadMediaInput<'a> {
     pub fn new_with_progress(
         url: &'a Url,
         media: &'a Media,
-        formats: Vec<MediaFormat>,
+        formats: Vec<(MediaFormat, RawMediaWithFormat)>,
     ) -> (
         Self,
         mpsc::UnboundedReceiver<ytdl::DownloadErrorKind>,
@@ -67,7 +71,7 @@ impl<'a> DownloadMediaInput<'a> {
 
 pub struct DownloadMediaPlaylistInput<'a> {
     url: &'a Url,
-    playlist: Vec<(Media, Vec<MediaFormat>)>,
+    playlist: Vec<(Media, Vec<(MediaFormat, RawMediaWithFormat)>)>,
     media_sender: mpsc::UnboundedSender<(MediaInFS, Media, MediaFormat)>,
     errs_sender: Option<mpsc::UnboundedSender<Vec<ytdl::DownloadErrorKind>>>,
     progress_sender: Option<mpsc::UnboundedSender<String>>,
@@ -77,7 +81,7 @@ impl<'a> DownloadMediaPlaylistInput<'a> {
     #[allow(clippy::type_complexity)]
     pub fn new_with_progress(
         url: &'a Url,
-        playlist: Vec<(Media, Vec<MediaFormat>)>,
+        playlist: Vec<(Media, Vec<(MediaFormat, RawMediaWithFormat)>)>,
     ) -> (
         Self,
         mpsc::UnboundedReceiver<(MediaInFS, Media, MediaFormat)>,
@@ -102,7 +106,10 @@ impl<'a> DownloadMediaPlaylistInput<'a> {
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn new(url: &'a Url, playlist: Vec<(Media, Vec<MediaFormat>)>) -> (Self, mpsc::UnboundedReceiver<(MediaInFS, Media, MediaFormat)>) {
+    pub fn new(
+        url: &'a Url,
+        playlist: Vec<(Media, Vec<(MediaFormat, RawMediaWithFormat)>)>,
+    ) -> (Self, mpsc::UnboundedReceiver<(MediaInFS, Media, MediaFormat)>) {
         let (media_sender, media_receiver) = mpsc::unbounded_channel();
         (
             Self {
@@ -142,14 +149,16 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
         let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
         let output_dir_path = temp_dir.path();
         let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
+        let info_file_path = output_dir_path.join(format!("{}.info.json", media.id));
 
         let mut thumn_is_downloaded = false;
-        for format in formats {
+        for (format, raw) in formats {
             let span = info_span!("iter", %format).entered();
 
             let format_id = &format.format_id;
             let max_file_size = self.yt_dlp_cfg.max_file_size;
             let media_file_path = output_dir_path.join(format!("{}.{}", media.id, format.ext));
+            let info_file_path = &info_file_path;
             let executable_path = self.yt_dlp_cfg.executable_path.as_ref();
             let pot_provider_url = self.yt_pot_provider_cfg.url.as_ref();
             let timeout = self.timeouts_cfg.video_download;
@@ -158,6 +167,8 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
 
             debug!("Downloading video");
             let span = span.exit();
+
+            fs::write(info_file_path, raw).map_err(Self::Err::InfoFile)?;
 
             if !thumn_is_downloaded {
                 for thumb_url in media.get_thumb_urls(format.aspect_ration_kind()) {
@@ -177,11 +188,11 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
             }
 
             if let Err(err) = download_media(
-                media.webpage_url.as_str(),
                 FormatStrategy::VideoAndAudio,
                 format_id,
                 max_file_size,
                 output_dir_path,
+                info_file_path,
                 executable_path,
                 pot_provider_url,
                 timeout,
@@ -235,14 +246,16 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
         let audio_ext = "m4a";
         let output_dir_path = temp_dir.path();
         let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
+        let info_file_path = output_dir_path.join(format!("{}.info.json", media.id));
 
         let mut thumn_is_downloaded = false;
-        for format in formats {
+        for (format, raw) in formats {
             let span = info_span!("iter", %format).entered();
 
             let format_id = &format.format_id;
             let max_file_size = self.yt_dlp_cfg.max_file_size;
             let media_file_path = output_dir_path.join(format!("{}.{audio_ext}", media.id));
+            let info_file_path = &info_file_path;
             let executable_path = self.yt_dlp_cfg.executable_path.as_ref();
             let pot_provider_url = self.yt_pot_provider_cfg.url.as_ref();
             let timeout = self.timeouts_cfg.audio_download;
@@ -251,6 +264,8 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
 
             debug!("Downloading audio");
             let span = span.exit();
+
+            fs::write(info_file_path, raw).map_err(Self::Err::InfoFile)?;
 
             if !thumn_is_downloaded {
                 for thumb_url in media.get_thumb_urls(format.aspect_ration_kind()) {
@@ -270,11 +285,11 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
             }
 
             if let Err(err) = download_media(
-                media.webpage_url.as_str(),
                 FormatStrategy::AudioOnly { audio_ext },
                 format_id,
                 max_file_size,
                 output_dir_path,
+                info_file_path,
                 executable_path,
                 pot_provider_url,
                 timeout,
@@ -335,18 +350,22 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
             let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
             let output_dir_path = temp_dir.path();
             let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
+            let info_file_path = output_dir_path.join(format!("{}.info.json", media.id));
 
             let mut errs = vec![];
             let mut media_is_downloaded = false;
             let mut thumn_is_downloaded = false;
-            for format in formats {
+            for (format, raw) in formats {
                 let span = info_span!("iter", id = media.id, %format).entered();
 
                 let format_id = &format.format_id;
+                let info_file_path = &info_file_path;
                 let media_file_path = output_dir_path.join(format!("{}.{}", media.id, format.ext));
 
                 debug!("Downloading video");
                 let span = span.exit();
+
+                fs::write(info_file_path, raw).map_err(Self::Err::InfoFile)?;
 
                 if !thumn_is_downloaded {
                     for thumb_url in media.get_thumb_urls(format.aspect_ration_kind()) {
@@ -366,11 +385,11 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
                 }
 
                 if let Err(err) = download_media(
-                    media.webpage_url.as_str(),
                     FormatStrategy::VideoAndAudio,
                     format_id,
                     max_file_size,
                     output_dir_path,
+                    info_file_path,
                     executable_path,
                     pot_provider_url,
                     timeout,
@@ -443,17 +462,21 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
             let output_dir_path = temp_dir.path();
             let media_file_path = output_dir_path.join(format!("{}.{audio_ext}", media.id));
             let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
+            let info_file_path = output_dir_path.join(format!("{}.info.json", media.id));
 
             let mut errs = vec![];
             let mut media_is_downloaded = false;
             let mut thumn_is_downloaded = false;
-            for format in formats {
+            for (format, raw) in formats {
                 let span = info_span!("iter", id = media.id, %format).entered();
 
                 let format_id = &format.format_id;
+                let info_file_path = &info_file_path;
 
                 debug!("Downloading audio");
                 let span = span.exit();
+
+                fs::write(info_file_path, raw).map_err(Self::Err::InfoFile)?;
 
                 if !thumn_is_downloaded {
                     for thumb_url in media.get_thumb_urls(format.aspect_ration_kind()) {
@@ -473,11 +496,11 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
                 }
 
                 if let Err(err) = download_media(
-                    media.webpage_url.as_str(),
                     FormatStrategy::AudioOnly { audio_ext },
                     format_id,
                     max_file_size,
                     output_dir_path,
+                    info_file_path,
                     executable_path,
                     pot_provider_url,
                     timeout,
