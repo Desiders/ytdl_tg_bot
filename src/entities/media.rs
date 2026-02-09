@@ -208,45 +208,47 @@ pub struct MediaWithFormat {
     pub playlist_index: Option<i16>,
 }
 
+pub type RawMediaWithFormat = String;
+
 #[derive(Debug)]
 pub struct Playlist {
-    pub inner: Vec<(Media, Vec<MediaFormat>)>,
+    pub inner: Vec<(Media, Vec<(MediaFormat, RawMediaWithFormat)>)>,
 }
 
 impl Playlist {
-    pub fn new(media_with_formats: Vec<MediaWithFormat>) -> Self {
+    pub fn new(media_with_formats: Vec<(MediaWithFormat, RawMediaWithFormat)>) -> Self {
         use std::collections::btree_map::Entry::{Occupied, Vacant};
 
         let mut inner = BTreeMap::new();
 
-        for media_with_format in media_with_formats {
+        for (media_with_format, raw) in media_with_formats {
             match inner.entry(media_with_format.id.clone()) {
                 Vacant(vacant_entry) => {
-                    vacant_entry.insert(vec![media_with_format]);
+                    vacant_entry.insert(vec![(media_with_format, raw)]);
                 }
                 Occupied(mut occupied_entry) => {
-                    occupied_entry.get_mut().push(media_with_format);
+                    occupied_entry.get_mut().push((media_with_format, raw));
                 }
             }
         }
 
-        let mut inner: Vec<(Media, Vec<MediaFormat>)> = inner
+        let mut inner: Vec<(Media, Vec<(MediaFormat, RawMediaWithFormat)>)> = inner
             .into_values()
             .map(|mut media_with_formats| {
-                let first = media_with_formats.remove(0);
+                let (first_format, raw) = media_with_formats.remove(0);
                 let mut formats = vec![];
                 if media_with_formats.is_empty() {
-                    formats.push(first.clone().into());
+                    formats.push((first_format.clone().into(), raw));
                 } else {
-                    for media_with_format in media_with_formats {
-                        let format = media_with_format.into();
-                        if formats.contains(&format) {
+                    for (media_with_format, raw) in media_with_formats {
+                        let format: MediaFormat = media_with_format.into();
+                        if formats.contains(&(format.clone(), raw.clone())) {
                             continue;
                         }
-                        formats.push(format);
+                        formats.push((format, raw));
                     }
                 }
-                (first.into(), formats)
+                (first_format.into(), formats)
             })
             .collect();
         inner.sort_by_key(|(val, _)| val.playlist_index);
