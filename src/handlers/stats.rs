@@ -35,8 +35,8 @@ pub async fn stats(
 
             format!(
                 "<b>Stats</b>\n\
-                Chats count: {}\n\
-                Downloads last day/week/month/total: {}/{}/{}/{} count\n\
+                - Chats count: {}\n\
+                - Downloads last 1/7/30/total days: {}/{}/{}/{} count\n\
                 {top_domains_text}\
                 ",
                 chat_stats.count,
