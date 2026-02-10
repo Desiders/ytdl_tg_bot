@@ -1,7 +1,7 @@
 use crate::{
     config::Config,
     database::TxManager,
-    entities::{language::Language, Domains, MediaInPlaylist, Params, Range},
+    entities::{language::Language, Domains, MediaInPlaylist, Params, Range, Sections},
     handlers_utils::progress,
     interactors::{
         download::media,
@@ -54,8 +54,8 @@ pub async fn download(
     let progress_message_id = progress_message.id();
 
     let playlist_range = match params.0.get("items") {
-        Some(val) => match Range::from_str(val) {
-            Ok(range) => range,
+        Some(raw_value) => match Range::from_str(raw_value) {
+            Ok(value) => value,
             Err(err) => {
                 error!(%err, "Parse range err");
                 let text = format!(
@@ -67,6 +67,21 @@ pub async fn download(
             }
         },
         None => Range::default(),
+    };
+    let sections = match params.0.get("clip").or(params.0.get("section")) {
+        Some(raw_value) => Some(match Sections::from_str(raw_value) {
+            Ok(val) => val,
+            Err(err) => {
+                error!(%err, "Parse sections err");
+                let text = format!(
+                    "Sorry, an error to parse sections\n{}",
+                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                );
+                let _ = progress::is_error(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
+                return Ok(EventReturn::Finish);
+            }
+        }),
+        None => None,
     };
     let audio_language = match params.0.get("lang") {
         Some(raw_value) => Language::from_str(raw_value).unwrap(),
@@ -110,7 +125,7 @@ pub async fn download(
             let mut downloaded_playlist = Vec::with_capacity(cached_len + uncached_len);
             downloaded_playlist.extend(cached);
             let (input, mut media_receiver, mut errs_receiver, mut progress_receiver) =
-                media::DownloadMediaPlaylistInput::new_with_progress(&url, uncached);
+                media::DownloadMediaPlaylistInput::new_with_progress(&url, uncached, sections.as_ref());
 
             let downloaded_media_count = AtomicUsize::new(cached_len);
             tokio::join!(
@@ -254,14 +269,24 @@ pub async fn download_quiet(
     let chat_id = message.chat().id();
 
     let playlist_range = match params.0.get("items") {
-        Some(val) => match Range::from_str(val) {
-            Ok(range) => range,
+        Some(raw_value) => match Range::from_str(raw_value) {
+            Ok(val) => val,
             Err(err) => {
                 error!(%err, "Parse range err");
                 return Ok(EventReturn::Finish);
             }
         },
         None => Range::default(),
+    };
+    let sections = match params.0.get("clip").or(params.0.get("section")) {
+        Some(raw_value) => Some(match Sections::from_str(raw_value) {
+            Ok(val) => val,
+            Err(err) => {
+                error!(%err, "Parse sections err");
+                return Ok(EventReturn::Finish);
+            }
+        }),
+        None => None,
     };
     let audio_language = match params.0.get("lang") {
         Some(raw_value) => Language::from_str(raw_value).unwrap(),
@@ -295,7 +320,7 @@ pub async fn download_quiet(
             let (cached_len, uncached_len) = (cached.len(), uncached.len());
             let mut downloaded_playlist = Vec::with_capacity(cached_len + uncached_len);
             downloaded_playlist.extend(cached);
-            let (input, mut media_receiver) = media::DownloadMediaPlaylistInput::new(&url, uncached);
+            let (input, mut media_receiver) = media::DownloadMediaPlaylistInput::new(&url, uncached, sections.as_ref());
 
             let downloaded_media_count = AtomicUsize::new(cached_len);
             tokio::join!(
