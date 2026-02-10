@@ -11,7 +11,7 @@ const DEFAULT_STEP: i16 = 1;
 pub enum ParseRangeError {
     #[error("Failed to parse number: {0}")]
     InvalidNumber(#[from] ParseIntError),
-    #[error("Invalid range format. Expected format \"start:count:step\" or variations")]
+    #[error("Invalid range format. Expected format \"start:count:step\".")]
     InvalidFormat,
     #[error("Step cannot be zero")]
     ZeroStep,
@@ -73,11 +73,12 @@ impl FromStr for Range {
     type Err = ParseRangeError;
 
     #[allow(clippy::get_first, clippy::similar_names)]
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.trim().is_empty() {
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let raw = raw.trim();
+        if raw.is_empty() {
             return Ok(Range::default());
         }
-        let parts: Vec<&str> = s.split(':').collect();
+        let parts: Vec<&str> = raw.split(':').collect();
         if parts.len() > 3 {
             return Err(ParseRangeError::InvalidFormat);
         }
