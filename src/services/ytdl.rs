@@ -173,6 +173,8 @@ pub async fn get_media_info(
         &playlist_range,
         "--format-sort",
         "ext,quality,codec,source,lang",
+        "--compat-options",
+        "manifest-filesize-approx",
         "-f",
         &formats,
     ];
