@@ -86,6 +86,7 @@ pub async fn download_video(
             cache_search: url.as_str(),
             domain: url.domain(),
             audio_language: &audio_language,
+            sections: sections.as_ref(),
             tx_manager: &mut tx_manager,
         })
         .await
@@ -224,6 +225,7 @@ pub async fn download_video(
                     display_id: media.display_id.clone(),
                     domain: media.webpage_url.host_str().map(ToOwned::to_owned),
                     audio_language: audio_language.clone(),
+                    sections: sections.clone(),
                     tx_manager: &mut tx_manager,
                 })
                 .await
@@ -309,6 +311,7 @@ pub async fn download_audio(
             cache_search: url.as_str(),
             domain: url.domain(),
             audio_language: &audio_language,
+            sections: sections.as_ref(),
             tx_manager: &mut tx_manager,
         })
         .await
@@ -447,6 +450,7 @@ pub async fn download_audio(
                     display_id: media.display_id.clone(),
                     domain: media.webpage_url.host_str().map(ToOwned::to_owned),
                     audio_language: audio_language.clone(),
+                    sections: sections.clone(),
                     tx_manager: &mut tx_manager,
                 })
                 .await

@@ -13,6 +13,8 @@ pub struct Model {
     pub media_type: MediaType,
     pub created_at: TimeDateTimeWithTimeZone,
     pub audio_language: Option<String>,
+    pub crop_start_time: Option<i32>,
+    pub crop_end_time: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
