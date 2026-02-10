@@ -4,6 +4,7 @@ mod m20220101_000001_create_table;
 mod m20251113_100712_remove_chat_from_downloaded_media;
 mod m20260112_142259_chat_config;
 mod m20260123_213835_add_downloaded_media_language;
+mod m20260210_174551_add_downloaded_media_sections;
 
 pub struct Migrator;
 
@@ -15,6 +16,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20251113_100712_remove_chat_from_downloaded_media::Migration),
             Box::new(m20260112_142259_chat_config::Migration),
             Box::new(m20260123_213835_add_downloaded_media_language::Migration),
+            Box::new(m20260210_174551_add_downloaded_media_sections::Migration),
         ]
     }
 }
