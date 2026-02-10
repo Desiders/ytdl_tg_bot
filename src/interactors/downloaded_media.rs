@@ -1,7 +1,7 @@
 use crate::{
     config::RandomCmdConfig,
     database::TxManager,
-    entities::{language::Language, ChatStats, Domains, DownloadedMedia, DownloadedMediaStats},
+    entities::{language::Language, ChatStats, Domains, DownloadedMedia, DownloadedMediaStats, Sections},
     errors::ErrorKind,
     interactors::Interactor,
     value_objects::MediaType,
@@ -17,6 +17,7 @@ pub struct AddMediaInput<'a> {
     pub display_id: Option<String>,
     pub domain: Option<String>,
     pub audio_language: Language,
+    pub sections: Option<Sections>,
     pub tx_manager: &'a mut TxManager,
 }
 
@@ -35,6 +36,7 @@ impl Interactor<AddMediaInput<'_>> for &AddVideo {
             display_id,
             domain,
             audio_language,
+            sections,
             tx_manager,
         }: AddMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
@@ -51,6 +53,8 @@ impl Interactor<AddMediaInput<'_>> for &AddVideo {
             media_type: MediaType::Video,
             created_at: OffsetDateTime::now_utc(),
             audio_language: audio_language.language,
+            crop_start_time: sections.as_ref().map(|val| val.start).flatten(),
+            crop_end_time: sections.as_ref().map(|val| val.end).flatten(),
         })
         .await?;
         info!("Downloaded media added");
@@ -75,6 +79,7 @@ impl Interactor<AddMediaInput<'_>> for &AddAudio {
             display_id,
             domain,
             audio_language,
+            sections,
             tx_manager,
         }: AddMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
@@ -92,6 +97,8 @@ impl Interactor<AddMediaInput<'_>> for &AddAudio {
             media_type: MediaType::Audio,
             created_at: OffsetDateTime::now_utc(),
             audio_language: audio_language.language,
+            crop_start_time: sections.as_ref().map(|val| val.start).flatten(),
+            crop_end_time: sections.as_ref().map(|val| val.end).flatten(),
         })
         .await?;
         info!("Downloaded media added");

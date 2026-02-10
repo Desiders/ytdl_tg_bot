@@ -11,6 +11,8 @@ pub struct DownloadedMedia {
     pub media_type: MediaType,
     pub created_at: OffsetDateTime,
     pub audio_language: Option<String>,
+    pub crop_start_time: Option<i32>,
+    pub crop_end_time: Option<i32>,
 }
 
 #[derive(Debug)]
@@ -43,6 +45,8 @@ impl From<Model> for DownloadedMedia {
             media_type,
             created_at,
             audio_language,
+            crop_start_time,
+            crop_end_time,
         }: Model,
     ) -> Self {
         Self {
@@ -53,6 +57,8 @@ impl From<Model> for DownloadedMedia {
             media_type: media_type.into(),
             created_at,
             audio_language,
+            crop_start_time,
+            crop_end_time,
         }
     }
 }

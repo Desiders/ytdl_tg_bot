@@ -39,11 +39,13 @@ where
             media_type,
             created_at,
             audio_language,
+            crop_start_time,
+            crop_end_time,
         }: DownloadedMedia,
     ) -> Result<(), ErrorKind<Infallible>> {
         use downloaded_media::{
             ActiveModel,
-            Column::{AudioLanguage, Domain, Id, MediaType},
+            Column::{AudioLanguage, CropEndTime, CropStartTime, Domain, Id, MediaType},
             Entity,
         };
 
@@ -55,10 +57,16 @@ where
             media_type: Set(media_type.into()),
             created_at: Set(created_at),
             audio_language: Set(audio_language),
+            crop_start_time: Set(crop_start_time),
+            crop_end_time: Set(crop_end_time),
         };
 
         Entity::insert(model)
-            .on_conflict(OnConflict::columns([Id, Domain, MediaType, AudioLanguage]).do_nothing().to_owned())
+            .on_conflict(
+                OnConflict::columns([Id, Domain, MediaType, AudioLanguage, CropStartTime, CropEndTime])
+                    .do_nothing()
+                    .to_owned(),
+            )
             .exec_without_returning(self.conn)
             .await
             .map(|_| ())
@@ -71,9 +79,11 @@ where
         domain: Option<&str>,
         audio_language: Option<&str>,
         media_type: MediaType,
+        crop_start_time: Option<i32>,
+        crop_end_time: Option<i32>,
     ) -> Result<Option<DownloadedMedia>, ErrorKind<Infallible>> {
         use downloaded_media::{
-            Column::{AudioLanguage, DisplayId, Id, MediaType},
+            Column::{AudioLanguage, CropEndTime, CropStartTime, DisplayId, Id, MediaType},
             Entity,
         };
 
@@ -96,6 +106,16 @@ where
         }
         if let Some(domain) = domain {
             query = query.filter(Expr::cust_with_values("$1 ~* ('(^|\\.)' || domain || '$')", [domain]));
+        }
+        if let Some(time) = crop_start_time {
+            query = query.filter(CropStartTime.eq(time));
+        } else {
+            query = query.filter(CropStartTime.is_null());
+        }
+        if let Some(time) = crop_end_time {
+            query = query.filter(CropEndTime.eq(time));
+        } else {
+            query = query.filter(CropEndTime.is_null());
         }
 
         Ok(query.one(self.conn).await?.map(Into::into))
