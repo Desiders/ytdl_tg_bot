@@ -8,6 +8,7 @@ pub mod downloaded_media;
 pub mod language;
 pub mod params;
 pub mod range;
+pub mod sections;
 pub mod yt_toolkit;
 
 pub use chat::{Chat, ChatStats};
@@ -18,3 +19,4 @@ pub use downloaded_media::{DownloadedMedia, DownloadedMediaByDomainCount, Downlo
 pub use media::{Media, MediaFormat, MediaInFS, MediaInPlaylist, Playlist, RawMediaWithFormat, ShortMedia};
 pub use params::Params;
 pub use range::{ParseRangeError, Range};
+pub use sections::{ParseSectionError, Sections};
