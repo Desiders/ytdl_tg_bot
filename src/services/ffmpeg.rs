@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 use tokio::{process::Command, time};
-use tracing::{error, instrument, warn};
+use tracing::{error, instrument};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConvertErrorKind {
@@ -31,9 +31,6 @@ pub async fn download_and_convert(url: &str, output_file_path: &Path, executable
         Ok(Ok(Output { status, stderr, .. })) => {
             let stderr = String::from_utf8_lossy(&stderr);
             if status.success() {
-                if !stderr.is_empty() {
-                    warn!(%stderr);
-                }
                 Ok(())
             } else {
                 match status.code() {

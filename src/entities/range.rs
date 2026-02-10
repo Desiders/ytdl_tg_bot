@@ -80,7 +80,7 @@ impl FromStr for Range {
         }
         let parts: Vec<&str> = raw.split(':').collect();
         if parts.len() > 3 {
-            return Err(ParseRangeError::InvalidFormat);
+            return Err(Self::Err::InvalidFormat);
         }
         let start = parse_optional_positive(parts.get(0).unwrap_or(&""), false)?.unwrap_or(DEFAULT_START);
         let step = parse_optional_positive(parts.get(2).unwrap_or(&""), true)?.unwrap_or(DEFAULT_STEP);

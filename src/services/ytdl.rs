@@ -1,4 +1,4 @@
-use crate::entities::{language::Language, Cookie, Playlist, Range};
+use crate::entities::{language::Language, Cookie, Playlist, Range, Sections};
 
 use serde::de::DeserializeOwned;
 use std::{
@@ -237,6 +237,7 @@ pub async fn get_media_info(
 pub async fn download_media(
     strategy: FormatStrategy<'_>,
     format_id: &str,
+    sections: Option<&Sections>,
     max_filesize: u64,
     output_dir_path: &Path,
     info_file_path: &Path,
@@ -248,9 +249,9 @@ pub async fn download_media(
 ) -> Result<(), DownloadErrorKind> {
     use tokio::{io::BufReader, process::Command, time};
 
+    let max_filesize = max_filesize.to_string();
     let output_dir_path = output_dir_path.to_string_lossy();
     let info_file_path = info_file_path.to_string_lossy();
-    let max_filesize = max_filesize.to_string();
     let extractor_arg = format!("youtubepot-bgutilhttp:base_url={pot_provider_url}");
 
     let mut args = vec![
@@ -308,6 +309,12 @@ pub async fn download_media(
         args.push(cookie_path);
     } else {
         trace!("No cookies provided");
+    }
+
+    let sections = sections.map(|val| val.to_download_sections_string());
+    if let Some(sections) = sections.as_deref() {
+        args.push("--download-sections");
+        args.push(sections);
     }
 
     trace!(?args, "Ytdlp args");
@@ -377,7 +384,9 @@ mod tests {
 
         assert_eq!(
             result,
-            "bv[vcodec!=none][vcodec!*=av01][height<=1080]+ba/b[vcodec!*=av01][height<=1080],bv[vcodec!=none][vcodec!*=av01][height<=720]+ba/b[vcodec!*=av01][height<=720],bv*+ba,b,w"
+            "bv[vcodec!=none][vcodec!*=av01][height<=1080]+ba/b[vcodec!*=av01][height<=1080],\
+            bv[vcodec!=none][vcodec!*=av01][height<=720]+ba/b[vcodec!*=av01][height<=720],\
+            bv*+ba,b,w"
         );
     }
 
@@ -452,7 +461,9 @@ mod tests {
 
         assert_eq!(
             result,
-            "bv[vcodec!=none][vcodec!*=av01][height<=2160]+ba/b[vcodec!*=av01][height<=2160],bv[vcodec!=none][vcodec!*=av01][height<=1080]+ba/b[vcodec!*=av01][height<=1080],bv[vcodec!=none][vcodec!*=av01][height<=720]+ba/b[vcodec!*=av01][height<=720],bv*+ba,b,w"
+            "bv[vcodec!=none][vcodec!*=av01][height<=2160]+ba/b[vcodec!*=av01][height<=2160],bv[vcodec!=none]\
+            [vcodec!*=av01][height<=1080]+ba/b[vcodec!*=av01][height<=1080],bv[vcodec!=none][vcodec!*=av01]\
+            [height<=720]+ba/b[vcodec!*=av01][height<=720],bv*+ba,b,w"
         );
     }
 }
