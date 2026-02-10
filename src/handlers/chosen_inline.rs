@@ -1,7 +1,7 @@
 use crate::{
     config::Config,
     database::TxManager,
-    entities::{language::Language, Params, Range},
+    entities::{language::Language, Params, Range, Sections},
     handlers_utils::progress,
     interactors::{
         download::media,
@@ -60,6 +60,21 @@ pub async fn download_video(
     debug!("Got url");
 
     let playlist_range = Range::default();
+    let sections = match params.0.get("clip").or(params.0.get("section")) {
+        Some(raw_value) => Some(match Sections::from_str(raw_value) {
+            Ok(val) => val,
+            Err(err) => {
+                error!(%err, "Parse sections err");
+                let text = format!(
+                    "Sorry, an error to parse sections\n{}",
+                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                );
+                let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
+                return Ok(EventReturn::Finish);
+            }
+        }),
+        None => None,
+    };
     let audio_language = match params.0.get("lang") {
         Some(raw_value) => Language::from_str(raw_value).unwrap(),
         None => Language::default(),
@@ -116,7 +131,8 @@ pub async fn download_video(
             let mut errs = vec![];
             let (media, formats) = uncached.remove(0);
 
-            let (input, mut err_receiver, mut progress_receiver) = media::DownloadMediaInput::new_with_progress(&url, &media, formats);
+            let (input, mut err_receiver, mut progress_receiver) =
+                media::DownloadMediaInput::new_with_progress(&url, &media, sections.as_ref(), formats);
 
             let ((), (), download_res) = tokio::join!(
                 async {
@@ -267,6 +283,21 @@ pub async fn download_audio(
     debug!("Got url");
 
     let playlist_range = Range::default();
+    let sections = match params.0.get("clip").or(params.0.get("section")) {
+        Some(raw_value) => Some(match Sections::from_str(raw_value) {
+            Ok(val) => val,
+            Err(err) => {
+                error!(%err, "Parse sections err");
+                let text = format!(
+                    "Sorry, an error to parse sections\n{}",
+                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                );
+                let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
+                return Ok(EventReturn::Finish);
+            }
+        }),
+        None => None,
+    };
     let audio_language = match params.0.get("lang") {
         Some(raw_value) => Language::from_str(raw_value).unwrap(),
         None => Language::default(),
@@ -323,7 +354,8 @@ pub async fn download_audio(
             let mut download_errs = vec![];
             let (media, formats) = uncached.remove(0);
 
-            let (input, mut err_receiver, mut progress_receiver) = media::DownloadMediaInput::new_with_progress(&url, &media, formats);
+            let (input, mut err_receiver, mut progress_receiver) =
+                media::DownloadMediaInput::new_with_progress(&url, &media, sections.as_ref(), formats);
 
             let ((), (), download_res) = tokio::join!(
                 async {

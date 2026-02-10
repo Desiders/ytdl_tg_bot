@@ -23,6 +23,7 @@ impl Sections {
         }
 
         let parts: Vec<&str> = raw.split(':').collect();
+
         let secs = match parts.len() {
             1 => parts[0].parse::<u32>().map_err(|_| ParseSectionError::InvalidTime)?,
             2 => {
@@ -57,13 +58,9 @@ impl Sections {
     }
 
     pub fn to_download_sections_string(&self) -> String {
-        if self.start.is_none() && self.end.is_none() {
-            return "-".to_string();
-        }
-
-        let start = self.start.map(Self::format_time).unwrap_or_default();
-        let end = self.end.map(Self::format_time).unwrap_or_default();
-        format!("*{start}-{end}")
+        let start = self.start.map(Self::format_time);
+        let end = self.end.map(Self::format_time);
+        format!("*{}-{}", start.as_deref().unwrap_or("0"), end.as_deref().unwrap_or_default())
     }
 }
 
@@ -74,17 +71,16 @@ impl FromStr for Sections {
         let raw = raw.trim();
         let raw = if let Some(rest) = raw.strip_prefix('*') { rest.trim() } else { raw };
         if raw.is_empty() {
-            return Err(ParseSectionError::InvalidFormat);
+            return Ok(Sections::default());
         }
-
-        let mut parts = raw.splitn(2, '-');
-        let start_raw = parts.next().ok_or(ParseSectionError::InvalidFormat)?;
-        let end_raw = parts.next().ok_or(ParseSectionError::InvalidFormat)?;
-
-        let start = Sections::parse_section(start_raw)?;
-        let end = Sections::parse_section(end_raw)?;
-
-        Ok(Sections { start, end })
+        let parts: Vec<&str> = raw.split('-').collect();
+        if parts.len() > 2 {
+            return Err(Self::Err::InvalidFormat);
+        }
+        let start = Sections::parse_section(parts.get(0).unwrap_or(&""))?;
+        let end = Sections::parse_section(parts.get(1).unwrap_or(&""))?;
+        let sections = Sections { start, end };
+        Ok(sections)
     }
 }
 
@@ -93,97 +89,139 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_full_section() {
-        let s: Sections = "*1:00-2:30".parse().unwrap();
+    fn parse_full_range() {
+        let s: Sections = "1:00-3:00".parse().unwrap();
         assert_eq!(
             s,
             Sections {
                 start: Some(60),
-                end: Some(150)
+                end: Some(180),
             }
         );
     }
 
     #[test]
-    fn parse_seconds() {
-        let s: Sections = "*30-90".parse().unwrap();
+    fn parse_seconds_range() {
+        let s: Sections = "30-90".parse().unwrap();
         assert_eq!(
             s,
             Sections {
                 start: Some(30),
-                end: Some(90)
+                end: Some(90),
             }
         );
     }
 
     #[test]
     fn parse_start_only() {
-        let s: Sections = "*1:20-".parse().unwrap();
+        let s: Sections = "3:00-".parse().unwrap();
         assert_eq!(
             s,
             Sections {
-                start: Some(80),
-                end: None
+                start: Some(180),
+                end: None,
             }
         );
     }
 
     #[test]
     fn parse_end_only() {
-        let s: Sections = "*-2:00".parse().unwrap();
+        let s: Sections = "-3:00".parse().unwrap();
         assert_eq!(
             s,
             Sections {
                 start: None,
-                end: Some(120)
+                end: Some(180),
             }
         );
     }
 
     #[test]
-    fn parse_without_star() {
-        let s: Sections = "10-20".parse().unwrap();
+    fn parse_full_video_dash_only() {
+        let s: Sections = "-".parse().unwrap();
+        assert_eq!(s, Sections { start: None, end: None });
+    }
+
+    #[test]
+    fn parse_with_star_prefix() {
+        let s: Sections = "*1:00-2:00".parse().unwrap();
         assert_eq!(
             s,
             Sections {
-                start: Some(10),
-                end: Some(20)
+                start: Some(60),
+                end: Some(120),
             }
         );
     }
 
     #[test]
-    fn invalid_format() {
-        assert!("abc".parse::<Sections>().is_err());
+    fn parse_with_spaces() {
+        let s: Sections = "  *1:00-2:00  ".parse().unwrap();
+        assert_eq!(
+            s,
+            Sections {
+                start: Some(60),
+                end: Some(120),
+            }
+        );
     }
 
     #[test]
-    fn test_to_download_sections_string() {
-        let s = Sections { start: None, end: None };
-        assert_eq!(s.to_download_sections_string(), "-");
+    fn parse_empty_string_defaults() {
+        let s: Sections = "".parse().unwrap();
+        assert_eq!(s, Sections::default());
+    }
 
+    #[test]
+    fn parse_invalid_time() {
+        assert!("abc-2:00".parse::<Sections>().is_err());
+        assert!("1:xx-2:00".parse::<Sections>().is_err());
+    }
+
+    #[test]
+    fn parse_invalid_format_multiple_dashes() {
+        assert!("1-2-3".parse::<Sections>().is_err());
+    }
+
+    #[test]
+    fn format_full_range() {
         let s = Sections {
             start: Some(60),
             end: Some(150),
         };
         assert_eq!(s.to_download_sections_string(), "*1:00-2:30");
+    }
 
+    #[test]
+    fn format_start_only() {
         let s = Sections {
-            start: Some(30),
-            end: Some(90),
-        };
-        assert_eq!(s.to_download_sections_string(), "*30-1:30");
-
-        let s = Sections {
-            start: Some(80),
+            start: Some(90),
             end: None,
         };
-        assert_eq!(s.to_download_sections_string(), "*1:20-");
+        assert_eq!(s.to_download_sections_string(), "*1:30-");
+    }
 
+    #[test]
+    fn format_end_only() {
         let s = Sections {
             start: None,
             end: Some(120),
         };
-        assert_eq!(s.to_download_sections_string(), "*-2:00");
+        assert_eq!(s.to_download_sections_string(), "*0-2:00");
+    }
+
+    #[test]
+    fn format_full_video() {
+        let s = Sections { start: None, end: None };
+        assert_eq!(s.to_download_sections_string(), "*0-");
+    }
+
+    #[test]
+    fn roundtrip_full_range() {
+        let original: Sections = "1:00-2:30".parse().unwrap();
+        let formatted = original.to_download_sections_string();
+        let reparsed: Sections = formatted.parse().unwrap();
+
+        assert_eq!(original, reparsed);
     }
 }
