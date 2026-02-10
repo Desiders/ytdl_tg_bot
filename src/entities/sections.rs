@@ -9,14 +9,14 @@ pub enum ParseSectionError {
     InvalidFormat,
 }
 
-#[derive(Default, Debug, PartialEq)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct Sections {
-    pub start: Option<u32>,
-    pub end: Option<u32>,
+    pub start: Option<i32>,
+    pub end: Option<i32>,
 }
 
 impl Sections {
-    fn parse_section(raw: &str) -> Result<Option<u32>, ParseSectionError> {
+    fn parse_section(raw: &str) -> Result<Option<i32>, ParseSectionError> {
         let raw = raw.trim();
         if raw.is_empty() {
             return Ok(None);
@@ -25,16 +25,16 @@ impl Sections {
         let parts: Vec<&str> = raw.split(':').collect();
 
         let secs = match parts.len() {
-            1 => parts[0].parse::<u32>().map_err(|_| ParseSectionError::InvalidTime)?,
+            1 => parts[0].parse::<i32>().map_err(|_| ParseSectionError::InvalidTime)?,
             2 => {
-                let m = parts[0].parse::<u32>().map_err(|_| ParseSectionError::InvalidTime)?;
-                let s = parts[1].parse::<u32>().map_err(|_| ParseSectionError::InvalidTime)?;
+                let m = parts[0].parse::<i32>().map_err(|_| ParseSectionError::InvalidTime)?;
+                let s = parts[1].parse::<i32>().map_err(|_| ParseSectionError::InvalidTime)?;
                 m * 60 + s
             }
             3 => {
-                let h = parts[0].parse::<u32>().map_err(|_| ParseSectionError::InvalidTime)?;
-                let m = parts[1].parse::<u32>().map_err(|_| ParseSectionError::InvalidTime)?;
-                let s = parts[2].parse::<u32>().map_err(|_| ParseSectionError::InvalidTime)?;
+                let h = parts[0].parse::<i32>().map_err(|_| ParseSectionError::InvalidTime)?;
+                let m = parts[1].parse::<i32>().map_err(|_| ParseSectionError::InvalidTime)?;
+                let s = parts[2].parse::<i32>().map_err(|_| ParseSectionError::InvalidTime)?;
                 h * 3600 + m * 60 + s
             }
             _ => return Err(ParseSectionError::InvalidTime),
@@ -43,7 +43,7 @@ impl Sections {
         Ok(Some(secs))
     }
 
-    fn format_time(t: u32) -> String {
+    fn format_time(t: i32) -> String {
         let h = t / 3600;
         let m = (t % 3600) / 60;
         let s = t % 60;
