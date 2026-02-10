@@ -60,7 +60,7 @@ pub async fn download_video(
     debug!("Got url");
 
     let playlist_range = Range::default();
-    let sections = match params.0.get("clip").or(params.0.get("section")) {
+    let sections = match params.0.get("crop") {
         Some(raw_value) => Some(match Sections::from_str(raw_value) {
             Ok(val) => val,
             Err(err) => {
@@ -283,7 +283,7 @@ pub async fn download_audio(
     debug!("Got url");
 
     let playlist_range = Range::default();
-    let sections = match params.0.get("clip").or(params.0.get("section")) {
+    let sections = match params.0.get("crop") {
         Some(raw_value) => Some(match Sections::from_str(raw_value) {
             Ok(val) => val,
             Err(err) => {

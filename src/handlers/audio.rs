@@ -68,7 +68,7 @@ pub async fn download(
         },
         None => Range::default(),
     };
-    let sections = match params.0.get("clip").or(params.0.get("section")) {
+    let sections = match params.0.get("crop") {
         Some(raw_value) => Some(match Sections::from_str(raw_value) {
             Ok(val) => val,
             Err(err) => {
