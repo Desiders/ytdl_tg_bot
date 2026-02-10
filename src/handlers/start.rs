@@ -28,7 +28,7 @@ pub async fn start(bot: Bot, message: Message, Inject(cfg): Inject<Config>) -> H
         For <code>/vd</code> and <code>/ad</code>:\n\
           - lang: Preferred audio language, example: <code>/vd [lang=ru]</code>\n\
           - items: Playlist download, <code>start:end:step</code> (default: 1 for each argument, max: 10 media per command), example: <code>/vd [items=1:3:1]</code>\n\
-          - clip: Download only a specific media time range, format <code>start-end</code>, supports <code>hh:mm:ss</code> (default: 0 for start and empty for end), example: <code>/vd [clip=00:01:30-]</code>
+          - crop: Download only a specific media time range, format <code>start-end</code>, supports <code>hh:mm:ss</code> (default: 0 for start and empty for end), example: <code>/vd [clip=00:01:30-]</code>
         \n\
         For <code>/rv</code> and <code>/ra</code>:\n\
           - domains: Sources separated by <code>|</code>, example: <code>/rv [domains=youtube.com|youtu.be]</code>\n\
