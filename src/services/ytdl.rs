@@ -283,17 +283,14 @@ pub async fn download_media(
         "%(id)s.%(ext)s",
         "--load-info-json",
         &info_file_path,
+        "--add-metadata",
         "-f",
         &format_id,
     ];
 
     match strategy {
-        FormatStrategy::VideoAndAudio => {
-            args.push("--add-metadata");
-        }
+        FormatStrategy::VideoAndAudio => {}
         FormatStrategy::AudioOnly { audio_ext } => {
-            args.push("--embed-thumbnail");
-            args.push("--write-thumbnail");
             args.push("--extract-audio");
             args.extend(["--audio-format", audio_ext]);
         }

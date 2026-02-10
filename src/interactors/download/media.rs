@@ -3,7 +3,7 @@ use crate::{
     entities::{Cookies, Media, MediaFormat, MediaInFS, RawMediaWithFormat},
     interactors::Interactor,
     services::{
-        download_and_convert,
+        download_and_convert, embed_thumbnail,
         ytdl::{self, download_media, FormatStrategy},
     },
 };
@@ -209,6 +209,17 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
             let _guard = span.enter();
             info!("Video downloaded");
 
+            if thumn_is_downloaded {
+                match embed_thumbnail(&media_file_path, &thumb_file_path).await {
+                    Ok(()) => {
+                        info!("Thumb embeded");
+                    }
+                    Err(err) => {
+                        warn!(%err, "Embed thumb err");
+                    }
+                }
+            }
+
             let media_in_fs = MediaInFS {
                 path: media_file_path,
                 thumb_path: if thumn_is_downloaded { Some(thumb_file_path) } else { None },
@@ -305,6 +316,17 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
             }
             let _guard = span.enter();
             info!("Audio downloaded");
+
+            if thumn_is_downloaded {
+                match embed_thumbnail(&media_file_path, &thumb_file_path).await {
+                    Ok(()) => {
+                        info!("Thumb embeded");
+                    }
+                    Err(err) => {
+                        warn!(%err, "Embed thumb err");
+                    }
+                }
+            }
 
             let media_in_fs = MediaInFS {
                 path: media_file_path,
@@ -407,6 +429,17 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
                 let _guard = span.enter();
                 info!("Video downloaded");
                 media_is_downloaded = true;
+
+                if thumn_is_downloaded {
+                    match embed_thumbnail(&media_file_path, &thumb_file_path).await {
+                        Ok(()) => {
+                            info!("Thumb embeded");
+                        }
+                        Err(err) => {
+                            warn!(%err, "Embed thumb err");
+                        }
+                    }
+                }
 
                 let media_in_fs = MediaInFS {
                     path: media_file_path,
@@ -518,6 +551,17 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
                 let _guard = span.enter();
                 info!("Audio downloaded");
                 media_is_downloaded = true;
+
+                if thumn_is_downloaded {
+                    match embed_thumbnail(&media_file_path, &thumb_file_path).await {
+                        Ok(()) => {
+                            info!("Thumb embeded");
+                        }
+                        Err(err) => {
+                            warn!(%err, "Embed thumb err");
+                        }
+                    }
+                }
 
                 let media_in_fs = MediaInFS {
                     path: media_file_path,

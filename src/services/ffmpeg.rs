@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 use tokio::{process::Command, time};
-use tracing::{error, instrument};
+use tracing::{error, instrument, warn};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConvertErrorKind {
@@ -29,10 +29,13 @@ pub async fn download_and_convert(url: &str, output_file_path: &Path, executable
 
     match time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
         Ok(Ok(Output { status, stderr, .. })) => {
+            let stderr = String::from_utf8_lossy(&stderr);
             if status.success() {
+                if !stderr.is_empty() {
+                    warn!(%stderr);
+                }
                 Ok(())
             } else {
-                let stderr = String::from_utf8_lossy(&stderr);
                 match status.code() {
                     Some(code) => Err(io::Error::other(format!("Ffmpeg exited with code {code} and message: {stderr}")).into()),
                     None => Err(io::Error::other(format!("Ffmpeg exited with and message: {stderr}")).into()),
