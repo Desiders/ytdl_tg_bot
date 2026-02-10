@@ -3,7 +3,7 @@ use crate::{
     database::TxManager,
     entities::{
         language::Language, yt_toolkit::BasicInfo, Cookies, DownloadedMedia, Media, MediaFormat, MediaInPlaylist, Playlist, Range,
-        RawMediaWithFormat,
+        RawMediaWithFormat, Sections,
     },
     errors::ErrorKind,
     interactors::Interactor,
@@ -35,6 +35,7 @@ pub struct GetMediaByURLInput<'a> {
     pub cache_search: &'a str,
     pub domain: Option<&'a str>,
     pub audio_language: &'a Language,
+    pub sections: Option<&'a Sections>,
     pub tx_manager: &'a mut TxManager,
 }
 
@@ -72,6 +73,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
             cache_search,
             domain,
             audio_language,
+            sections,
             tx_manager,
         }: GetMediaByURLInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
@@ -79,10 +81,24 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
 
         let dao = tx_manager.downloaded_media_dao().unwrap();
         let is_single_media = playlist_range.is_single_element();
+        let (start, end) = match sections {
+            Some(sections) => (sections.start, sections.end),
+            None => {
+                let val = Sections::default();
+                (val.start, val.end)
+            }
+        };
 
         if is_single_media {
             if let Some(media) = dao
-                .get(cache_search, domain, audio_language.language.as_deref(), MediaType::Video)
+                .get(
+                    cache_search,
+                    domain,
+                    audio_language.language.as_deref(),
+                    MediaType::Video,
+                    start,
+                    end,
+                )
                 .await?
             {
                 info!("Got cached media");
@@ -114,7 +130,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
         for (media, mut formats) in playlist.inner {
             let domain = media.webpage_url.domain();
             if let Some(DownloadedMedia { file_id, .. }) = dao
-                .get(&media.id, domain, audio_language.language.as_deref(), MediaType::Video)
+                .get(&media.id, domain, audio_language.language.as_deref(), MediaType::Video, start, end)
                 .await?
             {
                 cached.push(MediaInPlaylist {
@@ -161,6 +177,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
             cache_search,
             domain,
             audio_language,
+            sections,
             tx_manager,
         }: GetMediaByURLInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
@@ -168,10 +185,24 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
 
         let dao = tx_manager.downloaded_media_dao().unwrap();
         let is_single_media = playlist_range.is_single_element();
+        let (start, end) = match sections {
+            Some(sections) => (sections.start, sections.end),
+            None => {
+                let val = Sections::default();
+                (val.start, val.end)
+            }
+        };
 
         if is_single_media {
             if let Some(media) = dao
-                .get(cache_search, domain, audio_language.language.as_deref(), MediaType::Audio)
+                .get(
+                    cache_search,
+                    domain,
+                    audio_language.language.as_deref(),
+                    MediaType::Audio,
+                    start,
+                    end,
+                )
                 .await?
             {
                 info!("Got cached media");
@@ -204,7 +235,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
         for (media, mut formats) in playlist.inner {
             let domain = media.webpage_url.domain();
             if let Some(DownloadedMedia { file_id, .. }) = dao
-                .get(&media.id, domain, audio_language.language.as_deref(), MediaType::Audio)
+                .get(&media.id, domain, audio_language.language.as_deref(), MediaType::Audio, start, end)
                 .await?
             {
                 cached.push(MediaInPlaylist {
