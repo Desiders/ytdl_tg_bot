@@ -1,5 +1,5 @@
 use crate::{
-    entities::ParseRangeError,
+    entities::{ParseRangeError, ParseSectionError},
     errors::ErrorKind,
     interactors::{download::media, get_media},
     services::ytdl,
@@ -61,6 +61,12 @@ impl FormatErrorToMessage for ytdl::DownloadErrorKind {
 }
 
 impl FormatErrorToMessage for ParseRangeError {
+    fn format(&self, _token: &str) -> Cow<'static, str> {
+        Cow::Owned(self.to_string())
+    }
+}
+
+impl FormatErrorToMessage for ParseSectionError {
     fn format(&self, _token: &str) -> Cow<'static, str> {
         Cow::Owned(self.to_string())
     }
