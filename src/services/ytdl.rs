@@ -377,7 +377,7 @@ mod tests {
 
         assert_eq!(
             result,
-            "bv[vcodec!=none,height<=1080]+ba[]/b[height<=1080],bv[vcodec!=none,height<=720]+ba[]/b[height<=720],bv*+ba,b,w"
+            "bv[vcodec!=none][vcodec!*=av01][height<=1080]+ba/b[vcodec!*=av01][height<=1080],bv[vcodec!=none][vcodec!*=av01][height<=720]+ba/b[vcodec!*=av01][height<=720],bv*+ba,b,w"
         );
     }
 
@@ -393,7 +393,10 @@ mod tests {
             },
         );
 
-        assert_eq!(result, "bv[vcodec!=none,height<=1080]+ba[language^=ru]/b[height<=1080],bv*+ba,b,w");
+        assert_eq!(
+            result,
+            "bv[vcodec!=none][vcodec!*=av01][height<=1080]+ba[language^=ru]/b[vcodec!*=av01][height<=1080],bv*+ba,b,w"
+        );
     }
 
     #[test]
@@ -402,14 +405,17 @@ mod tests {
 
         let result = build_formats_string(&FormatStrategy::VideoAndAudio, &heights, &Language::default());
 
-        assert_eq!(result, "bv[vcodec!=none,height<=1080]+ba[]/b[height<=1080],bv*+ba,b,w");
+        assert_eq!(
+            result,
+            "bv[vcodec!=none][vcodec!*=av01][height<=1080]+ba/b[vcodec!*=av01][height<=1080],bv*+ba,b,w"
+        );
     }
 
     #[test]
     fn audio_only_builds_formats_correctly_without_heights() {
         let result = build_formats_string(&FormatStrategy::AudioOnly { audio_ext: "m4a" }, &[], &Language::default());
 
-        assert_eq!(result, "ba[],ba,wa");
+        assert_eq!(result, "ba,ba,wa,ba*");
     }
 
     #[test]
@@ -422,7 +428,7 @@ mod tests {
             },
         );
 
-        assert_eq!(result, "ba[language^=en],ba,wa");
+        assert_eq!(result, "ba[language^=en],ba,wa,ba*");
     }
 
     #[test]
@@ -435,7 +441,7 @@ mod tests {
             },
         );
 
-        assert_eq!(result, "ba[language^=ru],ba,wa");
+        assert_eq!(result, "ba[language^=ru],ba,wa,ba*");
     }
 
     #[test]
@@ -446,7 +452,7 @@ mod tests {
 
         assert_eq!(
             result,
-            "bv[vcodec!=none,height<=2160]+ba[]/b[height<=2160],bv[vcodec!=none,height<=1080]+ba[]/b[height<=1080],bv[vcodec!=none,height<=720]+ba[]/b[height<=720],bv*+ba,b,w"
+            "bv[vcodec!=none][vcodec!*=av01][height<=2160]+ba/b[vcodec!*=av01][height<=2160],bv[vcodec!=none][vcodec!*=av01][height<=1080]+ba/b[vcodec!*=av01][height<=1080],bv[vcodec!=none][vcodec!*=av01][height<=720]+ba/b[vcodec!*=av01][height<=720],bv*+ba,b,w"
         );
     }
 }
