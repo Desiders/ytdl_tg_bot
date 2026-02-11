@@ -155,7 +155,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
             progress_sender,
         }: DownloadMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
-        let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
+        let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(Self::Err::TempDir)?;
         let output_dir_path = temp_dir.path();
         let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
         let info_file_path = output_dir_path.join(format!("{}.info.json", media.id));
@@ -258,7 +258,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
             progress_sender,
         }: DownloadMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
-        let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
+        let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(Self::Err::TempDir)?;
         let audio_ext = "m4a";
         let output_dir_path = temp_dir.path();
         let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
@@ -372,7 +372,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
         for (media, formats) in playlist {
             trace!(?media);
 
-            let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
+            let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(Self::Err::TempDir)?;
             let output_dir_path = temp_dir.path();
             let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
             let info_file_path = output_dir_path.join(format!("{}.info.json", media.id));
@@ -490,7 +490,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
         let audio_ext = "m4a";
 
         for (media, formats) in playlist {
-            let temp_dir = TempDir::new().map_err(Self::Err::TempDir)?;
+            let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(Self::Err::TempDir)?;
             let output_dir_path = temp_dir.path();
             let media_file_path = output_dir_path.join(format!("{}.{audio_ext}", media.id));
             let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
