@@ -1,9 +1,11 @@
+use std::env;
 use telers::{
     event::simple::HandlerResult,
     methods::SetMyCommands,
     types::{BotCommand, BotCommandScopeAllPrivateChats},
     Bot,
 };
+use tokio::fs;
 
 async fn set_my_commands(bot: Bot) -> HandlerResult {
     let commands = [
@@ -18,7 +20,29 @@ async fn set_my_commands(bot: Bot) -> HandlerResult {
     Ok(())
 }
 
+async fn remove_tmp_media_files() -> HandlerResult {
+    let temp_dir = env::temp_dir();
+    let mut entries = fs::read_dir(&temp_dir).await?;
+
+    while let Some(entry) = entries.next_entry().await? {
+        let file_type = entry.file_type().await?;
+        if file_type.is_dir() {
+            let file_name = entry.file_name();
+            let file_name = file_name.to_string_lossy();
+
+            if file_name.starts_with("ytdl-tg-bot") {
+                let path = entry.path();
+                fs::remove_dir_all(&path).await?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[allow(clippy::module_name_repetitions)]
 pub async fn on_startup(bot: Bot) -> HandlerResult {
-    set_my_commands(bot).await
+    set_my_commands(bot).await?;
+    remove_tmp_media_files().await?;
+    Ok(())
 }
