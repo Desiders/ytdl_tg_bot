@@ -75,6 +75,19 @@ async fn main() {
     download_router.message.inner_middlewares.register(ReplaceDomainsMiddleware);
     download_router.message.inner_middlewares.register(ReactionMiddleware);
     download_router
+        .inline_query
+        .inner_middlewares
+        .register(RemoveTrackingParamsMiddleware);
+    download_router.inline_query.inner_middlewares.register(ReplaceDomainsMiddleware);
+    download_router
+        .chosen_inline_result
+        .inner_middlewares
+        .register(RemoveTrackingParamsMiddleware);
+    download_router
+        .chosen_inline_result
+        .inner_middlewares
+        .register(ReplaceDomainsMiddleware);
+    download_router
         .message
         .register(video::download)
         .filter(ContentType::one(enums::ContentType::Text))
