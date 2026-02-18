@@ -28,8 +28,9 @@ use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt
 
 use crate::{
     filters::{
-        is_audio_inline_result, is_via_bot, is_video_inline_result, random_cmd_is_enabled, text_contains_url, text_contains_url_with_reply,
-        text_empty, url_is_blacklisted, url_is_skippable_by_param,
+        is_audio_inline_result, is_exclude_domain, is_via_bot, is_video_inline_result, random_cmd_is_enabled,
+        text_contains_host_with_reply, text_contains_url, text_contains_url_with_reply, text_empty, url_is_blacklisted,
+        url_is_skippable_by_param,
     },
     handlers::{audio, chosen_inline, inline_query, start, stats, video},
     middlewares::{CreateChatMiddleware, ReactionMiddleware, RemoveTrackingParamsMiddleware, ReplaceDomainsMiddleware},
@@ -74,6 +75,19 @@ async fn main() {
     download_router.message.inner_middlewares.register(ReplaceDomainsMiddleware);
     download_router.message.inner_middlewares.register(ReactionMiddleware);
     download_router
+        .inline_query
+        .inner_middlewares
+        .register(RemoveTrackingParamsMiddleware);
+    download_router.inline_query.inner_middlewares.register(ReplaceDomainsMiddleware);
+    download_router
+        .chosen_inline_result
+        .inner_middlewares
+        .register(RemoveTrackingParamsMiddleware);
+    download_router
+        .chosen_inline_result
+        .inner_middlewares
+        .register(ReplaceDomainsMiddleware);
+    download_router
         .message
         .register(video::download)
         .filter(ContentType::one(enums::ContentType::Text))
@@ -99,17 +113,31 @@ async fn main() {
         .filter(random_cmd_is_enabled);
     download_router
         .message
+        .register(handlers::config::add_exclude_domain)
+        .filter(ContentType::one(enums::ContentType::Text))
+        .filter(Command::many(["add_ed", "add_exclude_domain"]))
+        .filter(text_contains_host_with_reply);
+    download_router
+        .message
+        .register(handlers::config::remove_exclude_domain)
+        .filter(ContentType::one(enums::ContentType::Text))
+        .filter(Command::many(["rm_ed", "remove_ed", "rm_exclude_domain", "remove_exclude_domain"]))
+        .filter(text_contains_host_with_reply);
+    download_router
+        .message
         .register(video::download)
         .filter(ChatType::one(enums::ChatType::Private))
         .filter(text_contains_url_with_reply)
-        .filter(is_via_bot.invert());
+        .filter(is_via_bot.invert())
+        .filter(is_exclude_domain.invert());
     download_router
         .message
         .register(video::download_quiet)
         .filter(text_contains_url)
         .filter(url_is_blacklisted.invert())
         .filter(url_is_skippable_by_param.invert())
-        .filter(is_via_bot.invert());
+        .filter(is_via_bot.invert())
+        .filter(is_exclude_domain.invert());
     download_router
         .inline_query
         .register(inline_query::select_by_url)

@@ -1,16 +1,41 @@
 use crate::config::BlacklistedConfig;
 
 use froodi::async_impl::Container;
+use psl::Psl;
 use std::{future::Future, str::FromStr};
 use telers::{types::UpdateKind, Request};
 use tracing::error;
-use url::Url;
+use url::{Host, Url};
 
 pub fn get_url_from_text(text: &str) -> Option<Url> {
     let words: Vec<&str> = text.split_whitespace().collect();
     for word in words {
         if let Ok(url) = Url::parse(word) {
             return Some(url);
+        }
+    }
+    None
+}
+
+pub fn get_host_from_text(text: &str) -> Option<Host> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    for word in words {
+        if let Ok(url) = Url::parse(word) {
+            if let Some(host) = url.host() {
+                let host = host.to_owned();
+                if let Some(suffix) = psl::List.suffix(host.to_string().as_bytes()) {
+                    if suffix.is_known() && suffix.typ().unwrap() == psl::Type::Icann {
+                        return Some(host);
+                    }
+                }
+            }
+        }
+        if let Ok(host) = Host::parse(word) {
+            if let Some(suffix) = psl::List.suffix(host.to_string().as_bytes()) {
+                if suffix.is_known() && suffix.typ().unwrap() == psl::Type::Icann {
+                    return Some(host);
+                }
+            }
         }
     }
     None
@@ -60,6 +85,39 @@ pub fn text_contains_url_with_reply(request: &mut Request) -> impl Future<Output
         }
 
         url_found
+    } else {
+        false
+    };
+
+    async move { result }
+}
+
+#[allow(clippy::module_name_repetitions)]
+pub fn text_contains_host_with_reply(request: &mut Request) -> impl Future<Output = bool> {
+    let result = if let Some(text) = request.update.text() {
+        let mut host_found = false;
+
+        match get_host_from_text(text) {
+            Some(host) => {
+                host_found = true;
+                request.extensions.insert(host);
+            }
+            None => match request.update.kind() {
+                UpdateKind::Message(message) | UpdateKind::EditedMessage(message) => {
+                    if let Some(message) = message.reply_to_message() {
+                        if let Some(text) = message.text() {
+                            if let Some(host) = get_host_from_text(text) {
+                                host_found = true;
+                                request.extensions.insert(host);
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            },
+        }
+
+        host_found
     } else {
         false
     };

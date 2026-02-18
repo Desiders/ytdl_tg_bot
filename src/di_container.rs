@@ -41,7 +41,9 @@ pub(super) fn init(bot: Bot, cfg: Config, cookies: Cookies) -> Container {
 
             provide(|| Ok(Mutex::new(ContextV7::new()))),
             provide(|| Ok(Client::new())),
-            provide(|| Ok(chat::SaveChat::new())),
+            provide(|| Ok(chat::SaveChat {})),
+            provide(|| Ok(chat::AddExcludeDomain {})),
+            provide(|| Ok(chat::RemoveExcludeDomain {})),
             provide(|| Ok(downloaded_media::AddVideo {})),
             provide(|| Ok(downloaded_media::AddAudio {})),
             provide(|| Ok(downloaded_media::GetStats {})),
