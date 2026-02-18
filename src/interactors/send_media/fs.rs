@@ -83,7 +83,10 @@ impl Interactor<SendVideoInput<'_>> for &SendVideo {
         .await?;
         drop(temp_dir);
         let message_id = message.id();
-        let file_id = message.video().unwrap().file_id.clone();
+        let file_id = message
+            .video()
+            .map(|video| video.file_id.clone())
+            .unwrap_or(message.document().unwrap().file_id.clone());
         drop(message);
         info!("Video sent");
 
