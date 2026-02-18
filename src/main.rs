@@ -78,7 +78,6 @@ async fn main() {
         .inline_query
         .inner_middlewares
         .register(RemoveTrackingParamsMiddleware);
-    download_router.inline_query.inner_middlewares.register(ReplaceDomainsMiddleware);
     download_router
         .chosen_inline_result
         .inner_middlewares
