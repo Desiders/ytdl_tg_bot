@@ -10,7 +10,7 @@ use crate::{
 use std::{fs, io, sync::Arc};
 use tempfile::TempDir;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info, info_span, instrument, trace, warn};
+use tracing::{debug, error, info, info_span, instrument, warn};
 use url::Url;
 
 #[derive(thiserror::Error, Debug)]
@@ -370,8 +370,6 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
 
         for (media, formats) in playlist {
-            trace!(?media);
-
             let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(Self::Err::TempDir)?;
             let output_dir_path = temp_dir.path();
             let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
