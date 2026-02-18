@@ -1,3 +1,4 @@
+pub mod chat_config_exclude_domains;
 pub mod chat_configs;
 pub mod chats;
 pub mod downloaded_media;

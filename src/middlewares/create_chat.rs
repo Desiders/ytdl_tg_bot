@@ -38,11 +38,16 @@ impl Middleware for CreateChatMiddleware {
         let mut tx_manager = container.get_transient::<TxManager>().await.unwrap();
 
         match save_chat
-            .execute(chat::SaveChatInput::new(db_chat, db_chat_config, &mut tx_manager))
+            .execute(chat::SaveChatInput {
+                chat: db_chat,
+                chat_config: db_chat_config,
+                tx_manager: &mut tx_manager,
+            })
             .await
         {
-            Ok((_, chat_config)) => {
+            Ok((_, chat_config, chat_config_exclude_domains)) => {
                 request.extensions.insert(chat_config);
+                request.extensions.insert(chat_config_exclude_domains);
             }
             Err(err) => error!(%err, "Save chat err"),
         }

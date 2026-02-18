@@ -1,7 +1,7 @@
 use super::Interactor;
 use crate::{
     database::TxManager,
-    entities::{Chat, ChatConfig},
+    entities::{Chat, ChatConfig, ChatConfigExcludeDomain, ChatConfigExcludeDomains},
     errors::ErrorKind,
 };
 
@@ -10,30 +10,14 @@ use tracing::{debug, instrument};
 
 pub struct SaveChat {}
 
-impl SaveChat {
-    pub const fn new() -> Self {
-        Self {}
-    }
-}
-
 pub struct SaveChatInput<'a> {
     pub chat: Chat,
     pub chat_config: ChatConfig,
     pub tx_manager: &'a mut TxManager,
 }
 
-impl<'a> SaveChatInput<'a> {
-    pub const fn new(chat: Chat, chat_config: ChatConfig, tx_manager: &'a mut TxManager) -> Self {
-        Self {
-            chat,
-            chat_config,
-            tx_manager,
-        }
-    }
-}
-
 impl Interactor<SaveChatInput<'_>> for &SaveChat {
-    type Output = (Chat, ChatConfig);
+    type Output = (Chat, ChatConfig, ChatConfigExcludeDomains);
     type Err = ErrorKind<Infallible>;
 
     #[instrument(skip_all)]
@@ -65,8 +49,52 @@ impl Interactor<SaveChatInput<'_>> for &SaveChat {
             }
         };
         debug!("Chat config saved");
+        let config_exclude_domains = dao.get_exclude_domains(chat.tg_id).await?;
 
         tx_manager.commit().await?;
-        Ok((chat, config))
+        Ok((chat, config, config_exclude_domains))
+    }
+}
+
+pub struct ExcludeDomainInput<'a> {
+    pub dto: ChatConfigExcludeDomain,
+    pub tx_manager: &'a mut TxManager,
+}
+
+pub struct AddExcludeDomain {}
+
+impl Interactor<ExcludeDomainInput<'_>> for &AddExcludeDomain {
+    type Output = ();
+    type Err = ErrorKind<Infallible>;
+
+    #[instrument(skip_all)]
+    async fn execute(self, ExcludeDomainInput { dto, tx_manager }: ExcludeDomainInput<'_>) -> Result<Self::Output, Self::Err> {
+        tx_manager.begin().await?;
+
+        let dao = tx_manager.chat_config_dao().unwrap();
+        let _ = dao.insert_exclude_domain_or_update(dto).await?;
+        debug!("Exclude domain saved");
+
+        tx_manager.commit().await?;
+        Ok(())
+    }
+}
+
+pub struct RemoveExcludeDomain {}
+
+impl Interactor<ExcludeDomainInput<'_>> for &RemoveExcludeDomain {
+    type Output = ();
+    type Err = ErrorKind<Infallible>;
+
+    #[instrument(skip_all)]
+    async fn execute(self, ExcludeDomainInput { dto, tx_manager }: ExcludeDomainInput<'_>) -> Result<Self::Output, Self::Err> {
+        tx_manager.begin().await?;
+
+        let dao = tx_manager.chat_config_dao().unwrap();
+        let _ = dao.delete_exclude_domain(dto).await?;
+        debug!("Exclude domain deleted");
+
+        tx_manager.commit().await?;
+        Ok(())
     }
 }
