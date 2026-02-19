@@ -7,11 +7,11 @@ use telers::{
     Bot,
 };
 
-pub async fn new(bot: &Bot, chat_id: i64, reply_to_message_id: i64) -> Result<Message, SessionErrorKind> {
+pub async fn new(bot: &Bot, text: &str, chat_id: i64, reply_to_message_id: Option<i64>) -> Result<Message, SessionErrorKind> {
     bot.send(
-        SendMessage::new(chat_id, "🔍 Preparing download...")
+        SendMessage::new(chat_id, text)
             .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
-            .reply_parameters(ReplyParameters::new(reply_to_message_id).allow_sending_without_reply(true)),
+            .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true))),
     )
     .await
 }
@@ -131,7 +131,13 @@ pub async fn is_downloading_with_progress_in_chosen_inline(
     Ok(())
 }
 
-pub async fn is_error(bot: &Bot, chat_id: i64, message_id: i64, text: &str, parse_mode: Option<ParseMode>) -> Result<(), SessionErrorKind> {
+pub async fn is_error_in_progress(
+    bot: &Bot,
+    chat_id: i64,
+    message_id: i64,
+    text: &str,
+    parse_mode: Option<ParseMode>,
+) -> Result<(), SessionErrorKind> {
     bot.send(
         EditMessageText::new(text)
             .chat_id(chat_id)
