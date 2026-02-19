@@ -136,6 +136,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
                 cached.push(MediaInPlaylist {
                     file_id,
                     playlist_index: media.playlist_index,
+                    webpage_url: Some(media.webpage_url.clone()),
                 });
                 continue;
             }
@@ -241,6 +242,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
                 cached.push(MediaInPlaylist {
                     file_id,
                     playlist_index: media.playlist_index,
+                    webpage_url: Some(media.webpage_url.clone()),
                 });
                 continue;
             }

@@ -1,4 +1,4 @@
-use crate::{config::TimeoutsConfig, entities::MediaInPlaylist, handlers_utils::send, interactors::Interactor};
+use crate::{config::TimeoutsConfig, entities::MediaInPlaylist, handlers_utils::send, interactors::Interactor, utils::media_link};
 
 use std::sync::Arc;
 use telers::{
@@ -9,11 +9,13 @@ use telers::{
     Bot,
 };
 use tracing::{debug, info, instrument};
+use url::Url;
 
 pub struct SendMediaInput<'a> {
     pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
     pub id: &'a str,
+    pub webpage_url: Option<&'a Url>,
 }
 
 pub struct SendPlaylistInput {
@@ -25,7 +27,7 @@ pub struct SendPlaylistInput {
 pub struct EditMediaInput<'a> {
     pub inline_message_id: &'a str,
     pub id: &'a str,
-    pub caption: &'a str,
+    pub webpage_url: Option<&'a Url>,
 }
 
 pub struct SendVideo {
@@ -44,6 +46,7 @@ impl Interactor<SendMediaInput<'_>> for &SendVideo {
             chat_id,
             reply_to_message_id,
             id,
+            webpage_url,
         }: SendMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         debug!("Video sending");
@@ -51,8 +54,10 @@ impl Interactor<SendMediaInput<'_>> for &SendVideo {
             &self.bot,
             methods::SendVideo::new(chat_id, InputFile::id(id))
                 .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)))
+                .caption_option(media_link(webpage_url))
                 .disable_notification(true)
-                .supports_streaming(true),
+                .supports_streaming(true)
+                .parse_mode(ParseMode::HTML),
             2,
             Some(self.timeouts_cfg.send_by_id),
         )
@@ -79,6 +84,7 @@ impl Interactor<SendMediaInput<'_>> for &SendAudio {
             chat_id,
             reply_to_message_id,
             id,
+            webpage_url,
         }: SendMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         debug!("Audio sending");
@@ -86,7 +92,9 @@ impl Interactor<SendMediaInput<'_>> for &SendAudio {
             &self.bot,
             methods::SendAudio::new(chat_id, InputFile::id(id))
                 .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)))
-                .disable_notification(true),
+                .caption_option(media_link(webpage_url))
+                .disable_notification(true)
+                .parse_mode(ParseMode::HTML),
             2,
             Some(self.timeouts_cfg.send_by_id),
         )
@@ -112,7 +120,7 @@ impl Interactor<EditMediaInput<'_>> for &EditVideo {
         EditMediaInput {
             inline_message_id,
             id,
-            caption,
+            webpage_url,
         }: EditMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         debug!("Video editing");
@@ -120,7 +128,7 @@ impl Interactor<EditMediaInput<'_>> for &EditVideo {
             &self.bot,
             methods::EditMessageMedia::new(
                 InputMediaVideo::new(InputFile::id(id))
-                    .caption(caption)
+                    .caption_option(media_link(webpage_url))
                     .supports_streaming(true)
                     .parse_mode(ParseMode::HTML),
             )
@@ -151,15 +159,19 @@ impl Interactor<EditMediaInput<'_>> for &EditAudio {
         EditMediaInput {
             inline_message_id,
             id,
-            caption,
+            webpage_url,
         }: EditMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         debug!("Audio editing");
         send::with_retries(
             &self.bot,
-            methods::EditMessageMedia::new(InputMediaAudio::new(InputFile::id(id)).caption(caption).parse_mode(ParseMode::HTML))
-                .inline_message_id(inline_message_id)
-                .reply_markup(InlineKeyboardMarkup::new([[]])),
+            methods::EditMessageMedia::new(
+                InputMediaAudio::new(InputFile::id(id))
+                    .caption_option(media_link(webpage_url))
+                    .parse_mode(ParseMode::HTML),
+            )
+            .inline_message_id(inline_message_id)
+            .reply_markup(InlineKeyboardMarkup::new([[]])),
             2,
             Some(self.timeouts_cfg.send_by_id),
         )
@@ -194,7 +206,11 @@ impl Interactor<SendPlaylistInput> for &SendVideoPlaylist {
             chat_id,
             playlist
                 .into_iter()
-                .map(|val| InputMediaVideo::new(InputFile::id(val.file_id)))
+                .map(|val| {
+                    InputMediaVideo::new(InputFile::id(val.file_id))
+                        .caption_option(media_link(val.webpage_url.as_ref()))
+                        .parse_mode(ParseMode::HTML)
+                })
                 .collect(),
             reply_to_message_id,
             Some(self.timeouts_cfg.send_by_id),
@@ -230,7 +246,11 @@ impl Interactor<SendPlaylistInput> for &SendAudioPlaylist {
             chat_id,
             playlist
                 .into_iter()
-                .map(|MediaInPlaylist { file_id, .. }| InputMediaAudio::new(InputFile::id(file_id)))
+                .map(|val| {
+                    InputMediaAudio::new(InputFile::id(val.file_id))
+                        .caption_option(media_link(val.webpage_url.as_ref()))
+                        .parse_mode(ParseMode::HTML)
+                })
                 .collect(),
             reply_to_message_id,
             Some(self.timeouts_cfg.send_by_id),

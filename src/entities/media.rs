@@ -261,6 +261,7 @@ impl Playlist {
 pub struct MediaInPlaylist {
     pub file_id: String,
     pub playlist_index: i16,
+    pub webpage_url: Option<Url>,
 }
 
 #[derive(Debug)]
