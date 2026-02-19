@@ -50,10 +50,7 @@ pub async fn add_exclude_domain(
 
     let text = match add_domain
         .execute(chat::ExcludeDomainInput {
-            dto: ChatConfigExcludeDomain {
-                tg_id: chat_id,
-                domain: host.clone(),
-            },
+            dto: ChatConfigExcludeDomain::new(chat_id, host.clone()),
             tx_manager: &mut tx_manager,
         })
         .await
@@ -118,10 +115,7 @@ pub async fn remove_exclude_domain(
 
     let text = match remove_domain
         .execute(chat::ExcludeDomainInput {
-            dto: ChatConfigExcludeDomain {
-                tg_id: chat_id,
-                domain: host.clone(),
-            },
+            dto: ChatConfigExcludeDomain::new(chat_id, host.clone()),
             tx_manager: &mut tx_manager,
         })
         .await

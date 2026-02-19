@@ -21,7 +21,7 @@ use telers::{
     enums::ParseMode,
     event::{telegram::HandlerResult, EventReturn},
     types::ChosenInlineResult,
-    utils::text::{html_expandable_blockquote, html_quote, html_text_link},
+    utils::text::{html_expandable_blockquote, html_quote},
     Bot, Extension,
 };
 use tracing::{debug, error, instrument, warn, Span};
@@ -96,7 +96,7 @@ pub async fn download_video(
                 .execute(send_media::id::EditMediaInput {
                     inline_message_id,
                     id: &file_id,
-                    caption: &html_text_link("Link", url),
+                    webpage_url: Some(&url),
                 })
                 .await
             {
@@ -116,7 +116,7 @@ pub async fn download_video(
                 .execute(send_media::id::EditMediaInput {
                     inline_message_id,
                     id: &file_id,
-                    caption: &html_text_link("Link", url),
+                    webpage_url: media.webpage_url.as_ref(),
                 })
                 .await
             {
@@ -184,6 +184,7 @@ pub async fn download_video(
                     #[allow(clippy::cast_possible_truncation)]
                     duration: media.duration.map(|val| val as i64),
                     with_delete: true,
+                    webpage_url: &media.webpage_url,
                 })
                 .await
             {
@@ -205,7 +206,7 @@ pub async fn download_video(
                 .execute(send_media::id::EditMediaInput {
                     inline_message_id,
                     id: &file_id,
-                    caption: &html_text_link("Link", &url),
+                    webpage_url: Some(&media.webpage_url),
                 })
                 .await
             {
@@ -321,7 +322,7 @@ pub async fn download_audio(
                 .execute(send_media::id::EditMediaInput {
                     inline_message_id,
                     id: &file_id,
-                    caption: &html_text_link("Link", url),
+                    webpage_url: Some(&url),
                 })
                 .await
             {
@@ -341,7 +342,7 @@ pub async fn download_audio(
                 .execute(send_media::id::EditMediaInput {
                     inline_message_id,
                     id: &file_id,
-                    caption: &html_text_link("Link", url),
+                    webpage_url: media.webpage_url.as_ref(),
                 })
                 .await
             {
@@ -409,6 +410,7 @@ pub async fn download_audio(
                     #[allow(clippy::cast_possible_truncation)]
                     duration: media.duration.map(|val| val as i64),
                     with_delete: true,
+                    webpage_url: &media.webpage_url,
                 })
                 .await
             {
@@ -430,7 +432,7 @@ pub async fn download_audio(
                 .execute(send_media::id::EditMediaInput {
                     inline_message_id,
                     id: &file_id,
-                    caption: &html_text_link("Link", &url),
+                    webpage_url: Some(&media.webpage_url),
                 })
                 .await
             {

@@ -106,6 +106,7 @@ pub async fn download(
                     chat_id,
                     reply_to_message_id: Some(message_id),
                     id: &file_id,
+                    webpage_url: Some(&url),
                 })
                 .await
             {
@@ -144,6 +145,7 @@ pub async fn download(
                                 #[allow(clippy::cast_possible_truncation)]
                                 duration: media.duration.map(|val| val as i64),
                                 with_delete: true,
+                                webpage_url: &media.webpage_url,
                             })
                             .await
                         {
@@ -157,6 +159,7 @@ pub async fn download(
                         downloaded_playlist.push(MediaInPlaylist {
                             file_id: file_id.clone().into(),
                             playlist_index: media.playlist_index,
+                            webpage_url: Some(media.webpage_url.clone()),
                         });
 
                         if let Err(err) = add_downloaded_media
@@ -313,6 +316,7 @@ pub async fn download_quiet(
                     chat_id,
                     reply_to_message_id: Some(message_id),
                     id: &file_id,
+                    webpage_url: Some(&url),
                 })
                 .await
             {
@@ -340,6 +344,7 @@ pub async fn download_quiet(
                                 height: format.height,
                                 duration: media.duration.map(|val| val as i64),
                                 with_delete: true,
+                                webpage_url: &media.webpage_url,
                             })
                             .await
                         {
@@ -352,6 +357,7 @@ pub async fn download_quiet(
                         downloaded_playlist.push(MediaInPlaylist {
                             file_id: file_id.clone().into(),
                             playlist_index: media.playlist_index,
+                            webpage_url: Some(media.webpage_url.clone()),
                         });
 
                         if let Err(err) = add_downloaded_media
@@ -433,6 +439,7 @@ pub async fn random(
                         .map(|(index, media)| MediaInPlaylist {
                             file_id: media.file_id,
                             playlist_index: index.try_into().unwrap(),
+                            webpage_url: None,
                         })
                         .collect(),
                 })

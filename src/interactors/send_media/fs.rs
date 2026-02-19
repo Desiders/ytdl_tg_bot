@@ -1,7 +1,8 @@
 use crate::{config::TimeoutsConfig, entities::MediaInFS, handlers_utils::send, interactors::Interactor};
 
-use crate::utils::sanitize_send_filename;
+use crate::utils::{media_link, sanitize_send_filename};
 use std::sync::Arc;
+use telers::enums::ParseMode;
 use telers::{
     errors::SessionErrorKind,
     methods,
@@ -9,6 +10,7 @@ use telers::{
     Bot,
 };
 use tracing::{debug, error, info, instrument};
+use url::Url;
 
 pub struct SendVideo {
     pub bot: Arc<Bot>,
@@ -24,6 +26,7 @@ pub struct SendVideoInput<'a> {
     pub height: Option<i64>,
     pub duration: Option<i64>,
     pub with_delete: bool,
+    pub webpage_url: &'a Url,
 }
 
 pub struct SendAudio {
@@ -40,6 +43,7 @@ pub struct SendAudioInput<'a> {
     pub performer: Option<&'a str>,
     pub duration: Option<i64>,
     pub with_delete: bool,
+    pub webpage_url: &'a Url,
 }
 
 impl Interactor<SendVideoInput<'_>> for &SendVideo {
@@ -62,6 +66,7 @@ impl Interactor<SendVideoInput<'_>> for &SendVideo {
             height,
             duration,
             with_delete,
+            webpage_url,
         }: SendVideoInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let send_name = sanitize_send_filename(path.as_ref(), name);
@@ -76,6 +81,8 @@ impl Interactor<SendVideoInput<'_>> for &SendVideo {
                 .duration_option(duration)
                 .disable_notification(true)
                 .thumbnail_option(thumb_path.map(InputFile::fs))
+                .caption(media_link(Some(webpage_url)).unwrap())
+                .parse_mode(ParseMode::HTML)
                 .reply_parameters_option(reply_to_message_id.map(|val| ReplyParameters::new(val).allow_sending_without_reply(true))),
             2,
             Some(self.timeouts_cfg.send_by_fs),
@@ -125,6 +132,7 @@ impl Interactor<SendAudioInput<'_>> for &SendAudio {
             title,
             duration,
             with_delete,
+            webpage_url,
         }: SendAudioInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let send_name = sanitize_send_filename(path.as_ref(), name);
@@ -138,6 +146,8 @@ impl Interactor<SendAudioInput<'_>> for &SendAudio {
                 .disable_notification(true)
                 .performer_option(performer)
                 .thumbnail_option(thumb_path.map(InputFile::fs))
+                .caption(media_link(Some(webpage_url)).unwrap())
+                .parse_mode(ParseMode::HTML)
                 .reply_parameters_option(reply_to_message_id.map(|val| ReplyParameters::new(val).allow_sending_without_reply(true))),
             2,
             Some(self.timeouts_cfg.send_by_fs),
