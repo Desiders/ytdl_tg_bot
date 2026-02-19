@@ -1,15 +1,14 @@
 use crate::database::TxManager;
 use crate::entities::{ChatConfigExcludeDomain, ChatConfigExcludeDomains};
+use crate::handlers_utils::progress;
 use crate::interactors::{chat, Interactor as _};
 use crate::utils::{format_error_report, FormatErrorToMessage as _};
 
 use froodi::{Inject, InjectTransient};
 use telers::utils::text::html_code;
 use telers::{
-    enums::ParseMode,
     event::{telegram::HandlerResult, EventReturn},
-    methods::SendMessage,
-    types::{LinkPreviewOptions, Message, ReplyParameters},
+    types::Message,
     utils::text::{html_expandable_blockquote, html_quote},
     Bot, Extension,
 };
@@ -29,13 +28,21 @@ pub async fn add_exclude_domain(
     let host = host.to_string();
 
     if chat_cfg_domains.0.contains(&host) {
-        bot.send(
-            SendMessage::new(chat_id, "Domain already exists in exclude list").reply_parameters_option(
-                message
-                    .reply_to_message()
-                    .as_ref()
-                    .map(|message| ReplyParameters::new(message.id()).allow_sending_without_reply(true)),
-            ),
+        progress::new(
+            &bot,
+            "Domain already exists in exclude list",
+            chat_id,
+            message.reply_to_message().as_ref().map(|message| message.id()),
+        )
+        .await?;
+        return Ok(EventReturn::Finish);
+    }
+    if chat_cfg_domains.0.len() >= 15 {
+        progress::new(
+            &bot,
+            "Too many domains in exclude list. Limit is 15.",
+            chat_id,
+            message.reply_to_message().as_ref().map(|message| message.id()),
         )
         .await?;
         return Ok(EventReturn::Finish);
@@ -76,16 +83,11 @@ pub async fn add_exclude_domain(
         }
     };
 
-    bot.send(
-        SendMessage::new(chat_id, text)
-            .parse_mode(ParseMode::HTML)
-            .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
-            .reply_parameters_option(
-                message
-                    .reply_to_message()
-                    .as_ref()
-                    .map(|message| ReplyParameters::new(message.id()).allow_sending_without_reply(true)),
-            ),
+    progress::new(
+        &bot,
+        &text,
+        chat_id,
+        message.reply_to_message().as_ref().map(|message| message.id()),
     )
     .await?;
     Ok(EventReturn::Finish)
@@ -104,13 +106,11 @@ pub async fn remove_exclude_domain(
     let host = host.to_string();
 
     if !chat_cfg_domains.0.contains(&host) {
-        bot.send(
-            SendMessage::new(chat_id, "Domain not found in exclude list").reply_parameters_option(
-                message
-                    .reply_to_message()
-                    .as_ref()
-                    .map(|message| ReplyParameters::new(message.id()).allow_sending_without_reply(true)),
-            ),
+        progress::new(
+            &bot,
+            "Domain not found in exclude list",
+            chat_id,
+            message.reply_to_message().as_ref().map(|message| message.id()),
         )
         .await?;
         return Ok(EventReturn::Finish);
@@ -150,16 +150,11 @@ pub async fn remove_exclude_domain(
         }
     };
 
-    bot.send(
-        SendMessage::new(chat_id, text)
-            .parse_mode(ParseMode::HTML)
-            .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
-            .reply_parameters_option(
-                message
-                    .reply_to_message()
-                    .as_ref()
-                    .map(|message| ReplyParameters::new(message.id()).allow_sending_without_reply(true)),
-            ),
+    progress::new(
+        &bot,
+        &text,
+        chat_id,
+        message.reply_to_message().as_ref().map(|message| message.id()),
     )
     .await?;
     Ok(EventReturn::Finish)

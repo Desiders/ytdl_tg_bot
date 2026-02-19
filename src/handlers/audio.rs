@@ -50,7 +50,7 @@ pub async fn download(
     let message_id = message.id();
     let chat_id = message.chat().id();
 
-    let progress_message = progress::new(&bot, chat_id, message_id).await?;
+    let progress_message = progress::new(&bot, "🔍 Preparing download...", chat_id, Some(message_id)).await?;
     let progress_message_id = progress_message.id();
 
     let playlist_range = match params.0.get("items") {
@@ -62,7 +62,7 @@ pub async fn download(
                     "Sorry, an error to parse range\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
                 );
-                let _ = progress::is_error(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
+                let _ = progress::is_error_in_progress(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
                 return Ok(EventReturn::Finish);
             }
         },
@@ -77,7 +77,7 @@ pub async fn download(
                     "Sorry, an error to parse sections\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
                 );
-                let _ = progress::is_error(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
+                let _ = progress::is_error_in_progress(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
                 return Ok(EventReturn::Finish);
             }
         }),
@@ -114,7 +114,7 @@ pub async fn download(
                     "Sorry, an error to send media\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
                 );
-                let _ = progress::is_error(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
+                let _ = progress::is_error_in_progress(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
             } else {
                 let _ = progress::delete(&bot, chat_id, progress_message_id).await;
             }
@@ -205,7 +205,7 @@ pub async fn download(
                             "Sorry, an error to download playlist\n{}",
                             html_expandable_blockquote(html_quote(err.format(&bot.token)))
                         );
-                        let _ = progress::is_error(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
+                        let _ = progress::is_error_in_progress(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
                     }
                 }
             );
@@ -227,7 +227,7 @@ pub async fn download(
                     "Sorry, an error to send playlist\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
                 );
-                let _ = progress::is_error(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
+                let _ = progress::is_error_in_progress(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
             } else if errs.is_empty() {
                 let _ = progress::delete(&bot, chat_id, progress_message_id).await;
             }
@@ -235,7 +235,7 @@ pub async fn download(
         Ok(Empty) => {
             warn!("Empty playlist");
             let text = "Playlist is empty";
-            let _ = progress::is_error(&bot, chat_id, message_id, text, Some(ParseMode::HTML)).await;
+            let _ = progress::is_error_in_progress(&bot, chat_id, message_id, text, Some(ParseMode::HTML)).await;
         }
         Err(err) => {
             error!(err = format_error_report(&err), "Get err");
@@ -243,7 +243,7 @@ pub async fn download(
                 "Sorry, an error to get info\n{}",
                 html_expandable_blockquote(html_quote(err.format(&bot.token)))
             );
-            let _ = progress::is_error(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
+            let _ = progress::is_error_in_progress(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
             return Ok(EventReturn::Finish);
         }
     }
