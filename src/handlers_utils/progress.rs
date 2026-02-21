@@ -7,11 +7,18 @@ use telers::{
     Bot,
 };
 
-pub async fn new(bot: &Bot, text: &str, chat_id: i64, reply_to_message_id: Option<i64>) -> Result<Message, SessionErrorKind> {
+pub async fn new(
+    bot: &Bot,
+    text: &str,
+    chat_id: i64,
+    reply_to_message_id: Option<i64>,
+    parse_mode: Option<ParseMode>,
+) -> Result<Message, SessionErrorKind> {
     bot.send(
         SendMessage::new(chat_id, text)
             .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
-            .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true))),
+            .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)))
+            .parse_mode_option(parse_mode),
     )
     .await
 }
