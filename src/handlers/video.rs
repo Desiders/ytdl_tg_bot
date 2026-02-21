@@ -50,7 +50,7 @@ pub async fn download(
     let message_id = message.id();
     let chat_id = message.chat().id();
 
-    let progress_message = progress::new(&bot, "🔍 Preparing download...", chat_id, Some(message_id)).await?;
+    let progress_message = progress::new(&bot, "🔍 Preparing download...", chat_id, Some(message_id), None).await?;
     let progress_message_id = progress_message.id();
 
     let playlist_range = match params.0.get("items") {

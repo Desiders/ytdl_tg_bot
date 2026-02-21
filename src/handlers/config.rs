@@ -5,6 +5,7 @@ use crate::interactors::{chat, Interactor as _};
 use crate::utils::{format_error_report, FormatErrorToMessage as _};
 
 use froodi::{Inject, InjectTransient};
+use telers::enums::ParseMode;
 use telers::utils::text::html_code;
 use telers::{
     event::{telegram::HandlerResult, EventReturn},
@@ -33,6 +34,7 @@ pub async fn add_exclude_domain(
             "Domain already exists in exclude list",
             chat_id,
             message.reply_to_message().as_ref().map(|message| message.id()),
+            None,
         )
         .await?;
         return Ok(EventReturn::Finish);
@@ -43,6 +45,7 @@ pub async fn add_exclude_domain(
             "Too many domains in exclude list. Limit is 15.",
             chat_id,
             message.reply_to_message().as_ref().map(|message| message.id()),
+            None,
         )
         .await?;
         return Ok(EventReturn::Finish);
@@ -85,6 +88,7 @@ pub async fn add_exclude_domain(
         &text,
         chat_id,
         message.reply_to_message().as_ref().map(|message| message.id()),
+        Some(ParseMode::HTML),
     )
     .await?;
     Ok(EventReturn::Finish)
@@ -108,6 +112,7 @@ pub async fn remove_exclude_domain(
             "Domain not found in exclude list",
             chat_id,
             message.reply_to_message().as_ref().map(|message| message.id()),
+            None,
         )
         .await?;
         return Ok(EventReturn::Finish);
@@ -149,6 +154,7 @@ pub async fn remove_exclude_domain(
         &text,
         chat_id,
         message.reply_to_message().as_ref().map(|message| message.id()),
+        Some(ParseMode::HTML),
     )
     .await?;
     Ok(EventReturn::Finish)
