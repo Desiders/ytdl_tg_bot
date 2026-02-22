@@ -1,5 +1,5 @@
 use crate::{
-    config::{YtDlpConfig, YtPotProviderConfig, YtToolkitConfig},
+    config::{TrackingParamsConfig, YtDlpConfig, YtPotProviderConfig, YtToolkitConfig},
     database::TxManager,
     entities::{
         language::Language, yt_toolkit::BasicInfo, Cookies, DownloadedMedia, Media, MediaFormat, MediaInPlaylist, Playlist, Range,
@@ -57,6 +57,7 @@ pub enum GetMediaByURLKind {
 pub struct GetVideoByURL {
     pub yt_dlp_cfg: Arc<YtDlpConfig>,
     pub yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
+    pub tracking_params_cfg: Arc<TrackingParamsConfig>,
     pub cookies: Arc<Cookies>,
 }
 
@@ -127,7 +128,8 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
 
         let mut cached = vec![];
         let mut uncached = vec![];
-        for (media, mut formats) in playlist.inner {
+        for (mut media, mut formats) in playlist.inner {
+            media.remove_url_tracking_params(self.tracking_params_cfg.as_ref());
             let domain = media.webpage_url.domain();
             if let Some(DownloadedMedia { file_id, .. }) = dao
                 .get(&media.id, domain, audio_language.language.as_deref(), MediaType::Video, start, end)
@@ -162,6 +164,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
 pub struct GetAudioByURL {
     pub yt_dlp_cfg: Arc<YtDlpConfig>,
     pub yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
+    pub tracking_params_cfg: Arc<TrackingParamsConfig>,
     pub cookies: Arc<Cookies>,
 }
 
@@ -233,7 +236,8 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
 
         let mut cached = vec![];
         let mut uncached = vec![];
-        for (media, mut formats) in playlist.inner {
+        for (mut media, mut formats) in playlist.inner {
+            media.remove_url_tracking_params(self.tracking_params_cfg.as_ref());
             let domain = media.webpage_url.domain();
             if let Some(DownloadedMedia { file_id, .. }) = dao
                 .get(&media.id, domain, audio_language.language.as_deref(), MediaType::Audio, start, end)
@@ -268,6 +272,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
 pub struct GetUncachedVideoByURL {
     pub yt_dlp_cfg: Arc<YtDlpConfig>,
     pub yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
+    pub tracking_params_cfg: Arc<TrackingParamsConfig>,
     pub cookies: Arc<Cookies>,
 }
 
@@ -289,7 +294,7 @@ impl Interactor<GetUncachedMediaByURLInput<'_>> for &GetUncachedVideoByURL {
 
         debug!("Getting media");
 
-        let playlist = get_media_info(
+        let mut playlist = get_media_info(
             url.as_str(),
             &FormatStrategy::VideoAndAudio,
             audio_language,
@@ -301,6 +306,9 @@ impl Interactor<GetUncachedMediaByURLInput<'_>> for &GetUncachedVideoByURL {
             cookie,
         )
         .await?;
+        for (media, _) in playlist.inner.iter_mut() {
+            media.remove_url_tracking_params(self.tracking_params_cfg.as_ref());
+        }
         let playlist_len = playlist.inner.len();
 
         info!(playlist_len, "Got media");
