@@ -12,7 +12,9 @@ use tracing::{error, info};
 use uuid::ContextV7;
 
 use crate::{
-    config::{Config, DatabaseConfig, RandomCmdConfig, TimeoutsConfig, YtDlpConfig, YtPotProviderConfig, YtToolkitConfig},
+    config::{
+        Config, DatabaseConfig, RandomCmdConfig, TimeoutsConfig, TrackingParamsConfig, YtDlpConfig, YtPotProviderConfig, YtToolkitConfig,
+    },
     database::TxManager,
     entities::Cookies,
     interactors::{chat, download::media, downloaded_media, get_media, send_media},
@@ -85,17 +87,20 @@ pub(super) fn init(bot: Bot, cfg: Config, cookies: Cookies) -> Container {
             provide(|
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
                 Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-                Inject(cookies): Inject<Cookies>| Ok(get_media::GetUncachedVideoByURL { yt_dlp_cfg, yt_pot_provider_cfg, cookies })
+                Inject(tracking_params_cfg): Inject<TrackingParamsConfig>,
+                Inject(cookies): Inject<Cookies>| Ok(get_media::GetUncachedVideoByURL { yt_dlp_cfg, yt_pot_provider_cfg, tracking_params_cfg, cookies })
             ),
             provide(|
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
                 Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-                Inject(cookies): Inject<Cookies>| Ok(get_media::GetVideoByURL { yt_dlp_cfg, yt_pot_provider_cfg, cookies })
+                Inject(tracking_params_cfg): Inject<TrackingParamsConfig>,
+                Inject(cookies): Inject<Cookies>| Ok(get_media::GetVideoByURL { yt_dlp_cfg, yt_pot_provider_cfg, tracking_params_cfg, cookies })
             ),
             provide(|
                 Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
                 Inject(yt_pot_provider_cfg): Inject<YtPotProviderConfig>,
-                Inject(cookies): Inject<Cookies>| Ok(get_media::GetAudioByURL { yt_dlp_cfg, yt_pot_provider_cfg, cookies })
+                Inject(tracking_params_cfg): Inject<TrackingParamsConfig>,
+                Inject(cookies): Inject<Cookies>| Ok(get_media::GetAudioByURL { yt_dlp_cfg, yt_pot_provider_cfg, tracking_params_cfg, cookies })
             ),
             provide(
                 |Inject(client): Inject<Client>,
