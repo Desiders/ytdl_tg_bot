@@ -8,6 +8,7 @@ pub struct Model {
     pub tg_id: i64,
     pub cmd_random_enabled: bool,
     pub updated_at: TimeDateTimeWithTimeZone,
+    pub link_is_visible: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

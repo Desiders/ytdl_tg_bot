@@ -1,7 +1,7 @@
 use crate::{
     config::Config,
     database::TxManager,
-    entities::{language::Language, Domains, MediaInPlaylist, Params, Range, Sections},
+    entities::{language::Language, ChatConfig, Domains, MediaInPlaylist, Params, Range, Sections},
     handlers_utils::progress,
     interactors::{
         download::media,
@@ -36,6 +36,7 @@ pub async fn download(
     message: Message,
     params: Params,
     Extension(url): Extension<Url>,
+    Extension(chat_cfg): Extension<ChatConfig>,
     Inject(cfg): Inject<Config>,
     Inject(get_media): Inject<get_media::GetAudioByURL>,
     Inject(download_playlist): Inject<media::DownloadAudioPlaylist>,
@@ -107,6 +108,7 @@ pub async fn download(
                     reply_to_message_id: Some(message_id),
                     id: &file_id,
                     webpage_url: Some(&url),
+                    link_is_visible: chat_cfg.link_is_visible,
                 })
                 .await
             {
@@ -146,6 +148,7 @@ pub async fn download(
                                 duration: media.duration.map(|val| val as i64),
                                 with_delete: true,
                                 webpage_url: &media.webpage_url,
+                                link_is_visible: true,
                             })
                             .await
                         {
@@ -222,6 +225,7 @@ pub async fn download(
                     chat_id,
                     reply_to_message_id: Some(message_id),
                     playlist: downloaded_playlist,
+                    link_is_visible: chat_cfg.link_is_visible,
                 })
                 .await
             {
@@ -287,6 +291,7 @@ pub async fn random(
                             webpage_url: None,
                         })
                         .collect(),
+                    link_is_visible: false,
                 })
                 .await
             {
