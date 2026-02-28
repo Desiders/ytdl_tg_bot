@@ -1,12 +1,12 @@
 use crate::database::TxManager;
-use crate::entities::{ChatConfigExcludeDomain, ChatConfigExcludeDomains};
+use crate::entities::{ChatConfig, ChatConfigExcludeDomain, ChatConfigExcludeDomains, ChatConfigUpdate};
 use crate::handlers_utils::progress;
 use crate::interactors::{chat, Interactor as _};
 use crate::utils::{format_error_report, FormatErrorToMessage as _};
 
 use froodi::{Inject, InjectTransient};
 use telers::enums::ParseMode;
-use telers::utils::text::html_code;
+use telers::utils::text::{html_bold, html_code};
 use telers::{
     event::{telegram::HandlerResult, EventReturn},
     types::Message,
@@ -15,6 +15,49 @@ use telers::{
 };
 use tracing::{error, instrument};
 use url::Host;
+
+pub async fn change_link_visibility(
+    bot: Bot,
+    message: Message,
+    Extension(chat_cfg): Extension<ChatConfig>,
+    Inject(update_chat_cfg): Inject<chat::UpdateChatConfig>,
+    InjectTransient(mut tx_manager): InjectTransient<TxManager>,
+) -> HandlerResult {
+    let link_is_visible = !chat_cfg.link_is_visible;
+
+    let text = match update_chat_cfg
+        .execute(chat::UpdateChatConfigInput {
+            dto: ChatConfigUpdate::new(chat_cfg.tg_id).with_link_is_visible(link_is_visible),
+            tx_manager: &mut tx_manager,
+        })
+        .await
+    {
+        Ok(chat_cfg) => {
+            format!(
+                "Link visibility has been changed to {}",
+                html_bold(if chat_cfg.link_is_visible { "visible" } else { "hidden" }),
+            )
+        }
+        Err(err) => {
+            error!(err = format_error_report(&err), "Update err");
+            format!(
+                "Sorry, an error to change link visibility\n{}",
+                html_expandable_blockquote(html_quote(err.format(&bot.token)))
+            )
+        }
+    };
+
+    progress::new(
+        &bot,
+        &text,
+        chat_cfg.tg_id,
+        message.reply_to_message().as_ref().map(|message| message.id()),
+        Some(ParseMode::HTML),
+    )
+    .await?;
+
+    Ok(EventReturn::Finish)
+}
 
 #[instrument(skip_all, fields(%message_id = message.id(), %host))]
 pub async fn add_exclude_domain(

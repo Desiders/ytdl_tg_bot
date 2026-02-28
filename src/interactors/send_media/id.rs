@@ -16,18 +16,21 @@ pub struct SendMediaInput<'a> {
     pub reply_to_message_id: Option<i64>,
     pub id: &'a str,
     pub webpage_url: Option<&'a Url>,
+    pub link_is_visible: bool,
 }
 
 pub struct SendPlaylistInput {
     pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
     pub playlist: Vec<MediaInPlaylist>,
+    pub link_is_visible: bool,
 }
 
 pub struct EditMediaInput<'a> {
     pub inline_message_id: &'a str,
     pub id: &'a str,
     pub webpage_url: Option<&'a Url>,
+    pub link_is_visible: bool,
 }
 
 pub struct SendVideo {
@@ -47,6 +50,7 @@ impl Interactor<SendMediaInput<'_>> for &SendVideo {
             reply_to_message_id,
             id,
             webpage_url,
+            link_is_visible,
         }: SendMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         debug!("Video sending");
@@ -54,7 +58,7 @@ impl Interactor<SendMediaInput<'_>> for &SendVideo {
             &self.bot,
             methods::SendVideo::new(chat_id, InputFile::id(id))
                 .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)))
-                .caption_option(media_link(webpage_url))
+                .caption_option(if link_is_visible { media_link(webpage_url) } else { None })
                 .disable_notification(true)
                 .supports_streaming(true)
                 .parse_mode(ParseMode::HTML),
@@ -85,6 +89,7 @@ impl Interactor<SendMediaInput<'_>> for &SendAudio {
             reply_to_message_id,
             id,
             webpage_url,
+            link_is_visible,
         }: SendMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         debug!("Audio sending");
@@ -92,7 +97,7 @@ impl Interactor<SendMediaInput<'_>> for &SendAudio {
             &self.bot,
             methods::SendAudio::new(chat_id, InputFile::id(id))
                 .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)))
-                .caption_option(media_link(webpage_url))
+                .caption_option(if link_is_visible { media_link(webpage_url) } else { None })
                 .disable_notification(true)
                 .parse_mode(ParseMode::HTML),
             2,
@@ -121,6 +126,7 @@ impl Interactor<EditMediaInput<'_>> for &EditVideo {
             inline_message_id,
             id,
             webpage_url,
+            link_is_visible,
         }: EditMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         debug!("Video editing");
@@ -128,7 +134,7 @@ impl Interactor<EditMediaInput<'_>> for &EditVideo {
             &self.bot,
             methods::EditMessageMedia::new(
                 InputMediaVideo::new(InputFile::id(id))
-                    .caption_option(media_link(webpage_url))
+                    .caption_option(if link_is_visible { media_link(webpage_url) } else { None })
                     .supports_streaming(true)
                     .parse_mode(ParseMode::HTML),
             )
@@ -160,6 +166,7 @@ impl Interactor<EditMediaInput<'_>> for &EditAudio {
             inline_message_id,
             id,
             webpage_url,
+            link_is_visible,
         }: EditMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         debug!("Audio editing");
@@ -167,7 +174,7 @@ impl Interactor<EditMediaInput<'_>> for &EditAudio {
             &self.bot,
             methods::EditMessageMedia::new(
                 InputMediaAudio::new(InputFile::id(id))
-                    .caption_option(media_link(webpage_url))
+                    .caption_option(if link_is_visible { media_link(webpage_url) } else { None })
                     .parse_mode(ParseMode::HTML),
             )
             .inline_message_id(inline_message_id)
@@ -198,6 +205,7 @@ impl Interactor<SendPlaylistInput> for &SendVideoPlaylist {
             chat_id,
             reply_to_message_id,
             playlist,
+            link_is_visible,
         }: SendPlaylistInput,
     ) -> Result<Self::Output, Self::Err> {
         debug!("Video playlist sending");
@@ -208,7 +216,11 @@ impl Interactor<SendPlaylistInput> for &SendVideoPlaylist {
                 .into_iter()
                 .map(|val| {
                     InputMediaVideo::new(InputFile::id(val.file_id))
-                        .caption_option(media_link(val.webpage_url.as_ref()))
+                        .caption_option(if link_is_visible {
+                            media_link(val.webpage_url.as_ref())
+                        } else {
+                            None
+                        })
                         .parse_mode(ParseMode::HTML)
                 })
                 .collect(),
@@ -238,6 +250,7 @@ impl Interactor<SendPlaylistInput> for &SendAudioPlaylist {
             chat_id,
             reply_to_message_id,
             playlist,
+            link_is_visible,
         }: SendPlaylistInput,
     ) -> Result<Self::Output, Self::Err> {
         debug!("Audio playlist sending");
@@ -248,7 +261,11 @@ impl Interactor<SendPlaylistInput> for &SendAudioPlaylist {
                 .into_iter()
                 .map(|val| {
                     InputMediaAudio::new(InputFile::id(val.file_id))
-                        .caption_option(media_link(val.webpage_url.as_ref()))
+                        .caption_option(if link_is_visible {
+                            media_link(val.webpage_url.as_ref())
+                        } else {
+                            None
+                        })
                         .parse_mode(ParseMode::HTML)
                 })
                 .collect(),

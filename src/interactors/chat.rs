@@ -1,7 +1,7 @@
 use super::Interactor;
 use crate::{
     database::TxManager,
-    entities::{Chat, ChatConfig, ChatConfigExcludeDomain, ChatConfigExcludeDomains},
+    entities::{Chat, ChatConfig, ChatConfigExcludeDomain, ChatConfigExcludeDomains, ChatConfigUpdate},
     errors::ErrorKind,
 };
 
@@ -96,5 +96,29 @@ impl Interactor<ExcludeDomainInput<'_>> for &RemoveExcludeDomain {
 
         tx_manager.commit().await?;
         Ok(())
+    }
+}
+
+pub struct UpdateChatConfigInput<'a> {
+    pub dto: ChatConfigUpdate,
+    pub tx_manager: &'a mut TxManager,
+}
+
+pub struct UpdateChatConfig {}
+
+impl Interactor<UpdateChatConfigInput<'_>> for &UpdateChatConfig {
+    type Output = ChatConfig;
+    type Err = ErrorKind<Infallible>;
+
+    #[instrument(skip_all)]
+    async fn execute(self, UpdateChatConfigInput { dto, tx_manager }: UpdateChatConfigInput<'_>) -> Result<Self::Output, Self::Err> {
+        tx_manager.begin().await?;
+
+        let dao = tx_manager.chat_config_dao().unwrap();
+        let config = dao.update(dto).await?;
+        debug!("Chat config updated");
+
+        tx_manager.commit().await?;
+        Ok(config)
     }
 }

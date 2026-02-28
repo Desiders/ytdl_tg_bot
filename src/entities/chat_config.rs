@@ -6,6 +6,7 @@ use time::OffsetDateTime;
 pub struct ChatConfig {
     pub tg_id: i64,
     pub cmd_random_enabled: bool,
+    pub link_is_visible: bool,
     pub updated_at: OffsetDateTime,
 }
 
@@ -14,8 +15,38 @@ impl ChatConfig {
         Self {
             tg_id,
             cmd_random_enabled,
+            link_is_visible: false,
             updated_at: OffsetDateTime::now_utc(),
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ChatConfigUpdate {
+    pub tg_id: i64,
+    pub cmd_random_enabled: Option<bool>,
+    pub link_is_visible: Option<bool>,
+    pub updated_at: OffsetDateTime,
+}
+
+impl ChatConfigUpdate {
+    pub fn new(tg_id: i64) -> Self {
+        Self {
+            tg_id,
+            cmd_random_enabled: None,
+            link_is_visible: None,
+            updated_at: OffsetDateTime::now_utc(),
+        }
+    }
+
+    pub fn with_cmd_random_enabled(mut self, cmd_random_enabled: bool) -> Self {
+        self.cmd_random_enabled = Some(cmd_random_enabled);
+        self
+    }
+
+    pub fn with_link_is_visible(mut self, link_is_visible: bool) -> Self {
+        self.link_is_visible = Some(link_is_visible);
+        self
     }
 }
 
@@ -40,12 +71,14 @@ impl From<chat_configs::Model> for ChatConfig {
             tg_id,
             cmd_random_enabled,
             updated_at,
+            link_is_visible,
         }: chat_configs::Model,
     ) -> Self {
         Self {
             tg_id,
             cmd_random_enabled,
             updated_at,
+            link_is_visible,
         }
     }
 }

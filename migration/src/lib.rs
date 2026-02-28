@@ -6,6 +6,7 @@ mod m20260112_142259_chat_config;
 mod m20260123_213835_add_downloaded_media_language;
 mod m20260210_174551_add_downloaded_media_sections;
 mod m20260217_205206_add_chat_config_exclude_domains;
+mod m20260228_070901_add_chat_config_link_is_visible;
 
 pub struct Migrator;
 
@@ -19,6 +20,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260123_213835_add_downloaded_media_language::Migration),
             Box::new(m20260210_174551_add_downloaded_media_sections::Migration),
             Box::new(m20260217_205206_add_chat_config_exclude_domains::Migration),
+            Box::new(m20260228_070901_add_chat_config_link_is_visible::Migration),
         ]
     }
 }
