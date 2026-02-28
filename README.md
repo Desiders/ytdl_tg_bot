@@ -18,6 +18,16 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 - Copy `config.toml.example` to `config.toml` and fill it with your data
 - Run `just docker-up` to start the project
 
+## Migrations
+
+### Docker
+- `just docker-migration help`
+
+### Dev
+
+- `cd migration`
+- `cargo run -- help`
+
 ## Features
 
 - Video download 
@@ -27,3 +37,5 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 - Skip download param
 - Random media
 - Media crop
+- Stats
+- Exclude domains list
