@@ -46,6 +46,7 @@ pub(super) fn init(bot: Bot, cfg: Config, cookies: Cookies) -> Container {
             provide(|| Ok(chat::SaveChat {})),
             provide(|| Ok(chat::AddExcludeDomain {})),
             provide(|| Ok(chat::RemoveExcludeDomain {})),
+            provide(|| Ok(chat::UpdateChatConfig {})),
             provide(|| Ok(downloaded_media::AddVideo {})),
             provide(|| Ok(downloaded_media::AddAudio {})),
             provide(|| Ok(downloaded_media::GetStats {})),

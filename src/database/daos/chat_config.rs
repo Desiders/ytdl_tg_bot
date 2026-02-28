@@ -1,9 +1,13 @@
-use sea_orm::{sea_query::OnConflict, ActiveValue::Set, ColumnTrait as _, ConnectionTrait, EntityTrait, QueryFilter as _};
+use sea_orm::{
+    sea_query::OnConflict,
+    ActiveValue::{NotSet, Set, Unchanged},
+    ColumnTrait as _, ConnectionTrait, EntityTrait, QueryFilter as _,
+};
 use std::convert::Infallible;
 
 use crate::{
     database::models::{chat_config_exclude_domains, chat_configs},
-    entities::{ChatConfig, ChatConfigExcludeDomain, ChatConfigExcludeDomains},
+    entities::{ChatConfig, ChatConfigExcludeDomain, ChatConfigExcludeDomains, ChatConfigUpdate},
     errors::ErrorKind,
 };
 
@@ -29,6 +33,7 @@ where
         ChatConfig {
             tg_id,
             cmd_random_enabled,
+            link_is_visible,
             updated_at,
         }: ChatConfig,
     ) -> Result<ChatConfig, ErrorKind<Infallible>> {
@@ -41,6 +46,7 @@ where
         let model = ActiveModel {
             tg_id: Set(tg_id),
             cmd_random_enabled: Set(cmd_random_enabled),
+            link_is_visible: Unchanged(link_is_visible),
             updated_at: Set(updated_at),
         };
 
@@ -50,6 +56,27 @@ where
             .await
             .map(Into::into)
             .map_err(Into::into)
+    }
+
+    pub async fn update(
+        &self,
+        ChatConfigUpdate {
+            tg_id,
+            cmd_random_enabled,
+            link_is_visible,
+            updated_at,
+        }: ChatConfigUpdate,
+    ) -> Result<ChatConfig, ErrorKind<Infallible>> {
+        use chat_configs::{ActiveModel, Entity};
+
+        let model = ActiveModel {
+            tg_id: Set(tg_id),
+            cmd_random_enabled: cmd_random_enabled.map(Set).unwrap_or(NotSet),
+            link_is_visible: link_is_visible.map(Set).unwrap_or(NotSet),
+            updated_at: Set(updated_at),
+        };
+
+        Entity::update(model).exec(self.conn).await.map(Into::into).map_err(Into::into)
     }
 
     pub async fn get_exclude_domains(&self, tg_id: i64) -> Result<ChatConfigExcludeDomains, ErrorKind<Infallible>> {
