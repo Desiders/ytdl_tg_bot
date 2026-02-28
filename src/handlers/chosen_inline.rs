@@ -1,7 +1,7 @@
 use crate::{
     config::Config,
     database::TxManager,
-    entities::{language::Language, Params, Range, Sections},
+    entities::{language::Language, ChatConfig, Params, Range, Sections},
     handlers_utils::progress,
     interactors::{
         download::media,
@@ -32,6 +32,7 @@ pub async fn download_video(
     bot: Bot,
     params: Params,
     url_option: Option<Extension<Url>>,
+    Extension(chat_cfg): Extension<ChatConfig>,
     ChosenInlineResult {
         inline_message_id,
         result_id,
@@ -97,6 +98,7 @@ pub async fn download_video(
                     inline_message_id,
                     id: &file_id,
                     webpage_url: Some(&url),
+                    link_is_visible: chat_cfg.link_is_visible,
                 })
                 .await
             {
@@ -117,6 +119,7 @@ pub async fn download_video(
                     inline_message_id,
                     id: &file_id,
                     webpage_url: media.webpage_url.as_ref(),
+                    link_is_visible: chat_cfg.link_is_visible,
                 })
                 .await
             {
@@ -185,6 +188,7 @@ pub async fn download_video(
                     duration: media.duration.map(|val| val as i64),
                     with_delete: true,
                     webpage_url: &media.webpage_url,
+                    link_is_visible: true,
                 })
                 .await
             {
@@ -207,6 +211,7 @@ pub async fn download_video(
                     inline_message_id,
                     id: &file_id,
                     webpage_url: Some(&media.webpage_url),
+                    link_is_visible: chat_cfg.link_is_visible,
                 })
                 .await
             {
@@ -258,6 +263,7 @@ pub async fn download_audio(
     bot: Bot,
     params: Params,
     url_option: Option<Extension<Url>>,
+    Extension(chat_cfg): Extension<ChatConfig>,
     ChosenInlineResult {
         inline_message_id,
         result_id,
@@ -323,6 +329,7 @@ pub async fn download_audio(
                     inline_message_id,
                     id: &file_id,
                     webpage_url: Some(&url),
+                    link_is_visible: chat_cfg.link_is_visible,
                 })
                 .await
             {
@@ -343,6 +350,7 @@ pub async fn download_audio(
                     inline_message_id,
                     id: &file_id,
                     webpage_url: media.webpage_url.as_ref(),
+                    link_is_visible: chat_cfg.link_is_visible,
                 })
                 .await
             {
@@ -411,6 +419,7 @@ pub async fn download_audio(
                     duration: media.duration.map(|val| val as i64),
                     with_delete: true,
                     webpage_url: &media.webpage_url,
+                    link_is_visible: true,
                 })
                 .await
             {
@@ -433,6 +442,7 @@ pub async fn download_audio(
                     inline_message_id,
                     id: &file_id,
                     webpage_url: Some(&media.webpage_url),
+                    link_is_visible: chat_cfg.link_is_visible,
                 })
                 .await
             {

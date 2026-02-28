@@ -19,6 +19,10 @@ pub async fn start(bot: Bot, message: Message, Inject(cfg): Inject<Config>) -> H
         - <code>/vd</code> — download video. Calling this command is required to display download progress; otherwise, downloading will occur in \"silent\" mode.\n\
         - <code>/ad</code> — download audio\n\
         - <code>/rv</code>, <code>/ra</code> — random video or audio\n\
+        - <code>/add_ed</code> — exclude domain from download\n\
+        - <code>/rm_ed</code> — include domain in download\n\
+        - <code>/change_link_visibility</code> — change link visibility in media caption\n\
+        - <code>/stats</code> — usage statistics\n\
         \n\
         <b>Inline Mode</b>\n\
         - <code>@{bot_username} &lt;url&gt;</code> — download by link\n\
