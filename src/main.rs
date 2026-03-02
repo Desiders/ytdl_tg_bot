@@ -19,8 +19,8 @@ use telers::{
         telegram::{APIServer, BareFilesPathWrapper},
         Reqwest,
     },
-    enums::{ChatType::Private, ContentType::Text},
-    filters::{ChatType, Command, ContentType, Filter as _},
+    enums::{ChatType::Private, MessageType::Text},
+    filters::{ChatType, Command, Filter as _, MessageType},
     Bot, Dispatcher, Router,
 };
 use tracing::{error, info};
@@ -89,42 +89,42 @@ async fn main() {
     download_router
         .message
         .register(video::download)
-        .filter(ContentType::one(Text))
+        .filter(MessageType::one(Text))
         .filter(Command::many(["vd", "video_download"]))
         .filter(text_contains_url_with_reply);
     download_router
         .message
         .register(audio::download)
-        .filter(ContentType::one(Text))
+        .filter(MessageType::one(Text))
         .filter(Command::many(["ad", "audio_download"]))
         .filter(text_contains_url_with_reply);
     download_router
         .message
         .register(video::random)
-        .filter(ContentType::one(Text))
+        .filter(MessageType::one(Text))
         .filter(Command::many(["rv", "random_video"]))
         .filter(random_cmd_is_enabled);
     download_router
         .message
         .register(audio::random)
-        .filter(ContentType::one(Text))
+        .filter(MessageType::one(Text))
         .filter(Command::many(["ra", "random_audio"]))
         .filter(random_cmd_is_enabled);
     download_router
         .message
         .register(handlers::config::change_link_visibility)
-        .filter(ContentType::one(Text))
+        .filter(MessageType::one(Text))
         .filter(Command::one("change_link_visibility"));
     download_router
         .message
         .register(handlers::config::add_exclude_domain)
-        .filter(ContentType::one(Text))
+        .filter(MessageType::one(Text))
         .filter(Command::many(["add_ed", "add_exclude_domain"]))
         .filter(text_contains_host_with_reply);
     download_router
         .message
         .register(handlers::config::remove_exclude_domain)
-        .filter(ContentType::one(Text))
+        .filter(MessageType::one(Text))
         .filter(Command::many(["rm_ed", "remove_ed", "rm_exclude_domain", "remove_exclude_domain"]))
         .filter(text_contains_host_with_reply);
     download_router

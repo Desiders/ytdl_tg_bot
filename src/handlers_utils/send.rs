@@ -29,16 +29,10 @@ use tracing::{error, instrument, warn};
 /// - `Err(SessionErrorKind)` - If the request was unsuccessful and the maximum number of retries was exceeded
 #[instrument(skip_all)]
 #[allow(clippy::cast_sign_loss)]
-pub async fn with_retries<T, TRef>(
-    bot: &Bot,
-    method: TRef,
-    max_retries: u8,
-    request_timeout: Option<f32>,
-) -> Result<T::Return, SessionErrorKind>
+pub async fn with_retries<T>(bot: &Bot, method: T, max_retries: u8, request_timeout: Option<f32>) -> Result<T::Return, SessionErrorKind>
 where
-    T: TelegramMethod + Send + Sync,
+    T: TelegramMethod + Clone + Send + Sync,
     T::Method: Send + Sync,
-    TRef: AsRef<T> + Clone,
 {
     let cur_retry_count = AtomicU8::new(0);
 
@@ -54,7 +48,7 @@ where
                     SessionErrorKind::Telegram(TelegramErrorKind::RetryAfter { retry_after, .. }) => {
                         warn!("Sleeping for {retry_after:?} seconds");
 
-                        backoff::Error::retry_after(err, Duration::from_secs_f32(retry_after))
+                        backoff::Error::retry_after(err, Duration::from_secs(retry_after.try_into().unwrap()))
                     }
                     SessionErrorKind::Telegram(TelegramErrorKind::ServerError { .. } | TelegramErrorKind::MigrateToChat { .. }) => {
                         cur_retry_count.fetch_add(1, Relaxed);
@@ -90,7 +84,7 @@ where
 pub async fn media_groups(
     bot: &Bot,
     chat_id: impl Into<ChatIdKind>,
-    input_media_list: Vec<impl Into<InputMedia<'_>>>,
+    input_media_list: Vec<impl Into<InputMedia>>,
     reply_to_message_id: Option<i64>,
     request_timeout: Option<f32>,
 ) -> Result<Box<[Message]>, SessionErrorKind> {
