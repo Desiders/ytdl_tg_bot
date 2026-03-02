@@ -2,7 +2,7 @@ use std::future::Future;
 use telers::Request;
 
 pub fn text_empty(request: &mut Request) -> impl Future<Output = bool> {
-    let result = if let Some(text) = request.update.text() {
+    let result = if let Some(text) = request.update.text().or(request.update.query()) {
         text.is_empty()
     } else {
         true
