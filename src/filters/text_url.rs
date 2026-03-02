@@ -3,7 +3,7 @@ use crate::config::BlacklistedConfig;
 use froodi::async_impl::Container;
 use psl::Psl;
 use std::{future::Future, str::FromStr};
-use telers::{types::UpdateKind, Request};
+use telers::{types::Message, Request};
 use tracing::error;
 use url::{Host, Url};
 
@@ -61,34 +61,26 @@ pub fn text_contains_url(request: &mut Request) -> impl Future<Output = bool> {
 pub fn text_contains_url_with_reply(request: &mut Request) -> impl Future<Output = bool> {
     let result = if let Some(text) = request.update.text() {
         let mut url_found = false;
-
-        match get_url_from_text(text) {
-            Some(url) => {
-                if url.origin().is_tuple() {
-                    url_found = true;
-                    request.extensions.insert(url);
-                }
+        if let Some(url) = get_url_from_text(text) {
+            if url.origin().is_tuple() {
+                url_found = true;
+                request.extensions.insert(url);
             }
-            None => match request.update.kind() {
-                UpdateKind::Message(message) | UpdateKind::EditedMessage(message) => {
-                    if let Some(message) = message.reply_to_message() {
-                        if let Some(text) = message.text() {
-                            if let Some(url) = get_url_from_text(text) {
-                                url_found = true;
-                                request.extensions.insert(url);
-                            }
-                        }
+        }
+        if !url_found {
+            if let Some(text) = request.update.reply_to_message().and_then(Message::text) {
+                if let Some(url) = get_url_from_text(text) {
+                    if url.origin().is_tuple() {
+                        url_found = true;
+                        request.extensions.insert(url);
                     }
                 }
-                _ => {}
-            },
+            }
         }
-
         url_found
     } else {
         false
     };
-
     async move { result }
 }
 
@@ -96,27 +88,18 @@ pub fn text_contains_url_with_reply(request: &mut Request) -> impl Future<Output
 pub fn text_contains_host_with_reply(request: &mut Request) -> impl Future<Output = bool> {
     let result = if let Some(text) = request.update.text() {
         let mut host_found = false;
-
-        match get_host_from_text(text) {
-            Some(host) => {
-                host_found = true;
-                request.extensions.insert(host);
-            }
-            None => match request.update.kind() {
-                UpdateKind::Message(message) | UpdateKind::EditedMessage(message) => {
-                    if let Some(message) = message.reply_to_message() {
-                        if let Some(text) = message.text() {
-                            if let Some(host) = get_host_from_text(text) {
-                                host_found = true;
-                                request.extensions.insert(host);
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            },
+        if let Some(host) = get_host_from_text(text) {
+            host_found = true;
+            request.extensions.insert(host);
         }
-
+        if !host_found {
+            if let Some(text) = request.update.reply_to_message().and_then(Message::text) {
+                if let Some(host) = get_host_from_text(text) {
+                    host_found = true;
+                    request.extensions.insert(host);
+                }
+            }
+        }
         host_found
     } else {
         false
