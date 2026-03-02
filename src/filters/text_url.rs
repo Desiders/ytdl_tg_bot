@@ -42,7 +42,7 @@ pub fn get_host_from_text(text: &str) -> Option<Host> {
 }
 
 pub fn text_contains_url(request: &mut Request) -> impl Future<Output = bool> {
-    let result = if let Some(text) = request.update.text() {
+    let result = if let Some(text) = request.update.text().or(request.update.query()) {
         let mut url_found = false;
         if let Some(url) = get_url_from_text(text) {
             if url.origin().is_tuple() {
@@ -59,7 +59,7 @@ pub fn text_contains_url(request: &mut Request) -> impl Future<Output = bool> {
 
 #[allow(clippy::module_name_repetitions)]
 pub fn text_contains_url_with_reply(request: &mut Request) -> impl Future<Output = bool> {
-    let result = if let Some(text) = request.update.text() {
+    let result = if let Some(text) = request.update.text().or(request.update.query()) {
         let mut url_found = false;
         if let Some(url) = get_url_from_text(text) {
             if url.origin().is_tuple() {
@@ -86,7 +86,7 @@ pub fn text_contains_url_with_reply(request: &mut Request) -> impl Future<Output
 
 #[allow(clippy::module_name_repetitions)]
 pub fn text_contains_host_with_reply(request: &mut Request) -> impl Future<Output = bool> {
-    let result = if let Some(text) = request.update.text() {
+    let result = if let Some(text) = request.update.text().or(request.update.query()) {
         let mut host_found = false;
         if let Some(host) = get_host_from_text(text) {
             host_found = true;
