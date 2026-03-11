@@ -2,8 +2,8 @@ use crate::config::BlacklistedConfig;
 
 use froodi::async_impl::Container;
 use psl::Psl;
-use std::{future::Future, str::FromStr};
-use telers::{types::Message, Request};
+use std::{convert::Infallible, future::Future, str::FromStr};
+use telers::{types::Message, FilterResult, Request};
 use tracing::error;
 use url::{Host, Url};
 
@@ -41,7 +41,7 @@ pub fn get_host_from_text(text: &str) -> Option<Host> {
     None
 }
 
-pub fn text_contains_url(request: &mut Request) -> impl Future<Output = bool> {
+pub fn text_contains_url(request: &mut Request) -> impl Future<Output = FilterResult<Infallible>> {
     let result = if let Some(text) = request.update.text().or(request.update.query()) {
         let mut url_found = false;
         if let Some(url) = get_url_from_text(text) {
@@ -54,11 +54,11 @@ pub fn text_contains_url(request: &mut Request) -> impl Future<Output = bool> {
     } else {
         false
     };
-    async move { result }
+    async move { Ok(result) }
 }
 
 #[allow(clippy::module_name_repetitions)]
-pub fn text_contains_url_with_reply(request: &mut Request) -> impl Future<Output = bool> {
+pub fn text_contains_url_with_reply(request: &mut Request) -> impl Future<Output = FilterResult<Infallible>> {
     let result = if let Some(text) = request.update.text().or(request.update.query()) {
         let mut url_found = false;
         if let Some(url) = get_url_from_text(text) {
@@ -81,11 +81,11 @@ pub fn text_contains_url_with_reply(request: &mut Request) -> impl Future<Output
     } else {
         false
     };
-    async move { result }
+    async move { Ok(result) }
 }
 
 #[allow(clippy::module_name_repetitions)]
-pub fn text_contains_host_with_reply(request: &mut Request) -> impl Future<Output = bool> {
+pub fn text_contains_host_with_reply(request: &mut Request) -> impl Future<Output = FilterResult<Infallible>> {
     let result = if let Some(text) = request.update.text().or(request.update.query()) {
         let mut host_found = false;
         if let Some(host) = get_host_from_text(text) {
@@ -104,34 +104,33 @@ pub fn text_contains_host_with_reply(request: &mut Request) -> impl Future<Outpu
     } else {
         false
     };
-
-    async move { result }
+    async move { Ok(result) }
 }
 
-pub fn url_is_blacklisted(request: &mut Request) -> impl Future<Output = bool> {
+pub fn url_is_blacklisted(request: &mut Request) -> impl Future<Output = FilterResult<Infallible>> {
     let url_option = request.extensions.get::<Url>().cloned();
     let container_option = request.extensions.get::<Container>().cloned();
     async move {
         let Some(url) = url_option else {
-            return false;
+            return Ok(false);
         };
         let Some(domain) = url.domain() else {
-            return false;
+            return Ok(false);
         };
         let Some(container) = container_option else {
-            return false;
+            return Ok(false);
         };
-        match container.get::<BlacklistedConfig>().await {
+        Ok(match container.get::<BlacklistedConfig>().await {
             Ok(cfg) => cfg.domains.iter().map(String::as_str).collect::<Vec<_>>().contains(&domain),
             Err(err) => {
                 error!(%err);
                 false
             }
-        }
+        })
     }
 }
 
-pub fn url_is_skippable_by_param(request: &mut Request) -> impl Future<Output = bool> {
+pub fn url_is_skippable_by_param(request: &mut Request) -> impl Future<Output = FilterResult<Infallible>> {
     let mut result: bool = false;
     if let Some(url) = request.extensions.get::<Url>() {
         for (key, value) in url.query_pairs() {
@@ -141,5 +140,5 @@ pub fn url_is_skippable_by_param(request: &mut Request) -> impl Future<Output = 
             }
         }
     }
-    async move { result }
+    async move { Ok(result) }
 }
