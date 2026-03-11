@@ -129,12 +129,113 @@ services:
     profiles:
       - migration
 
+  victoria_metrics:
+    container_name: ytdl_tg_bot.victoria_metrics
+    image: victoriametrics/victoria-metrics:latest
+    expose:
+      - "8428"
+    ports:
+      - "127.0.0.1:${VICTORIA_METRICS_PORT:-8428}:8428"
+    networks:
+      - monitoring.network
+    volumes:
+      - vm_data:/victoria-metrics-data
+    profiles:
+      - metrics-db
+
+  node_exporter:
+    container_name: ytdl_tg_bot.node_exporter
+    image: quay.io/prometheus/node-exporter:latest 
+    restart: unless-stopped
+    pid: host
+    expose:
+      - "9100"
+    networks:
+      - monitoring.network
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    profiles:
+      - monitoring
+
+  postgres_exporter:
+    container_name: ytdl_tg_bot.postgres_exporter
+    image: prometheuscommunity/postgres-exporter:latest
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: $DATABASE_URL
+    expose:
+      - "9187"
+    networks:
+      - postgres.network
+      - monitoring.network
+    profiles:
+      - monitoring
+
+  vmagent:
+    container_name: ytdl_tg_bot.vmagent
+    image: victoriametrics/vmagent:latest
+    restart: unless-stopped
+    env_file:
+      - ".env"
+    expose:
+      - "8429"
+    networks:
+      - monitoring.network
+    volumes:
+      - vmagent.data:/tmp/vmagent-remotewrite-data
+      - ./victoria-metrics/scrape.yaml:/config/scrape.yml:ro
+    command:
+      - "--promscrape.config=/config/scrape.yml"
+      - "--remoteWrite.url=${VMAGENT_REMOTE_WRITE_URL}"
+      - "--remoteWrite.maxDiskUsagePerURL=${VMAGENT_MAX_DISK}"
+      - "--remoteWrite.basicAuth.username=${VMAGENT_REMOTE_WRITE_USER}"
+      - "--remoteWrite.basicAuth.password=${VMAGENT_REMOTE_WRITE_PASSWORD}"
+    depends_on:
+      - node_exporter
+      - postgres_exporter
+    profiles:
+      - monitoring
+
+  grafana:
+    container_name: ytdl_tg_bot.grafana
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    environment:
+      VICTORIA_METRICS_URL: $VICTORIA_METRICS_URL
+      GRAFANA_USER: $GRAFANA_USER
+      GRAFANA_PASSWORD: $GRAFANA_PASSWORD
+      GF_AUTH_ANONYMOUS_ENABLED: $GRAFANA_ANONYMOUS_ENABLED
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+    expose:
+      - "3000"
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    networks:
+      - monitoring.network
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana.data:/var/lib/grafana
+    profiles:
+      - metrics
+
 volumes:
   postgres.data: {}
   telegram_bot_api.data: {}
+  vm_data: {}
+  vmagent.data: {}
+  grafana.data: {}
 
 networks:
   postgres.network: {}
   yt_toolkit_api.network: {}
   yt_pot_provider_api.network: {}
   telegram_bot_api.network: {}
+  monitoring.network: {}

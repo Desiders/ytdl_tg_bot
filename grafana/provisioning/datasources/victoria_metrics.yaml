@@ -1,0 +1,8 @@
+apiVersion: 1
+
+datasources:
+  - name: VictoriaMetrics
+    type: prometheus
+    url: $VICTORIA_METRICS_URL
+    isDefault: true
+    editable: false

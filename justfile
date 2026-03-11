@@ -38,6 +38,24 @@ fmt:
 @docker-dev-down:
     docker compose --profile dev down
 
+@docker-metrics-up:
+    docker compose --profile metrics-db --profile metrics up -d && docker compose --profile metrics-db --profile metrics logs -f
+
+@docker-metrics-stop:
+    docker compose --profile metrics-db --profile metrics stop
+
+@docker-metrics-down:
+    docker compose --profile metrics-db --profile metrics down
+
+@docker-monitoring-up:
+    docker compose --profile monitoring up -d && docker compose --profile monitoring logs -f
+
+@docker-monitoring-stop:
+    docker compose --profile monitoring stop
+
+@docker-monitoring-down:
+    docker compose --profile monitoring down
+
 @docker-migration COMMAND:
     docker compose run --rm migration {{COMMAND}}
 
