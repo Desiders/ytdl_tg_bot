@@ -157,8 +157,8 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
     ) -> Result<Self::Output, Self::Err> {
         let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(Self::Err::TempDir)?;
         let output_dir_path = temp_dir.path();
-        let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
-        let info_file_path = output_dir_path.join(format!("{}.info.json", media.id));
+        let thumb_file_path = output_dir_path.join("media.jpg");
+        let info_file_path = output_dir_path.join("media.info.json");
 
         let mut thumn_is_downloaded = false;
         for (format, raw) in formats {
@@ -166,7 +166,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
 
             let format_id = &format.format_id;
             let max_file_size = self.yt_dlp_cfg.max_file_size;
-            let media_file_path = output_dir_path.join(format!("{}.{}", media.id, format.ext));
+            let media_file_path = output_dir_path.join(format!("media.{}", format.ext));
             let info_file_path = &info_file_path;
             let executable_path = self.yt_dlp_cfg.executable_path.as_ref();
             let pot_provider_url = self.yt_pot_provider_cfg.url.as_ref();
@@ -261,8 +261,8 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
         let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(Self::Err::TempDir)?;
         let audio_ext = "m4a";
         let output_dir_path = temp_dir.path();
-        let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
-        let info_file_path = output_dir_path.join(format!("{}.info.json", media.id));
+        let thumb_file_path = output_dir_path.join("media.jpg");
+        let info_file_path = output_dir_path.join("media.info.json");
 
         let mut thumn_is_downloaded = false;
         for (format, raw) in formats {
@@ -270,7 +270,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
 
             let format_id = &format.format_id;
             let max_file_size = self.yt_dlp_cfg.max_file_size;
-            let media_file_path = output_dir_path.join(format!("{}.{audio_ext}", media.id));
+            let media_file_path = output_dir_path.join(format!("media.{audio_ext}"));
             let info_file_path = &info_file_path;
             let executable_path = self.yt_dlp_cfg.executable_path.as_ref();
             let pot_provider_url = self.yt_pot_provider_cfg.url.as_ref();
@@ -372,8 +372,8 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
         for (media, formats) in playlist {
             let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(Self::Err::TempDir)?;
             let output_dir_path = temp_dir.path();
-            let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
-            let info_file_path = output_dir_path.join(format!("{}.info.json", media.id));
+            let thumb_file_path = output_dir_path.join("media.jpg");
+            let info_file_path = output_dir_path.join("media.info.json");
 
             let mut errs = vec![];
             let mut media_is_downloaded = false;
@@ -383,7 +383,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
 
                 let format_id = &format.format_id;
                 let info_file_path = &info_file_path;
-                let media_file_path = output_dir_path.join(format!("{}.{}", media.id, format.ext));
+                let media_file_path = output_dir_path.join(format!("media.{}", format.ext));
 
                 debug!("Downloading video");
                 let span = span.exit();
@@ -490,9 +490,9 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
         for (media, formats) in playlist {
             let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(Self::Err::TempDir)?;
             let output_dir_path = temp_dir.path();
-            let media_file_path = output_dir_path.join(format!("{}.{audio_ext}", media.id));
-            let thumb_file_path = output_dir_path.join(format!("{}.jpg", media.id));
-            let info_file_path = output_dir_path.join(format!("{}.info.json", media.id));
+            let media_file_path = output_dir_path.join(format!("media.{audio_ext}"));
+            let thumb_file_path = output_dir_path.join("media.jpg");
+            let info_file_path = output_dir_path.join("media.info.json");
 
             let mut errs = vec![];
             let mut media_is_downloaded = false;

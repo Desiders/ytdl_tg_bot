@@ -59,7 +59,7 @@ pub async fn start(bot: Bot, message: Message, Inject(cfg): Inject<Config>) -> H
                 message
                     .reply_to_message()
                     .as_ref()
-                    .map(|message| ReplyParameters::new(message.id()).allow_sending_without_reply(true)),
+                    .map(|message| ReplyParameters::new(message.message_id()).allow_sending_without_reply(true)),
             ),
     )
     .await?;

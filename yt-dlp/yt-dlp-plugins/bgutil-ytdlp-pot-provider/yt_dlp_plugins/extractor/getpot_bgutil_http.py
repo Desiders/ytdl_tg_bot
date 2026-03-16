@@ -23,6 +23,7 @@ from yt_dlp_plugins.extractor.getpot_bgutil import BgUtilPTPBase
 class BgUtilHTTPPTP(BgUtilPTPBase):
     PROVIDER_NAME = 'bgutil:http'
     DEFAULT_BASE_URL = 'http://127.0.0.1:4416'
+    _GET_SERVER_VSN_TIMEOUT = 5.0
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -61,11 +62,8 @@ class BgUtilHTTPPTP(BgUtilPTPBase):
                 note=False))
         except TransportError as e:
             # the server may be down
-            script_path_provided = self.ie._configuration_arg(
-                ie_key='youtubepot-bgutilscript', key='script_path', default=[None])[0] is not None
-
             warning_base = f'Error reaching GET {self._base_url}/ping (caused by {e.__class__.__name__}). '
-            if script_path_provided:  # server down is expected, log info
+            if self._script_path_provided() is not None:  # server down is expected, log info
                 self._info_and_raise(
                     warning_base + 'This is expected if you are using the script method.')
             else:
@@ -108,18 +106,18 @@ class BgUtilHTTPPTP(BgUtilPTPBase):
         # used for CI check
         self.logger.trace('Generating POT via HTTP server')
 
-        disable_innertube = bool(self._configuration_arg('disable_innertube', default=[None])[0])
-        challenge = self._get_attestation(None if disable_innertube else request.video_webpage)
+        if self._configuration_arg('disable_innertube', default=[None])[0] is not None:
+            self._warn_and_raise(
+                "'youtubepot-bgutilhttp:disable_innertube' extractor arg is deprecated")
+
+        challenge = self._get_attestation(request.video_webpage)
         # The challenge is falsy when the webpage and the challenge are unavailable
         # In this case, we need to disable /att/get since it's broken for web_music
         if not challenge and request.internal_client_name == 'web_music':
-            if not disable_innertube:  # if not already set, warn the user
-                self.logger.warning(
-                    'BotGuard challenges could not be obtained from the webpage, '
-                    'overriding disable_innertube=True because InnerTube challenges '
-                    'are currently broken for the web_music client. '
-                    'Pass disable_innertube=1 to suppress this warning.')
-            disable_innertube = True
+            self._warn_and_raise(
+                'BotGuard challenges could not be obtained from the webpage, '
+                'a PO Token cannot be generated because InnerTube challenges '
+                'are currently broken for the web_music client. ')
 
         try:
             response = self._request_webpage(
@@ -128,7 +126,6 @@ class BgUtilHTTPPTP(BgUtilPTPBase):
                         'bypass_cache': request.bypass_cache,
                         'challenge': challenge,
                         'content_binding': get_webpo_content_binding(request)[0],
-                        'disable_innertube': disable_innertube,
                         'disable_tls_verification': not request.request_verify_tls,
                         'proxy': request.request_proxy,
                         'innertube_context': request.innertube_context,

@@ -30,7 +30,7 @@ use telers::{
 use tracing::{debug, error, instrument, warn};
 use url::Url;
 
-#[instrument(skip_all, fields(%message_id = message.id(), %url = url.as_str(), ?params))]
+#[instrument(skip_all, fields(%message_id = message.message_id(), %url = url.as_str(), ?params))]
 pub async fn download(
     bot: Bot,
     message: Message,
@@ -48,11 +48,11 @@ pub async fn download(
 ) -> HandlerResult {
     debug!("Got url");
 
-    let message_id = message.id();
+    let message_id = message.message_id();
     let chat_id = message.chat().id();
 
     let progress_message = progress::new(&bot, "🔍 Preparing download...", chat_id, Some(message_id), None).await?;
-    let progress_message_id = progress_message.id();
+    let progress_message_id = progress_message.message_id();
 
     let playlist_range = match params.0.get("items") {
         Some(raw_value) => match Range::from_str(raw_value) {
@@ -258,7 +258,7 @@ pub async fn download(
     Ok(EventReturn::Finish)
 }
 
-#[instrument(skip_all, fields(%message_id = message.id(), %url = url.as_str(), ?params))]
+#[instrument(skip_all, fields(%message_id = message.message_id(), %url = url.as_str(), ?params))]
 pub async fn download_quiet(
     message: Message,
     params: Params,
@@ -275,7 +275,7 @@ pub async fn download_quiet(
 ) -> HandlerResult {
     debug!("Got url");
 
-    let message_id = message.id();
+    let message_id = message.message_id();
     let chat_id = message.chat().id();
 
     let playlist_range = match params.0.get("items") {
@@ -416,7 +416,7 @@ pub async fn download_quiet(
     Ok(EventReturn::Finish)
 }
 
-#[instrument(skip_all, fields(%message_id = message.id()))]
+#[instrument(skip_all, fields(%message_id = message.message_id()))]
 pub async fn random(
     message: Message,
     params: Params,
@@ -424,7 +424,7 @@ pub async fn random(
     Inject(send_playlist): Inject<send_media::id::SendVideoPlaylist>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
 ) -> HandlerResult {
-    let message_id = message.id();
+    let message_id = message.message_id();
     let chat_id = message.chat().id();
 
     let domains = params.0.get("domains").map(|val| Domains::from_str(val).unwrap());

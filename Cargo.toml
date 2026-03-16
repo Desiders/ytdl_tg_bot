@@ -1,16 +1,16 @@
 [package]
 name = "ytdl_tg_bot"
-version = "4.4.0"
+version = "4.6.0"
 edition = "2021"
 
 [dependencies]
-telers = { version = "1.0.0-alpha.29", features = ["default_signal", "rustls-tls"], default-features = false }
+telers = { version = "1.0.0-beta.1", features = ["default-signal", "rustls-tls"], default-features = false }
 tokio = { version = "1.36", features = ["rt-multi-thread", "process", "sync"], default-features = false }
 tokio-util = { version = "0.7", default-features = false }
-nix = { version = "0.30", features = ["fs"], default-features = false }
-reqwest = { version = "0.12", features = ["rustls-tls", "charset"], default-features = false }
+nix = { version = "0.31", features = ["fs"], default-features = false }
+reqwest = { version = "0.13", features = ["rustls", "charset", "query"], default-features = false }
 sea-orm = { version = "1.1", features = ["macros", "sqlx-postgres", "runtime-tokio-rustls", "with-time", "with-uuid"], default-features = false }
-froodi = { version = "1.0.0-beta.16", features = ["async", "thread_safe", "telers"], default-features = false }
+froodi = { version = "1.0.0-beta.17", features = ["async", "thread_safe", "telers"], default-features = false }
 serde = { version = "1.0", default-features = false }
 serde_json = {version = "1.0", default-features = false }
 bytes = { version = "1", default-features = false }
@@ -23,8 +23,12 @@ thiserror = { version = "2.0", default-features = false }
 tempfile = { version = "3.9", default-features = false }
 futures-util = { version = "0.3", default-features = false }
 backoff = { version = "0.4", features = ["tokio"], default-features = false }
-toml = { version = "0.9", features = ["parse", "serde"], default-features = false }
+toml = { version = "1.0.6", features = ["parse", "serde"], default-features = false }
 anyhow = { version = "1.0", default-features = false }
 regex = { version = "1.12", features = ["perf"], default-features = false }
 mutagen-rs = { version = "0.2.5", default-features = false }
 psl = { version = "2.1", default-features = false }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

@@ -1,10 +1,10 @@
 use crate::entities::ChatConfigExcludeDomains;
 
-use std::future::Future;
-use telers::Request;
+use std::{convert::Infallible, future::Future};
+use telers::{FilterResult, Request};
 use url::Url;
 
-pub fn is_exclude_domain(request: &mut Request) -> impl Future<Output = bool> {
+pub fn is_exclude_domain(request: &mut Request) -> impl Future<Output = FilterResult<Infallible>> {
     let chat_cfg = request.extensions.get::<ChatConfigExcludeDomains>().cloned();
     let url = request
         .extensions
@@ -13,11 +13,11 @@ pub fn is_exclude_domain(request: &mut Request) -> impl Future<Output = bool> {
         .flatten();
     async move {
         let Some(chat_cfg) = chat_cfg else {
-            return false;
+            return Ok(false);
         };
         let Some(host) = url else {
-            return false;
+            return Ok(false);
         };
-        chat_cfg.0.contains(&host.to_string())
+        Ok(chat_cfg.0.contains(&host.to_string()))
     }
 }

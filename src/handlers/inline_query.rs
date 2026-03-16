@@ -66,7 +66,7 @@ pub async fn select_by_url(
     let mut results: Vec<InlineQueryResult> = Vec::with_capacity(media_many.len());
     for media in media_many {
         let title = media.title.as_deref().unwrap_or("No name");
-        let thumbnail = media.thumbnail;
+        let thumbnail = media.thumbnail.map(|val| val.to_string());
         let result_id = Uuid::new_v4();
 
         results.push(
@@ -142,7 +142,7 @@ pub async fn select_by_text(
     let mut results: Vec<InlineQueryResult> = Vec::with_capacity(media_many.len());
     for media in media_many {
         let title = media.title.as_deref().unwrap_or("No name");
-        let thumbnail = media.thumbnail;
+        let thumbnail = media.thumbnail.map(|val| val.to_string());
         let id = &media.id;
 
         results.push(
