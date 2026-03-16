@@ -3804,7 +3804,7 @@ dependencies = [
 
 [[package]]
 name = "ytdl_tg_bot"
-version = "4.6.0"
+version = "4.6.1"
 dependencies = [
  "anyhow",
  "backoff",
