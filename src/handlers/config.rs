@@ -51,7 +51,7 @@ pub async fn change_link_visibility(
         &bot,
         &text,
         chat_cfg.tg_id,
-        message.reply_to_message().as_ref().map(|message| message.id()),
+        message.reply_to_message().as_ref().map(|message| message.message_id()),
         Some(ParseMode::HTML),
     )
     .await?;
@@ -59,7 +59,7 @@ pub async fn change_link_visibility(
     Ok(EventReturn::Finish)
 }
 
-#[instrument(skip_all, fields(%message_id = message.id(), %host))]
+#[instrument(skip_all, fields(%message_id = message.message_id(), %host))]
 pub async fn add_exclude_domain(
     bot: Bot,
     message: Message,
@@ -76,7 +76,7 @@ pub async fn add_exclude_domain(
             &bot,
             "Domain already exists in exclude list",
             chat_id,
-            message.reply_to_message().as_ref().map(|message| message.id()),
+            message.reply_to_message().as_ref().map(|message| message.message_id()),
             None,
         )
         .await?;
@@ -87,7 +87,7 @@ pub async fn add_exclude_domain(
             &bot,
             "Too many domains in exclude list. Limit is 15.",
             chat_id,
-            message.reply_to_message().as_ref().map(|message| message.id()),
+            message.reply_to_message().as_ref().map(|message| message.message_id()),
             None,
         )
         .await?;
@@ -130,14 +130,14 @@ pub async fn add_exclude_domain(
         &bot,
         &text,
         chat_id,
-        message.reply_to_message().as_ref().map(|message| message.id()),
+        message.reply_to_message().as_ref().map(|message| message.message_id()),
         Some(ParseMode::HTML),
     )
     .await?;
     Ok(EventReturn::Finish)
 }
 
-#[instrument(skip_all, fields(%message_id = message.id(), %host))]
+#[instrument(skip_all, fields(%message_id = message.message_id(), %host))]
 pub async fn remove_exclude_domain(
     bot: Bot,
     message: Message,
@@ -154,7 +154,7 @@ pub async fn remove_exclude_domain(
             &bot,
             "Domain not found in exclude list",
             chat_id,
-            message.reply_to_message().as_ref().map(|message| message.id()),
+            message.reply_to_message().as_ref().map(|message| message.message_id()),
             None,
         )
         .await?;
@@ -196,7 +196,7 @@ pub async fn remove_exclude_domain(
         &bot,
         &text,
         chat_id,
-        message.reply_to_message().as_ref().map(|message| message.id()),
+        message.reply_to_message().as_ref().map(|message| message.message_id()),
         Some(ParseMode::HTML),
     )
     .await?;

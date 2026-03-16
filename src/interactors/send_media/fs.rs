@@ -92,7 +92,7 @@ impl Interactor<SendVideoInput<'_>> for &SendVideo {
         )
         .await?;
         drop(temp_dir);
-        let message_id = message.id();
+        let message_id = message.message_id();
         let file_id = match message.video() {
             Some(video) => video.file_id.clone(),
             None => message.document().unwrap().file_id.clone(),
@@ -158,7 +158,7 @@ impl Interactor<SendAudioInput<'_>> for &SendAudio {
         )
         .await?;
         drop(temp_dir);
-        let message_id = message.id();
+        let message_id = message.message_id();
         let file_id = message
             .audio()
             .map(|val| val.file_id.clone())

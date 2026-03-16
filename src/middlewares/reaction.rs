@@ -36,7 +36,7 @@ impl Middleware for ReactionMiddleware {
         }
 
         let bot = request.bot.clone();
-        let message_id = message.id();
+        let message_id = message.message_id();
         let chat_id = message.chat().id();
 
         for reaction in REACTIONS {
