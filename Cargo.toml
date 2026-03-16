@@ -28,3 +28,7 @@ anyhow = { version = "1.0", default-features = false }
 regex = { version = "1.12", features = ["perf"], default-features = false }
 mutagen-rs = { version = "0.2.5", default-features = false }
 psl = { version = "2.1", default-features = false }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
