@@ -577,8 +577,9 @@ dependencies = [
 
 [[package]]
 name = "froodi"
-version = "1.0.0-beta.16"
-source = "git+https://github.com/Desiders/froodi.git?branch=telers-codegen-branch#a7582709507e6d50746a16370c98078815f38585"
+version = "1.0.0-beta.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7153a6ce9dc0d497fcb0d9fc8726c57516d969ffcf8cf8ee4e8cfabe4bba4c75"
 dependencies = [
  "anyhow",
  "frunk",
@@ -2706,8 +2707,9 @@ checksum = "20f34339676cdcab560c9a82300c4c2581f68b9369aedf0fae86f2ff9565ff3e"
 
 [[package]]
 name = "telers"
-version = "1.0.0-alpha.29"
-source = "git+https://github.com/Desiders/telers.git?branch=codegen#509e8ff12d512fd31804550a98dd439c010e3b54"
+version = "1.0.0-beta.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab3c0cfd7e39f501200545462137534b2bec5d4208382be911559edf825c31e1"
 dependencies = [
  "anyhow",
  "backoff",
@@ -2736,8 +2738,9 @@ dependencies = [
 
 [[package]]
 name = "telers-macros"
-version = "1.0.0-alpha.4"
-source = "git+https://github.com/Desiders/telers.git?branch=codegen#509e8ff12d512fd31804550a98dd439c010e3b54"
+version = "1.0.0-beta.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef31d179268f4c1d56f96864cb6f770f337f9e38348fef29565d1bab62b60e29"
 dependencies = [
  "proc-macro2",
  "quote",
