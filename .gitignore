@@ -5,6 +5,8 @@ target/
 yt-dlp-cache/
 
 config.toml
+configs/config.toml
+configs/downloader.toml
 
 cookies/*.txt
 

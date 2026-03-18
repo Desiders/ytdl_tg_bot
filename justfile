@@ -1,6 +1,7 @@
 set dotenv-load
 
 host := `uname -a`
+compose := "docker compose --env-file .env -f deployment/docker-compose.yaml"
 
 help:
     just -l
@@ -9,44 +10,53 @@ lint:
     cargo clippy --all --all-features -- -W clippy::pedantic
 
 fmt:
-    cargo fmt --all -- --check
+    cargo +nightly fmt --all
 
 @docker-build:
-    docker compose --profile default build
+    {{compose}} --profile default build
+
+@docker-build-downloader:
+    {{compose}} --profile default --profile downloader build
 
 @docker-migration-build:
-    docker compose build migration
+    {{compose}} build migration
 
 @docker-up:
-    docker compose --profile default up
+    {{compose}} --profile default up
 
 @docker-up-build: docker-build
-    docker compose --profile default up
+    {{compose}} --profile default up
+
+@docker-up-downloader:
+    {{compose}} --profile default --profile downloader up
+
+@docker-up-build-downloader: docker-build-downloader
+    {{compose}} --profile default --profile downloader up
 
 @docker-down:
-    docker compose --profile default down
+    {{compose}} down
 
 @docker-dev-build:
-    docker compose --profile dev build
+    {{compose}} --profile dev build
 
 @docker-dev-up:
-    docker compose --profile dev up -d && docker compose --profile dev logs -f
+    {{compose}} --profile dev up -d && {{compose}} --profile dev logs -f
 
 @docker-dev-up-build: docker-dev-build
-    docker compose --profile dev up -d && docker compose --profile dev logs -f
+    {{compose}} --profile dev up -d && {{compose}} --profile dev logs -f
 
 @docker-dev-down:
-    docker compose --profile dev down
+    {{compose}} --profile dev down
 
 @docker-migration COMMAND:
-    docker compose run --rm migration {{COMMAND}}
+    {{compose}} run --rm migration {{COMMAND}}
 
 @docker-migration-with-build COMMAND:
     @just docker-migration-build
-    docker compose run --rm migration {{COMMAND}}
+    {{compose}} run --rm migration {{COMMAND}}
 
 @run:
-    cargo run
+    cargo run -p ytdl_tg_bot_bot
 
 docker-pull USER VERSION="latest":
     docker pull {{USER}}/ytdl_tg_bot:{{VERSION}}
@@ -63,7 +73,7 @@ docker-migration-push USER VERSION="latest":
     docker push {{USER}}/ytdl_tg_bot.migration:{{VERSION}}
 
 @docker-db-up:
-    docker compose up -d postgres
+    {{compose}} up -d postgres
 
 @docker-db-stop:
-    docker compose stop postgres
+    {{compose}} stop postgres
