@@ -21,10 +21,6 @@ pub struct ChatConfig {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct TimeoutsConfig {
-    #[allow(dead_code)]
-    pub video_download: u64,
-    #[allow(dead_code)]
-    pub audio_download: u64,
     pub send_by_fs: f32,
     pub send_by_id: f32,
 }
@@ -32,8 +28,6 @@ pub struct TimeoutsConfig {
 impl Default for TimeoutsConfig {
     fn default() -> Self {
         Self {
-            video_download: 420,
-            audio_download: 420,
             send_by_fs: 210.0,
             send_by_id: 360.0,
         }
@@ -125,22 +119,8 @@ pub struct DownloadNodeConfig {
 pub struct DownloadConfig {
     #[serde(default)]
     pub capabilities_refresh_interval: u64,
-    #[serde(default = "default_overload_strategy")]
-    #[allow(dead_code)]
-    pub overload_strategy: OverloadStrategy,
     #[serde(default)]
     pub nodes: Vec<DownloadNodeConfig>,
-}
-
-#[derive(Default, Deserialize, Clone, Debug)]
-#[serde(rename_all = "lowercase")]
-pub enum OverloadStrategy {
-    #[default]
-    Reject,
-}
-
-fn default_overload_strategy() -> OverloadStrategy {
-    OverloadStrategy::Reject
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -182,7 +162,7 @@ pub enum ParseError {
 pub fn get_path() -> Box<str> {
     let path = match env::var("CONFIG_PATH") {
         Ok(val) => val,
-        Err(VarError::NotPresent) => String::from("config.toml"),
+        Err(VarError::NotPresent) => String::from("configs/config.toml"),
         Err(VarError::NotUnicode(_)) => {
             panic!("`CONFIG_PATH` env variable is not a valid UTF-8 string!");
         }
