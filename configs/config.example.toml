@@ -9,8 +9,6 @@ dirs = "info,hyper=warn,reqwest=warn,tokio_util::codec=warn"
 receiver_chat_id = 123
 
 [timeouts]
-video_download = 420
-audio_download = 420
 send_by_fs = 210
 send_by_id = 360
 
@@ -59,7 +57,6 @@ max_file_size = 5000000
 
 [download]
 capabilities_refresh_interval = 0
-overload_strategy = "reject"
 
 [[download.nodes]]
 address = "http://downloader:50051"

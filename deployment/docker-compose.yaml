@@ -116,7 +116,6 @@ services:
       - "127.0.0.1:${YT_POT_PROVIDER_PORT:-4416}:4416"
     profiles:
       - downloader
-      - dev
 
   telegram_bot_api:
     container_name: ytdl_tg_bot.telegram_bot_api
