@@ -17,9 +17,7 @@ yt-dlp
 
 cookies/*.txt
 
-docker-compose.yml
-docker-compose.yaml
-Dockerfile
-
 config.toml
-config.example.toml
+node_config.toml
+configs/config.toml
+configs/downloader.toml

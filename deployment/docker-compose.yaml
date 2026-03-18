@@ -4,38 +4,63 @@ services:
     image: desiders/ytdl_tg_bot:4.6.1
     restart: "unless-stopped"
     env_file:
-      - ".env"
+      - "../.env"
     environment:
-      - CONFIG_PATH=${CONFIG_PATH:-config.toml}
+      - CONFIG_PATH=${CONFIG_PATH:-configs/config.toml}
     build:
-      context: .
+      context: ..
+      dockerfile: deployment/Dockerfile.bot
     networks:
       - postgres.network
       - yt_toolkit_api.network
-      - yt_pot_provider_api.network
       - telegram_bot_api.network
+      - download.network
     volumes:
       - type: bind
-        source: ./config.toml
-        target: /app/config.toml
-      - type: bind
-        source: ./yt-dlp
-        target: /app/yt-dlp
-      - type: bind
-        source: ./cookies
-        target: /app/cookies 
+        source: ../configs/config.toml
+        target: /app/configs/config.toml
     depends_on:
       postgres:
         condition: service_healthy
       yt_toolkit_api:
-        condition: service_started
-      yt_pot_provider_api:
         condition: service_started
       telegram_bot_api:
         condition: service_started
     mem_limit: $BOT_MEM_LIMIT
     profiles:
       - default
+
+  downloader:
+    container_name: ytdl_tg_bot.downloader
+    image: desiders/ytdl_tg_bot.downloader:0.1.0
+    restart: "unless-stopped"
+    env_file:
+      - "../.env"
+    environment:
+      - NODE_CONFIG_PATH=${NODE_CONFIG_PATH:-configs/downloader.toml}
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile.downloader
+    networks:
+      - download.network
+      - yt_pot_provider_api.network
+    expose:
+      - "50051"
+    volumes:
+      - type: bind
+        source: ../configs/downloader.toml
+        target: /app/configs/downloader.toml
+      - type: bind
+        source: ../yt-dlp
+        target: /app/yt-dlp
+      - type: bind
+        source: ../cookies
+        target: /app/cookies
+    depends_on:
+      yt_pot_provider_api:
+        condition: service_started
+    profiles:
+      - downloader
 
   postgres:
     container_name: ytdl_tg_bot.postgres
@@ -90,7 +115,7 @@ services:
     ports:
       - "127.0.0.1:${YT_POT_PROVIDER_PORT:-4416}:4416"
     profiles:
-      - default
+      - downloader
       - dev
 
   telegram_bot_api:
@@ -120,7 +145,7 @@ services:
     environment:
       DATABASE_URL: $DATABASE_URL
     build:
-      context: ./migration
+      context: ../migration
     networks:
       - postgres.network
     depends_on:
@@ -138,3 +163,4 @@ networks:
   yt_toolkit_api.network: {}
   yt_pot_provider_api.network: {}
   telegram_bot_api.network: {}
+  download.network: {}

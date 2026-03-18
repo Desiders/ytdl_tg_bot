@@ -1,0 +1,17 @@
+[server]
+address = "0.0.0.0:50051"
+max_concurrent = 5
+
+[auth]
+tokens = ["secret-token-a"]
+
+[yt_dlp]
+executable_path = "./yt-dlp/executable"
+cookies_path = "./cookies"
+max_file_size = 5000000
+
+[yt_pot_provider]
+url = "http://yt_pot_provider_api:4416"
+
+[logging]
+dirs = "info"
