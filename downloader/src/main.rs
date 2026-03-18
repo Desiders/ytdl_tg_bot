@@ -1,0 +1,59 @@
+mod config;
+mod entities;
+mod grpc;
+mod services;
+mod utils;
+
+use std::sync::{atomic::AtomicU32, Arc};
+
+use tokio::sync::Semaphore;
+use tonic::transport::Server;
+use tracing::info;
+use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
+use ytdl_tg_bot_proto::downloader::{downloader_server::DownloaderServer, node_capabilities_server::NodeCapabilitiesServer};
+
+use crate::{
+    grpc::{auth::AuthInterceptor, capabilities::CapabilitiesService, downloader::DownloaderService},
+    services::get_cookies_from_directory,
+};
+
+#[tokio::main(flavor = "multi_thread")]
+async fn main() {
+    let config_path = config::get_path();
+    let config = config::parse_from_fs(&*config_path).unwrap();
+
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::builder().parse_lossy(config.logging.dirs.as_ref()))
+        .init();
+
+    let cookies = Arc::new(get_cookies_from_directory(&*config.yt_dlp.cookies_path).unwrap_or_default());
+    info!(hosts = ?cookies.get_hosts(), "Cookies loaded");
+
+    let active_downloads = Arc::new(AtomicU32::new(0));
+    let semaphore = Arc::new(Semaphore::new(config.server.max_concurrent as usize));
+
+    let capabilities_service = CapabilitiesService {
+        cookies: cookies.clone(),
+        active_downloads: active_downloads.clone(),
+        max_concurrent: config.server.max_concurrent,
+    };
+    let downloader_service = DownloaderService {
+        yt_dlp_cfg: Arc::new(config.yt_dlp),
+        yt_pot_provider_cfg: Arc::new(config.yt_pot_provider),
+        cookies: cookies.clone(),
+        active_downloads: active_downloads.clone(),
+        semaphore,
+    };
+
+    let auth = AuthInterceptor::new(config.auth.tokens);
+    let addr = config.server.address.parse().unwrap();
+    info!(%addr, "Starting download node");
+
+    Server::builder()
+        .add_service(DownloaderServer::with_interceptor(downloader_service, auth.clone()))
+        .add_service(NodeCapabilitiesServer::with_interceptor(capabilities_service, auth))
+        .serve(addr)
+        .await
+        .unwrap();
+}
