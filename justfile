@@ -16,7 +16,7 @@ fmt:
     {{compose}} --profile default build
 
 @docker-build-downloader:
-    {{compose}} --profile default --profile downloader build
+    {{compose}} --profile downloader build
 
 @docker-migration-build:
     {{compose}} build migration
@@ -31,7 +31,7 @@ fmt:
     {{compose}} --profile default --profile downloader up
 
 @docker-up-build-downloader: docker-build-downloader
-    {{compose}} --profile default --profile downloader up
+    {{compose}} --profile downloader up
 
 @docker-down:
     {{compose}} down
