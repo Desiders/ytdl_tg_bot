@@ -14,27 +14,16 @@ RUN rustup target add x86_64-unknown-linux-musl
 
 WORKDIR /usr/src/app
 
-COPY Cargo.toml Cargo.lock ./
-COPY bot/Cargo.toml bot/Cargo.toml
-COPY downloader/Cargo.toml downloader/Cargo.toml
-COPY proto/Cargo.toml proto/Cargo.toml
-COPY proto/build.rs proto/build.rs
-COPY proto/proto proto/proto
-RUN mkdir -p bot/src downloader/src proto/src \
-    && printf 'fn main() {}\n' > bot/src/main.rs \
-    && printf 'fn main() {}\n' > downloader/src/main.rs \
-    && printf 'pub fn placeholder() {}\n' > proto/src/lib.rs
-RUN cargo fetch --locked
-
-COPY bot bot
 COPY downloader downloader
 COPY proto proto
-RUN cargo build --release --target x86_64-unknown-linux-musl --locked -p ytdl_tg_bot_downloader
-RUN upx --best --lzma target/x86_64-unknown-linux-musl/release/ytdl_tg_bot_downloader
+
+WORKDIR /usr/src/app/downloader
+RUN cargo build --release --target x86_64-unknown-linux-musl --locked
+RUN upx --best --lzma target/x86_64-unknown-linux-musl/release/ytdl_tg_downloader
 
 FROM base AS final
 WORKDIR /app
 RUN mkdir -p /app/configs
-COPY --from=build /usr/src/app/target/x86_64-unknown-linux-musl/release/ytdl_tg_bot_downloader /app/ytdl_tg_bot_downloader
+COPY --from=build /usr/src/app/downloader/target/x86_64-unknown-linux-musl/release/ytdl_tg_downloader /app/ytdl_tg_downloader
 ENV RUST_BACKTRACE=full
-ENTRYPOINT ["/app/ytdl_tg_bot_downloader"]
+ENTRYPOINT ["/app/ytdl_tg_downloader"]
