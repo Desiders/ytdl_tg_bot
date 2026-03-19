@@ -1,9 +1,4 @@
-use std::{
-    collections::HashSet,
-    io,
-    path::Path,
-    sync::Arc,
-};
+use std::{collections::HashSet, io, path::Path, sync::Arc};
 use tempfile::TempDir;
 use tokio::{io::AsyncWriteExt as _, sync::mpsc};
 use tonic::Code;

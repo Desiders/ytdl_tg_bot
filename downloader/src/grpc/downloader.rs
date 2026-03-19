@@ -110,19 +110,15 @@ impl Downloader for DownloaderService {
         let request_url = request.url.clone();
         let request_format_id = request.format_id.clone();
         let request_media_type = request.media_type.clone();
-        let permit = self
-            .semaphore
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| {
-                warn!(
-                    url = %request_url,
-                    format_id = %request_format_id,
-                    media_type = %request_media_type,
-                    "Rejected download request because node is at capacity"
-                );
-                Status::resource_exhausted("node is at capacity")
-            })?;
+        let permit = self.semaphore.clone().try_acquire_owned().map_err(|_| {
+            warn!(
+                url = %request_url,
+                format_id = %request_format_id,
+                media_type = %request_media_type,
+                "Rejected download request because node is at capacity"
+            );
+            Status::resource_exhausted("node is at capacity")
+        })?;
         let active_downloads = self.active_downloads.fetch_add(1, Ordering::Relaxed) + 1;
         info!(
             url = %request_url,

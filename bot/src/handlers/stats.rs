@@ -31,7 +31,13 @@ pub async fn stats(
         Ok((media_stats, chat_stats)) => {
             let mut top_domains_text = "- Most used domains:\n".to_owned();
             for (index, top_domain) in media_stats.top_domains.iter().enumerate() {
-                let _ = writeln!(top_domains_text, "{}. {} ({} count)", index + 1, top_domain.domain, top_domain.count);
+                let _ = writeln!(
+                    top_domains_text,
+                    "{}. {} ({} count)",
+                    index + 1,
+                    top_domain.domain,
+                    top_domain.count
+                );
             }
 
             format!(
