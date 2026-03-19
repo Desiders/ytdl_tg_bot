@@ -1,5 +1,5 @@
 [package]
-name = "ytdl_tg_bot_downloader"
+name = "ytdl_tg_downloader"
 version = "0.1.0"
 edition = "2021"
 

@@ -56,7 +56,10 @@ fmt:
     {{compose}} run --rm migration {{COMMAND}}
 
 @run:
-    cargo run -p ytdl_tg_bot_bot
+    cargo run -p ytdl_tg_bot
+
+@run-downloader:
+    cargo run -p ytdl_tg_downloader
 
 docker-pull USER VERSION="latest":
     docker pull {{USER}}/ytdl_tg_bot:{{VERSION}}

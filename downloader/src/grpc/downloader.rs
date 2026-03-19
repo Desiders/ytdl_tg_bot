@@ -5,6 +5,7 @@ use std::{
         atomic::{AtomicU32, Ordering},
         Arc,
     },
+    time::Instant,
 };
 
 use tempfile::TempDir;
@@ -56,6 +57,7 @@ impl Downloader for DownloaderService {
     type DownloadMediaStream = DownloadStream;
 
     async fn get_media_info(&self, request: Request<MediaInfoRequest>) -> Result<Response<MediaInfoResponse>, Status> {
+        let started_at = Instant::now();
         let request = request.into_inner();
         let url = parse_url(&request.url)?;
         let playlist_range = parse_range(request.playlist_range)?;
@@ -64,6 +66,15 @@ impl Downloader for DownloaderService {
         let allow_playlist = !playlist_range.is_single_element();
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
+
+        info!(
+            url = %url,
+            media_type = %request.media_type,
+            audio_language = %request.audio_language,
+            allow_playlist,
+            has_cookie = cookie.is_some(),
+            "Fetching media info"
+        );
 
         let playlist = ytdl::get_media_info(
             url.as_str(),
@@ -77,24 +88,54 @@ impl Downloader for DownloaderService {
             cookie,
         )
         .await
-        .map_err(|err| Status::internal(err.to_string()))?;
+        .map_err(|err| {
+            error!(url = %url, media_type = %request.media_type, %err, "Get media info failed");
+            Status::internal(err.to_string())
+        })?;
+
+        let entries_count = playlist.inner.len();
+        info!(
+            url = %url,
+            media_type = %request.media_type,
+            entries_count,
+            elapsed_ms = started_at.elapsed().as_millis(),
+            "Fetched media info"
+        );
 
         Ok(Response::new(map_playlist_response(playlist)))
     }
 
     async fn download_media(&self, request: Request<DownloadRequest>) -> Result<Response<Self::DownloadMediaStream>, Status> {
+        let request = request.into_inner();
+        let request_url = request.url.clone();
+        let request_format_id = request.format_id.clone();
+        let request_media_type = request.media_type.clone();
         let permit = self
             .semaphore
             .clone()
             .try_acquire_owned()
-            .map_err(|_| Status::resource_exhausted("node is at capacity"))?;
-        self.active_downloads.fetch_add(1, Ordering::Relaxed);
+            .map_err(|_| {
+                warn!(
+                    url = %request_url,
+                    format_id = %request_format_id,
+                    media_type = %request_media_type,
+                    "Rejected download request because node is at capacity"
+                );
+                Status::resource_exhausted("node is at capacity")
+            })?;
+        let active_downloads = self.active_downloads.fetch_add(1, Ordering::Relaxed) + 1;
+        info!(
+            url = %request_url,
+            format_id = %request_format_id,
+            media_type = %request_media_type,
+            active_downloads,
+            "Accepted download request"
+        );
 
         let guard = DownloadGuard {
             active_downloads: self.active_downloads.clone(),
             _permit: permit,
         };
-        let request = request.into_inner();
         let yt_dlp_cfg = self.yt_dlp_cfg.clone();
         let yt_pot_provider_cfg = self.yt_pot_provider_cfg.clone();
         let cookies = self.cookies.clone();
@@ -102,11 +143,35 @@ impl Downloader for DownloaderService {
         let (tx, rx) = mpsc::unbounded_channel();
         let error_tx = tx.clone();
         tokio::spawn(async move {
+            let started_at = Instant::now();
             if let Err(status) = stream_download(request, yt_dlp_cfg, yt_pot_provider_cfg, cookies, tx).await {
-                if status.code() != Code::Cancelled {
-                    error!(%status, "Download stream failed");
+                if status.code() == Code::Cancelled {
+                    info!(
+                        url = %request_url,
+                        format_id = %request_format_id,
+                        media_type = %request_media_type,
+                        elapsed_ms = started_at.elapsed().as_millis(),
+                        "Download stream cancelled by client"
+                    );
+                } else {
+                    error!(
+                        url = %request_url,
+                        format_id = %request_format_id,
+                        media_type = %request_media_type,
+                        elapsed_ms = started_at.elapsed().as_millis(),
+                        %status,
+                        "Download stream failed"
+                    );
                     let _ = send_status(&error_tx, status);
                 }
+            } else {
+                info!(
+                    url = %request_url,
+                    format_id = %request_format_id,
+                    media_type = %request_media_type,
+                    elapsed_ms = started_at.elapsed().as_millis(),
+                    "Download stream finished"
+                );
             }
             drop(guard);
         });
@@ -142,6 +207,18 @@ async fn stream_download(
     let media = Media::from(media_with_format.clone());
     let format = MediaFormat::from(media_with_format);
     let effective_max_file_size = resolve_max_file_size(request.max_file_size, yt_dlp_cfg.max_file_size);
+    let host = url.host();
+    let cookie = cookies.get_path_by_optional_host(host.as_ref());
+
+    info!(
+        url = %url,
+        format_id = %request.format_id,
+        media_type = requested_media.kind(),
+        has_cookie = cookie.is_some(),
+        has_section = section.is_some(),
+        max_file_size = effective_max_file_size,
+        "Starting media download"
+    );
 
     send_chunk(
         &tx,
@@ -162,8 +239,6 @@ async fn stream_download(
 
     let media_file_path = output_dir_path.join(format!("media.{}", requested_media.output_ext(&format)));
     let thumb_file_path = output_dir_path.join("media.jpg");
-    let host = url.host();
-    let cookie = cookies.get_path_by_optional_host(host.as_ref());
 
     let mut thumbnail_downloaded = false;
     for thumb_url in media.get_thumb_urls(format.aspect_ration_kind()) {
@@ -216,6 +291,8 @@ async fn stream_download(
     drop(progress_tx);
     let _ = progress_forwarder.await;
 
+    info!(url = %url, path = %media_file_path.display(), "Media downloaded, preparing stream");
+
     if thumbnail_downloaded {
         match embed_thumbnail(&media_file_path, &thumb_file_path).await {
             Ok(()) => {
@@ -231,6 +308,12 @@ async fn stream_download(
         .await
         .map_err(|err| Status::internal(format!("metadata error: {err}")))?;
     if metadata.len() > effective_max_file_size {
+        warn!(
+            url = %url,
+            file_size = metadata.len(),
+            max_file_size = effective_max_file_size,
+            "Downloaded file exceeds max_file_size"
+        );
         return Err(Status::invalid_argument("file exceeds max_file_size"));
     }
 
@@ -238,6 +321,7 @@ async fn stream_download(
         .await
         .map_err(|err| Status::internal(format!("open file error: {err}")))?;
     let mut buffer = vec![0u8; STREAM_CHUNK_SIZE];
+    let mut total_streamed = 0_u64;
     loop {
         let read = file
             .read(&mut buffer)
@@ -246,6 +330,7 @@ async fn stream_download(
         if read == 0 {
             break;
         }
+        total_streamed += read as u64;
         send_chunk(
             &tx,
             DownloadChunk {
@@ -254,6 +339,7 @@ async fn stream_download(
         )?;
     }
 
+    info!(url = %url, bytes_streamed = total_streamed, "Finished streaming downloaded media");
     drop(file);
     drop(temp_dir);
     Ok(())
@@ -377,6 +463,13 @@ enum RequestMedia<'a> {
 }
 
 impl RequestMedia<'_> {
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::Video => "video",
+            Self::Audio { .. } => "audio",
+        }
+    }
+
     fn format_strategy(&self) -> FormatStrategy<'_> {
         match self {
             Self::Video => FormatStrategy::VideoAndAudio,

@@ -1,10 +1,10 @@
 [package]
-name = "ytdl_tg_bot_bot"
+name = "ytdl_tg_bot"
 version = "4.6.1"
 edition = "2021"
 
 [dependencies]
-telers = { version = "1.0.0-beta.1", features = ["default-signal", "rustls-tls"], default-features = false }
+telers = { version = "1.0.0-beta.1", features = ["default_signal", "rustls-tls"], default-features = false }
 tokio = { version = "1.36", features = ["rt-multi-thread", "process", "sync"], default-features = false }
 tokio-util = { version = "0.7", default-features = false }
 nix = { version = "0.31", features = ["fs"], default-features = false }
