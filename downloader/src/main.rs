@@ -62,7 +62,33 @@ async fn main() {
     Server::builder()
         .add_service(DownloaderServer::with_interceptor(downloader_service, auth.clone()))
         .add_service(NodeCapabilitiesServer::with_interceptor(capabilities_service, auth))
-        .serve(addr)
+        .serve_with_shutdown(addr, shutdown_signal())
         .await
         .unwrap();
+
+    info!("Download node stopped");
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C shutdown handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM shutdown handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => info!("Received Ctrl+C, shutting down download node"),
+        () = terminate => info!("Received SIGTERM, shutting down download node"),
+    }
 }
