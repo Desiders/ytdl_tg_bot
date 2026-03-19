@@ -55,11 +55,11 @@ pub enum ParseError {
 
 #[must_use]
 pub fn get_path() -> Box<str> {
-    let path = match env::var("NODE_CONFIG_PATH") {
+    let path = match env::var("DOWNLOADER_CONFIG_PATH") {
         Ok(val) => val,
-        Err(VarError::NotPresent) => String::from("node_config.toml"),
+        Err(VarError::NotPresent) => String::from("configs/downloader.toml"),
         Err(VarError::NotUnicode(_)) => {
-            panic!("`NODE_CONFIG_PATH` env variable is not a valid UTF-8 string!");
+            panic!("`DOWNLOADER_CONFIG_PATH` env variable is not a valid UTF-8 string!");
         }
     };
 

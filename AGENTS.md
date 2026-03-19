@@ -259,7 +259,7 @@ pub struct Config {
 }
 ```
 
-Example `node_config.toml`:
+Example `downloader.example.toml`:
 ```toml
 [server]
 address = "0.0.0.0:50051"
@@ -280,7 +280,7 @@ url = "http://127.0.0.1:4416"
 dirs = "info"
 ```
 
-Config is loaded from the path in env var `NODE_CONFIG_PATH`, defaulting to `node_config.toml`.
+Config is loaded from the path in env var `DOWNLOADER_CONFIG_PATH`, defaulting to `configs/downloader.toml`.
 Panic on missing or malformed config (same pattern as `bot/src/config.rs`).
 
 **Acceptance criteria:** Config parses correctly from the example toml above.

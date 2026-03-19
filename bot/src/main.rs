@@ -42,14 +42,26 @@ use crate::{
 #[tokio::main(flavor = "multi_thread")]
 #[allow(clippy::too_many_lines)]
 async fn main() {
-    println!("{}", &*config::get_path());
-
-    let config = config::parse_from_fs(&*config::get_path()).unwrap();
+    let config_path = config::get_path();
+    let config = config::parse_from_fs(&*config_path).unwrap();
 
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(EnvFilter::builder().parse_lossy(config.logging.dirs.as_ref()))
         .init();
+
+    let download_node_addresses: Vec<_> = config.download.nodes.iter().map(|node| node.address.as_ref()).collect();
+    info!(
+        config_path = %config_path,
+        log_filter = %config.logging.dirs,
+        yt_toolkit_url = %config.yt_toolkit.url,
+        telegram_bot_api_url = %config.telegram_bot_api.url,
+        download_node_count = config.download.nodes.len(),
+        download_node_addresses = ?download_node_addresses,
+        capabilities_refresh_interval = config.download.capabilities_refresh_interval,
+        max_file_size = config.yt_dlp.max_file_size,
+        "Loaded bot config"
+    );
 
     let base_url = format!("{}/bot{{token}}/{{method_name}}", config.telegram_bot_api.url);
     let files_url = format!("{}/file{{token}}/{{path}}", config.telegram_bot_api.url);

@@ -37,7 +37,7 @@ services:
     env_file:
       - "../.env"
     environment:
-      - NODE_CONFIG_PATH=${NODE_CONFIG_PATH:-configs/downloader.toml}
+      - DOWNLOADER_CONFIG_PATH=${DOWNLOADER_CONFIG_PATH:-configs/downloader.toml}
     build:
       context: ..
       dockerfile: deployment/Dockerfile.downloader

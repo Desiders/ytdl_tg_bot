@@ -4,6 +4,7 @@ use tonic::{
     service::Interceptor,
     Request, Status,
 };
+use tracing::warn;
 
 #[derive(Clone)]
 pub struct AuthInterceptor {
@@ -22,12 +23,14 @@ impl AuthInterceptor {
 impl Interceptor for AuthInterceptor {
     fn call(&mut self, request: Request<()>) -> Result<Request<()>, Status> {
         let Some(header) = request.metadata().get("authorization") else {
+            warn!("Rejected request without authorization header");
             return Err(Status::unauthenticated("invalid token"));
         };
 
         if is_valid_token(header, &self.tokens) {
             Ok(request)
         } else {
+            warn!("Rejected request with invalid authorization token");
             Err(Status::unauthenticated("invalid token"))
         }
     }

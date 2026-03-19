@@ -27,8 +27,17 @@ async fn main() {
         .with(EnvFilter::builder().parse_lossy(config.logging.dirs.as_ref()))
         .init();
 
+    info!(
+        config_path = %config_path,
+        address = %config.server.address,
+        max_concurrent = config.server.max_concurrent,
+        token_count = config.auth.tokens.len(),
+        log_filter = %config.logging.dirs,
+        "Loaded downloader config"
+    );
+
     let cookies = Arc::new(get_cookies_from_directory(&*config.yt_dlp.cookies_path).unwrap_or_default());
-    info!(hosts = ?cookies.get_hosts(), "Cookies loaded");
+    info!(cookie_host_count = cookies.get_hosts().len(), hosts = ?cookies.get_hosts(), "Cookies loaded");
 
     let active_downloads = Arc::new(AtomicU32::new(0));
     let semaphore = Arc::new(Semaphore::new(config.server.max_concurrent as usize));
