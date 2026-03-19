@@ -149,9 +149,7 @@ pub fn authenticated_request<T>(message: T, token: &str) -> std::result::Result<
 }
 
 fn select_least_loaded(candidates: Vec<Arc<NodeHandle>>) -> Option<Arc<NodeHandle>> {
-    candidates
-        .into_iter()
-        .min_by_key(|node| node.estimated_active_downloads())
+    candidates.into_iter().min_by_key(|node| node.estimated_active_downloads())
 }
 
 async fn fetch_supported_domains(node: &NodeHandle) -> Result<Vec<String>> {
@@ -180,7 +178,10 @@ impl NodeHandle {
         let mut current = self.local_active_downloads.load(Ordering::Relaxed);
         loop {
             let next = current.saturating_sub(1);
-            match self.local_active_downloads.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
+            match self
+                .local_active_downloads
+                .compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed)
+            {
                 Ok(_) => return,
                 Err(actual) => current = actual,
             }

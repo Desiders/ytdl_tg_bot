@@ -118,7 +118,6 @@ impl Media {
         }
         urls
     }
-
 }
 
 impl fmt::Display for Media {

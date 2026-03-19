@@ -1,8 +1,4 @@
-use std::{
-    collections::HashSet,
-    convert::Infallible,
-    sync::Arc,
-};
+use std::{collections::HashSet, convert::Infallible, sync::Arc};
 
 use reqwest::Client;
 use tonic::Code;

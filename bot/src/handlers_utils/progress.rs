@@ -49,7 +49,12 @@ pub async fn is_errors_if_exist(
         for (format_err_index, format_err) in format_errs.iter().enumerate() {
             let _ = writeln!(format_errs_text, "{}. {}", format_err_index + 1, format_err);
         }
-        let _ = writeln!(errs_text, "{} media ({} download retries):", failed_media_index + 1, format_errs.len());
+        let _ = writeln!(
+            errs_text,
+            "{} media ({} download retries):",
+            failed_media_index + 1,
+            format_errs.len()
+        );
         errs_text.push_str(&html_expandable_blockquote(&format_errs_text));
     }
 
