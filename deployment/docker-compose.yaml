@@ -46,6 +46,8 @@ services:
       - yt_pot_provider_api.network
     expose:
       - "50051"
+    ports:
+      - "${DOWNLOADER_BIND_IP:-127.0.0.1}:${DOWNLOADER_PORT:-50051}:50051"
     volumes:
       - type: bind
         source: ../configs/downloader.toml
