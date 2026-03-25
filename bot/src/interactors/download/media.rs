@@ -1,13 +1,24 @@
-use std::{collections::HashSet, io, path::Path, sync::Arc};
+use bytes::Bytes;
+use futures_util::Stream;
+use std::{
+    collections::HashSet,
+    io,
+    path::{Path, PathBuf},
+    pin::Pin,
+    sync::{Arc, Mutex},
+    task::{Context, Poll},
+};
 use tempfile::TempDir;
-use tokio::{io::AsyncWriteExt as _, sync::mpsc};
+use tokio::sync::mpsc;
 use tonic::Code;
 use tracing::{error, instrument, warn};
 use url::Url;
-use ytdl_tg_bot_proto::downloader::{download_chunk::Payload, downloader_client::DownloaderClient, DownloadRequest, Section};
+use ytdl_tg_bot_proto::downloader::{
+    download_chunk::Payload, downloader_client::DownloaderClient, DownloadChunk, DownloadRequest, Section,
+};
 
 use crate::{
-    entities::{Media, MediaFormat, MediaInFS, RawMediaWithFormat, Sections},
+    entities::{Media, MediaByteStream, MediaForUpload, MediaFormat, RawMediaWithFormat, Sections},
     interactors::Interactor,
     node_router::{authenticated_request, NodeHandle, NodeRouter},
 };
@@ -28,8 +39,6 @@ pub enum DownloadErrorKind {
 pub enum DownloadMediaErrorKind {
     #[error("Temp dir error: {0}")]
     TempDir(io::Error),
-    #[error("Media file error: {0}")]
-    MediaFile(io::Error),
     #[error("Channel error: {0}")]
     Channel(#[from] mpsc::error::SendError<DownloadErrorKind>),
     #[error(transparent)]
@@ -41,12 +50,10 @@ pub enum DownloadMediaErrorKind {
 pub enum DownloadMediaPlaylistErrorKind {
     #[error("Temp dir error: {0}")]
     TempDir(io::Error),
-    #[error("Media file error: {0}")]
-    MediaFile(io::Error),
     #[error("Channel error: {0}")]
     ErrChannel(#[from] mpsc::error::SendError<Vec<DownloadErrorKind>>),
     #[error("Channel error: {0}")]
-    MediaChannel(#[from] mpsc::error::SendError<(MediaInFS, Media, MediaFormat)>),
+    MediaChannel(#[from] mpsc::error::SendError<(MediaForUpload, Media, MediaFormat)>),
 }
 
 pub struct DownloadMediaInput<'a> {
@@ -86,7 +93,7 @@ pub struct DownloadMediaPlaylistInput<'a> {
     url: &'a Url,
     playlist: Vec<(Media, Vec<(MediaFormat, RawMediaWithFormat)>)>,
     sections: Option<&'a Sections>,
-    media_sender: mpsc::UnboundedSender<(MediaInFS, Media, MediaFormat)>,
+    media_sender: mpsc::UnboundedSender<(MediaForUpload, Media, MediaFormat)>,
     errs_sender: Option<mpsc::UnboundedSender<Vec<DownloadErrorKind>>>,
     progress_sender: Option<mpsc::UnboundedSender<String>>,
 }
@@ -99,7 +106,7 @@ impl<'a> DownloadMediaPlaylistInput<'a> {
         sections: Option<&'a Sections>,
     ) -> (
         Self,
-        mpsc::UnboundedReceiver<(MediaInFS, Media, MediaFormat)>,
+        mpsc::UnboundedReceiver<(MediaForUpload, Media, MediaFormat)>,
         mpsc::UnboundedReceiver<Vec<DownloadErrorKind>>,
         mpsc::UnboundedReceiver<String>,
     ) {
@@ -126,7 +133,7 @@ impl<'a> DownloadMediaPlaylistInput<'a> {
         url: &'a Url,
         playlist: Vec<(Media, Vec<(MediaFormat, RawMediaWithFormat)>)>,
         sections: Option<&'a Sections>,
-    ) -> (Self, mpsc::UnboundedReceiver<(MediaInFS, Media, MediaFormat)>) {
+    ) -> (Self, mpsc::UnboundedReceiver<(MediaForUpload, Media, MediaFormat)>) {
         let (media_sender, media_receiver) = mpsc::unbounded_channel();
         (
             Self {
@@ -147,7 +154,7 @@ pub struct DownloadVideo {
 }
 
 impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
-    type Output = Option<(MediaInFS, MediaFormat)>;
+    type Output = Option<(MediaForUpload, MediaFormat)>;
     type Err = DownloadMediaErrorKind;
 
     #[instrument(skip_all)]
@@ -177,18 +184,18 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
             )
             .await
             {
-                Ok((path, format)) => {
-                    let media_in_fs = MediaInFS {
+                Ok(DownloadedMedia { path, format, stream }) => {
+                    let media_for_upload = MediaForUpload {
                         path,
                         thumb_path: None,
                         temp_dir,
+                        stream,
                     };
-                    return Ok(Some((media_in_fs, format)));
+                    return Ok(Some((media_for_upload, format)));
                 }
                 Err(AttemptError::Download(err)) => {
                     err_sender.send(err)?;
                 }
-                Err(AttemptError::MediaFile(err)) => return Err(Self::Err::MediaFile(err)),
             }
         }
 
@@ -202,7 +209,7 @@ pub struct DownloadAudio {
 }
 
 impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
-    type Output = Option<(MediaInFS, MediaFormat)>;
+    type Output = Option<(MediaForUpload, MediaFormat)>;
     type Err = DownloadMediaErrorKind;
 
     #[instrument(skip_all)]
@@ -232,18 +239,18 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
             )
             .await
             {
-                Ok((path, format)) => {
-                    let media_in_fs = MediaInFS {
+                Ok(DownloadedMedia { path, format, stream }) => {
+                    let media_for_upload = MediaForUpload {
                         path,
                         thumb_path: None,
                         temp_dir,
+                        stream,
                     };
-                    return Ok(Some((media_in_fs, format)));
+                    return Ok(Some((media_for_upload, format)));
                 }
                 Err(AttemptError::Download(err)) => {
                     err_sender.send(err)?;
                 }
-                Err(AttemptError::MediaFile(err)) => return Err(Self::Err::MediaFile(err)),
             }
         }
 
@@ -290,20 +297,20 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
                 )
                 .await
                 {
-                    Ok((path, format)) => {
-                        let media_in_fs = MediaInFS {
+                    Ok(DownloadedMedia { path, format, stream }) => {
+                        let media_for_upload = MediaForUpload {
                             path,
                             thumb_path: None,
                             temp_dir,
+                            stream,
                         };
-                        media_sender.send((media_in_fs, media, format))?;
+                        media_sender.send((media_for_upload, media, format))?;
                         media_is_downloaded = true;
                         break;
                     }
                     Err(AttemptError::Download(err)) => {
                         errs.push(err);
                     }
-                    Err(AttemptError::MediaFile(err)) => return Err(Self::Err::MediaFile(err)),
                 }
             }
 
@@ -356,20 +363,20 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
                 )
                 .await
                 {
-                    Ok((path, format)) => {
-                        let media_in_fs = MediaInFS {
+                    Ok(DownloadedMedia { path, format, stream }) => {
+                        let media_for_upload = MediaForUpload {
                             path,
                             thumb_path: None,
                             temp_dir,
+                            stream,
                         };
-                        media_sender.send((media_in_fs, media, format))?;
+                        media_sender.send((media_for_upload, media, format))?;
                         media_is_downloaded = true;
                         break;
                     }
                     Err(AttemptError::Download(err)) => {
                         errs.push(err);
                     }
-                    Err(AttemptError::MediaFile(err)) => return Err(Self::Err::MediaFile(err)),
                 }
             }
 
@@ -386,7 +393,12 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
 
 enum AttemptError {
     Download(DownloadErrorKind),
-    MediaFile(io::Error),
+}
+
+struct DownloadedMedia {
+    path: PathBuf,
+    format: MediaFormat,
+    stream: MediaByteStream,
 }
 
 async fn download_with_retry(
@@ -396,7 +408,7 @@ async fn download_with_retry(
     output_dir: &Path,
     base_format: &MediaFormat,
     progress_sender: Option<&mpsc::UnboundedSender<String>>,
-) -> Result<(std::path::PathBuf, MediaFormat), AttemptError> {
+) -> Result<DownloadedMedia, AttemptError> {
     let mut excluded = HashSet::new();
 
     loop {
@@ -432,7 +444,7 @@ async fn download_from_node(
     output_dir: &Path,
     base_format: &MediaFormat,
     progress_sender: Option<&mpsc::UnboundedSender<String>>,
-) -> Result<(std::path::PathBuf, MediaFormat), AttemptError> {
+) -> Result<DownloadedMedia, AttemptError> {
     let mut client = DownloaderClient::new(node.channel.clone());
     let response = client
         .download_media(
@@ -459,37 +471,13 @@ async fn download_from_node(
     };
 
     let path = output_dir.join(format!("media.{}", meta.ext));
-    let mut file = tokio::fs::File::create(&path).await.map_err(AttemptError::MediaFile)?;
     let mut format = base_format.clone();
     format.ext = meta.ext;
     format.width = meta.width;
     format.height = meta.height;
+    let stream = MediaByteStream::new(DownloadByteStream::new(stream, progress_sender.cloned()));
 
-    while let Some(chunk) = stream
-        .message()
-        .await
-        .map_err(DownloadErrorKind::from)
-        .map_err(AttemptError::Download)?
-    {
-        match chunk.payload {
-            Some(Payload::Progress(progress)) => {
-                if let Some(sender) = progress_sender {
-                    let _ = sender.send(progress);
-                }
-            }
-            Some(Payload::Data(data)) => {
-                file.write_all(&data).await.map_err(AttemptError::MediaFile)?;
-            }
-            Some(Payload::Meta(_)) | None => {
-                return Err(AttemptError::Download(DownloadErrorKind::InvalidStream));
-            }
-        }
-    }
-
-    file.flush().await.map_err(AttemptError::MediaFile)?;
-    drop(file);
-
-    Ok((path, format))
+    Ok(DownloadedMedia { path, format, stream })
 }
 
 fn build_download_request(
@@ -512,5 +500,49 @@ fn build_download_request(
             end: sections.end,
         }),
         max_file_size,
+    }
+}
+
+struct DownloadByteStream {
+    inner: Mutex<DownloadByteStreamState>,
+}
+
+struct DownloadByteStreamState {
+    stream: tonic::Streaming<DownloadChunk>,
+    progress_sender: Option<mpsc::UnboundedSender<String>>,
+}
+
+impl DownloadByteStream {
+    fn new(stream: tonic::Streaming<DownloadChunk>, progress_sender: Option<mpsc::UnboundedSender<String>>) -> Self {
+        Self {
+            inner: Mutex::new(DownloadByteStreamState { stream, progress_sender }),
+        }
+    }
+}
+
+impl Stream for DownloadByteStream {
+    type Item = Result<Bytes, io::Error>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let mut inner = self.inner.lock().expect("Download byte stream mutex poisoned");
+
+        loop {
+            match Pin::new(&mut inner.stream).poll_next(cx) {
+                Poll::Ready(Some(Ok(chunk))) => match chunk.payload {
+                    Some(Payload::Progress(progress)) => {
+                        if let Some(sender) = &inner.progress_sender {
+                            let _ = sender.send(progress);
+                        }
+                    }
+                    Some(Payload::Data(data)) => return Poll::Ready(Some(Ok(Bytes::from(data)))),
+                    Some(Payload::Meta(_)) | None => {
+                        return Poll::Ready(Some(Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid download stream"))));
+                    }
+                },
+                Poll::Ready(Some(Err(err))) => return Poll::Ready(Some(Err(io::Error::other(err)))),
+                Poll::Ready(None) => return Poll::Ready(None),
+                Poll::Pending => return Poll::Pending,
+            }
+        }
     }
 }

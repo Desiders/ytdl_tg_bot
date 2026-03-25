@@ -39,7 +39,7 @@ impl NodeRouter {
 
         for (index, config) in configs.iter().enumerate() {
             let channel = Endpoint::from_shared(config.address.to_string())
-                .with_context(|| format!("invalid node address {}", config.address))?
+                .with_context(|| format!("Invalid node address {}", config.address))?
                 .connect_lazy();
             let node = Arc::new(NodeHandle {
                 address: config.address.clone(),

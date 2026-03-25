@@ -199,7 +199,7 @@ async fn stream_download(
     let section = parse_section(request.section);
     let requested_media = parse_request_media(&request.media_type, &request.audio_ext)?;
     let media_with_format: MediaWithFormat =
-        serde_json::from_str(&request.raw_info_json).map_err(|err| Status::invalid_argument(format!("invalid raw_info_json: {err}")))?;
+        serde_json::from_str(&request.raw_info_json).map_err(|err| Status::invalid_argument(format!("Invalid info file error: {err}")))?;
     let media = Media::from(media_with_format.clone());
     let format = MediaFormat::from(media_with_format);
     let effective_max_file_size = resolve_max_file_size(request.max_file_size, yt_dlp_cfg.max_file_size);
@@ -228,10 +228,10 @@ async fn stream_download(
         },
     )?;
 
-    let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(|err| Status::internal(format!("temp dir error: {err}")))?;
+    let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(|err| Status::internal(format!("Temp dir error: {err}")))?;
     let output_dir_path = temp_dir.path();
     let info_file_path = output_dir_path.join("media.info.json");
-    fs::write(&info_file_path, &request.raw_info_json).map_err(|err| Status::internal(format!("info file error: {err}")))?;
+    fs::write(&info_file_path, &request.raw_info_json).map_err(|err| Status::internal(format!("Info file error: {err}")))?;
 
     let media_file_path = output_dir_path.join(format!("media.{}", requested_media.output_ext(&format)));
     let thumb_file_path = output_dir_path.join("media.jpg");
@@ -302,7 +302,7 @@ async fn stream_download(
 
     let metadata = tokio::fs::metadata(&media_file_path)
         .await
-        .map_err(|err| Status::internal(format!("metadata error: {err}")))?;
+        .map_err(|err| Status::internal(format!("Metadata error: {err}")))?;
     if metadata.len() > effective_max_file_size {
         warn!(
             url = %url,
@@ -310,19 +310,19 @@ async fn stream_download(
             max_file_size = effective_max_file_size,
             "Downloaded file exceeds max_file_size"
         );
-        return Err(Status::invalid_argument("file exceeds max_file_size"));
+        return Err(Status::invalid_argument("File exceeds max file size"));
     }
 
     let mut file = File::open(&media_file_path)
         .await
-        .map_err(|err| Status::internal(format!("open file error: {err}")))?;
+        .map_err(|err| Status::internal(format!("Open file error: {err}")))?;
     let mut buffer = vec![0u8; STREAM_CHUNK_SIZE];
     let mut total_streamed = 0_u64;
     loop {
         let read = file
             .read(&mut buffer)
             .await
-            .map_err(|err| Status::internal(format!("read file error: {err}")))?;
+            .map_err(|err| Status::internal(format!("Read file error: {err}")))?;
         if read == 0 {
             break;
         }
@@ -378,14 +378,14 @@ fn parse_range(range: Option<ytdl_tg_bot_proto::downloader::Range>) -> Result<Ra
     let Some(range) = range else {
         return Ok(Range::default());
     };
-    let step = i16::try_from(range.step).map_err(|_| Status::invalid_argument("invalid playlist_range.step"))?;
+    let step = i16::try_from(range.step).map_err(|_| Status::invalid_argument("Invalid playlist_range.step"))?;
     if step == 0 {
-        return Err(Status::invalid_argument("invalid playlist_range.step"));
+        return Err(Status::invalid_argument("Invalid playlist_range.step"));
     }
 
     let mut range = Range {
-        start: i16::try_from(range.start).map_err(|_| Status::invalid_argument("invalid playlist_range.start"))?,
-        count: i16::try_from(range.count).map_err(|_| Status::invalid_argument("invalid playlist_range.count"))?,
+        start: i16::try_from(range.start).map_err(|_| Status::invalid_argument("Invalid playlist_range.start"))?,
+        count: i16::try_from(range.count).map_err(|_| Status::invalid_argument("Invalid playlist_range.count"))?,
         step,
     };
     range.normalize();
@@ -416,7 +416,7 @@ fn parse_format_strategy<'a>(media_type: &'a str, audio_ext: &'a str) -> Result<
         "audio" => Ok(FormatStrategy::AudioOnly {
             audio_ext: if audio_ext.is_empty() { AUDIO_EXT } else { audio_ext },
         }),
-        _ => Err(Status::invalid_argument("invalid media_type")),
+        _ => Err(Status::invalid_argument("Invalid media_type")),
     }
 }
 
@@ -427,13 +427,13 @@ fn parse_request_media<'a>(media_type: &'a str, audio_ext: &'a str) -> Result<Re
         "audio" => Ok(RequestMedia::Audio {
             audio_ext: if audio_ext.is_empty() { AUDIO_EXT } else { audio_ext },
         }),
-        _ => Err(Status::invalid_argument("invalid media_type")),
+        _ => Err(Status::invalid_argument("Invalid media type")),
     }
 }
 
 #[allow(clippy::result_large_err)]
 fn parse_url(raw: &str) -> Result<Url, Status> {
-    Url::parse(raw).map_err(|err| Status::invalid_argument(format!("invalid url: {err}")))
+    Url::parse(raw).map_err(|err| Status::invalid_argument(format!("Invalid url: {err}")))
 }
 
 fn resolve_max_file_size(request_max_file_size: u64, node_max_file_size: u64) -> u64 {
@@ -445,12 +445,12 @@ fn resolve_max_file_size(request_max_file_size: u64, node_max_file_size: u64) ->
 
 #[allow(clippy::result_large_err)]
 fn send_chunk(tx: &UnboundedSender<Result<DownloadChunk, Status>>, chunk: DownloadChunk) -> Result<(), Status> {
-    tx.send(Ok(chunk)).map_err(|_| Status::cancelled("client disconnected"))
+    tx.send(Ok(chunk)).map_err(|_| Status::cancelled("Client disconnected"))
 }
 
 #[allow(clippy::result_large_err)]
 fn send_status(tx: &UnboundedSender<Result<DownloadChunk, Status>>, status: Status) -> Result<(), Status> {
-    tx.send(Err(status)).map_err(|_| Status::cancelled("client disconnected"))
+    tx.send(Err(status)).map_err(|_| Status::cancelled("Client disconnected"))
 }
 
 enum RequestMedia<'a> {

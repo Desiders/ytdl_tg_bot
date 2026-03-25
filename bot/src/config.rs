@@ -21,14 +21,14 @@ pub struct ChatConfig {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct TimeoutsConfig {
-    pub send_by_fs: f32,
+    pub send_by_upload: f32,
     pub send_by_id: f32,
 }
 
 impl Default for TimeoutsConfig {
     fn default() -> Self {
         Self {
-            send_by_fs: 210.0,
+            send_by_upload: 210.0,
             send_by_id: 360.0,
         }
     }

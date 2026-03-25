@@ -41,7 +41,7 @@ pub async fn download_video(
     Inject(cfg): Inject<Config>,
     Inject(get_media): Inject<get_media::GetVideoByURL>,
     Inject(download_media): Inject<media::DownloadVideo>,
-    Inject(send_media_in_fs): Inject<send_media::fs::SendVideo>,
+    Inject(upload_media): Inject<send_media::upload::SendVideo>,
     Inject(edit_media_by_id): Inject<send_media::id::EditVideo>,
     Inject(add_downloaded_media): Inject<downloaded_media::AddVideo>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
@@ -156,7 +156,7 @@ pub async fn download_video(
                 },
                 async { download_media.execute(input).await }
             );
-            let (media_in_fs, format) = match download_res {
+            let (media_for_upload, format) = match download_res {
                 Ok(Some(val)) => val,
                 Ok(None) => {
                     let _ = progress::is_errors_in_chosen_inline(&bot, inline_message_id, &errs, Some(ParseMode::HTML)).await;
@@ -176,11 +176,11 @@ pub async fn download_video(
             };
 
             let _ = progress::is_sending_in_chosen_inline(&bot, inline_message_id).await;
-            let file_id = match send_media_in_fs
-                .execute(send_media::fs::SendVideoInput {
+            let file_id = match upload_media
+                .execute(send_media::upload::SendVideoInput {
                     chat_id: cfg.chat.receiver_chat_id,
                     reply_to_message_id: None,
-                    media_in_fs,
+                    media_for_upload,
                     name: media.title.as_deref().unwrap_or(media.id.as_ref()),
                     width: format.width,
                     height: format.height,
@@ -272,7 +272,7 @@ pub async fn download_audio(
     Inject(cfg): Inject<Config>,
     Inject(get_media): Inject<get_media::GetAudioByURL>,
     Inject(download_media): Inject<media::DownloadAudio>,
-    Inject(send_media_in_fs): Inject<send_media::fs::SendAudio>,
+    Inject(upload_media): Inject<send_media::upload::SendAudio>,
     Inject(edit_media_by_id): Inject<send_media::id::EditAudio>,
     Inject(add_downloaded_media): Inject<downloaded_media::AddAudio>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
@@ -387,7 +387,7 @@ pub async fn download_audio(
                 },
                 async { download_media.execute(input).await }
             );
-            let (media_in_fs, _format) = match download_res {
+            let (media_for_upload, _format) = match download_res {
                 Ok(Some(val)) => val,
                 Ok(None) => {
                     let _ = progress::is_errors_in_chosen_inline(&bot, inline_message_id, &download_errs, Some(ParseMode::HTML)).await;
@@ -407,11 +407,11 @@ pub async fn download_audio(
             };
 
             let _ = progress::is_sending_in_chosen_inline(&bot, inline_message_id).await;
-            let file_id = match send_media_in_fs
-                .execute(send_media::fs::SendAudioInput {
+            let file_id = match upload_media
+                .execute(send_media::upload::SendAudioInput {
                     chat_id: cfg.chat.receiver_chat_id,
                     reply_to_message_id: None,
-                    media_in_fs,
+                    media_for_upload,
                     name: media.title.as_deref().unwrap_or(media.id.as_ref()),
                     title: media.title.as_deref(),
                     performer: media.uploader.as_deref(),
