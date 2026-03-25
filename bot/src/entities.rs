@@ -14,7 +14,7 @@ pub use chat::{Chat, ChatStats};
 pub use chat_config::{ChatConfig, ChatConfigExcludeDomain, ChatConfigExcludeDomains, ChatConfigUpdate};
 pub use domains::Domains;
 pub use downloaded_media::{DownloadedMedia, DownloadedMediaByDomainCount, DownloadedMediaCount, DownloadedMediaStats};
-pub use media::{Media, MediaFormat, MediaInFS, MediaInPlaylist, Playlist, RawMediaWithFormat, ShortMedia};
+pub use media::{Media, MediaByteStream, MediaForUpload, MediaFormat, MediaInPlaylist, Playlist, RawMediaWithFormat, ShortMedia};
 pub use params::Params;
 pub use range::{ParseRangeError, Range};
 pub use sections::{ParseSectionError, Sections};

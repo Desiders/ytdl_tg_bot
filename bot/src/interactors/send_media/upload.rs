@@ -1,4 +1,4 @@
-use crate::{config::TimeoutsConfig, entities::MediaInFS, handlers_utils::send, interactors::Interactor};
+use crate::{config::TimeoutsConfig, entities::MediaForUpload, handlers_utils::send, interactors::Interactor};
 
 use crate::utils::{media_link, sanitize_send_filename};
 use std::sync::Arc;
@@ -20,7 +20,7 @@ pub struct SendVideo {
 pub struct SendVideoInput<'a> {
     pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
-    pub media_in_fs: MediaInFS,
+    pub media_for_upload: MediaForUpload,
     pub name: &'a str,
     pub width: Option<i64>,
     pub height: Option<i64>,
@@ -38,7 +38,7 @@ pub struct SendAudio {
 pub struct SendAudioInput<'a> {
     pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
-    pub media_in_fs: MediaInFS,
+    pub media_for_upload: MediaForUpload,
     pub name: &'a str,
     pub title: Option<&'a str>,
     pub performer: Option<&'a str>,
@@ -58,11 +58,13 @@ impl Interactor<SendVideoInput<'_>> for &SendVideo {
         SendVideoInput {
             chat_id,
             reply_to_message_id,
-            media_in_fs: MediaInFS {
-                path,
-                thumb_path,
-                temp_dir,
-            },
+            media_for_upload:
+                MediaForUpload {
+                    path,
+                    thumb_path,
+                    temp_dir,
+                    stream,
+                },
             name,
             width,
             height,
@@ -73,24 +75,20 @@ impl Interactor<SendVideoInput<'_>> for &SendVideo {
         }: SendVideoInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let send_name = sanitize_send_filename(path.as_ref(), name);
+        let video = InputFile::stream_with_name(stream.into_inner(), &send_name);
+        let method = methods::SendVideo::new(chat_id, video)
+            .width_option(width)
+            .height_option(height)
+            .supports_streaming(true)
+            .duration_option(duration)
+            .disable_notification(true)
+            .thumbnail_option(thumb_path.map(InputFile::fs))
+            .caption_option(if link_is_visible { media_link(Some(webpage_url)) } else { None })
+            .parse_mode(ParseMode::HTML)
+            .reply_parameters_option(reply_to_message_id.map(|val| ReplyParameters::new(val).allow_sending_without_reply(true)));
 
         debug!("Video sending");
-        let message = send::with_retries(
-            &self.bot,
-            methods::SendVideo::new(chat_id, InputFile::fs_with_name(path, &send_name))
-                .width_option(width)
-                .height_option(height)
-                .supports_streaming(true)
-                .duration_option(duration)
-                .disable_notification(true)
-                .thumbnail_option(thumb_path.map(InputFile::fs))
-                .caption_option(if link_is_visible { media_link(Some(webpage_url)) } else { None })
-                .parse_mode(ParseMode::HTML)
-                .reply_parameters_option(reply_to_message_id.map(|val| ReplyParameters::new(val).allow_sending_without_reply(true))),
-            2,
-            Some(self.timeouts_cfg.send_by_fs),
-        )
-        .await?;
+        let message = send::once(&self.bot, method, Some(self.timeouts_cfg.send_by_upload)).await?;
         drop(temp_dir);
         let message_id = message.message_id();
         let file_id = match message.video() {
@@ -125,11 +123,13 @@ impl Interactor<SendAudioInput<'_>> for &SendAudio {
         SendAudioInput {
             chat_id,
             reply_to_message_id,
-            media_in_fs: MediaInFS {
-                path,
-                thumb_path,
-                temp_dir,
-            },
+            media_for_upload:
+                MediaForUpload {
+                    path,
+                    thumb_path,
+                    temp_dir,
+                    stream,
+                },
             name,
             performer,
             title,
@@ -140,23 +140,19 @@ impl Interactor<SendAudioInput<'_>> for &SendAudio {
         }: SendAudioInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         let send_name = sanitize_send_filename(path.as_ref(), name);
+        let audio = InputFile::stream_with_name(stream.into_inner(), &send_name);
+        let method = methods::SendAudio::new(chat_id, audio)
+            .title_option(title)
+            .duration_option(duration)
+            .disable_notification(true)
+            .performer_option(performer)
+            .thumbnail_option(thumb_path.map(InputFile::fs))
+            .caption_option(if link_is_visible { media_link(Some(webpage_url)) } else { None })
+            .parse_mode(ParseMode::HTML)
+            .reply_parameters_option(reply_to_message_id.map(|val| ReplyParameters::new(val).allow_sending_without_reply(true)));
 
         debug!("Audio sending");
-        let message = send::with_retries(
-            &self.bot,
-            methods::SendAudio::new(chat_id, InputFile::fs_with_name(path, &send_name))
-                .title_option(title)
-                .duration_option(duration)
-                .disable_notification(true)
-                .performer_option(performer)
-                .thumbnail_option(thumb_path.map(InputFile::fs))
-                .caption_option(if link_is_visible { media_link(Some(webpage_url)) } else { None })
-                .parse_mode(ParseMode::HTML)
-                .reply_parameters_option(reply_to_message_id.map(|val| ReplyParameters::new(val).allow_sending_without_reply(true))),
-            2,
-            Some(self.timeouts_cfg.send_by_fs),
-        )
-        .await?;
+        let message = send::once(&self.bot, method, Some(self.timeouts_cfg.send_by_upload)).await?;
         drop(temp_dir);
         let message_id = message.message_id();
         let file_id = message

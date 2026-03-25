@@ -52,11 +52,11 @@ pub(super) fn init(bot: Bot, cfg: Config) -> Container {
             provide(|Inject(random_cfg): Inject<RandomCmdConfig>| Ok(downloaded_media::GetRandomAudio { random_cfg })),
             provide(|
                 Inject(bot): Inject<Bot>,
-                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(send_media::fs::SendVideo { bot, timeouts_cfg })
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(send_media::upload::SendVideo { bot, timeouts_cfg })
             ),
             provide(|
                 Inject(bot): Inject<Bot>,
-                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(send_media::fs::SendAudio { bot, timeouts_cfg })
+                Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(send_media::upload::SendAudio { bot, timeouts_cfg })
             ),
             provide(|
                 Inject(bot): Inject<Bot>,

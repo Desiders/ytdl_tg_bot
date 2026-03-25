@@ -20,6 +20,8 @@ use crate::{
     value_objects::MediaType,
 };
 
+const MAX_DECODING_MESSAGE_SIZE: usize = 30 * 1024 * 1024;
+
 #[derive(Debug, thiserror::Error)]
 pub enum GetInfoErrorKind {
     #[error(transparent)]
@@ -347,7 +349,7 @@ async fn fetch_media_info_with_retry(
 
         node.reserve_download_slot();
         let result = async {
-            let mut client = DownloaderClient::new(node.channel.clone());
+            let mut client = DownloaderClient::new(node.channel.clone()).max_decoding_message_size(MAX_DECODING_MESSAGE_SIZE);
             let response = client.get_media_info(authenticated_request(request.clone(), &node.token)?).await?;
             Ok::<_, GetInfoErrorKind>(response.into_inner())
         }

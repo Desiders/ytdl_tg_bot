@@ -1,10 +1,13 @@
 #![allow(dead_code)]
 
+use bytes::Bytes;
+use futures_util::Stream;
 use serde::Deserialize;
 use std::{
     collections::BTreeMap,
     fmt,
     hash::{Hash, Hasher},
+    io,
     path::{Path, PathBuf},
 };
 use tempfile::TempDir;
@@ -276,11 +279,32 @@ pub struct MediaInPlaylist {
     pub webpage_url: Option<Url>,
 }
 
+pub struct MediaByteStream {
+    inner: Box<dyn Stream<Item = Result<Bytes, io::Error>> + Send + Sync + Unpin>,
+}
+
+impl MediaByteStream {
+    pub fn new(stream: impl Stream<Item = Result<Bytes, io::Error>> + Send + Sync + Unpin + 'static) -> Self {
+        Self { inner: Box::new(stream) }
+    }
+
+    pub fn into_inner(self) -> Box<dyn Stream<Item = Result<Bytes, io::Error>> + Send + Sync + Unpin> {
+        self.inner
+    }
+}
+
+impl fmt::Debug for MediaByteStream {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("MediaByteStream(<stream>)")
+    }
+}
+
 #[derive(Debug)]
-pub struct MediaInFS {
+pub struct MediaForUpload {
     pub path: PathBuf,
     pub thumb_path: Option<PathBuf>,
     pub temp_dir: TempDir,
+    pub stream: MediaByteStream,
 }
 
 impl From<MediaWithFormat> for Media {

@@ -40,7 +40,7 @@ pub async fn download(
     Inject(cfg): Inject<Config>,
     Inject(get_media): Inject<get_media::GetAudioByURL>,
     Inject(download_playlist): Inject<media::DownloadAudioPlaylist>,
-    Inject(send_media_in_fs): Inject<send_media::fs::SendAudio>,
+    Inject(upload_media): Inject<send_media::upload::SendAudio>,
     Inject(send_media_by_id): Inject<send_media::id::SendAudio>,
     Inject(send_playlist): Inject<send_media::id::SendAudioPlaylist>,
     Inject(add_downloaded_media): Inject<downloaded_media::AddAudio>,
@@ -134,13 +134,13 @@ pub async fn download(
             let downloaded_media_count = AtomicUsize::new(cached_len);
             tokio::join!(
                 async {
-                    while let Some((media_in_fs, media, _format)) = media_receiver.recv().await {
+                    while let Some((media_for_upload, media, _format)) = media_receiver.recv().await {
                         let _ = progress::is_sending(&bot, chat_id, progress_message_id).await;
-                        let file_id = match send_media_in_fs
-                            .execute(send_media::fs::SendAudioInput {
+                        let file_id = match upload_media
+                            .execute(send_media::upload::SendAudioInput {
                                 chat_id: cfg.chat.receiver_chat_id,
                                 reply_to_message_id: Some(message_id),
-                                media_in_fs,
+                                media_for_upload,
                                 name: media.title.as_deref().unwrap_or(media.id.as_ref()),
                                 title: media.title.as_deref(),
                                 performer: media.uploader.as_deref(),

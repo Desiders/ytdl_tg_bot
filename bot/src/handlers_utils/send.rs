@@ -12,6 +12,19 @@ use telers::{
 };
 use tracing::{error, instrument, warn};
 
+#[instrument(skip_all)]
+pub async fn once<T>(bot: &Bot, method: T, request_timeout: Option<f32>) -> Result<T::Return, SessionErrorKind>
+where
+    T: TelegramMethod + Send + Sync,
+    T::Method: Send + Sync,
+{
+    if let Some(request_timeout) = request_timeout {
+        bot.send_with_timeout(method, request_timeout).await
+    } else {
+        bot.send(method).await
+    }
+}
+
 /// Sends a request to the Telegram Bot API with limited retries.
 /// # Arguments
 /// * `bot` - Bot instance
@@ -37,11 +50,7 @@ where
     let cur_retry_count = AtomicU8::new(0);
 
     backoff::future::retry(ExponentialBackoff::default(), || async {
-        match if let Some(request_timeout) = request_timeout {
-            bot.send_with_timeout(method.clone(), request_timeout).await
-        } else {
-            bot.send(method.clone()).await
-        } {
+        match once(bot, method.clone(), request_timeout).await {
             Ok(res) => Ok(res),
             Err(err) => {
                 Err(match err {

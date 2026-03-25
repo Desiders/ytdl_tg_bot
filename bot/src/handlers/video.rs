@@ -40,7 +40,7 @@ pub async fn download(
     Inject(cfg): Inject<Config>,
     Inject(get_media): Inject<get_media::GetVideoByURL>,
     Inject(download_playlist): Inject<media::DownloadVideoPlaylist>,
-    Inject(send_media_in_fs): Inject<send_media::fs::SendVideo>,
+    Inject(upload_media): Inject<send_media::upload::SendVideo>,
     Inject(send_media_by_id): Inject<send_media::id::SendVideo>,
     Inject(send_playlist): Inject<send_media::id::SendVideoPlaylist>,
     Inject(add_downloaded_media): Inject<downloaded_media::AddVideo>,
@@ -134,13 +134,13 @@ pub async fn download(
             let downloaded_media_count = AtomicUsize::new(cached_len);
             tokio::join!(
                 async {
-                    while let Some((media_in_fs, media, format)) = media_receiver.recv().await {
+                    while let Some((media_for_upload, media, format)) = media_receiver.recv().await {
                         let _ = progress::is_sending(&bot, chat_id, progress_message_id).await;
-                        let file_id = match send_media_in_fs
-                            .execute(send_media::fs::SendVideoInput {
+                        let file_id = match upload_media
+                            .execute(send_media::upload::SendVideoInput {
                                 chat_id: cfg.chat.receiver_chat_id,
                                 reply_to_message_id: Some(message_id),
-                                media_in_fs,
+                                media_for_upload,
                                 name: media.title.as_deref().unwrap_or(media.id.as_ref()),
                                 width: format.width,
                                 height: format.height,
@@ -267,7 +267,7 @@ pub async fn download_quiet(
     Inject(cfg): Inject<Config>,
     Inject(get_media): Inject<get_media::GetVideoByURL>,
     Inject(download_playlist): Inject<media::DownloadVideoPlaylist>,
-    Inject(send_media_in_fs): Inject<send_media::fs::SendVideo>,
+    Inject(upload_media): Inject<send_media::upload::SendVideo>,
     Inject(send_media_by_id): Inject<send_media::id::SendVideo>,
     Inject(send_playlist): Inject<send_media::id::SendVideoPlaylist>,
     Inject(add_downloaded_media): Inject<downloaded_media::AddVideo>,
@@ -338,12 +338,12 @@ pub async fn download_quiet(
             let downloaded_media_count = AtomicUsize::new(cached_len);
             tokio::join!(
                 async {
-                    while let Some((media_in_fs, media, format)) = media_receiver.recv().await {
-                        let file_id = match send_media_in_fs
-                            .execute(send_media::fs::SendVideoInput {
+                    while let Some((media_for_upload, media, format)) = media_receiver.recv().await {
+                        let file_id = match upload_media
+                            .execute(send_media::upload::SendVideoInput {
                                 chat_id: cfg.chat.receiver_chat_id,
                                 reply_to_message_id: Some(message_id),
-                                media_in_fs,
+                                media_for_upload,
                                 #[allow(clippy::cast_possible_truncation)]
                                 name: media.title.as_deref().unwrap_or(media.id.as_ref()),
                                 width: format.width,
