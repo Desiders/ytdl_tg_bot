@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 use tokio::{io::AsyncBufReadExt as _, sync::mpsc};
-use tracing::{error, instrument, trace, warn};
+use tracing::{debug, error, instrument, trace, warn};
 
 pub enum FormatStrategy<'a> {
     VideoAndAudio,
@@ -347,6 +347,7 @@ pub async fn download_media(
             };
             while let Ok(Some(line)) = reader.next_line().await {
                 if !line.starts_with("download-progress") {
+                    debug!("{line}");
                     continue;
                 }
                 let Some((_, progress)) = line.split_once(':') else {
@@ -364,7 +365,7 @@ pub async fn download_media(
                     let stderr = String::from_utf8_lossy(&stderr);
                     if status.success() {
                         if !stderr.is_empty() {
-                            warn!(%stderr);
+                            warn!("{stderr}");
                         }
                         Ok(())
                     } else {
