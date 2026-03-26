@@ -1,7 +1,7 @@
 services:
   bot:
     container_name: ytdl_tg_bot.bot
-    image: desiders/ytdl_tg_bot:4.6.1
+    image: desiders/ytdl_tg_bot:5.0.0
     restart: "unless-stopped"
     env_file:
       - "../.env"
@@ -32,7 +32,7 @@ services:
 
   downloader:
     container_name: ytdl_tg_bot.downloader
-    image: desiders/ytdl_tg_bot.downloader:0.1.0
+    image: desiders/ytdl_tg_bot.downloader:1.0.0
     restart: "unless-stopped"
     env_file:
       - "../.env"
