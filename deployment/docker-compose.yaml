@@ -19,6 +19,10 @@ services:
       - type: bind
         source: ../configs/config.toml
         target: /app/configs/config.toml
+      - type: bind
+        source: ../tls
+        target: /app/configs/tls
+        read_only: true
     depends_on:
       postgres:
         condition: service_healthy
@@ -52,6 +56,10 @@ services:
       - type: bind
         source: ../configs/downloader.toml
         target: /app/configs/downloader.toml
+      - type: bind
+        source: ../tls
+        target: /app/configs/tls
+        read_only: true
       - type: bind
         source: ../yt-dlp
         target: /app/yt-dlp

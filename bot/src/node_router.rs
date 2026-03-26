@@ -1,31 +1,22 @@
-use std::{
-    cmp::Ordering,
-    collections::{HashMap, HashSet},
-    sync::{
-        atomic::{AtomicU32, Ordering::Relaxed},
-        Arc, RwLock,
-    },
-};
+mod auth;
+mod handle;
+mod selection;
+mod tls;
 
-use anyhow::{Context, Result};
-use tonic::{
-    metadata::{Ascii, MetadataValue},
-    transport::{Channel, Endpoint},
-    Request,
+pub use auth::authenticated_request;
+pub use handle::NodeHandle;
+
+use anyhow::Result;
+use selection::{select_best_index, NodeSnapshot};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{Arc, RwLock},
 };
+use tls::{build_channel, DownloadClientTls};
 use tracing::{error, warn};
 use ytdl_tg_bot_proto::downloader::{node_capabilities_client::NodeCapabilitiesClient, Empty};
 
-use crate::config::DownloadNodeConfig;
-
-pub struct NodeHandle {
-    pub address: Box<str>,
-    pub token: Box<str>,
-    pub max_concurrent: u32,
-    local_active_downloads: AtomicU32,
-    remote_active_downloads: AtomicU32,
-    pub channel: Channel,
-}
+use crate::config::{DownloadNodeConfig, DownloadTlsConfig};
 
 pub struct NodeRouter {
     nodes: Vec<Arc<NodeHandle>>,
@@ -34,24 +25,21 @@ pub struct NodeRouter {
 }
 
 impl NodeRouter {
-    pub async fn new(configs: &[DownloadNodeConfig], max_file_size: u64) -> Result<Self> {
+    pub async fn new(configs: &[DownloadNodeConfig], tls_config: Option<&DownloadTlsConfig>, max_file_size: u64) -> Result<Self> {
         let mut nodes = Vec::with_capacity(configs.len());
         let mut domain_cookie_map = HashMap::new();
+        let tls_material = DownloadClientTls::load(tls_config)?;
 
         for (index, config) in configs.iter().enumerate() {
-            let channel = Endpoint::from_shared(config.address.to_string())
-                .with_context(|| format!("Invalid node address {}", config.address))?
-                .connect_lazy();
-            let node = Arc::new(NodeHandle {
-                address: config.address.clone(),
-                token: config.token.clone(),
-                max_concurrent: config.max_concurrent,
-                local_active_downloads: AtomicU32::new(0),
-                remote_active_downloads: AtomicU32::new(0),
+            let channel = build_channel(config, tls_material.as_ref())?;
+            let node = Arc::new(NodeHandle::new(
+                config.address.clone(),
+                config.token.clone(),
+                config.max_concurrent,
                 channel,
-            });
+            ));
 
-            match fetch_supported_domains(&node).await {
+            match node.fetch_supported_domains().await {
                 Ok(domains) => {
                     for domain in domains {
                         domain_cookie_map.entry(domain).or_insert_with(Vec::new).push(index);
@@ -72,8 +60,9 @@ impl NodeRouter {
         })
     }
 
+    #[inline]
     #[must_use]
-    pub fn max_file_size(&self) -> u64 {
+    pub const fn max_file_size(&self) -> u64 {
         self.max_file_size
     }
 
@@ -124,7 +113,7 @@ impl NodeRouter {
         let mut domain_cookie_map = HashMap::new();
 
         for (index, node) in self.nodes.iter().enumerate() {
-            match fetch_supported_domains(node).await {
+            match node.fetch_supported_domains().await {
                 Ok(domains) => {
                     for domain in domains {
                         domain_cookie_map.entry(domain).or_insert_with(Vec::new).push(index);
@@ -142,47 +131,8 @@ impl NodeRouter {
     }
 }
 
-pub fn authenticated_request<T>(message: T, token: &str) -> std::result::Result<Request<T>, tonic::metadata::errors::InvalidMetadataValue> {
-    let mut request = Request::new(message);
-    let value: MetadataValue<Ascii> = format!("Bearer {token}").parse()?;
-    request.metadata_mut().insert("authorization", value);
-    Ok(request)
-}
-
-fn select_best_index(candidates: Vec<NodeSnapshot<'_>>) -> Option<usize> {
-    candidates.into_iter().min_by(compare_nodes).map(|node| node.index)
-}
-
-fn compare_nodes(left: &NodeSnapshot<'_>, right: &NodeSnapshot<'_>) -> Ordering {
-    let left_active = left.estimated_active_downloads;
-    let right_active = right.estimated_active_downloads;
-
-    // Prefer the node that will have the lower utilization after taking this request.
-    let left_projected = (left_active + 1) * right.max_concurrent;
-    let right_projected = (right_active + 1) * left.max_concurrent;
-
-    left_projected
-        .cmp(&right_projected)
-        .then_with(|| left_active.cmp(&right_active))
-        .then_with(|| right.max_concurrent.cmp(&left.max_concurrent))
-        .then_with(|| left.address.cmp(right.address))
-}
-
-#[derive(Clone, Copy)]
-struct NodeSnapshot<'a> {
-    index: usize,
-    address: &'a str,
-    max_concurrent: u32,
-    estimated_active_downloads: u32,
-}
-
-async fn fetch_supported_domains(node: &NodeHandle) -> Result<Vec<String>> {
-    let mut client = NodeCapabilitiesClient::new(node.channel.clone());
-    let response = client.get_supported_domains(authenticated_request(Empty {}, &node.token)?).await?;
-    Ok(response.into_inner().domains_with_cookies)
-}
-
 impl NodeRouter {
+    #[inline]
     fn select_best_index(&self, indices: Vec<usize>, excluded: &HashSet<String>) -> Option<usize> {
         select_best_index(self.select_candidates(indices, excluded))
     }
@@ -200,39 +150,6 @@ impl NodeRouter {
                 estimated_active_downloads: node.estimated_active_downloads(),
             })
             .collect()
-    }
-}
-
-impl NodeHandle {
-    pub fn reserve_download_slot(&self) {
-        self.local_active_downloads.fetch_add(1, Relaxed);
-    }
-
-    pub fn release_download_slot(&self) {
-        let mut current = self.local_active_downloads.load(Relaxed);
-        loop {
-            let next = current.saturating_sub(1);
-            match self.local_active_downloads.compare_exchange_weak(current, next, Relaxed, Relaxed) {
-                Ok(_) => return,
-                Err(actual) => current = actual,
-            }
-        }
-    }
-
-    pub fn update_remote_active_downloads(&self, active_downloads: u32) {
-        self.remote_active_downloads.store(active_downloads, Relaxed);
-    }
-
-    #[must_use]
-    pub fn estimated_active_downloads(&self) -> u32 {
-        self.local_active_downloads
-            .load(Relaxed)
-            .max(self.remote_active_downloads.load(Relaxed))
-    }
-
-    #[must_use]
-    pub fn has_capacity(&self) -> bool {
-        self.estimated_active_downloads() < self.max_concurrent
     }
 }
 
