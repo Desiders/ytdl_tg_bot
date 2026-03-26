@@ -58,7 +58,7 @@ pub async fn download(
         Some(raw_value) => match Range::from_str(raw_value) {
             Ok(value) => value,
             Err(err) => {
-                error!(%err, "Parse range err");
+                error!(%err, "Parse range error");
                 let text = format!(
                     "Sorry, an error to parse range\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -73,7 +73,7 @@ pub async fn download(
         Some(raw_value) => Some(match Sections::from_str(raw_value) {
             Ok(val) => val,
             Err(err) => {
-                error!(%err, "Parse sections err");
+                error!(%err, "Parse sections error");
                 let text = format!(
                     "Sorry, an error to parse sections\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -112,7 +112,7 @@ pub async fn download(
                 })
                 .await
             {
-                error!(err = format_error_report(&err), "Send err");
+                error!(err = format_error_report(&err), "Send error");
                 let text = format!(
                     "Sorry, an error to send media\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -154,7 +154,7 @@ pub async fn download(
                         {
                             Ok(val) => val,
                             Err(err) => {
-                                error!(err = format_error_report(&err), "Send err");
+                                error!(err = format_error_report(&err), "Send error");
                                 send_err = Some(html_quote(err.format(&bot.token)));
                                 continue;
                             }
@@ -177,7 +177,7 @@ pub async fn download(
                             })
                             .await
                         {
-                            error!(%err, "Add err");
+                            error!(%err, "Add error");
                         }
 
                         downloaded_media_count.fetch_add(1, Ordering::SeqCst);
@@ -207,7 +207,7 @@ pub async fn download(
                 },
                 async {
                     if let Err(err) = download_playlist.execute(input).await {
-                        error!(%err, "Download err");
+                        error!(%err, "Download error");
                         let text = format!(
                             "Sorry, an error to download playlist\n{}",
                             html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -230,7 +230,7 @@ pub async fn download(
                 })
                 .await
             {
-                error!(%err, "Send err");
+                error!(%err, "Send error");
                 let text = format!(
                     "Sorry, an error to send playlist\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -246,7 +246,7 @@ pub async fn download(
             let _ = progress::is_error_in_progress(&bot, chat_id, message_id, text, Some(ParseMode::HTML)).await;
         }
         Err(err) => {
-            error!(err = format_error_report(&err), "Get err");
+            error!(err = format_error_report(&err), "Get error");
             let text = format!(
                 "Sorry, an error to get info\n{}",
                 html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -282,7 +282,7 @@ pub async fn download_quiet(
         Some(raw_value) => match Range::from_str(raw_value) {
             Ok(val) => val,
             Err(err) => {
-                error!(%err, "Parse range err");
+                error!(%err, "Parse range error");
                 return Ok(EventReturn::Finish);
             }
         },
@@ -292,7 +292,7 @@ pub async fn download_quiet(
         Some(raw_value) => Some(match Sections::from_str(raw_value) {
             Ok(val) => val,
             Err(err) => {
-                error!(%err, "Parse sections err");
+                error!(%err, "Parse sections error");
                 return Ok(EventReturn::Finish);
             }
         }),
@@ -326,7 +326,7 @@ pub async fn download_quiet(
                 })
                 .await
             {
-                error!(err = format_error_report(&err), "Send err");
+                error!(err = format_error_report(&err), "Send error");
             }
         }
         Ok(Playlist { cached, uncached }) => {
@@ -357,7 +357,7 @@ pub async fn download_quiet(
                         {
                             Ok(val) => val,
                             Err(err) => {
-                                error!(err = format_error_report(&err), "Send err");
+                                error!(err = format_error_report(&err), "Send error");
                                 continue;
                             }
                         };
@@ -379,7 +379,7 @@ pub async fn download_quiet(
                             })
                             .await
                         {
-                            error!(%err, "Add err");
+                            error!(%err, "Add error");
                         }
 
                         downloaded_media_count.fetch_add(1, Ordering::SeqCst);
@@ -387,7 +387,7 @@ pub async fn download_quiet(
                 },
                 async {
                     if let Err(err) = download_playlist.execute(input).await {
-                        error!(%err, "Download err");
+                        error!(%err, "Download error");
                     }
                 }
             );
@@ -402,14 +402,14 @@ pub async fn download_quiet(
                 })
                 .await
             {
-                error!(%err, "Send err");
+                error!(%err, "Send error");
             }
         }
         Ok(Empty) => {
             warn!("Empty playlist");
         }
         Err(err) => {
-            error!(err = format_error_report(&err), "Get err");
+            error!(err = format_error_report(&err), "Get error");
             return Ok(EventReturn::Finish);
         }
     }
@@ -454,11 +454,11 @@ pub async fn random(
                 })
                 .await
             {
-                error!(%err, "Send err");
+                error!(%err, "Send error");
             }
         }
         Err(err) => {
-            error!(err = format_error_report(&err), "Get err");
+            error!(err = format_error_report(&err), "Get error");
         }
     }
     Ok(EventReturn::Finish)

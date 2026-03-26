@@ -27,10 +27,10 @@ impl Middleware for ReplaceDomainsMiddleware {
         };
 
         for ReplaceDomainsConfig { from, to } in replace_domains.iter() {
-            let re = Regex::new(from).expect("invalid `from` pattern");
+            let re = Regex::new(from).expect("Invalid `from` pattern");
             if re.is_match(&domain) {
                 info!(from = domain, to, "Replace domain");
-                url.set_host(Some(&re.replace(&domain, &**to))).expect("invalid host");
+                url.set_host(Some(&re.replace(&domain, &**to))).expect("Invalid host");
                 break;
             }
         }

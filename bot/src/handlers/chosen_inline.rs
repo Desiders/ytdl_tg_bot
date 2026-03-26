@@ -50,7 +50,7 @@ pub async fn download_video(
     let url = if let Some(Extension(val)) = url_option {
         val
     } else {
-        let (_, video_id) = result_id.split_once('_').expect("incorrect inline message ID");
+        let (_, video_id) = result_id.split_once('_').expect("Incorrect inline message ID");
         Url::parse(&format!("https://www.youtube.com/watch?v={video_id}")).unwrap()
     };
 
@@ -65,7 +65,7 @@ pub async fn download_video(
         Some(raw_value) => Some(match Sections::from_str(raw_value) {
             Ok(val) => val,
             Err(err) => {
-                error!(%err, "Parse sections err");
+                error!(%err, "Parse sections error");
                 let text = format!(
                     "Sorry, an error to parse sections\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -102,7 +102,7 @@ pub async fn download_video(
                 })
                 .await
             {
-                error!(err = format_error_report(&err), "Edit err");
+                error!(err = format_error_report(&err), "Edit error");
                 let text = format!(
                     "Sorry, an error to edit the message\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -123,7 +123,7 @@ pub async fn download_video(
                 })
                 .await
             {
-                error!(err = format_error_report(&err), "Edit err");
+                error!(err = format_error_report(&err), "Edit error");
                 let text = format!(
                     "Sorry, an error to edit the message\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -163,7 +163,7 @@ pub async fn download_video(
                     return Ok(EventReturn::Finish);
                 }
                 Err(err) => {
-                    error!(%err, "Download err");
+                    error!(%err, "Download error");
                     let _ = progress::is_error_in_chosen_inline(
                         &bot,
                         inline_message_id,
@@ -194,7 +194,7 @@ pub async fn download_video(
             {
                 Ok(val) => val,
                 Err(err) => {
-                    error!(err = format_error_report(&err), "Send err");
+                    error!(err = format_error_report(&err), "Send error");
                     let _ = progress::is_error_in_chosen_inline(
                         &bot,
                         inline_message_id,
@@ -215,7 +215,7 @@ pub async fn download_video(
                 })
                 .await
             {
-                error!(err = format_error_report(&err), "Edit err");
+                error!(err = format_error_report(&err), "Edit error");
                 let text = format!(
                     "Sorry, an error to edit the message\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -236,7 +236,7 @@ pub async fn download_video(
                 })
                 .await
             {
-                error!(%err, "Add err");
+                error!(%err, "Add error");
             }
         }
         Ok(Empty) => {
@@ -245,7 +245,7 @@ pub async fn download_video(
             let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, text, Some(ParseMode::HTML)).await;
         }
         Err(err) => {
-            error!(err = format_error_report(&err), "Get err");
+            error!(err = format_error_report(&err), "Get error");
             let text = format!(
                 "Sorry, an error to get info\n{}",
                 html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -281,7 +281,7 @@ pub async fn download_audio(
     let url = if let Some(Extension(val)) = url_option {
         val
     } else {
-        let (_, video_id) = result_id.split_once('_').expect("incorrect inline message ID");
+        let (_, video_id) = result_id.split_once('_').expect("Incorrect inline message ID");
         Url::parse(&format!("https://www.youtube.com/watch?v={video_id}")).unwrap()
     };
 
@@ -296,7 +296,7 @@ pub async fn download_audio(
         Some(raw_value) => Some(match Sections::from_str(raw_value) {
             Ok(val) => val,
             Err(err) => {
-                error!(%err, "Parse sections err");
+                error!(%err, "Parse sections error");
                 let text = format!(
                     "Sorry, an error to parse sections\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -333,7 +333,7 @@ pub async fn download_audio(
                 })
                 .await
             {
-                error!(err = format_error_report(&err), "Edit err");
+                error!(err = format_error_report(&err), "Edit error");
                 let text = format!(
                     "Sorry, an error to edit the message\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -354,7 +354,7 @@ pub async fn download_audio(
                 })
                 .await
             {
-                error!(err = format_error_report(&err), "Edit err");
+                error!(err = format_error_report(&err), "Edit error");
                 let text = format!(
                     "Sorry, an error to edit the message\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -394,7 +394,7 @@ pub async fn download_audio(
                     return Ok(EventReturn::Finish);
                 }
                 Err(err) => {
-                    error!(%err, "Download err");
+                    error!(%err, "Download error");
                     let _ = progress::is_error_in_chosen_inline(
                         &bot,
                         inline_message_id,
@@ -425,7 +425,7 @@ pub async fn download_audio(
             {
                 Ok(val) => val,
                 Err(err) => {
-                    error!(err = format_error_report(&err), "Send err");
+                    error!(err = format_error_report(&err), "Send error");
                     let _ = progress::is_error_in_chosen_inline(
                         &bot,
                         inline_message_id,
@@ -446,7 +446,7 @@ pub async fn download_audio(
                 })
                 .await
             {
-                error!(err = format_error_report(&err), "Edit err");
+                error!(err = format_error_report(&err), "Edit error");
                 let text = format!(
                     "Sorry, an error to edit the message\n{}",
                     html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -467,7 +467,7 @@ pub async fn download_audio(
                 })
                 .await
             {
-                error!(%err, "Add err");
+                error!(%err, "Add error");
             }
         }
         Ok(Empty) => {
@@ -476,7 +476,7 @@ pub async fn download_audio(
             let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, text, Some(ParseMode::HTML)).await;
         }
         Err(err) => {
-            error!(err = format_error_report(&err), "Get err");
+            error!(err = format_error_report(&err), "Get error");
             let text = format!(
                 "Sorry, an error to get info\n{}",
                 html_expandable_blockquote(html_quote(err.format(&bot.token)))

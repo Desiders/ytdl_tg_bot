@@ -1,5 +1,5 @@
 use std::{
-    fs,
+    fmt, fs,
     pin::Pin,
     sync::{
         atomic::{AtomicU32, Ordering},
@@ -117,7 +117,7 @@ impl Downloader for DownloaderService {
                 media_type = %request_media_type,
                 "Rejected download request because node is at capacity"
             );
-            Status::resource_exhausted("node is at capacity")
+            Status::resource_exhausted("Node is at capacity")
         })?;
         let active_downloads = self.active_downloads.fetch_add(1, Ordering::Relaxed) + 1;
         info!(
@@ -197,57 +197,60 @@ async fn stream_download(
 ) -> Result<(), Status> {
     let url = parse_url(&request.url)?;
     let section = parse_section(request.section);
-    let requested_media = parse_request_media(&request.media_type, &request.audio_ext)?;
     let media_with_format: MediaWithFormat =
         serde_json::from_str(&request.raw_info_json).map_err(|err| Status::invalid_argument(format!("Invalid info file error: {err}")))?;
     let media = Media::from(media_with_format.clone());
     let format = MediaFormat::from(media_with_format);
+    let (requested_media_kind, ext, strategy) = {
+        let requested_media = parse_request_media(&request.media_type, &request.audio_ext)?;
+        (
+            requested_media.to_string(),
+            requested_media.output_ext(&format).to_owned(),
+            parse_format_strategy(&request.media_type, &request.audio_ext)?,
+        )
+    };
     let effective_max_file_size = resolve_max_file_size(request.max_file_size, yt_dlp_cfg.max_file_size);
     let host = url.host();
-    let cookie = cookies.get_path_by_optional_host(host.as_ref());
+    let cookie = cookies.get_path_by_optional_host(host.as_ref()).cloned();
 
     info!(
         url = %url,
         format_id = %request.format_id,
-        media_type = requested_media.kind(),
+        media_type = %requested_media_kind,
         has_cookie = cookie.is_some(),
         has_section = section.is_some(),
         max_file_size = effective_max_file_size,
         "Starting media download"
     );
 
-    send_chunk(
-        &tx,
-        DownloadChunk {
-            payload: Some(Payload::Meta(DownloadMeta {
-                ext: requested_media.output_ext(&format),
-                width: format.width,
-                height: format.height,
-                duration: media.duration.map(duration_seconds_to_i64),
-            })),
-        },
-    )?;
-
     let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(|err| Status::internal(format!("Temp dir error: {err}")))?;
     let output_dir_path = temp_dir.path();
     let info_file_path = output_dir_path.join("media.info.json");
     fs::write(&info_file_path, &request.raw_info_json).map_err(|err| Status::internal(format!("Info file error: {err}")))?;
 
-    let media_file_path = output_dir_path.join(format!("media.{}", requested_media.output_ext(&format)));
+    let media_file_path = output_dir_path.join(format!("media.{ext}"));
     let thumb_file_path = output_dir_path.join("media.jpg");
+    let thumb_urls = media.get_thumb_urls(format.aspect_ration_kind());
 
-    let mut thumbnail_downloaded = false;
-    for thumb_url in media.get_thumb_urls(format.aspect_ration_kind()) {
-        match download_and_convert(thumb_url.as_str(), &thumb_file_path, FFMPEG_PATH, THUMBNAIL_TIMEOUT_SECS).await {
-            Ok(()) => {
-                info!(thumbnail_url = %thumb_url, "Thumbnail downloaded");
-                thumbnail_downloaded = true;
-                break;
-            }
-            Err(err) => {
-                warn!(%err, thumbnail_url = %thumb_url, "Thumbnail download failed");
-            }
-        }
+    let thumbnail_downloaded = download_thumbnail(&thumb_urls, &thumb_file_path).await;
+
+    if let Err(status) = send_chunk(
+        &tx,
+        DownloadChunk {
+            payload: Some(Payload::Meta(DownloadMeta {
+                ext: ext.clone(),
+                width: format.width,
+                height: format.height,
+                duration: media.duration.map(duration_seconds_to_i64),
+                has_thumbnail: thumbnail_downloaded,
+            })),
+        },
+    ) {
+        return Err(status);
+    }
+
+    if thumbnail_downloaded {
+        stream_thumbnail_file(&thumb_file_path, &tx).await?;
     }
 
     let (progress_tx, mut progress_rx) = mpsc::unbounded_channel::<String>();
@@ -270,7 +273,7 @@ async fn stream_download(
     };
 
     ytdl::download_media(
-        requested_media.format_strategy(),
+        strategy,
         &request.format_id,
         section.as_ref(),
         effective_max_file_size,
@@ -279,7 +282,7 @@ async fn stream_download(
         &yt_dlp_cfg.executable_path,
         &yt_pot_provider_cfg.url,
         DOWNLOAD_TIMEOUT_SECS,
-        cookie,
+        cookie.as_ref(),
         Some(&progress_tx),
     )
     .await
@@ -308,35 +311,14 @@ async fn stream_download(
             url = %url,
             file_size = metadata.len(),
             max_file_size = effective_max_file_size,
-            "Downloaded file exceeds max_file_size"
+            "Downloaded file exceeds max file size"
         );
         return Err(Status::invalid_argument("File exceeds max file size"));
     }
 
-    let mut file = File::open(&media_file_path)
-        .await
-        .map_err(|err| Status::internal(format!("Open file error: {err}")))?;
-    let mut buffer = vec![0u8; STREAM_CHUNK_SIZE];
-    let mut total_streamed = 0_u64;
-    loop {
-        let read = file
-            .read(&mut buffer)
-            .await
-            .map_err(|err| Status::internal(format!("Read file error: {err}")))?;
-        if read == 0 {
-            break;
-        }
-        total_streamed += read as u64;
-        send_chunk(
-            &tx,
-            DownloadChunk {
-                payload: Some(Payload::Data(buffer[..read].to_vec())),
-            },
-        )?;
-    }
+    let total_streamed = stream_media_file(&media_file_path, &tx).await?;
 
     info!(url = %url, bytes_streamed = total_streamed, "Finished streaming downloaded media");
-    drop(file);
     drop(temp_dir);
     Ok(())
 }
@@ -410,11 +392,11 @@ fn parse_language(audio_language: &str) -> Language {
 }
 
 #[allow(clippy::result_large_err)]
-fn parse_format_strategy<'a>(media_type: &'a str, audio_ext: &'a str) -> Result<FormatStrategy<'a>, Status> {
+fn parse_format_strategy(media_type: &str, audio_ext: &str) -> Result<FormatStrategy, Status> {
     match media_type {
         "video" => Ok(FormatStrategy::VideoAndAudio),
         "audio" => Ok(FormatStrategy::AudioOnly {
-            audio_ext: if audio_ext.is_empty() { AUDIO_EXT } else { audio_ext },
+            audio_ext: if audio_ext.is_empty() { AUDIO_EXT } else { audio_ext }.to_owned(),
         }),
         _ => Err(Status::invalid_argument("Invalid media_type")),
     }
@@ -443,6 +425,79 @@ fn resolve_max_file_size(request_max_file_size: u64, node_max_file_size: u64) ->
     }
 }
 
+async fn download_thumbnail(thumb_urls: &[Url], thumb_file_path: &std::path::Path) -> bool {
+    for thumb_url in thumb_urls {
+        match download_and_convert(thumb_url.as_str(), thumb_file_path, FFMPEG_PATH, THUMBNAIL_TIMEOUT_SECS).await {
+            Ok(()) => {
+                info!(thumbnail_url = %thumb_url, "Thumbnail downloaded");
+                return true;
+            }
+            Err(err) => {
+                warn!(%err, thumbnail_url = %thumb_url, "Thumbnail download failed");
+            }
+        }
+    }
+    false
+}
+
+async fn stream_thumbnail_file(
+    thumb_file_path: &std::path::Path,
+    tx: &UnboundedSender<Result<DownloadChunk, Status>>,
+) -> Result<(), Status> {
+    match File::open(thumb_file_path).await {
+        Ok(mut file) => {
+            let mut buffer = vec![0u8; STREAM_CHUNK_SIZE];
+            loop {
+                let read = match file.read(&mut buffer).await {
+                    Ok(read) => read,
+                    Err(err) => {
+                        warn!(%err, path = %thumb_file_path.display(), "Thumbnail read failed");
+                        break;
+                    }
+                };
+                if read == 0 {
+                    break;
+                }
+                send_chunk(
+                    tx,
+                    DownloadChunk {
+                        payload: Some(Payload::ThumbnailData(buffer[..read].to_vec())),
+                    },
+                )?;
+            }
+        }
+        Err(err) => {
+            warn!(%err, path = %thumb_file_path.display(), "Thumbnail open failed");
+        }
+    }
+    Ok(())
+}
+
+async fn stream_media_file(media_file_path: &std::path::Path, tx: &UnboundedSender<Result<DownloadChunk, Status>>) -> Result<u64, Status> {
+    let mut file = File::open(media_file_path)
+        .await
+        .map_err(|err| Status::internal(format!("Open file error: {err}")))?;
+    let mut buffer = vec![0u8; STREAM_CHUNK_SIZE];
+    let mut total_streamed = 0_u64;
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .await
+            .map_err(|err| Status::internal(format!("Read file error: {err}")))?;
+        if read == 0 {
+            break;
+        }
+        total_streamed += read as u64;
+        send_chunk(
+            tx,
+            DownloadChunk {
+                payload: Some(Payload::Data(buffer[..read].to_vec())),
+            },
+        )?;
+    }
+    Ok(total_streamed)
+}
+
 #[allow(clippy::result_large_err)]
 fn send_chunk(tx: &UnboundedSender<Result<DownloadChunk, Status>>, chunk: DownloadChunk) -> Result<(), Status> {
     tx.send(Ok(chunk)).map_err(|_| Status::cancelled("Client disconnected"))
@@ -453,31 +508,31 @@ fn send_status(tx: &UnboundedSender<Result<DownloadChunk, Status>>, status: Stat
     tx.send(Err(status)).map_err(|_| Status::cancelled("Client disconnected"))
 }
 
+#[derive(Debug)]
 enum RequestMedia<'a> {
     Video,
     Audio { audio_ext: &'a str },
 }
 
 impl RequestMedia<'_> {
-    fn kind(&self) -> &'static str {
+    fn output_ext<'a>(&'a self, format: &'a MediaFormat) -> &'a str {
         match self {
-            Self::Video => "video",
-            Self::Audio { .. } => "audio",
+            Self::Video => format.ext.as_str(),
+            Self::Audio { audio_ext } => audio_ext,
         }
     }
+}
 
-    fn format_strategy(&self) -> FormatStrategy<'_> {
-        match self {
-            Self::Video => FormatStrategy::VideoAndAudio,
-            Self::Audio { audio_ext } => FormatStrategy::AudioOnly { audio_ext },
-        }
-    }
-
-    fn output_ext(&self, format: &MediaFormat) -> String {
-        match self {
-            Self::Video => format.ext.clone(),
-            Self::Audio { audio_ext } => (*audio_ext).to_owned(),
-        }
+impl fmt::Display for RequestMedia<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Video => "video",
+                Self::Audio { .. } => "audio",
+            }
+        )
     }
 }
 

@@ -50,7 +50,7 @@ pub async fn select_by_url(
             {
                 Ok(playlist) => playlist.inner.into_iter().map(|(val, _)| val.into()).collect(),
                 Err(err) => {
-                    error!(err = format_error_report(&err), "Get info err");
+                    error!(err = format_error_report(&err), "Get info error");
                     progress::is_error_in_inline_query(&bot, &query_id, "Sorry, an error to get media").await?;
                     return Ok(EventReturn::Finish);
                 }
@@ -128,7 +128,7 @@ pub async fn select_by_text(
             .map(|(_, video)| video)
             .collect(),
         Err(err) => {
-            error!(err = format_error_report(&err), "Search media err");
+            error!(err = format_error_report(&err), "Search media error");
             progress::is_error_in_inline_query(&bot, &query_id, "Sorry, an error to search media").await?;
             return Ok(EventReturn::Finish);
         }

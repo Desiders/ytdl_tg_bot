@@ -24,14 +24,14 @@ impl Interceptor for AuthInterceptor {
     fn call(&mut self, request: Request<()>) -> Result<Request<()>, Status> {
         let Some(header) = request.metadata().get("authorization") else {
             warn!("Rejected request without authorization header");
-            return Err(Status::unauthenticated("invalid token"));
+            return Err(Status::unauthenticated("Invalid token"));
         };
 
         if is_valid_token(header, &self.tokens) {
             Ok(request)
         } else {
             warn!("Rejected request with invalid authorization token");
-            Err(Status::unauthenticated("invalid token"))
+            Err(Status::unauthenticated("Invalid token"))
         }
     }
 }

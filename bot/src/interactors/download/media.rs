@@ -3,7 +3,7 @@ use futures_util::Stream;
 use std::{
     collections::HashSet,
     io,
-    path::{Path, PathBuf},
+    path::Path,
     pin::Pin,
     sync::{Arc, Mutex},
     task::{Context, Poll},
@@ -25,6 +25,8 @@ use crate::{
 
 #[derive(thiserror::Error, Debug)]
 pub enum DownloadErrorKind {
+    #[error("IO error: {0}")]
+    Io(#[from] io::Error),
     #[error(transparent)]
     Rpc(#[from] tonic::Status),
     #[error(transparent)]
@@ -184,10 +186,15 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
             )
             .await
             {
-                Ok(DownloadedMedia { path, format, stream }) => {
+                Ok(DownloadedMedia {
+                    path,
+                    thumb_stream,
+                    format,
+                    stream,
+                }) => {
                     let media_for_upload = MediaForUpload {
                         path,
-                        thumb_path: None,
+                        thumb_stream,
                         temp_dir,
                         stream,
                     };
@@ -239,10 +246,15 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
             )
             .await
             {
-                Ok(DownloadedMedia { path, format, stream }) => {
+                Ok(DownloadedMedia {
+                    path,
+                    thumb_stream,
+                    format,
+                    stream,
+                }) => {
                     let media_for_upload = MediaForUpload {
                         path,
-                        thumb_path: None,
+                        thumb_stream,
                         temp_dir,
                         stream,
                     };
@@ -297,10 +309,15 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
                 )
                 .await
                 {
-                    Ok(DownloadedMedia { path, format, stream }) => {
+                    Ok(DownloadedMedia {
+                        path,
+                        thumb_stream,
+                        format,
+                        stream,
+                    }) => {
                         let media_for_upload = MediaForUpload {
                             path,
-                            thumb_path: None,
+                            thumb_stream,
                             temp_dir,
                             stream,
                         };
@@ -363,10 +380,15 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
                 )
                 .await
                 {
-                    Ok(DownloadedMedia { path, format, stream }) => {
+                    Ok(DownloadedMedia {
+                        path,
+                        thumb_stream,
+                        format,
+                        stream,
+                    }) => {
                         let media_for_upload = MediaForUpload {
                             path,
-                            thumb_path: None,
+                            thumb_stream,
                             temp_dir,
                             stream,
                         };
@@ -396,7 +418,8 @@ enum AttemptError {
 }
 
 struct DownloadedMedia {
-    path: PathBuf,
+    path: std::path::PathBuf,
+    thumb_stream: Option<MediaByteStream>,
     format: MediaFormat,
     stream: MediaByteStream,
 }
@@ -471,13 +494,31 @@ async fn download_from_node(
     };
 
     let path = output_dir.join(format!("media.{}", meta.ext));
+    let (media_sender, media_receiver) = mpsc::unbounded_channel();
+    let (thumb_sender, thumb_receiver) = mpsc::unbounded_channel();
     let mut format = base_format.clone();
     format.ext = meta.ext;
     format.width = meta.width;
     format.height = meta.height;
-    let stream = MediaByteStream::new(DownloadByteStream::new(stream, progress_sender.cloned()));
 
-    Ok(DownloadedMedia { path, format, stream })
+    tokio::spawn(forward_download_stream(
+        stream,
+        progress_sender.cloned(),
+        media_sender,
+        meta.has_thumbnail.then_some(thumb_sender),
+    ));
+
+    let stream = MediaByteStream::new(ChannelByteStream::new(media_receiver));
+    let thumb_stream = meta
+        .has_thumbnail
+        .then(|| MediaByteStream::new(ChannelByteStream::new(thumb_receiver)));
+
+    Ok(DownloadedMedia {
+        path,
+        thumb_stream,
+        format,
+        stream,
+    })
 }
 
 fn build_download_request(
@@ -503,46 +544,69 @@ fn build_download_request(
     }
 }
 
-struct DownloadByteStream {
-    inner: Mutex<DownloadByteStreamState>,
+struct ChannelByteStream {
+    inner: Mutex<mpsc::UnboundedReceiver<Result<Bytes, io::Error>>>,
 }
 
-struct DownloadByteStreamState {
-    stream: tonic::Streaming<DownloadChunk>,
-    progress_sender: Option<mpsc::UnboundedSender<String>>,
-}
-
-impl DownloadByteStream {
-    fn new(stream: tonic::Streaming<DownloadChunk>, progress_sender: Option<mpsc::UnboundedSender<String>>) -> Self {
+impl ChannelByteStream {
+    fn new(receiver: mpsc::UnboundedReceiver<Result<Bytes, io::Error>>) -> Self {
         Self {
-            inner: Mutex::new(DownloadByteStreamState { stream, progress_sender }),
+            inner: Mutex::new(receiver),
         }
     }
 }
 
-impl Stream for DownloadByteStream {
+impl Stream for ChannelByteStream {
     type Item = Result<Bytes, io::Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let mut inner = self.inner.lock().expect("Download byte stream mutex poisoned");
+        self.inner.lock().expect("Channel byte stream mutex poisoned").poll_recv(cx)
+    }
+}
 
-        loop {
-            match Pin::new(&mut inner.stream).poll_next(cx) {
-                Poll::Ready(Some(Ok(chunk))) => match chunk.payload {
-                    Some(Payload::Progress(progress)) => {
-                        if let Some(sender) = &inner.progress_sender {
-                            let _ = sender.send(progress);
-                        }
-                    }
-                    Some(Payload::Data(data)) => return Poll::Ready(Some(Ok(Bytes::from(data)))),
-                    Some(Payload::Meta(_)) | None => {
-                        return Poll::Ready(Some(Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid download stream"))));
-                    }
-                },
-                Poll::Ready(Some(Err(err))) => return Poll::Ready(Some(Err(io::Error::other(err)))),
-                Poll::Ready(None) => return Poll::Ready(None),
-                Poll::Pending => return Poll::Pending,
+async fn forward_download_stream(
+    mut stream: tonic::Streaming<DownloadChunk>,
+    progress_sender: Option<mpsc::UnboundedSender<String>>,
+    media_sender: mpsc::UnboundedSender<Result<Bytes, io::Error>>,
+    thumb_sender: Option<mpsc::UnboundedSender<Result<Bytes, io::Error>>>,
+) {
+    loop {
+        match stream.message().await {
+            Ok(Some(chunk)) => {
+                if let Err(err) = handle_download_chunk(chunk, progress_sender.as_ref(), &media_sender, thumb_sender.as_ref()) {
+                    let _ = media_sender.send(Err(err));
+                    return;
+                }
+            }
+            Ok(None) => return,
+            Err(err) => {
+                let _ = media_sender.send(Err(io::Error::other(err)));
+                return;
             }
         }
+    }
+}
+
+fn handle_download_chunk(
+    chunk: DownloadChunk,
+    progress_sender: Option<&mpsc::UnboundedSender<String>>,
+    media_sender: &mpsc::UnboundedSender<Result<Bytes, io::Error>>,
+    thumb_sender: Option<&mpsc::UnboundedSender<Result<Bytes, io::Error>>>,
+) -> Result<(), io::Error> {
+    match chunk.payload {
+        Some(Payload::Progress(progress)) => {
+            if let Some(sender) = progress_sender {
+                let _ = sender.send(progress);
+            }
+            Ok(())
+        }
+        Some(Payload::Data(data)) => media_sender
+            .send(Ok(Bytes::from(data)))
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "Media stream closed")),
+        Some(Payload::ThumbnailData(data)) => thumb_sender
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Unexpected thumbnail stream"))?
+            .send(Ok(Bytes::from(data)))
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "Thumbnail stream closed")),
+        Some(Payload::Meta(_)) | None => Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid download stream")),
     }
 }

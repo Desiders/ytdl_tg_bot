@@ -61,7 +61,7 @@ impl Interactor<SendVideoInput<'_>> for &SendVideo {
             media_for_upload:
                 MediaForUpload {
                     path,
-                    thumb_path,
+                    thumb_stream,
                     temp_dir,
                     stream,
                 },
@@ -76,13 +76,14 @@ impl Interactor<SendVideoInput<'_>> for &SendVideo {
     ) -> Result<Self::Output, Self::Err> {
         let send_name = sanitize_send_filename(path.as_ref(), name);
         let video = InputFile::stream_with_name(stream.into_inner(), &send_name);
+        let thumbnail = thumb_stream.map(|stream| InputFile::stream_with_name(stream.into_inner(), "thumbnail.jpg"));
         let method = methods::SendVideo::new(chat_id, video)
             .width_option(width)
             .height_option(height)
             .supports_streaming(true)
             .duration_option(duration)
             .disable_notification(true)
-            .thumbnail_option(thumb_path.map(InputFile::fs))
+            .thumbnail_option(thumbnail)
             .caption_option(if link_is_visible { media_link(Some(webpage_url)) } else { None })
             .parse_mode(ParseMode::HTML)
             .reply_parameters_option(reply_to_message_id.map(|val| ReplyParameters::new(val).allow_sending_without_reply(true)));
@@ -103,7 +104,7 @@ impl Interactor<SendVideoInput<'_>> for &SendVideo {
                 let bot = self.bot.clone();
                 async move {
                     if let Err(err) = bot.send(methods::DeleteMessage::new(chat_id, message_id)).await {
-                        error!(%err, "Delete message err");
+                        error!(%err, "Delete message error");
                     }
                 }
             });
@@ -126,7 +127,7 @@ impl Interactor<SendAudioInput<'_>> for &SendAudio {
             media_for_upload:
                 MediaForUpload {
                     path,
-                    thumb_path,
+                    thumb_stream,
                     temp_dir,
                     stream,
                 },
@@ -141,12 +142,13 @@ impl Interactor<SendAudioInput<'_>> for &SendAudio {
     ) -> Result<Self::Output, Self::Err> {
         let send_name = sanitize_send_filename(path.as_ref(), name);
         let audio = InputFile::stream_with_name(stream.into_inner(), &send_name);
+        let thumbnail = thumb_stream.map(|stream| InputFile::stream_with_name(stream.into_inner(), "thumbnail.jpg"));
         let method = methods::SendAudio::new(chat_id, audio)
             .title_option(title)
             .duration_option(duration)
             .disable_notification(true)
             .performer_option(performer)
-            .thumbnail_option(thumb_path.map(InputFile::fs))
+            .thumbnail_option(thumbnail)
             .caption_option(if link_is_visible { media_link(Some(webpage_url)) } else { None })
             .parse_mode(ParseMode::HTML)
             .reply_parameters_option(reply_to_message_id.map(|val| ReplyParameters::new(val).allow_sending_without_reply(true)));
@@ -168,7 +170,7 @@ impl Interactor<SendAudioInput<'_>> for &SendAudio {
                 let bot = self.bot.clone();
                 async move {
                     if let Err(err) = bot.send(methods::DeleteMessage::new(chat_id, message_id)).await {
-                        error!(%err, "Delete message err");
+                        error!(%err, "Delete message error");
                     }
                 }
             });

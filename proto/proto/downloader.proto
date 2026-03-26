@@ -63,6 +63,7 @@ message DownloadMeta {
   optional int64 width = 2;
   optional int64 height = 3;
   optional int64 duration = 4;
+  bool has_thumbnail = 5;
 }
 
 message DownloadChunk {
@@ -70,6 +71,7 @@ message DownloadChunk {
     DownloadMeta meta = 1;
     string progress = 2;
     bytes data = 3;
+    bytes thumbnail_data = 4;
   }
 }
 

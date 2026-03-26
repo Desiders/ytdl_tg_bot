@@ -156,7 +156,7 @@ pub(super) fn init(bot: Bot, cfg: Config) -> Container {
                         Ok(database_conn)
                     }
                     Err(err) => {
-                        error!(%err, "Create database conn err");
+                        error!(%err, "Create database conn error");
                         Err(InstantiateErrorKind::Custom(err.into()))
                     }
                 }
@@ -167,7 +167,7 @@ pub(super) fn init(bot: Bot, cfg: Config) -> Container {
                         info!("Database conn closed");
                     },
                     Err(err) => {
-                        error!(%err, "Close database conn err");
+                        error!(%err, "Close database conn error");
                     },
                 }
             },

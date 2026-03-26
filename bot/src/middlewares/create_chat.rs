@@ -47,7 +47,7 @@ impl Middleware for CreateChatMiddleware {
                 request.extensions.insert(chat_config);
                 request.extensions.insert(chat_config_exclude_domains);
             }
-            Err(err) => error!(%err, "Save chat err"),
+            Err(err) => error!(%err, "Save chat error"),
         }
 
         Ok((request, EventReturn::Finish))

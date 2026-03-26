@@ -40,7 +40,7 @@ pub async fn change_link_visibility(
             )
         }
         Err(err) => {
-            error!(err = format_error_report(&err), "Update err");
+            error!(err = format_error_report(&err), "Update error");
             format!(
                 "Sorry, an error to change link visibility\n{}",
                 html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -119,7 +119,7 @@ pub async fn add_exclude_domain(
             )
         }
         Err(err) => {
-            error!(err = format_error_report(&err), "Add err");
+            error!(err = format_error_report(&err), "Add error");
             format!(
                 "Sorry, an error to add domain\n{}",
                 html_expandable_blockquote(html_quote(err.format(&bot.token)))
@@ -185,7 +185,7 @@ pub async fn remove_exclude_domain(
             )
         }
         Err(err) => {
-            error!(err = format_error_report(&err), "Add err");
+            error!(err = format_error_report(&err), "Add error");
             format!(
                 "Sorry, an error to remove domain\n{}",
                 html_expandable_blockquote(html_quote(err.format(&bot.token)))
