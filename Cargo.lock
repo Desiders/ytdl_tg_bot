@@ -4101,7 +4101,7 @@ dependencies = [
 
 [[package]]
 name = "ytdl_tg_bot"
-version = "4.6.1"
+version = "5.0.0"
 dependencies = [
  "anyhow",
  "backoff",
@@ -4133,7 +4133,7 @@ dependencies = [
 
 [[package]]
 name = "ytdl_tg_bot_proto"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "prost",
  "tonic",
@@ -4144,7 +4144,7 @@ dependencies = [
 
 [[package]]
 name = "ytdl_tg_downloader"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "backoff",
