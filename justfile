@@ -68,6 +68,13 @@ docker-push USER VERSION="latest":
     @just docker-build
     docker push {{USER}}/ytdl_tg_bot:{{VERSION}}
 
+docker-pull-downloader USER VERSION="latest":
+    docker pull {{USER}}/ytdl_tg_bot.downloader:{{VERSION}}
+
+docker-push-downloader USER VERSION="latest":
+    @just docker-build-downloader
+    docker push {{USER}}/ytdl_tg_bot.downloader:{{VERSION}}
+
 docker-migration-pull USER VERSION="latest":
     docker pull {{USER}}/ytdl_tg_bot.migration:{{VERSION}}
 
