@@ -11,3 +11,6 @@ configs/downloader.toml
 cookies/*.txt
 
 __pycache__
+
+tls/ca
+tls/nodes
