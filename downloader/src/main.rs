@@ -31,6 +31,7 @@ async fn main() {
         address = %config.server.address,
         max_concurrent = config.server.max_concurrent,
         token_count = config.auth.tokens.len(),
+        tls_enabled = config.tls.is_some(),
         log_filter = %config.logging.dirs,
         "Loaded downloader config"
     );
@@ -40,6 +41,7 @@ async fn main() {
 
     let active_downloads = Arc::new(AtomicU32::new(0));
     let semaphore = Arc::new(Semaphore::new(config.server.max_concurrent as usize));
+    let tls_config = config.load_server_tls_config().unwrap();
 
     let capabilities_service = CapabilitiesService {
         cookies: cookies.clone(),
@@ -58,7 +60,12 @@ async fn main() {
     let addr = config.server.address.parse().unwrap();
     info!(%addr, "Starting download node");
 
-    Server::builder()
+    let mut server = Server::builder();
+    if let Some(tls_config) = tls_config {
+        server = server.tls_config(tls_config).unwrap();
+    }
+
+    server
         .add_service(DownloaderServer::with_interceptor(downloader_service, auth.clone()))
         .add_service(NodeCapabilitiesServer::with_interceptor(capabilities_service, auth))
         .serve_with_shutdown(addr, shutdown_signal())

@@ -115,10 +115,17 @@ pub struct DownloadNodeConfig {
     pub max_concurrent: u32,
 }
 
+#[derive(Deserialize, Clone, Debug)]
+pub struct DownloadTlsConfig {
+    pub ca_cert_path: Box<str>,
+}
+
 #[derive(Default, Deserialize, Clone, Debug)]
 pub struct DownloadConfig {
     #[serde(default)]
     pub capabilities_refresh_interval: u64,
+    #[serde(default)]
+    pub tls: Option<DownloadTlsConfig>,
     #[serde(default)]
     pub nodes: Vec<DownloadNodeConfig>,
 }

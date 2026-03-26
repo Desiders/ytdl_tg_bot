@@ -61,6 +61,8 @@ deployment/generate-node-certs.sh \
 - Give the bot only `ca.crt` so it can verify node certificates.
 - If the bot connects to `https://127.0.0.1:50051`, the cert must contain `IP:127.0.0.1`.
 - If the bot connects to `https://203.0.113.10:50051`, the cert must contain `IP:203.0.113.10`.
+- Configure the bot with `[download.tls].ca_cert_path` and switch only TLS-backed nodes to `https://...`.
+- Configure each TLS-enabled downloader node with `[tls].cert_path` and `[tls].key_path`.
 
 ## Migrations
 

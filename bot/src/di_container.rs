@@ -96,7 +96,7 @@ pub(super) fn init(bot: Bot, cfg: Config) -> Container {
         provide(
             App,
             |Inject(cfg): Inject<Config>| async move {
-                NodeRouter::new(&cfg.download.nodes, cfg.yt_dlp.max_file_size)
+                NodeRouter::new(&cfg.download.nodes, cfg.download.tls.as_ref(), cfg.yt_dlp.max_file_size)
                     .await
                     .map_err(InstantiateErrorKind::Custom)
             },

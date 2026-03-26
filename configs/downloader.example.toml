@@ -5,6 +5,11 @@ max_concurrent = 5
 [auth]
 tokens = ["secret-token-a"]
 
+# Optional: enable this to serve gRPC over TLS.
+# [tls]
+# cert_path = "configs/tls/server.crt"
+# key_path = "configs/tls/server.key"
+
 [yt_dlp]
 command = ["python3", "-m", "yt_dlp"]
 executable_path = "./yt-dlp/executable"

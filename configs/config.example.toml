@@ -58,6 +58,10 @@ max_file_size = 5000000
 [download]
 capabilities_refresh_interval = 0
 
+# Optional: enable this if any node uses https:// and is signed by your private CA.
+# [download.tls]
+# ca_cert_path = "configs/tls/ca.crt"
+
 [[download.nodes]]
 address = "http://downloader:50051"
 token = "secret-token-a"

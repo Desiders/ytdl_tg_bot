@@ -30,6 +30,11 @@ The bot does not run yt-dlp directly.
 5. The downloader streams thumbnail and media bytes back to the bot.
 6. The bot forwards media and thumbnail streams to Telegram.
 
+Bot-to-node transport may now be plaintext or TLS depending on node address and config.
+- `http://...` nodes use plaintext gRPC.
+- `https://...` nodes use TLS and must be configured with a CA on the bot side.
+- Mixed `http://` and `https://` nodes are supported at the same time.
+
 ## Current Stream Contract
 
 Proto file: [proto/proto/downloader.proto](/proto/proto/downloader.proto)

@@ -1,5 +1,6 @@
 #![allow(clippy::module_name_repetitions)]
 
+use anyhow::Context;
 use serde::Deserialize;
 use std::{
     env::{self, VarError},
@@ -7,6 +8,7 @@ use std::{
     path::Path,
 };
 use thiserror::Error;
+use tonic::transport::{Identity, ServerTlsConfig};
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct ServerConfig {
@@ -17,6 +19,12 @@ pub struct ServerConfig {
 #[derive(Deserialize, Clone, Debug)]
 pub struct AuthConfig {
     pub tokens: Vec<Box<str>>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct TlsConfig {
+    pub cert_path: Box<str>,
+    pub key_path: Box<str>,
 }
 
 #[derive(Default, Deserialize, Clone, Debug)]
@@ -60,9 +68,24 @@ pub struct LoggingConfig {
 pub struct Config {
     pub server: ServerConfig,
     pub auth: AuthConfig,
+    #[serde(default)]
+    pub tls: Option<TlsConfig>,
     pub yt_dlp: YtDlpConfig,
     pub yt_pot_provider: YtPotProviderConfig,
     pub logging: LoggingConfig,
+}
+
+impl Config {
+    pub fn load_server_tls_config(&self) -> anyhow::Result<Option<ServerTlsConfig>> {
+        let Some(config) = self.tls.as_ref() else {
+            return Ok(None);
+        };
+
+        let cert = fs::read(&*config.cert_path).with_context(|| format!("Failed to read TLS certificate {}", config.cert_path))?;
+        let key = fs::read(&*config.key_path).with_context(|| format!("Failed to read TLS key {}", config.key_path))?;
+        let identity = Identity::from_pem(cert, key);
+        Ok(Some(ServerTlsConfig::new().identity(identity)))
+    }
 }
 
 #[derive(Error, Debug)]
