@@ -234,7 +234,7 @@ async fn stream_download(
 
     let thumbnail_downloaded = download_thumbnail(&thumb_urls, &thumb_file_path).await;
 
-    if let Err(status) = send_chunk(
+    send_chunk(
         &tx,
         DownloadChunk {
             payload: Some(Payload::Meta(DownloadMeta {
@@ -245,9 +245,7 @@ async fn stream_download(
                 has_thumbnail: thumbnail_downloaded,
             })),
         },
-    ) {
-        return Err(status);
-    }
+    )?;
 
     if thumbnail_downloaded {
         stream_thumbnail_file(&thumb_file_path, &tx).await?;
