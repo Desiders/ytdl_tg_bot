@@ -448,6 +448,10 @@ async fn download_with_retry(
             Err(AttemptError::Download(DownloadErrorKind::Rpc(status))) if status.code() == Code::ResourceExhausted => {
                 excluded.insert(node.address.to_string());
             }
+            Err(AttemptError::Download(DownloadErrorKind::Rpc(status))) if status.code() == Code::Aborted => {
+                warn!(node = %node.address, %status, "Download node returned retryable yt-dlp HTTP 400");
+                excluded.insert(node.address.to_string());
+            }
             Err(AttemptError::Download(DownloadErrorKind::Rpc(status))) if status.code() == Code::Unavailable => {
                 warn!(node = %node.address, %status, "Download node unavailable");
                 excluded.insert(node.address.to_string());

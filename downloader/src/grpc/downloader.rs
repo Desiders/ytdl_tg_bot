@@ -41,6 +41,7 @@ const AUDIO_EXT: &str = "m4a";
 const THUMBNAIL_TIMEOUT_SECS: u64 = 5;
 const FFMPEG_PATH: &str = "/usr/bin/ffmpeg";
 const STREAM_CHUNK_SIZE: usize = 256 * 1024;
+const RETRYABLE_YTDLP_MESSAGE: &str = "Yt-dlp requires a different node context";
 
 type DownloadStream = Pin<Box<dyn Stream<Item = Result<DownloadChunk, Status>> + Send + 'static>>;
 
@@ -88,9 +89,15 @@ impl Downloader for DownloaderService {
             cookie,
         )
         .await
-        .map_err(|err| {
-            error!(url = %url, media_type = %request.media_type, %err, "Get media info failed");
-            Status::internal(err.to_string())
+        .map_err(|err| match err {
+            ytdl::GetInfoErrorKind::Retryable(kind) => {
+                warn!(url = %url, media_type = %request.media_type, reason = %kind, "Get media info hit retryable yt-dlp error");
+                Status::aborted(RETRYABLE_YTDLP_MESSAGE)
+            }
+            err => {
+                error!(url = %url, media_type = %request.media_type, %err, "Get media info failed");
+                Status::internal(err.to_string())
+            }
         })?;
 
         let entries_count = playlist.inner.len();
@@ -284,7 +291,13 @@ async fn stream_download(
         Some(&progress_tx),
     )
     .await
-    .map_err(|err| Status::internal(err.to_string()))?;
+    .map_err(|err| match err {
+        ytdl::DownloadErrorKind::Retryable(kind) => {
+            warn!(url = %url, format_id = %request.format_id, reason = %kind, "Download hit retryable yt-dlp error");
+            Status::aborted(RETRYABLE_YTDLP_MESSAGE)
+        }
+        err => Status::internal(err.to_string()),
+    })?;
     drop(progress_tx);
     let _ = progress_forwarder.await;
 
