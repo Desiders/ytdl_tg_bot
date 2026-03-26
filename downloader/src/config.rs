@@ -35,7 +35,7 @@ impl YtDlpConfig {
     #[must_use]
     pub fn command_parts(&self) -> (&str, Vec<&str>) {
         if let Some((program, args)) = self.command.split_first() {
-            return (program.as_ref(), args.iter().map(|arg| arg.as_ref()).collect());
+            return (program.as_ref(), args.iter().map(AsRef::as_ref).collect());
         }
 
         if let Some(executable_path) = self.executable_path.as_deref() {
