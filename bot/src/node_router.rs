@@ -165,7 +165,7 @@ fn compare_nodes(left: &NodeSnapshot<'_>, right: &NodeSnapshot<'_>) -> Ordering 
         .cmp(&right_projected)
         .then_with(|| left_active.cmp(&right_active))
         .then_with(|| right.max_concurrent.cmp(&left.max_concurrent))
-        .then_with(|| left.address.cmp(&right.address))
+        .then_with(|| left.address.cmp(right.address))
 }
 
 #[derive(Clone, Copy)]
