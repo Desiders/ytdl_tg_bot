@@ -50,7 +50,7 @@ impl Middleware for ReactionMiddleware {
             {
                 Ok(_) => break,
                 Err(err) => {
-                    error!(%err, reaction, "Set reaction err");
+                    error!(%err, reaction, "Set reaction error");
                 }
             }
         }
@@ -61,7 +61,7 @@ impl Middleware for ReactionMiddleware {
             match bot.send(SetMessageReaction::new(chat_id, message_id)).await {
                 Ok(_) => {}
                 Err(err) => {
-                    error!(%err, "Unset reaction err");
+                    error!(%err, "Unset reaction error");
                 }
             }
         });

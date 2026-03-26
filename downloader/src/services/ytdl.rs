@@ -11,12 +11,13 @@ use std::{
 use tokio::{io::AsyncBufReadExt as _, sync::mpsc};
 use tracing::{debug, error, instrument, trace, warn};
 
-pub enum FormatStrategy<'a> {
+#[derive(Debug, Clone)]
+pub enum FormatStrategy {
     VideoAndAudio,
-    AudioOnly { audio_ext: &'a str },
+    AudioOnly { audio_ext: String },
 }
 
-impl FormatStrategy<'_> {
+impl FormatStrategy {
     fn templates(&self) -> &[&str] {
         match self {
             Self::VideoAndAudio => &["bv{video_args}+ba{audio_args}/b{combined_args}"],
@@ -146,7 +147,7 @@ pub fn build_formats_string(strategy: &FormatStrategy, heights: &[u32], audio_la
 #[allow(clippy::too_many_arguments)]
 pub async fn get_media_info(
     search: &str,
-    strategy: &FormatStrategy<'_>,
+    strategy: &FormatStrategy,
     audio_language: &Language,
     executable_path: &str,
     pot_provider_url: &str,
@@ -244,7 +245,7 @@ pub async fn get_media_info(
 #[instrument(skip_all)]
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub async fn download_media(
-    strategy: FormatStrategy<'_>,
+    strategy: FormatStrategy,
     format_id: &str,
     sections: Option<&Sections>,
     max_filesize: u64,
@@ -262,6 +263,10 @@ pub async fn download_media(
     let output_dir_path = output_dir_path.to_string_lossy();
     let info_file_path = info_file_path.to_string_lossy();
     let extractor_arg = format!("youtubepot-bgutilhttp:base_url={pot_provider_url}");
+    let audio_ext = match &strategy {
+        FormatStrategy::VideoAndAudio => None,
+        FormatStrategy::AudioOnly { audio_ext } => Some(audio_ext.as_str()),
+    };
 
     let mut args = vec![
         "--js-runtimes",
@@ -299,12 +304,9 @@ pub async fn download_media(
         &format_id,
     ];
 
-    match strategy {
-        FormatStrategy::VideoAndAudio => {}
-        FormatStrategy::AudioOnly { audio_ext } => {
-            args.push("--extract-audio");
-            args.extend(["--audio-format", audio_ext]);
-        }
+    if let Some(audio_ext) = audio_ext {
+        args.push("--extract-audio");
+        args.extend(["--audio-format", audio_ext]);
     }
 
     args.push("--extractor-args");
@@ -354,7 +356,7 @@ pub async fn download_media(
                     continue;
                 };
                 if let Err(err) = progress_sender.send(progress.to_owned()) {
-                    error!(%err, "Send progress err");
+                    error!(%err, "Send progress error");
                     return;
                 }
             }
@@ -433,7 +435,13 @@ mod tests {
 
     #[test]
     fn audio_only_builds_formats_correctly_without_heights() {
-        let result = build_formats_string(&FormatStrategy::AudioOnly { audio_ext: "m4a" }, &[], &Language::default());
+        let result = build_formats_string(
+            &FormatStrategy::AudioOnly {
+                audio_ext: "m4a".to_owned(),
+            },
+            &[],
+            &Language::default(),
+        );
 
         assert_eq!(result, "ba,ba,wa,ba*");
     }
@@ -441,7 +449,9 @@ mod tests {
     #[test]
     fn audio_only_includes_language_if_provided() {
         let result = build_formats_string(
-            &FormatStrategy::AudioOnly { audio_ext: "m4a" },
+            &FormatStrategy::AudioOnly {
+                audio_ext: "m4a".to_owned(),
+            },
             &[],
             &Language {
                 language: Some("en".to_owned()),
@@ -454,7 +464,9 @@ mod tests {
     #[test]
     fn audio_only_multiple_languages_are_handled_correctly() {
         let result = build_formats_string(
-            &FormatStrategy::AudioOnly { audio_ext: "m4a" },
+            &FormatStrategy::AudioOnly {
+                audio_ext: "m4a".to_owned(),
+            },
             &[],
             &Language {
                 language: Some("ru".to_owned()),

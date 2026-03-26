@@ -389,7 +389,7 @@ fn playlist_from_response(response: ytdl_tg_bot_proto::downloader::MediaInfoResp
                 uploader: entry.uploader,
                 duration: entry.duration,
                 playlist_index: i16::try_from(entry.playlist_index)
-                    .map_err(|_| GetInfoErrorKind::InvalidResponse("invalid playlist_index".into()))?,
+                    .map_err(|_| GetInfoErrorKind::InvalidResponse("Invalid playlist_index".into()))?,
                 thumbnail: None,
                 thumbnails: vec![],
             };

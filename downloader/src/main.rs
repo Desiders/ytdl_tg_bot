@@ -70,13 +70,13 @@ async fn main() {
 
 async fn shutdown_signal() {
     let ctrl_c = async {
-        tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C shutdown handler");
+        tokio::signal::ctrl_c().await.expect("Failed to install Ctrl+C shutdown handler");
     };
 
     #[cfg(unix)]
     let terminate = async {
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("failed to install SIGTERM shutdown handler")
+            .expect("Failed to install SIGTERM shutdown handler")
             .recv()
             .await;
     };

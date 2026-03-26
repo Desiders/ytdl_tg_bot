@@ -54,7 +54,7 @@ pub async fn stats(
             )
         }
         Err(err) => {
-            error!(err = format_error_report(&err), "Get err");
+            error!(err = format_error_report(&err), "Get error");
             format!(
                 "Sorry, an error to get stats\n{}",
                 html_expandable_blockquote(html_quote(err.format(&bot.token)))

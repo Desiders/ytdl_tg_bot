@@ -302,7 +302,7 @@ impl fmt::Debug for MediaByteStream {
 #[derive(Debug)]
 pub struct MediaForUpload {
     pub path: PathBuf,
-    pub thumb_path: Option<PathBuf>,
+    pub thumb_stream: Option<MediaByteStream>,
     pub temp_dir: TempDir,
     pub stream: MediaByteStream,
 }
