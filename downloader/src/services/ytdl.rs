@@ -45,6 +45,8 @@ pub enum ParseJsonErrorKind {
 pub enum GetInfoErrorKind {
     #[error(transparent)]
     Ndjson(#[from] ParseJsonErrorKind),
+    #[error("Yt-dlp requires a different node context: {0}")]
+    Retryable(RetryableYtdlpError),
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
 }
@@ -53,8 +55,52 @@ pub enum GetInfoErrorKind {
 pub enum DownloadErrorKind {
     #[error(transparent)]
     Ndjson(#[from] ParseJsonErrorKind),
+    #[error("Yt-dlp requires a different node context: {0}")]
+    Retryable(RetryableYtdlpError),
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
+}
+
+#[derive(Debug, Clone, Copy, thiserror::Error, PartialEq, Eq)]
+pub enum RetryableYtdlpError {
+    #[error("Authentication required")]
+    AuthenticationRequired,
+    #[error("Geo restricted")]
+    GeoRestricted,
+}
+
+fn classify_retryable_error(stderr: &str) -> Option<RetryableYtdlpError> {
+    let stderr = stderr.to_ascii_lowercase();
+
+    let auth_required = [
+        "only available for registered users",
+        "login required",
+        "sign in",
+        "use --cookies",
+        "use --cookies-from-browser",
+        "use --username and --password",
+        "authentication required",
+    ]
+    .iter()
+    .any(|pattern| stderr.contains(pattern));
+    if auth_required {
+        return Some(RetryableYtdlpError::AuthenticationRequired);
+    }
+
+    let geo_restricted = [
+        "geo restricted",
+        "geo restriction",
+        "not available from your location",
+        "not available in your country",
+        "this content is not available in your location",
+    ]
+    .iter()
+    .any(|pattern| stderr.contains(pattern));
+    if geo_restricted {
+        return Some(RetryableYtdlpError::GeoRestricted);
+    }
+
+    None
 }
 
 fn parse_ndjson<T: DeserializeOwned>(input: &[u8]) -> Result<Vec<(T, String)>, ParseJsonErrorKind> {
@@ -231,6 +277,9 @@ pub async fn get_media_info(
                     Err(err) => Err(err.into()),
                 }
             } else {
+                if let Some(kind) = classify_retryable_error(&stderr) {
+                    return Err(GetInfoErrorKind::Retryable(kind));
+                }
                 match status.code() {
                     Some(code) => Err(io::Error::other(format!("Ytdlp exited with code {code} and message: {stderr}")).into()),
                     None => Err(io::Error::other(format!("Ytdlp exited with and message: {stderr}")).into()),
@@ -371,6 +420,9 @@ pub async fn download_media(
                         }
                         Ok(())
                     } else {
+                        if let Some(kind) = classify_retryable_error(&stderr) {
+                            return Err(DownloadErrorKind::Retryable(kind));
+                        }
                         match status.code() {
                             Some(code) => Err(io::Error::other(format!("Ytdlp exited with code {code} and message: {stderr}")).into()),
                             None => Err(io::Error::other(format!("Ytdlp exited with and message: {stderr}")).into()),
@@ -488,5 +540,28 @@ mod tests {
             [vcodec!*=av01][height<=1080]+ba/b[vcodec!*=av01][height<=1080],bv[vcodec!=none][vcodec!*=av01]\
             [height<=720]+ba/b[vcodec!*=av01][height<=720],bv*+ba,b,w"
         );
+    }
+
+    #[test]
+    fn detects_retryable_authentication_error() {
+        assert_eq!(
+            classify_retryable_error(
+                "ERROR: [site] This video is only available for registered users. Use --cookies-from-browser or --cookies for the authentication"
+            ),
+            Some(RetryableYtdlpError::AuthenticationRequired)
+        );
+    }
+
+    #[test]
+    fn detects_retryable_geo_restricted_error() {
+        assert_eq!(
+            classify_retryable_error("ERROR: [site] This video is not available from your location due to geo restriction"),
+            Some(RetryableYtdlpError::GeoRestricted)
+        );
+    }
+
+    #[test]
+    fn ignores_non_retryable_no_formats_error() {
+        assert_eq!(classify_retryable_error("ERROR: [site] No video formats found!"), None);
     }
 }
