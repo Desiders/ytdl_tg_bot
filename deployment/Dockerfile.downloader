@@ -2,11 +2,17 @@ FROM alpine:3.22 AS base
 RUN apk add --no-cache \
         ffmpeg \
         python3 \
+        py3-pip \
+        py3-virtualenv \
         deno \
         bash \
         curl \
         ca-certificates \
     && rm -rf /var/cache/apk/*
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install --no-cache-dir -U pip \
+ && pip install --no-cache-dir "yt-dlp[default,curl-cffi]"
 
 FROM rust:1.91 AS build
 RUN apt-get update && apt-get install -y musl-tools protobuf-compiler upx && rm -rf /var/lib/apt/lists/*
@@ -14,16 +20,19 @@ RUN rustup target add x86_64-unknown-linux-musl
 
 WORKDIR /usr/src/app
 
+COPY Cargo.toml Cargo.toml
+COPY Cargo.lock Cargo.lock
+COPY bot bot
 COPY downloader downloader
 COPY proto proto
 
-WORKDIR /usr/src/app/downloader
-RUN cargo build --release --target x86_64-unknown-linux-musl --locked
+RUN cargo build --release --target x86_64-unknown-linux-musl --locked -p ytdl_tg_downloader
 RUN upx --best --lzma target/x86_64-unknown-linux-musl/release/ytdl_tg_downloader
 
 FROM base AS final
 WORKDIR /app
 RUN mkdir -p /app/configs
-COPY --from=build /usr/src/app/downloader/target/x86_64-unknown-linux-musl/release/ytdl_tg_downloader /app/ytdl_tg_downloader
+COPY --from=build /usr/src/app/target/x86_64-unknown-linux-musl/release/ytdl_tg_downloader /app/ytdl_tg_downloader
 ENV RUST_BACKTRACE=full
+ENV PATH="/opt/venv/bin:$PATH"
 ENTRYPOINT ["/app/ytdl_tg_downloader"]
