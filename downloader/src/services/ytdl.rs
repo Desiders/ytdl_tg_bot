@@ -1,4 +1,7 @@
-use crate::entities::{language::Language, Cookie, Playlist, Range, Sections};
+use crate::{
+    config::YtDlpConfig,
+    entities::{language::Language, Cookie, Playlist, Range, Sections},
+};
 
 use serde::de::DeserializeOwned;
 use std::{
@@ -195,14 +198,14 @@ pub async fn get_media_info(
     search: &str,
     strategy: &FormatStrategy,
     audio_language: &Language,
-    executable_path: &str,
+    yt_dlp_cfg: &YtDlpConfig,
     pot_provider_url: &str,
     playlist_range: &Range,
     allow_playlist: bool,
     timeout: u64,
     cookie: Option<&Cookie>,
 ) -> Result<Playlist, GetInfoErrorKind> {
-    use tokio::{process::Command, time};
+    use tokio::time;
 
     let playlist_range = playlist_range.to_range_string();
     let extractor_arg = format!("youtubepot-bgutilhttp:base_url={pot_provider_url}");
@@ -257,7 +260,7 @@ pub async fn get_media_info(
 
     trace!(?args, "Ytdlp args");
 
-    let child = Command::new(executable_path)
+    let child = create_ytdlp_command(yt_dlp_cfg)
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -300,13 +303,13 @@ pub async fn download_media(
     max_filesize: u64,
     output_dir_path: &Path,
     info_file_path: &Path,
-    executable_path: &str,
+    yt_dlp_cfg: &YtDlpConfig,
     pot_provider_url: &str,
     timeout: u64,
     cookie: Option<&Cookie>,
     progress_sender: Option<&mpsc::UnboundedSender<String>>,
 ) -> Result<(), DownloadErrorKind> {
-    use tokio::{io::BufReader, process::Command, time};
+    use tokio::{io::BufReader, time};
 
     let max_filesize = max_filesize.to_string();
     let output_dir_path = output_dir_path.to_string_lossy();
@@ -380,7 +383,7 @@ pub async fn download_media(
 
     trace!(?args, "Ytdlp args");
 
-    let mut child = Command::new(executable_path)
+    let mut child = create_ytdlp_command(yt_dlp_cfg)
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -435,6 +438,18 @@ pub async fn download_media(
         }
     );
     res
+}
+
+fn create_ytdlp_command(yt_dlp_cfg: &YtDlpConfig) -> tokio::process::Command {
+    let (program, base_args) = yt_dlp_cfg.command_parts();
+    let mut command = tokio::process::Command::new(program);
+    command.args(base_args);
+
+    for plugin_dir in &yt_dlp_cfg.plugin_dirs {
+        command.arg("--plugin-dirs").arg(plugin_dir.as_ref());
+    }
+
+    command
 }
 
 #[cfg(test)]

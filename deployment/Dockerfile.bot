@@ -10,16 +10,18 @@ RUN rustup target add x86_64-unknown-linux-musl
 
 WORKDIR /usr/src/app
 
+COPY Cargo.toml Cargo.toml
+COPY Cargo.lock Cargo.lock
 COPY bot bot
+COPY downloader downloader
 COPY proto proto
 
-WORKDIR /usr/src/app/bot
-RUN cargo build --release --target x86_64-unknown-linux-musl --locked
+RUN cargo build --release --target x86_64-unknown-linux-musl --locked -p ytdl_tg_bot
 RUN upx --best --lzma target/x86_64-unknown-linux-musl/release/ytdl_tg_bot
 
 FROM base AS final
 WORKDIR /app
 RUN mkdir -p /app/configs
-COPY --from=build /usr/src/app/bot/target/x86_64-unknown-linux-musl/release/ytdl_tg_bot /app/ytdl_tg_bot
+COPY --from=build /usr/src/app/target/x86_64-unknown-linux-musl/release/ytdl_tg_bot /app/ytdl_tg_bot
 ENV RUST_BACKTRACE=full
 ENTRYPOINT ["/app/ytdl_tg_bot"]

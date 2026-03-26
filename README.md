@@ -23,6 +23,8 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 - Copy `configs/downloader.example.toml` to `configs/downloader.toml`
 - Keep `configs/config.toml` and `configs/downloader.toml` in sync:
   `download.nodes[0].address = "http://downloader:50051"` and the token must match `auth.tokens`
+- The downloader container installs yt-dlp as a Python package and launches it as `python3 -m yt_dlp`.
+- If you use yt-dlp plugins, keep them under `yt-dlp/yt-dlp-plugins/` so the default downloader config can load them.
 - The downloader port is published as `${DOWNLOADER_BIND_IP}:${DOWNLOADER_PORT}`.
   Set `DOWNLOADER_BIND_IP=127.0.0.1` for local-only access or `DOWNLOADER_BIND_IP=0.0.0.0` for public access.
 - Run `just docker-up-downloader` to start the local downloader node too
