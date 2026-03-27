@@ -15,7 +15,7 @@ use crate::{
     config::{Config, DatabaseConfig, RandomCmdConfig, TimeoutsConfig, TrackingParamsConfig, YtToolkitConfig},
     database::TxManager,
     interactors::{chat, download::media, downloaded_media, get_media, send_media},
-    node_router::NodeRouter,
+    services::node_router::NodeRouter,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -130,19 +130,19 @@ pub(super) fn init(bot: Bot, cfg: Config) -> Container {
         ),
         provide(
             App,
-            |Inject(router): Inject<NodeRouter>| async move { Ok(media::DownloadVideo { router: router.clone() }) },
+            |Inject(router): Inject<NodeRouter>| async move { Ok(media::DownloadVideo { node_router: router.clone() }) },
         ),
         provide(
             App,
-            |Inject(router): Inject<NodeRouter>| async move { Ok(media::DownloadAudio { router: router.clone() }) },
+            |Inject(router): Inject<NodeRouter>| async move { Ok(media::DownloadAudio { node_router: router.clone() }) },
         ),
         provide(
             App,
-            |Inject(router): Inject<NodeRouter>| async move { Ok(media::DownloadVideoPlaylist { router: router.clone() }) },
+            |Inject(router): Inject<NodeRouter>| async move { Ok(media::DownloadVideoPlaylist { node_router: router.clone() }) },
         ),
         provide(
             App,
-            |Inject(router): Inject<NodeRouter>| async move { Ok(media::DownloadAudioPlaylist { router: router.clone() }) },
+            |Inject(router): Inject<NodeRouter>| async move { Ok(media::DownloadAudioPlaylist { node_router: router.clone() }) },
         ),
         provide(
             App,
