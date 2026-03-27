@@ -74,7 +74,7 @@ pub enum GetMediaByURLKind {
 }
 
 pub struct GetVideoByURL {
-    pub router: Arc<NodeRouter>,
+    pub node_router: Arc<NodeRouter>,
     pub tracking_params_cfg: Arc<TrackingParamsConfig>,
 }
 
@@ -96,7 +96,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
         }: GetMediaByURLInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         get_media_by_url(
-            self.router.as_ref(),
+            self.node_router.as_ref(),
             self.tracking_params_cfg.as_ref(),
             url,
             playlist_range,
@@ -113,7 +113,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
 }
 
 pub struct GetAudioByURL {
-    pub router: Arc<NodeRouter>,
+    pub node_router: Arc<NodeRouter>,
     pub tracking_params_cfg: Arc<TrackingParamsConfig>,
 }
 
@@ -135,7 +135,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
         }: GetMediaByURLInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         get_media_by_url(
-            self.router.as_ref(),
+            self.node_router.as_ref(),
             self.tracking_params_cfg.as_ref(),
             url,
             playlist_range,
@@ -152,7 +152,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
 }
 
 pub struct GetUncachedVideoByURL {
-    pub router: Arc<NodeRouter>,
+    pub node_router: Arc<NodeRouter>,
     pub tracking_params_cfg: Arc<TrackingParamsConfig>,
 }
 
@@ -171,7 +171,7 @@ impl Interactor<GetUncachedMediaByURLInput<'_>> for &GetUncachedVideoByURL {
         debug!("Getting media");
 
         let response = fetch_media_info_with_retry(
-            self.router.as_ref(),
+            self.node_router.as_ref(),
             url.domain(),
             MediaInfoRequest {
                 url: url.as_str().to_owned(),
