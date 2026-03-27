@@ -20,18 +20,27 @@ RUN rustup target add x86_64-unknown-linux-musl
 
 WORKDIR /usr/src/app
 
-COPY Cargo.toml Cargo.toml
-COPY Cargo.lock Cargo.lock
-COPY bot bot
-COPY downloader downloader
-COPY proto proto
+COPY downloader/Cargo.toml downloader/Cargo.toml
+COPY proto/Cargo.toml proto/Cargo.toml
+RUN mkdir -p downloader/src && echo "fn main(){}" > downloader/src/main.rs
+RUN mkdir -p proto/src && echo "" > proto/src/lib.rs
+RUN cargo fetch --manifest-path downloader/Cargo.toml
+RUN cargo fetch --manifest-path proto/Cargo.toml
 
-RUN cargo build --release --target x86_64-unknown-linux-musl --locked -p ytdl_tg_downloader
+COPY proto proto
+RUN touch proto/src/lib.rs
+
+RUN cargo build --release --target x86_64-unknown-linux-musl --manifest-path proto/Cargo.toml --target-dir target
+
+COPY downloader downloader
+RUN touch downloader/src/main.rs
+
+RUN cargo build --release --target x86_64-unknown-linux-musl --manifest-path downloader/Cargo.toml --target-dir target
+
 RUN upx --best --lzma target/x86_64-unknown-linux-musl/release/ytdl_tg_downloader
 
 FROM base AS final
 WORKDIR /app
-RUN mkdir -p /app/configs
 COPY --from=build /usr/src/app/target/x86_64-unknown-linux-musl/release/ytdl_tg_downloader /app/ytdl_tg_downloader
 ENV RUST_BACKTRACE=full
 ENV PATH="/opt/venv/bin:$PATH"
