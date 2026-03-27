@@ -2,6 +2,11 @@
 name = "ytdl_tg_downloader"
 version = "1.0.0"
 edition = "2021"
+resolver = "2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
 
 [dependencies]
 ytdl_tg_bot_proto = { path = "../proto" }
