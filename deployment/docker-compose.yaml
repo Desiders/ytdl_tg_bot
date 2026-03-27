@@ -19,8 +19,9 @@ services:
       - type: bind
         source: ../configs/config.toml
         target: /app/configs/config.toml
+        read_only: true
       - type: bind
-        source: ../tls
+        source: ../configs/tls
         target: /app/configs/tls
         read_only: true
     depends_on:
@@ -56,16 +57,19 @@ services:
       - type: bind
         source: ../configs/downloader.toml
         target: /app/configs/downloader.toml
+        read_only: true
       - type: bind
-        source: ../tls
+        source: ../configs/tls
         target: /app/configs/tls
         read_only: true
       - type: bind
         source: ../yt-dlp
         target: /app/yt-dlp
+        read_only: false
       - type: bind
         source: ../cookies
         target: /app/cookies
+        read_only: false
     depends_on:
       yt_pot_provider_api:
         condition: service_started
