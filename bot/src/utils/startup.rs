@@ -7,7 +7,7 @@ use telers::{
 };
 use tokio::fs;
 
-use crate::{config::Config, node_router::NodeRouter};
+use crate::{config::Config, services::node_router::NodeRouter};
 
 async fn set_my_commands(bot: Bot) -> HandlerResult {
     let commands = [
@@ -43,12 +43,12 @@ async fn remove_tmp_media_files() -> HandlerResult {
 }
 
 #[allow(clippy::module_name_repetitions)]
-pub async fn on_startup(bot: Bot, router: Arc<NodeRouter>, cfg: Arc<Config>) -> HandlerResult {
+pub async fn on_startup(bot: Bot, node_router: Arc<NodeRouter>, cfg: Arc<Config>) -> HandlerResult {
     set_my_commands(bot).await?;
     remove_tmp_media_files().await?;
 
     {
-        let router = router.clone();
+        let router = node_router.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(5));
             loop {
@@ -59,7 +59,7 @@ pub async fn on_startup(bot: Bot, router: Arc<NodeRouter>, cfg: Arc<Config>) -> 
     }
 
     if cfg.download.capabilities_refresh_interval > 0 {
-        let router = router.clone();
+        let router = node_router.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(cfg.download.capabilities_refresh_interval));
             loop {

@@ -15,8 +15,10 @@ use crate::{
     },
     errors::ErrorKind,
     interactors::Interactor,
-    node_router::{authenticated_request, NodeRouter},
-    services::yt_toolkit::{get_video_info, search_video, GetVideoInfoErrorKind, SearchVideoErrorKind},
+    services::{
+        node_router::{authenticated_request, NodeRouter},
+        yt_toolkit::{get_video_info, search_video, GetVideoInfoErrorKind, SearchVideoErrorKind},
+    },
     value_objects::MediaType,
 };
 

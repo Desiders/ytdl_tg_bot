@@ -8,12 +8,12 @@ mod handlers;
 mod handlers_utils;
 mod interactors;
 mod middlewares;
-mod node_router;
 mod services;
 mod utils;
 mod value_objects;
 
 use froodi::telers::setup_async_default;
+use services::node_router::NodeRouter;
 use std::borrow::Cow;
 use telers::{
     client::{
@@ -72,8 +72,8 @@ async fn main() {
     );
 
     let container = di_container::init(bot.clone(), config);
-    let startup_router = container.get::<node_router::NodeRouter>().await.unwrap();
-    let startup_cfg = container.get::<config::Config>().await.unwrap();
+    let node_router = container.get::<NodeRouter>().await.unwrap();
+    let cfg = container.get::<config::Config>().await.unwrap();
 
     let download_router = Router::new("download")
         .on_message(|observer| {
@@ -167,12 +167,7 @@ async fn main() {
                 .register(Handler::new(start).filter(Command::many(["start", "help"])))
                 .register(Handler::new(stats).filter(Command::one("stats")))
         })
-        .on_startup(|observer| {
-            observer.register(SimpleHandler::new(
-                on_startup,
-                (bot.clone(), startup_router.clone(), startup_cfg.clone()),
-            ))
-        })
+        .on_startup(|observer| observer.register(SimpleHandler::new(on_startup, (bot.clone(), node_router.clone(), cfg.clone()))))
         .on_shutdown(|observer| observer.register(SimpleHandler::new(on_shutdown, ())))
         .include(download_router);
 

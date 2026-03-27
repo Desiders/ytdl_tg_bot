@@ -20,7 +20,7 @@ use ytdl_tg_bot_proto::downloader::{
 use crate::{
     entities::{Media, MediaByteStream, MediaForUpload, MediaFormat, RawMediaWithFormat, Sections},
     interactors::Interactor,
-    node_router::{authenticated_request, NodeHandle, NodeRouter},
+    services::node_router::{authenticated_request, NodeHandle, NodeRouter},
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -152,7 +152,7 @@ impl<'a> DownloadMediaPlaylistInput<'a> {
 }
 
 pub struct DownloadVideo {
-    pub router: Arc<NodeRouter>,
+    pub node_router: Arc<NodeRouter>,
 }
 
 impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
@@ -174,10 +174,10 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
         let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(Self::Err::TempDir)?;
 
         for (format, raw) in formats {
-            let request = build_download_request(url, &format, raw, "video", "", sections, self.router.max_file_size());
+            let request = build_download_request(url, &format, raw, "video", "", sections, self.node_router.max_file_size());
 
             match download_with_retry(
-                self.router.as_ref(),
+                self.node_router.as_ref(),
                 url.domain(),
                 request,
                 temp_dir.path(),
@@ -212,7 +212,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
 }
 
 pub struct DownloadAudio {
-    pub router: Arc<NodeRouter>,
+    pub node_router: Arc<NodeRouter>,
 }
 
 impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
@@ -234,10 +234,10 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
         let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(Self::Err::TempDir)?;
 
         for (format, raw) in formats {
-            let request = build_download_request(url, &format, raw, "audio", "m4a", sections, self.router.max_file_size());
+            let request = build_download_request(url, &format, raw, "audio", "m4a", sections, self.node_router.max_file_size());
 
             match download_with_retry(
-                self.router.as_ref(),
+                self.node_router.as_ref(),
                 url.domain(),
                 request,
                 temp_dir.path(),
@@ -272,7 +272,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
 }
 
 pub struct DownloadVideoPlaylist {
-    pub router: Arc<NodeRouter>,
+    pub node_router: Arc<NodeRouter>,
 }
 
 impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
@@ -297,10 +297,10 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
             let mut media_is_downloaded = false;
 
             for (format, raw) in formats {
-                let request = build_download_request(url, &format, raw, "video", "", sections, self.router.max_file_size());
+                let request = build_download_request(url, &format, raw, "video", "", sections, self.node_router.max_file_size());
 
                 match download_with_retry(
-                    self.router.as_ref(),
+                    self.node_router.as_ref(),
                     url.domain(),
                     request,
                     temp_dir.path(),
@@ -343,7 +343,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
 }
 
 pub struct DownloadAudioPlaylist {
-    pub router: Arc<NodeRouter>,
+    pub node_router: Arc<NodeRouter>,
 }
 
 impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
@@ -368,10 +368,10 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
             let mut media_is_downloaded = false;
 
             for (format, raw) in formats {
-                let request = build_download_request(url, &format, raw, "audio", "m4a", sections, self.router.max_file_size());
+                let request = build_download_request(url, &format, raw, "audio", "m4a", sections, self.node_router.max_file_size());
 
                 match download_with_retry(
-                    self.router.as_ref(),
+                    self.node_router.as_ref(),
                     url.domain(),
                     request,
                     temp_dir.path(),
@@ -425,7 +425,7 @@ struct DownloadedMedia {
 }
 
 async fn download_with_retry(
-    router: &NodeRouter,
+    node_router: &NodeRouter,
     domain: Option<&str>,
     request: DownloadRequest,
     output_dir: &Path,
@@ -435,12 +435,12 @@ async fn download_with_retry(
     let mut excluded = HashSet::new();
 
     loop {
-        let Some(node) = router.pick_node_excluding(domain, &excluded) else {
+        let Some(node) = node_router.pick_node_excluding(domain, &excluded) else {
             return Err(AttemptError::Download(DownloadErrorKind::NodeUnavailable));
         };
 
         node.reserve_download_slot();
-        let result = download_from_node(node.clone(), request.clone(), output_dir, base_format, progress_sender).await;
+        let result = download_from_node(node, request.clone(), output_dir, base_format, progress_sender).await;
         node.release_download_slot();
 
         match result {
@@ -466,7 +466,7 @@ async fn download_with_retry(
 }
 
 async fn download_from_node(
-    node: Arc<NodeHandle>,
+    node: &NodeHandle,
     request: DownloadRequest,
     output_dir: &Path,
     base_format: &MediaFormat,

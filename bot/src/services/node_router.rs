@@ -68,23 +68,23 @@ impl NodeRouter {
 
     #[must_use]
     #[allow(dead_code)]
-    pub fn pick_node(&self, domain: Option<&str>) -> Option<Arc<NodeHandle>> {
+    pub fn pick_node(&self, domain: Option<&str>) -> Option<&NodeHandle> {
         self.pick_node_excluding(domain, &HashSet::new())
     }
 
     #[must_use]
-    pub fn pick_node_excluding(&self, domain: Option<&str>, excluded: &HashSet<String>) -> Option<Arc<NodeHandle>> {
+    pub fn pick_node_excluding(&self, domain: Option<&str>, excluded: &HashSet<String>) -> Option<&NodeHandle> {
         let normalized_domain = domain.map(|value| value.trim_start_matches("www."));
         let domain_candidates = normalized_domain
             .and_then(|domain| self.domain_cookie_map.read().ok().and_then(|map| map.get(domain).cloned()))
             .unwrap_or_default();
 
         if let Some(index) = self.select_best_index(domain_candidates, excluded) {
-            return self.nodes.get(index).cloned();
+            return self.nodes.get(index).map(AsRef::as_ref);
         }
 
         self.select_best_index((0..self.nodes.len()).collect(), excluded)
-            .and_then(|index| self.nodes.get(index).cloned())
+            .and_then(|index| self.nodes.get(index).map(AsRef::as_ref))
     }
 
     pub async fn refresh_status(&self) {
