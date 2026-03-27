@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 ytdl_tg_bot_proto = { path = "../proto" }
 tokio = { version = "1.36", features = ["rt-multi-thread", "macros", "process", "sync", "fs", "io-util", "time", "signal"], default-features = false }
-tonic = { version = "0.14", features = ["transport", "tls-webpki-roots"] }
+tonic = { version = "0.14", features = ["transport", "tls-ring", "tls-webpki-roots"], default-features = false }
 tokio-stream = { version = "0.1", default-features = false }
 nix = { version = "0.31", features = ["fs"], default-features = false }
 tracing = { version = "0.1", default-features = false }

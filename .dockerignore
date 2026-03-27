@@ -1,9 +1,13 @@
 LICENSE
 LICENCE
 README.md
+AGENTS.md
 
 .gitignore
 .gitattributes
+
+justfile
+rustfmt.toml
 
 .env
 .env.example
@@ -12,12 +16,8 @@ README.md
 
 target/
 
-yt-dlp-cache/
-yt-dlp
+yt-dlp/
 
-cookies/*.txt
-
-config.toml
-node_config.toml
-configs/config.toml
-configs/downloader.toml
+cookies/
+configs/
+deployment/

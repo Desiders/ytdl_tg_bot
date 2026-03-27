@@ -4,10 +4,10 @@ version = "1.0.0"
 edition = "2021"
 
 [dependencies]
-prost = { version = "0.14", features = ["derive"], default-features = false }
-tonic = { version = "0.14", features = ["router", "transport", "codegen", "tls-webpki-roots", "zstd"], default-features = false }
+prost = { version = "0.14", default-features = false }
+tonic = { version = "0.14", features = ["router", "codegen", "tls-ring", "tls-webpki-roots"], default-features = false }
 tonic-prost = { version = "0.14", default-features = false }
 
 [build-dependencies]
-tonic-build = { version = "0.14", features = ["transport"], default-features = false }
-tonic-prost-build = { version = "0.14", features = ["transport"], default-features = false }
+tonic-build = { version = "0.14", default-features = false }
+tonic-prost-build = { version = "0.14", default-features = false }

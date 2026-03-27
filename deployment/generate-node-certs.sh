@@ -10,13 +10,13 @@ Creates a private CA on first use and issues a TLS server certificate for one do
 
 Examples:
   deployment/generate-node-certs.sh \
-    --root-dir ./tls \
+    --root-dir configs/tls \
     --node local \
     --ip 127.0.0.1 \
-    --dns localhost
+    --dns downloader
 
   deployment/generate-node-certs.sh \
-    --root-dir ./tls \
+    --root-dir configs/tls \
     --node external \
     --ip 203.0.113.10
 
