@@ -56,13 +56,14 @@ to = "fxbsky.app"
 max_file_size = 5000000
 
 [download]
-capabilities_refresh_interval = 0
+capabilities_refresh_interval = 60
 
 # Optional: enable this if any node uses https:// and is signed by your private CA.
 # [download.tls]
 # ca_cert_path = "configs/tls/ca/ca.crt"
 
 [[download.nodes]]
+name = "local-1"
 address = "http://downloader:50051"
 token = "secret-token-a"
 max_concurrent = 5

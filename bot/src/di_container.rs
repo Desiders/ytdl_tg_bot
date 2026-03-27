@@ -14,7 +14,7 @@ use uuid::ContextV7;
 use crate::{
     config::{Config, DatabaseConfig, RandomCmdConfig, TimeoutsConfig, TrackingParamsConfig, YtToolkitConfig},
     database::TxManager,
-    interactors::{chat, download::media, downloaded_media, get_media, send_media},
+    interactors::{chat, download::media, downloaded_media, get_media, node_router, send_media},
     services::node_router::NodeRouter,
 };
 
@@ -103,46 +103,52 @@ pub(super) fn init(bot: Bot, cfg: Config) -> Container {
         ),
         provide(
             App,
-            |Inject(router): Inject<NodeRouter>, Inject(tracking_params_cfg): Inject<TrackingParamsConfig>| async move {
+            |Inject(node_router): Inject<NodeRouter>| async move {
+                Ok(node_router::GetStats { node_router })
+            },
+        ),
+        provide(
+            App,
+            |Inject(node_router): Inject<NodeRouter>, Inject(tracking_params_cfg): Inject<TrackingParamsConfig>| async move {
                 Ok(get_media::GetUncachedVideoByURL {
-                    router: router.clone(),
+                    node_router,
                     tracking_params_cfg,
                 })
             },
         ),
         provide(
             App,
-            |Inject(router): Inject<NodeRouter>, Inject(tracking_params_cfg): Inject<TrackingParamsConfig>| async move {
+            |Inject(node_router): Inject<NodeRouter>, Inject(tracking_params_cfg): Inject<TrackingParamsConfig>| async move {
                 Ok(get_media::GetVideoByURL {
-                    router: router.clone(),
+                    node_router,
                     tracking_params_cfg,
                 })
             },
         ),
         provide(
             App,
-            |Inject(router): Inject<NodeRouter>, Inject(tracking_params_cfg): Inject<TrackingParamsConfig>| async move {
+            |Inject(node_router): Inject<NodeRouter>, Inject(tracking_params_cfg): Inject<TrackingParamsConfig>| async move {
                 Ok(get_media::GetAudioByURL {
-                    router: router.clone(),
+                    node_router,
                     tracking_params_cfg,
                 })
             },
         ),
         provide(
             App,
-            |Inject(router): Inject<NodeRouter>| async move { Ok(media::DownloadVideo { node_router: router.clone() }) },
+            |Inject(node_router): Inject<NodeRouter>| async move { Ok(media::DownloadVideo { node_router }) },
         ),
         provide(
             App,
-            |Inject(router): Inject<NodeRouter>| async move { Ok(media::DownloadAudio { node_router: router.clone() }) },
+            |Inject(node_router): Inject<NodeRouter>| async move { Ok(media::DownloadAudio { node_router }) },
         ),
         provide(
             App,
-            |Inject(router): Inject<NodeRouter>| async move { Ok(media::DownloadVideoPlaylist { node_router: router.clone() }) },
+            |Inject(node_router): Inject<NodeRouter>| async move { Ok(media::DownloadVideoPlaylist { node_router }) },
         ),
         provide(
             App,
-            |Inject(router): Inject<NodeRouter>| async move { Ok(media::DownloadAudioPlaylist { node_router: router.clone() }) },
+            |Inject(node_router): Inject<NodeRouter>| async move { Ok(media::DownloadAudioPlaylist { node_router }) },
         ),
         provide(
             App,

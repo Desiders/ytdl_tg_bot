@@ -10,7 +10,7 @@ use anyhow::Result;
 use selection::{select_best_index, NodeSnapshot};
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, RwLock},
+    sync::RwLock,
 };
 use tls::{build_channel, DownloadClientTls};
 use tracing::{error, warn};
@@ -19,25 +19,26 @@ use ytdl_tg_bot_proto::downloader::{node_capabilities_client::NodeCapabilitiesCl
 use crate::config::{DownloadNodeConfig, DownloadTlsConfig};
 
 pub struct NodeRouter {
-    nodes: Vec<Arc<NodeHandle>>,
+    nodes: Box<[NodeHandle]>,
     domain_cookie_map: RwLock<HashMap<String, Vec<usize>>>,
     max_file_size: u64,
 }
 
 impl NodeRouter {
-    pub async fn new(configs: &[DownloadNodeConfig], tls_config: Option<&DownloadTlsConfig>, max_file_size: u64) -> Result<Self> {
-        let mut nodes = Vec::with_capacity(configs.len());
+    pub async fn new(cfgs: &[DownloadNodeConfig], tls_config: Option<&DownloadTlsConfig>, max_file_size: u64) -> Result<Self> {
+        let mut nodes = Vec::with_capacity(cfgs.len());
         let mut domain_cookie_map = HashMap::new();
-        let tls_material = DownloadClientTls::load(tls_config)?;
+        let tls_info = DownloadClientTls::load(tls_config)?;
 
-        for (index, config) in configs.iter().enumerate() {
-            let channel = build_channel(config, tls_material.as_ref())?;
-            let node = Arc::new(NodeHandle::new(
-                config.address.clone(),
-                config.token.clone(),
-                config.max_concurrent,
+        for (index, cfg) in cfgs.iter().enumerate() {
+            let channel = build_channel(cfg, tls_info.as_ref())?;
+            let node = NodeHandle::new(
+                cfg.name.clone(),
+                cfg.address.clone(),
+                cfg.token.clone(),
+                cfg.max_concurrent,
                 channel,
-            ));
+            );
 
             match node.fetch_supported_domains().await {
                 Ok(domains) => {
@@ -54,7 +55,7 @@ impl NodeRouter {
         }
 
         Ok(Self {
-            nodes,
+            nodes: nodes.into(),
             domain_cookie_map: RwLock::new(domain_cookie_map),
             max_file_size,
         })
@@ -64,6 +65,12 @@ impl NodeRouter {
     #[must_use]
     pub const fn max_file_size(&self) -> u64 {
         self.max_file_size
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn nodes(&self) -> &[NodeHandle] {
+        &self.nodes
     }
 
     #[must_use]
@@ -80,11 +87,11 @@ impl NodeRouter {
             .unwrap_or_default();
 
         if let Some(index) = self.select_best_index(domain_candidates, excluded) {
-            return self.nodes.get(index).map(AsRef::as_ref);
+            return self.nodes.get(index);
         }
 
         self.select_best_index((0..self.nodes.len()).collect(), excluded)
-            .and_then(|index| self.nodes.get(index).map(AsRef::as_ref))
+            .and_then(|index| self.nodes.get(index))
     }
 
     pub async fn refresh_status(&self) {

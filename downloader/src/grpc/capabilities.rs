@@ -3,7 +3,7 @@ use std::sync::{
     Arc,
 };
 use tonic::{Request, Response, Status};
-use tracing::{debug, info};
+use tracing::info;
 use ytdl_tg_bot_proto::downloader::{node_capabilities_server::NodeCapabilities, Empty, NodeStatus, SupportedDomainsResponse};
 
 use crate::entities::Cookies;
@@ -18,7 +18,7 @@ pub struct CapabilitiesService {
 impl NodeCapabilities for CapabilitiesService {
     async fn get_status(&self, _request: Request<Empty>) -> Result<Response<NodeStatus>, Status> {
         let active_downloads = self.active_downloads.load(Ordering::Relaxed);
-        debug!(active_downloads, max_concurrent = self.max_concurrent, "Reported node status");
+        info!(active_downloads, max_concurrent = self.max_concurrent, "Reported node status");
 
         Ok(Response::new(NodeStatus {
             active_downloads,

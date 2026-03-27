@@ -110,6 +110,7 @@ pub struct ReplaceDomainsConfig {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct DownloadNodeConfig {
+    pub name: Box<str>,
     pub address: Box<str>,
     pub token: Box<str>,
     pub max_concurrent: u32,

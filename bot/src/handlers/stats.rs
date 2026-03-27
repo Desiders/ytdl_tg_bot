@@ -1,5 +1,5 @@
 use crate::database::TxManager;
-use crate::interactors::{downloaded_media, Interactor as _};
+use crate::interactors::{downloaded_media, node_router, Interactor as _};
 use crate::utils::{format_error_report, FormatErrorToMessage as _};
 
 use froodi::{Inject, InjectTransient};
@@ -18,17 +18,29 @@ use tracing::{error, instrument};
 pub async fn stats(
     bot: Bot,
     message: Message,
-    Inject(get_stats): Inject<downloaded_media::GetStats>,
+    Inject(get_media_stats): Inject<downloaded_media::GetStats>,
+    Inject(node_node_stats): Inject<node_router::GetStats>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
 ) -> HandlerResult {
-    let text = match get_stats
+    let media_stats = get_media_stats
         .execute(downloaded_media::GetStatsInput {
             top_domains_limit: 5,
             tx_manager: &mut tx_manager,
         })
-        .await
-    {
+        .await;
+    let nodes_stats = node_node_stats.execute(node_router::GetStatsInput {}).await.unwrap_or_default();
+
+    let text = match media_stats {
         Ok((media_stats, chat_stats)) => {
+            let mut nodes_text = "- Nodes:\n".to_owned();
+            for node_stats in nodes_stats {
+                let _ = writeln!(
+                    nodes_text,
+                    "{}. ({}/{})",
+                    node_stats.name, node_stats.active_downloads, node_stats.max_concurrent,
+                );
+            }
+
             let mut top_domains_text = "- Most used domains:\n".to_owned();
             for (index, top_domain) in media_stats.top_domains.iter().enumerate() {
                 let _ = writeln!(
@@ -44,6 +56,7 @@ pub async fn stats(
                 "<b>Stats</b>\n\
                 - Chats count: {}\n\
                 - Downloads last 1/7/30/total days: {}/{}/{}/{} count\n\
+                {nodes_text}\
                 {top_domains_text}\
                 ",
                 chat_stats.count,

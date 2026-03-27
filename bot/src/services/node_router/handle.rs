@@ -6,6 +6,7 @@ use ytdl_tg_bot_proto::downloader::{node_capabilities_client::NodeCapabilitiesCl
 use super::authenticated_request;
 
 pub struct NodeHandle {
+    pub name: Box<str>,
     pub address: Box<str>,
     pub token: Box<str>,
     pub max_concurrent: u32,
@@ -16,8 +17,9 @@ pub struct NodeHandle {
 }
 
 impl NodeHandle {
-    pub(super) fn new(address: Box<str>, token: Box<str>, max_concurrent: u32, channel: Channel) -> Self {
+    pub(super) fn new(name: Box<str>, address: Box<str>, token: Box<str>, max_concurrent: u32, channel: Channel) -> Self {
         Self {
+            name,
             address,
             token,
             max_concurrent,
