@@ -37,7 +37,9 @@ pub async fn stats(
                 let _ = writeln!(
                     nodes_text,
                     "{}. ({}/{})",
-                    node_stats.name, node_stats.active_downloads, node_stats.max_concurrent,
+                    html_quote(node_stats.name),
+                    node_stats.active_downloads,
+                    node_stats.max_concurrent,
                 );
             }
 
