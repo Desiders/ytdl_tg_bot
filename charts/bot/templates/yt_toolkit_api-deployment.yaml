@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yt-toolkit-api
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: yt-toolkit-api
+  template:
+    metadata:
+      labels:
+        app: yt-toolkit-api
+    spec:
+      containers:
+        - name: yt-toolkit-api
+          image: "{{ .Values.ytToolkit.image.repository }}:{{ .Values.ytToolkit.image.tag }}"
+          imagePullPolicy: {{ .Values.ytToolkit.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: yt-toolkit-api-secret

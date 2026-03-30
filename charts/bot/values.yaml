@@ -1,0 +1,25 @@
+namespace: bot
+
+bot:
+  image:
+    repository: desiders/ytdl_tg_bot
+    tag: "5.0.0"
+    pullPolicy: Always
+
+postgres:
+  storage: 3Gi
+  storageClass: standard
+  database: api
+  owner: admin
+  secretName: ytdl-db
+  superuserSecretName: ytdl-db-superuser
+
+telegramBotApi:
+  image:
+    pullPolicy: IfNotPresent
+
+ytToolkit:
+  image:
+    repository: ghcr.io/ikiovi/yt-toolkit/info-api
+    tag: "v2.0.0"
+    pullPolicy: IfNotPresent

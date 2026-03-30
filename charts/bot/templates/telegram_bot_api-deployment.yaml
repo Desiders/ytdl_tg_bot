@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telegram-bot-api
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: telegram-bot-api
+  template:
+    metadata:
+      labels:
+        app: telegram-bot-api
+    spec:
+      containers:
+        - name: telegram-bot-api
+          image: aiogram/telegram-bot-api:latest
+          imagePullPolicy: {{ .Values.telegramBotApi.image.pullPolicy }}
+          ports:
+            - containerPort: 8081
+          env:
+            - name: TELEGRAM_LOCAL
+              value: "1"
+            - name: TELEGRAM_API_ID
+              valueFrom:
+                secretKeyRef:
+                  name: ytdl-telegram-bot-api
+                  key: api_id
+            - name: TELEGRAM_API_HASH
+              valueFrom:
+                secretKeyRef:
+                  name: ytdl-telegram-bot-api
+                  key: hash
