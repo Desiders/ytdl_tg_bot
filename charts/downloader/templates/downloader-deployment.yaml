@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: downloader
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: {{ .Values.downloader.replicas }}
+  selector:
+    matchLabels:
+      app: downloader
+  template:
+    metadata:
+      labels:
+        app: downloader
+    spec:
+      containers:
+        - name: downloader
+          image: "{{ .Values.downloader.image.repository }}:{{ .Values.downloader.image.tag }}"
+          imagePullPolicy: {{ .Values.downloader.image.pullPolicy }}
+          env:
+            - name: DOWNLOADER_CONFIG_PATH
+              value: /app/configs/downloader.toml
+          volumeMounts:
+            - name: config
+              mountPath: /app/configs
+              readOnly: true
+            - name: tls
+              mountPath: /app/configs/tls
+              readOnly: true
+            - name: yt-dlp
+              mountPath: /app/yt-dlp
+            - name: cookies
+              mountPath: /app/cookies
+      volumes:
+        - name: config
+          secret:
+            secretName: ytdl-downloader-config
+            items:
+              - key: downloader.toml
+                path: downloader.toml
+        - name: tls
+          secret:
+            secretName: ytdl-tls
+        - name: yt-dlp
+          secret:
+            secretName: ytdl-downloader-yt-dlp
+            items:
+              - key: executable
+                path: executable
+        - name: cookies
+          secret:
+            secretName: ytdl-downloader-cookies

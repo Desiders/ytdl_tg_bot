@@ -1,0 +1,18 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres
+  namespace: {{ .Values.namespace }}
+spec:
+  instances: 1
+  storage:
+    size: {{ .Values.postgres.storage }}
+    storageClass: {{ .Values.postgres.storageClass | default "standard" }}
+  superuserSecret:
+    name: {{ .Values.postgres.superuserSecretName }}
+  bootstrap:
+    initdb:
+      database: {{ .Values.postgres.database }}
+      owner: {{ .Values.postgres.owner }}
+      secret:
+        name: {{ .Values.postgres.secretName }}
