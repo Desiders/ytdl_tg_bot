@@ -8,7 +8,7 @@ use std::{
     path::Path,
 };
 use thiserror::Error;
-use tonic::transport::{Identity, ServerTlsConfig};
+use tonic::transport::{Certificate, Identity, ServerTlsConfig};
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct ServerConfig {
@@ -23,6 +23,7 @@ pub struct AuthConfig {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct TlsConfig {
+    pub ca_cert_path: Box<str>,
     pub cert_path: Box<str>,
     pub key_path: Box<str>,
 }
@@ -68,23 +69,24 @@ pub struct LoggingConfig {
 pub struct Config {
     pub server: ServerConfig,
     pub auth: AuthConfig,
-    #[serde(default)]
-    pub tls: Option<TlsConfig>,
+    pub tls: TlsConfig,
     pub yt_dlp: YtDlpConfig,
     pub yt_pot_provider: YtPotProviderConfig,
     pub logging: LoggingConfig,
 }
 
 impl Config {
-    pub fn load_server_tls_config(&self) -> anyhow::Result<Option<ServerTlsConfig>> {
-        let Some(config) = self.tls.as_ref() else {
-            return Ok(None);
-        };
+    pub fn load_server_tls_cfg(&self) -> anyhow::Result<ServerTlsConfig> {
+        let config = &self.tls;
+        let ca_cert_pem =
+            fs::read(&*config.ca_cert_path).with_context(|| format!("Failed to read downloader CA certificate {}", config.ca_cert_path))?;
+        let cert_pem = fs::read(&*config.cert_path).with_context(|| format!("Failed to read node certificate {}", config.cert_path))?;
+        let key_pem = fs::read(&*config.key_path).with_context(|| format!("Failed to read node key {}", config.key_path))?;
 
-        let cert = fs::read(&*config.cert_path).with_context(|| format!("Failed to read TLS certificate {}", config.cert_path))?;
-        let key = fs::read(&*config.key_path).with_context(|| format!("Failed to read TLS key {}", config.key_path))?;
-        let identity = Identity::from_pem(cert, key);
-        Ok(Some(ServerTlsConfig::new().identity(identity)))
+        let tls_cfg = ServerTlsConfig::new()
+            .client_ca_root(Certificate::from_pem(ca_cert_pem))
+            .identity(Identity::from_pem(cert_pem, key_pem));
+        Ok(tls_cfg)
     }
 }
 
