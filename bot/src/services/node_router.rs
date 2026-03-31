@@ -1,18 +1,18 @@
 mod auth;
+mod client;
 mod handle;
 mod selection;
-mod tls;
 
 pub use auth::authenticated_request;
 pub use handle::NodeHandle;
 
 use anyhow::Result;
+use client::NodeClient;
 use selection::{select_best_index, NodeSnapshot};
 use std::{
     collections::{HashMap, HashSet},
     sync::RwLock,
 };
-use tls::{build_channel, DownloadClientTls};
 use tracing::{error, warn};
 use ytdl_tg_bot_proto::downloader::{node_capabilities_client::NodeCapabilitiesClient, Empty};
 
@@ -25,13 +25,13 @@ pub struct NodeRouter {
 }
 
 impl NodeRouter {
-    pub async fn new(cfgs: &[DownloadNodeConfig], tls_config: Option<&DownloadTlsConfig>, max_file_size: u64) -> Result<Self> {
+    pub async fn new(cfgs: &[DownloadNodeConfig], tls_cfg: &DownloadTlsConfig, max_file_size: u64) -> Result<Self> {
         let mut nodes = Vec::with_capacity(cfgs.len());
         let mut domain_cookie_map = HashMap::new();
-        let tls_info = DownloadClientTls::load(tls_config)?;
+        let client = NodeClient::load(tls_cfg)?;
 
         for (index, cfg) in cfgs.iter().enumerate() {
-            let channel = build_channel(cfg, tls_info.as_ref())?;
+            let channel = client.build_channel(&cfg)?;
             let node = NodeHandle::new(
                 cfg.name.clone(),
                 cfg.address.clone(),
@@ -50,7 +50,6 @@ impl NodeRouter {
                     warn!(node = %node.address, error = %err, "Failed to fetch node capabilities");
                 }
             }
-
             nodes.push(node);
         }
 
