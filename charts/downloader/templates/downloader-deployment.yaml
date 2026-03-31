@@ -17,6 +17,8 @@ spec:
         - name: downloader
           image: "{{ .Values.downloader.image.repository }}:{{ .Values.downloader.image.tag }}"
           imagePullPolicy: {{ .Values.downloader.image.pullPolicy }}
+          ports:
+            - containerPort: 50051
           env:
             - name: DOWNLOADER_CONFIG_PATH
               value: /app/configs/downloader.toml
