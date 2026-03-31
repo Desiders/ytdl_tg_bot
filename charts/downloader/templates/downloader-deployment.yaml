@@ -25,7 +25,16 @@ spec:
               mountPath: /app/configs
               readOnly: true
             - name: tls
-              mountPath: /app/configs/tls
+              mountPath: /app/configs/tls/ca.crt
+              subPath: ca.crt
+              readOnly: true
+            - name: tls
+              mountPath: /app/configs/tls/node.crt
+              subPath: tls.crt
+              readOnly: true
+            - name: tls
+              mountPath: /app/configs/tls/node.key
+              subPath: tls.key
               readOnly: true
             - name: yt-dlp
               mountPath: /app/yt-dlp
@@ -40,7 +49,7 @@ spec:
                 path: downloader.toml
         - name: tls
           secret:
-            secretName: ytdl-tls
+            secretName: downloader-tls-secret
         - name: yt-dlp
           secret:
             secretName: ytdl-downloader-yt-dlp

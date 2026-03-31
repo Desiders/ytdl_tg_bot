@@ -25,7 +25,16 @@ spec:
               mountPath: /app/configs
               readOnly: true
             - name: tls
-              mountPath: /app/configs/tls
+              mountPath: /app/configs/tls/ca.crt
+              subPath: ca.crt
+              readOnly: true
+            - name: tls
+              mountPath: /app/configs/tls/bot.crt
+              subPath: tls.crt
+              readOnly: true
+            - name: tls
+              mountPath: /app/configs/tls/bot.key
+              subPath: tls.key
               readOnly: true
       volumes:
         - name: config
@@ -36,4 +45,4 @@ spec:
                 path: config.toml
         - name: tls
           secret:
-            secretName: ytdl-tls
+            secretName: bot-tls-secret
