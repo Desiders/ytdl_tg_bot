@@ -33,8 +33,6 @@ pub struct YtDlpConfig {
     #[serde(default)]
     pub command: Vec<Box<str>>,
     #[serde(default)]
-    pub executable_path: Option<Box<str>>,
-    #[serde(default)]
     pub plugin_dirs: Vec<Box<str>>,
     pub cookies_path: Box<str>,
     pub max_file_size: u64,
@@ -45,10 +43,6 @@ impl YtDlpConfig {
     pub fn command_parts(&self) -> (&str, Vec<&str>) {
         if let Some((program, args)) = self.command.split_first() {
             return (program.as_ref(), args.iter().map(AsRef::as_ref).collect());
-        }
-
-        if let Some(executable_path) = self.executable_path.as_deref() {
-            return (executable_path, Vec::new());
         }
 
         ("python3", vec!["-m", "yt_dlp"])
@@ -126,7 +120,6 @@ mod tests {
     fn command_parts_use_explicit_command_when_present() {
         let config = YtDlpConfig {
             command: vec!["python3".into(), "-m".into(), "yt_dlp".into()],
-            executable_path: Some("./yt-dlp/executable".into()),
             plugin_dirs: vec![],
             cookies_path: "./cookies".into(),
             max_file_size: 1,
@@ -138,25 +131,9 @@ mod tests {
     }
 
     #[test]
-    fn command_parts_fall_back_to_legacy_executable_path() {
-        let config = YtDlpConfig {
-            command: vec![],
-            executable_path: Some("./yt-dlp/executable".into()),
-            plugin_dirs: vec![],
-            cookies_path: "./cookies".into(),
-            max_file_size: 1,
-        };
-
-        let (program, args) = config.command_parts();
-        assert_eq!(program, "./yt-dlp/executable");
-        assert!(args.is_empty());
-    }
-
-    #[test]
     fn command_parts_default_to_python_module_launcher() {
         let config = YtDlpConfig {
             command: vec![],
-            executable_path: None,
             plugin_dirs: vec![],
             cookies_path: "./cookies".into(),
             max_file_size: 1,
