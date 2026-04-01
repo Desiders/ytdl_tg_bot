@@ -25,10 +25,10 @@ spec:
             - name: TELEGRAM_API_ID
               valueFrom:
                 secretKeyRef:
-                  name: ytdl-telegram-bot-api
+                  name: telegram-bot-api
                   key: api_id
             - name: TELEGRAM_API_HASH
               valueFrom:
                 secretKeyRef:
-                  name: ytdl-telegram-bot-api
+                  name: telegram-bot-api
                   key: hash

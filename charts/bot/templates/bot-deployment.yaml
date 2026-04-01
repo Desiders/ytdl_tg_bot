@@ -39,7 +39,7 @@ spec:
       volumes:
         - name: config
           secret:
-            secretName: ytdl-bot-config
+            secretName: bot-config
             items:
               - key: config.toml
                 path: config.toml

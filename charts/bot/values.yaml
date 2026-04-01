@@ -9,8 +9,8 @@ postgres:
   storageClass: standard
   database: api
   owner: admin
-  secretName: ytdl-db
-  superuserSecretName: ytdl-db-superuser
+  secretName: db
+  superuserSecretName: db-superuser
 
 telegramBotApi:
   image:
