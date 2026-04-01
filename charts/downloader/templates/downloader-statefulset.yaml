@@ -1,9 +1,10 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: downloader
   namespace: {{ .Release.Namespace }}
 spec:
+  serviceName: downloader
   replicas: {{ .Values.downloader.replicas }}
   selector:
     matchLabels:
@@ -50,6 +51,12 @@ spec:
         - name: tls
           secret:
             secretName: downloader-tls-secret
-        - name: cookies
-          secret:
-            secretName: downloader-cookies
+  volumeClaimTemplates:
+    - metadata:
+        name: cookies
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.downloader.cookies.storageClass | default "" }}
+        resources:
+          requests:
+            storage: {{ .Values.downloader.cookies.storage | default "30Mi" }}
