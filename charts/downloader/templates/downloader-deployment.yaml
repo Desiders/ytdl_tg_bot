@@ -43,7 +43,7 @@ spec:
       volumes:
         - name: config
           secret:
-            secretName: ytdl-downloader-config
+            secretName: downloader-config
             items:
               - key: downloader.toml
                 path: downloader.toml
@@ -52,4 +52,4 @@ spec:
             secretName: downloader-tls-secret
         - name: cookies
           secret:
-            secretName: ytdl-downloader-cookies
+            secretName: downloader-cookies

@@ -19,6 +19,3 @@ spec:
           imagePullPolicy: {{ .Values.ytToolkit.image.pullPolicy }}
           ports:
             - containerPort: 8080
-          envFrom:
-            - secretRef:
-                name: yt-toolkit-api-secret
