@@ -29,4 +29,3 @@ metadata:
 spec:
   ca:
     secretName: ca-root-secret
-    namespace: {{ .Release.Namespace }}
