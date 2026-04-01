@@ -12,7 +12,6 @@ key_path = "configs/tls/node.key"
 
 [yt_dlp]
 command = ["python3", "-m", "yt_dlp"]
-executable_path = "yt-dlp/executable"
 plugin_dirs = ["yt-dlp/yt-dlp-plugins"]
 cookies_path = "cookies"
 max_file_size = 5000000

@@ -38,8 +38,6 @@ spec:
               mountPath: /app/configs/tls/node.key
               subPath: tls.key
               readOnly: true
-            - name: yt-dlp
-              mountPath: /app/yt-dlp
             - name: cookies
               mountPath: /app/cookies
       volumes:
@@ -52,12 +50,6 @@ spec:
         - name: tls
           secret:
             secretName: downloader-tls-secret
-        - name: yt-dlp
-          secret:
-            secretName: ytdl-downloader-yt-dlp
-            items:
-              - key: executable
-                path: executable
         - name: cookies
           secret:
             secretName: ytdl-downloader-cookies
