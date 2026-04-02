@@ -6,7 +6,7 @@ bot:
 
 postgres:
   storage: 3Gi
-  storageClass: standard
+  torageClass: ""
   database: api
   owner: admin
   secretName: db

@@ -74,11 +74,11 @@ port = 5432
 database = "api"
 
 [yt_toolkit]
-url = "http://yt_toolkit_api:8080"
+url = "http://yt-toolkit-api:8080"
 # url = "http://127.0.0.1:8080"
 
 [telegram_bot_api]
-url = "http://telegram_bot_api:8081"
+url = "http://telegram-bot-api:8081"
 # url = "https://api.telegram.org"
 api_id = "..."
 api_hash = "..."
