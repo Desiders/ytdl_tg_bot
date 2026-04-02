@@ -7,7 +7,7 @@ spec:
   instances: 1
   storage:
     size: {{ .Values.postgres.storage }}
-    storageClass: {{ .Values.postgres.storageClass | default "standard" }}
+    storageClass: {{ .Values.postgres.storageClass | default "" }}
   superuserSecret:
     name: {{ .Values.postgres.superuserSecretName }}
   bootstrap:
