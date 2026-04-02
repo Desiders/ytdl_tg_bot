@@ -35,14 +35,14 @@ All internal bot-to-node communication uses strict mutual TLS.
 - Certificates and keys are mounted into containers at **exact hardcoded paths**. Do not change these paths without updating Helm templates.
 
 **Bot TLS paths:**
-- CA: `/app/configs/tls/ca.crt`
-- Cert: `/app/configs/tls/bot.crt`
-- Key: `/app/configs/tls/bot.key`
+- CA: `/app/tls/ca.crt`
+- Cert: `/app/tls/bot.crt`
+- Key: `/app/tls/bot.key`
 
 **Downloader TLS paths:**
-- CA: `/app/configs/tls/ca.crt`
-- Cert: `/app/configs/tls/node.crt`
-- Key: `/app/configs/tls/node.key`
+- CA: `/app/tls/ca.crt`
+- Cert: `/app/tls/node.crt`
+- Key: `/app/tls/node.key`
 
 **CRITICAL TLS RULE (SNI / ServerName):**
 Because the bot connects to nodes by IP address (resolved from DNS), but the node's certificate only contains the DNS name in its SAN field, the bot's gRPC TLS client **MUST** explicitly set the `server_name` (SNI) parameter to `downloader.<namespace>.svc.cluster.local`. Failure to do this will result in a TLS handshake failure (`certificate verify failed`).

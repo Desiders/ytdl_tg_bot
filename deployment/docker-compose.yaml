@@ -21,8 +21,8 @@ services:
         target: /app/configs/config.toml
         read_only: true
       - type: bind
-        source: ../configs/tls
-        target: /app/configs/tls
+        source: ../tls
+        target: /app/tls
         read_only: true
     depends_on:
       postgres:
@@ -59,8 +59,8 @@ services:
         target: /app/configs/downloader.toml
         read_only: true
       - type: bind
-        source: ../configs/tls
-        target: /app/configs/tls
+        source: ../tls
+        target: /app/tls
         read_only: true
       - type: bind
         source: ../yt-dlp

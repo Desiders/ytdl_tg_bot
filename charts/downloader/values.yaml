@@ -3,7 +3,7 @@ downloader:
   image:
     repository: desiders/ytdl_tg_bot.downloader
     tag: "1.0.0"
-    pullPolicy: Always
+    pullPolicy: IfNotPresent
   cookies:
     storage: 30Mi
     storageClass: ""

@@ -6,9 +6,9 @@ max_concurrent = 5
 tokens = ["secret-token-a"]
 
 [tls]
-ca_cert_path = "configs/tls/ca.crt"
-cert_path = "configs/tls/node.crt"
-key_path = "configs/tls/node.key"
+ca_cert_path = "tls/ca.crt"
+cert_path = "tls/node.crt"
+key_path = "tls/node.key"
 
 [yt_dlp]
 command = ["python3", "-m", "yt_dlp"]

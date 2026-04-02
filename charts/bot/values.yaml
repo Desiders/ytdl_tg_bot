@@ -2,7 +2,7 @@ bot:
   image:
     repository: desiders/ytdl_tg_bot
     tag: "5.0.0"
-    pullPolicy: Always
+    pullPolicy: IfNotPresent
 
 postgres:
   storage: 3Gi
