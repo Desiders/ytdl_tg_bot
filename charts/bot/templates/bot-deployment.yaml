@@ -20,6 +20,8 @@ spec:
           env:
             - name: CONFIG_PATH
               value: /app/configs/config.toml
+            - name: DOWNLOADER_SERVICE_DNS
+              value: "downloader.{{ .Release.Namespace }}.svc.cluster.local:50051"
           volumeMounts:
             - name: config
               mountPath: /app/configs

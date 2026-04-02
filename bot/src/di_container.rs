@@ -15,7 +15,7 @@ use crate::{
     config::{Config, DatabaseConfig, RandomCmdConfig, TimeoutsConfig, TrackingParamsConfig, YtToolkitConfig},
     database::TxManager,
     interactors::{chat, download::media, downloaded_media, get_media, node_router, send_media},
-    services::node_router::NodeRouter,
+    services::node_router::{DownloaderServiceTarget, NodeRouter},
 };
 
 #[allow(clippy::too_many_lines)]
@@ -47,6 +47,7 @@ pub(super) fn init(bot: Bot, cfg: Config) -> Container {
             provide(|| Ok(downloaded_media::AddVideo {})),
             provide(|| Ok(downloaded_media::AddAudio {})),
             provide(|| Ok(downloaded_media::GetStats {})),
+            provide(|| Ok(DownloaderServiceTarget::from_env())),
 
             provide(|Inject(random_cfg): Inject<RandomCmdConfig>| Ok(downloaded_media::GetRandomVideo { random_cfg })),
             provide(|Inject(random_cfg): Inject<RandomCmdConfig>| Ok(downloaded_media::GetRandomAudio { random_cfg })),
@@ -82,74 +83,40 @@ pub(super) fn init(bot: Bot, cfg: Config) -> Container {
                 Inject(bot): Inject<Bot>,
                 Inject(timeouts_cfg): Inject<TimeoutsConfig>| Ok(send_media::id::SendAudioPlaylist { bot, timeouts_cfg })
             ),
-            provide(
-                |Inject(client): Inject<Client>,
+            provide(|
+                Inject(client): Inject<Client>,
                 Inject(yt_toolkit_cfg): Inject<YtToolkitConfig>| Ok(get_media::GetShortMediaByURL { client, yt_toolkit_cfg })
             ),
             provide(|
                 Inject(client): Inject<Client>,
                 Inject(yt_toolkit_cfg): Inject<YtToolkitConfig>| Ok(get_media::SearchMediaInfo { client, yt_toolkit_cfg })
             ),
+
+            provide(
+                |Inject(cfg): Inject<Config>, Inject(service_target): Inject<DownloaderServiceTarget>| {
+                    Ok(NodeRouter::new(&cfg.download, cfg.yt_dlp.max_file_size, service_target))
+                },
+            ),
+            provide(|Inject(node_router): Inject<NodeRouter>| Ok(node_router::GetStats { node_router })),
+            provide(|
+                Inject(node_router): Inject<NodeRouter>,
+                Inject(tracking_params_cfg): Inject<TrackingParamsConfig>| Ok(get_media::GetUncachedVideoByURL { node_router, tracking_params_cfg })
+            ),
+            provide(|
+                Inject(node_router): Inject<NodeRouter>,
+                Inject(tracking_params_cfg): Inject<TrackingParamsConfig>| Ok(get_media::GetVideoByURL { node_router, tracking_params_cfg })
+            ),
+            provide(|
+                Inject(node_router): Inject<NodeRouter>,
+                Inject(tracking_params_cfg): Inject<TrackingParamsConfig>| Ok(get_media::GetAudioByURL { node_router, tracking_params_cfg })
+            ),
+            provide(|Inject(node_router): Inject<NodeRouter>| Ok(media::DownloadVideo { node_router })),
+            provide(|Inject(node_router): Inject<NodeRouter>| Ok(media::DownloadAudio { node_router })),
+            provide(|Inject(node_router): Inject<NodeRouter>|  Ok(media::DownloadVideoPlaylist { node_router })),
+            provide(|Inject(node_router): Inject<NodeRouter>|  Ok(media::DownloadAudioPlaylist { node_router })),
         ],
     };
     let registry_with_sync = async_registry! {
-        provide(
-            App,
-            |Inject(cfg): Inject<Config>| async move {
-                NodeRouter::new(&cfg.download.nodes, &cfg.download.tls, cfg.yt_dlp.max_file_size)
-                    .await
-                    .map_err(InstantiateErrorKind::Custom)
-            },
-        ),
-        provide(
-            App,
-            |Inject(node_router): Inject<NodeRouter>| async move {
-                Ok(node_router::GetStats { node_router })
-            },
-        ),
-        provide(
-            App,
-            |Inject(node_router): Inject<NodeRouter>, Inject(tracking_params_cfg): Inject<TrackingParamsConfig>| async move {
-                Ok(get_media::GetUncachedVideoByURL {
-                    node_router,
-                    tracking_params_cfg,
-                })
-            },
-        ),
-        provide(
-            App,
-            |Inject(node_router): Inject<NodeRouter>, Inject(tracking_params_cfg): Inject<TrackingParamsConfig>| async move {
-                Ok(get_media::GetVideoByURL {
-                    node_router,
-                    tracking_params_cfg,
-                })
-            },
-        ),
-        provide(
-            App,
-            |Inject(node_router): Inject<NodeRouter>, Inject(tracking_params_cfg): Inject<TrackingParamsConfig>| async move {
-                Ok(get_media::GetAudioByURL {
-                    node_router,
-                    tracking_params_cfg,
-                })
-            },
-        ),
-        provide(
-            App,
-            |Inject(node_router): Inject<NodeRouter>| async move { Ok(media::DownloadVideo { node_router }) },
-        ),
-        provide(
-            App,
-            |Inject(node_router): Inject<NodeRouter>| async move { Ok(media::DownloadAudio { node_router }) },
-        ),
-        provide(
-            App,
-            |Inject(node_router): Inject<NodeRouter>| async move { Ok(media::DownloadVideoPlaylist { node_router }) },
-        ),
-        provide(
-            App,
-            |Inject(node_router): Inject<NodeRouter>| async move { Ok(media::DownloadAudioPlaylist { node_router }) },
-        ),
         provide(
             App,
             |Inject(database_cfg): Inject<DatabaseConfig>| async move {

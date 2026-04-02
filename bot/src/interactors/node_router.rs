@@ -10,7 +10,7 @@ pub struct GetStats {
 pub struct GetStatsInput {}
 
 impl<'a> Interactor<GetStatsInput> for &'a GetStats {
-    type Output = Vec<NodeStats<'a>>;
+    type Output = Vec<NodeStats>;
     type Err = ErrorKind<Infallible>;
 
     #[instrument(skip_all)]
@@ -19,9 +19,9 @@ impl<'a> Interactor<GetStatsInput> for &'a GetStats {
         let mut nodes_stats = Vec::with_capacity(nodes.len());
         for node in nodes {
             let node_stats = NodeStats {
-                name: &node.name,
+                name: node.name.clone(),
                 active_downloads: node.estimated_active_downloads(),
-                max_concurrent: node.max_concurrent,
+                max_concurrent: node.max_concurrent(),
             };
             info!(?node_stats, "Got nodes stats");
 

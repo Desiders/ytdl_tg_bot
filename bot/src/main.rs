@@ -50,14 +50,11 @@ async fn main() {
         .with(EnvFilter::builder().parse_lossy(config.logging.dirs.as_ref()))
         .init();
 
-    let download_node_addresses: Vec<_> = config.download.nodes.iter().map(|node| node.address.as_ref()).collect();
     info!(
         config_path = %config_path,
         log_filter = %config.logging.dirs,
         yt_toolkit_url = %config.yt_toolkit.url,
         telegram_bot_api_url = %config.telegram_bot_api.url,
-        download_node_count = config.download.nodes.len(),
-        download_node_addresses = ?download_node_addresses,
         capabilities_refresh_interval = config.download.capabilities_refresh_interval,
         max_file_size = config.yt_dlp.max_file_size,
         "Loaded bot config"

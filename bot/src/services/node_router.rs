@@ -3,61 +3,45 @@ mod client;
 mod handle;
 mod selection;
 
-pub use auth::authenticated_request;
-pub use handle::NodeHandle;
-
-use anyhow::Result;
 use client::NodeClient;
 use selection::{select_best_index, NodeSnapshot};
 use std::{
     collections::{HashMap, HashSet},
-    sync::RwLock,
+    io,
+    net::SocketAddr,
+    sync::{Arc, RwLock},
 };
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 use ytdl_tg_bot_proto::downloader::{node_capabilities_client::NodeCapabilitiesClient, Empty};
 
-use crate::config::{DownloadNodeConfig, DownloadTlsConfig};
+use crate::config::DownloadConfig;
+
+pub use auth::authenticated_request;
+pub use client::DownloaderServiceTarget;
+pub use handle::NodeHandle;
 
 pub struct NodeRouter {
-    nodes: Box<[NodeHandle]>,
+    nodes: RwLock<Vec<Arc<NodeHandle>>>,
     domain_cookie_map: RwLock<HashMap<String, Vec<usize>>>,
     max_file_size: u64,
+    client: NodeClient,
+    service_target: Arc<DownloaderServiceTarget>,
+    node_token: Box<str>,
 }
 
 impl NodeRouter {
-    pub async fn new(cfgs: &[DownloadNodeConfig], tls_cfg: &DownloadTlsConfig, max_file_size: u64) -> Result<Self> {
-        let mut nodes = Vec::with_capacity(cfgs.len());
-        let mut domain_cookie_map = HashMap::new();
-        let client = NodeClient::load(tls_cfg)?;
+    pub fn new(cfg: &DownloadConfig, max_file_size: u64, service_target: Arc<DownloaderServiceTarget>) -> Self {
+        let client = NodeClient::load(&cfg.tls, service_target.host.as_ref());
+        let node_token = cfg.token.clone();
 
-        for (index, cfg) in cfgs.iter().enumerate() {
-            let channel = client.build_channel(&cfg)?;
-            let node = NodeHandle::new(
-                cfg.name.clone(),
-                cfg.address.clone(),
-                cfg.token.clone(),
-                cfg.max_concurrent,
-                channel,
-            );
-
-            match node.fetch_supported_domains().await {
-                Ok(domains) => {
-                    for domain in domains {
-                        domain_cookie_map.entry(domain).or_insert_with(Vec::new).push(index);
-                    }
-                }
-                Err(err) => {
-                    warn!(node = %node.address, error = %err, "Failed to fetch node capabilities");
-                }
-            }
-            nodes.push(node);
-        }
-
-        Ok(Self {
-            nodes: nodes.into(),
-            domain_cookie_map: RwLock::new(domain_cookie_map),
+        Self {
+            nodes: RwLock::new(Vec::new()),
+            domain_cookie_map: RwLock::new(HashMap::new()),
             max_file_size,
-        })
+            client,
+            service_target,
+            node_token,
+        }
     }
 
     #[inline]
@@ -68,33 +52,32 @@ impl NodeRouter {
 
     #[inline]
     #[must_use]
-    pub const fn nodes(&self) -> &[NodeHandle] {
-        &self.nodes
+    pub fn nodes(&self) -> Vec<Arc<NodeHandle>> {
+        self.nodes.read().map(|nodes| nodes.clone()).unwrap_or_default()
     }
+}
 
+impl NodeRouter {
     #[must_use]
-    #[allow(dead_code)]
-    pub fn pick_node(&self, domain: Option<&str>) -> Option<&NodeHandle> {
-        self.pick_node_excluding(domain, &HashSet::new())
-    }
-
-    #[must_use]
-    pub fn pick_node_excluding(&self, domain: Option<&str>, excluded: &HashSet<String>) -> Option<&NodeHandle> {
-        let normalized_domain = domain.map(|value| value.trim_start_matches("www."));
+    pub fn pick_node(&self, domain: Option<&str>, excluded: &HashSet<String>) -> Option<Arc<NodeHandle>> {
+        let nodes = self.nodes();
+        let normalized_domain = domain.map(|val| val.trim_start_matches("www."));
         let domain_candidates = normalized_domain
-            .and_then(|domain| self.domain_cookie_map.read().ok().and_then(|map| map.get(domain).cloned()))
+            .and_then(|val| self.domain_cookie_map.read().ok().and_then(|map| map.get(val).cloned()))
             .unwrap_or_default();
 
-        if let Some(index) = self.select_best_index(domain_candidates, excluded) {
-            return self.nodes.get(index);
+        if let Some(index) = self.select_best_index(&nodes, domain_candidates, excluded) {
+            return nodes.get(index).cloned();
         }
 
-        self.select_best_index((0..self.nodes.len()).collect(), excluded)
-            .and_then(|index| self.nodes.get(index))
+        self.select_best_index(&nodes, (0..nodes.len()).collect(), excluded)
+            .and_then(|index| nodes.get(index).cloned())
     }
 
     pub async fn refresh_status(&self) {
-        for node in &self.nodes {
+        self.refresh_nodes().await;
+
+        for node in self.nodes() {
             let mut client = NodeCapabilitiesClient::new(node.channel.clone());
             let request = match authenticated_request(Empty {}, &node.token) {
                 Ok(request) => request,
@@ -106,7 +89,8 @@ impl NodeRouter {
 
             match client.get_status(request).await {
                 Ok(response) => {
-                    node.update_remote_active_downloads(response.into_inner().active_downloads);
+                    let status = response.into_inner();
+                    node.update_remote_status(status.active_downloads, status.max_concurrent);
                 }
                 Err(err) => {
                     warn!(node = %node.address, error = %err, "Failed to refresh node status");
@@ -116,9 +100,10 @@ impl NodeRouter {
     }
 
     pub async fn refresh_capabilities(&self) {
-        let mut domain_cookie_map = HashMap::new();
+        self.refresh_nodes().await;
 
-        for (index, node) in self.nodes.iter().enumerate() {
+        let mut domain_cookie_map = HashMap::new();
+        for (index, node) in self.nodes().into_iter().enumerate() {
             match node.fetch_supported_domains().await {
                 Ok(domains) => {
                     for domain in domains {
@@ -135,24 +120,116 @@ impl NodeRouter {
             *map = domain_cookie_map;
         }
     }
+
+    async fn refresh_nodes(&self) {
+        let node_addresses = match self.resolve_nodes().await {
+            Ok(nodes) => nodes,
+            Err(err) => {
+                warn!(dns = %self.service_target.authority(), error = %err, "Failed to resolve downloader service DNS");
+                return;
+            }
+        };
+
+        if node_addresses.is_empty() {
+            warn!(dns = %self.service_target.authority(), "DNS lookup returned no downloader endpoints");
+            return;
+        }
+
+        let existing = self
+            .nodes()
+            .into_iter()
+            .map(|node| node.address.to_string())
+            .collect::<HashSet<_>>();
+        let next = node_addresses.iter().map(|addr| format!("https://{addr}")).collect::<HashSet<_>>();
+        if existing == next {
+            return;
+        }
+
+        let mut nodes = Vec::with_capacity(node_addresses.len());
+        let mut domain_cookie_map = HashMap::new();
+
+        for (index, address) in node_addresses.into_iter().enumerate() {
+            let address = format!("https://{address}");
+            let channel = match self.client.build_channel(&address) {
+                Ok(channel) => channel,
+                Err(err) => {
+                    warn!(node = %address, error = %err, "Failed to initialize node channel");
+                    continue;
+                }
+            };
+
+            let node = Arc::new(NodeHandle::new(
+                format!("downloader-{}", index + 1).into_boxed_str(),
+                address.into_boxed_str(),
+                self.node_token.clone(),
+                channel,
+            ));
+
+            if let Ok((active_downloads, max_concurrent)) = node.fetch_status().await {
+                node.update_remote_status(active_downloads, max_concurrent);
+            }
+
+            match node.fetch_supported_domains().await {
+                Ok(domains) => {
+                    for domain in domains {
+                        domain_cookie_map.entry(domain).or_insert_with(Vec::new).push(nodes.len());
+                    }
+                }
+                Err(err) => {
+                    warn!(node = %node.address, error = %err, "Failed to fetch node capabilities");
+                }
+            }
+
+            nodes.push(node);
+        }
+
+        if nodes.is_empty() {
+            return;
+        }
+
+        info!(dns = %self.service_target.authority(), node_count = nodes.len(), "Refreshed downloader nodes from DNS");
+        self.replace_nodes(nodes, domain_cookie_map);
+    }
+
+    async fn resolve_nodes(&self) -> io::Result<Vec<SocketAddr>> {
+        Ok(tokio::net::lookup_host(self.service_target.authority())
+            .await?
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect())
+    }
+
+    fn replace_nodes(&self, nodes: Vec<Arc<NodeHandle>>, domain_cookie_map: HashMap<String, Vec<usize>>) {
+        if let Ok(mut lock) = self.nodes.write() {
+            *lock = nodes;
+        }
+        if let Ok(mut map) = self.domain_cookie_map.write() {
+            *map = domain_cookie_map;
+        }
+    }
 }
 
 impl NodeRouter {
     #[inline]
-    fn select_best_index(&self, indices: Vec<usize>, excluded: &HashSet<String>) -> Option<usize> {
-        select_best_index(self.select_candidates(indices, excluded))
+    fn select_best_index(&self, nodes: &[Arc<NodeHandle>], indices: Vec<usize>, excluded: &HashSet<String>) -> Option<usize> {
+        select_best_index(self.select_candidates(nodes, indices, excluded))
     }
 
-    fn select_candidates(&self, indices: Vec<usize>, excluded: &HashSet<String>) -> Vec<NodeSnapshot<'_>> {
+    fn select_candidates<'a>(
+        &self,
+        nodes: &'a [Arc<NodeHandle>],
+        indices: Vec<usize>,
+        excluded: &HashSet<String>,
+    ) -> Vec<NodeSnapshot<'a>> {
         indices
             .into_iter()
-            .filter_map(|index| self.nodes.get(index).map(|node| (index, node)))
+            .filter_map(|index| nodes.get(index).map(|node| (index, node)))
             .filter(|(_, node)| !excluded.contains(node.address.as_ref()))
             .filter(|(_, node)| node.has_capacity())
             .map(|(index, node)| NodeSnapshot {
                 index,
                 address: node.address.as_ref(),
-                max_concurrent: node.max_concurrent,
+                max_concurrent: node.max_concurrent(),
                 estimated_active_downloads: node.estimated_active_downloads(),
             })
             .collect()

@@ -345,7 +345,7 @@ async fn fetch_media_info_with_retry(
     let mut excluded = HashSet::new();
 
     loop {
-        let Some(node) = router.pick_node_excluding(domain, &excluded) else {
+        let Some(node) = router.pick_node(domain, &excluded) else {
             return Err(GetInfoErrorKind::NodeUnavailable);
         };
 

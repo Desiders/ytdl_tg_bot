@@ -30,12 +30,11 @@ async fn main() {
         config_path = %config_path,
         address = %config.server.address,
         max_concurrent = config.server.max_concurrent,
-        token_count = config.auth.tokens.len(),
         log_filter = %config.logging.dirs,
         "Loaded downloader config"
     );
 
-    let cookies = Arc::new(get_cookies_from_directory(&*config.yt_dlp.cookies_path).unwrap_or_default());
+    let cookies = Arc::new(get_cookies_from_directory(&*config.yt_dlp.cookies_path).unwrap());
     info!(cookie_host_count = cookies.get_hosts().len(), hosts = ?cookies.get_hosts(), "Cookies loaded");
 
     let active_downloads = Arc::new(AtomicU32::new(0));
@@ -55,7 +54,7 @@ async fn main() {
         semaphore,
     };
 
-    let auth = AuthInterceptor::new(config.auth.tokens);
+    let auth = AuthInterceptor::new(config.auth.token);
     let addr = config.server.address.parse().unwrap();
     info!(%addr, "Starting download node");
 

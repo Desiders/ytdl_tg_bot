@@ -435,12 +435,12 @@ async fn download_with_retry(
     let mut excluded = HashSet::new();
 
     loop {
-        let Some(node) = node_router.pick_node_excluding(domain, &excluded) else {
+        let Some(node) = node_router.pick_node(domain, &excluded) else {
             return Err(AttemptError::Download(DownloadErrorKind::NodeUnavailable));
         };
 
         node.reserve_download_slot();
-        let result = download_from_node(node, request.clone(), output_dir, base_format, progress_sender).await;
+        let result = download_from_node(node.as_ref(), request.clone(), output_dir, base_format, progress_sender).await;
         node.release_download_slot();
 
         match result {

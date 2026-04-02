@@ -18,7 +18,7 @@ pub struct ServerConfig {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct AuthConfig {
-    pub tokens: Vec<Box<str>>,
+    pub token: Box<str>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
