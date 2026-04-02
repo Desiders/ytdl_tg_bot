@@ -59,9 +59,9 @@ max_file_size = 5000000
 capabilities_refresh_interval = 60
 
 [download.tls]
-ca_cert_path = "configs/tls/ca.crt"
-cert_path = "configs/tls/bot.crt"
-key_path = "configs/tls/bot.key"
+ca_cert_path = "tls/ca.crt"
+cert_path = "tls/bot.crt"
+key_path = "tls/bot.key"
 
 [[download.nodes]]
 name = "local-1"

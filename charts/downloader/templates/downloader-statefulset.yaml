@@ -28,15 +28,15 @@ spec:
               mountPath: /app/configs
               readOnly: true
             - name: tls
-              mountPath: /app/configs/tls/ca.crt
+              mountPath: /app/tls/ca.crt
               subPath: ca.crt
               readOnly: true
             - name: tls
-              mountPath: /app/configs/tls/node.crt
+              mountPath: /app/tls/node.crt
               subPath: tls.crt
               readOnly: true
             - name: tls
-              mountPath: /app/configs/tls/node.key
+              mountPath: /app/tls/node.key
               subPath: tls.key
               readOnly: true
             - name: cookies
