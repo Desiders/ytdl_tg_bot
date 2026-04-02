@@ -1,9 +1,16 @@
-use anyhow::Result;
 use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
 use tonic::transport::Channel;
 use ytdl_tg_bot_proto::downloader::{node_capabilities_client::NodeCapabilitiesClient, Empty};
 
 use super::authenticated_request;
+
+#[derive(Debug, thiserror::Error)]
+pub enum NodeHandleError {
+    #[error(transparent)]
+    Metadata(#[from] tonic::metadata::errors::InvalidMetadataValue),
+    #[error(transparent)]
+    Rpc(#[from] tonic::Status),
+}
 
 pub struct NodeHandle {
     pub name: Box<str>,
@@ -68,13 +75,13 @@ impl NodeHandle {
 }
 
 impl NodeHandle {
-    pub async fn fetch_supported_domains(&self) -> Result<Vec<String>> {
+    pub async fn fetch_supported_domains(&self) -> Result<Vec<String>, NodeHandleError> {
         let mut client = NodeCapabilitiesClient::new(self.channel.clone());
         let response = client.get_supported_domains(authenticated_request(Empty {}, &self.token)?).await?;
         Ok(response.into_inner().domains_with_cookies)
     }
 
-    pub async fn fetch_status(&self) -> Result<(u32, u32)> {
+    pub async fn fetch_status(&self) -> Result<(u32, u32), NodeHandleError> {
         let mut client = NodeCapabilitiesClient::new(self.channel.clone());
         let response = client.get_status(authenticated_request(Empty {}, &self.token)?).await?;
         let status = response.into_inner();

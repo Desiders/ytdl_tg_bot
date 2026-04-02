@@ -1,6 +1,5 @@
 #![allow(clippy::module_name_repetitions)]
 
-use anyhow::Context;
 use serde::Deserialize;
 use std::{
     env::{self, VarError},
@@ -44,7 +43,6 @@ impl YtDlpConfig {
         if let Some((program, args)) = self.command.split_first() {
             return (program.as_ref(), args.iter().map(AsRef::as_ref).collect());
         }
-
         ("python3", vec!["-m", "yt_dlp"])
     }
 }
@@ -69,13 +67,31 @@ pub struct Config {
     pub logging: LoggingConfig,
 }
 
+#[derive(Error, Debug)]
+pub enum TlsLoadError {
+    #[error("Failed to read downloader CA certificate {path}: {source}")]
+    ReadCa { path: Box<str>, source: io::Error },
+    #[error("Failed to read node certificate {path}: {source}")]
+    ReadCert { path: Box<str>, source: io::Error },
+    #[error("Failed to read node key {path}: {source}")]
+    ReadKey { path: Box<str>, source: io::Error },
+}
+
 impl Config {
-    pub fn load_server_tls_cfg(&self) -> anyhow::Result<ServerTlsConfig> {
+    pub fn load_server_tls_cfg(&self) -> Result<ServerTlsConfig, TlsLoadError> {
         let config = &self.tls;
-        let ca_cert_pem =
-            fs::read(&*config.ca_cert_path).with_context(|| format!("Failed to read downloader CA certificate {}", config.ca_cert_path))?;
-        let cert_pem = fs::read(&*config.cert_path).with_context(|| format!("Failed to read node certificate {}", config.cert_path))?;
-        let key_pem = fs::read(&*config.key_path).with_context(|| format!("Failed to read node key {}", config.key_path))?;
+        let ca_cert_pem = fs::read(&*config.ca_cert_path).map_err(|source| TlsLoadError::ReadCa {
+            path: config.ca_cert_path.clone(),
+            source,
+        })?;
+        let cert_pem = fs::read(&*config.cert_path).map_err(|source| TlsLoadError::ReadCert {
+            path: config.cert_path.clone(),
+            source,
+        })?;
+        let key_pem = fs::read(&*config.key_path).map_err(|source| TlsLoadError::ReadKey {
+            path: config.key_path.clone(),
+            source,
+        })?;
 
         let tls_cfg = ServerTlsConfig::new()
             .client_ca_root(Certificate::from_pem(ca_cert_pem))
