@@ -4102,7 +4102,6 @@ dependencies = [
 name = "ytdl_tg_bot"
 version = "5.0.0"
 dependencies = [
- "anyhow",
  "backoff",
  "bytes",
  "froodi",
@@ -4145,7 +4144,6 @@ dependencies = [
 name = "ytdl_tg_downloader"
 version = "1.0.0"
 dependencies = [
- "anyhow",
  "backoff",
  "bytes",
  "futures-util",

@@ -36,12 +36,9 @@ pub(super) struct NodeClient {
 
 impl NodeClient {
     pub(super) fn load(config: &DownloadTlsConfig, server_name: &str) -> Self {
-        let ca_cert_pem = fs::read(&*config.ca_cert_path)
-            .unwrap_or_else(|err| panic!("Failed to read downloader CA certificate {}: {err}", config.ca_cert_path));
-        let cert_pem =
-            fs::read(&*config.cert_path).unwrap_or_else(|err| panic!("Failed to read bot certificate {}: {err}", config.cert_path));
-        let key_pem = fs::read(&*config.key_path).unwrap_or_else(|err| panic!("Failed to read bot key {}: {err}", config.key_path));
-
+        let ca_cert_pem = fs::read(&*config.ca_cert_path).expect(&format!("Failed to read downloader CA certificate {}", config.cert_path));
+        let cert_pem = fs::read(&*config.cert_path).expect(&format!("Failed to read bot certificate {}", config.cert_path));
+        let key_pem = fs::read(&*config.key_path).expect(&format!("Failed to read bot key {}", config.key_path));
         Self {
             ca_cert_pem: ca_cert_pem.into(),
             cert_pem: cert_pem.into(),
@@ -50,15 +47,12 @@ impl NodeClient {
         }
     }
 
-    pub(super) fn build_channel(&self, address: &str) -> Result<Channel, String> {
+    pub(super) fn build_channel(&self, address: &str) -> Result<Channel, tonic::transport::Error> {
         let tls_cfg = ClientTlsConfig::new()
             .ca_certificate(Certificate::from_pem(self.ca_cert_pem.as_ref()))
             .identity(Identity::from_pem(self.cert_pem.as_ref(), self.key_pem.as_ref()))
             .domain_name(self.server_name.as_ref());
-        let endpoint = Endpoint::from_shared(address.to_owned())
-            .map_err(|err| format!("Invalid node address {address}: {err}"))?
-            .tls_config(tls_cfg)
-            .map_err(|err| format!("Invalid TLS configuration for node {address}: {err}"))?;
+        let endpoint = Endpoint::from_shared(address.to_owned())?.tls_config(tls_cfg)?;
         Ok(endpoint.connect_lazy())
     }
 }
