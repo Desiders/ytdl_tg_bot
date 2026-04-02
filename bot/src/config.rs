@@ -109,14 +109,6 @@ pub struct ReplaceDomainsConfig {
 }
 
 #[derive(Deserialize, Clone, Debug)]
-pub struct DownloadNodeConfig {
-    pub name: Box<str>,
-    pub address: Box<str>,
-    pub token: Box<str>,
-    pub max_concurrent: u32,
-}
-
-#[derive(Deserialize, Clone, Debug)]
 pub struct DownloadTlsConfig {
     pub ca_cert_path: Box<str>,
     pub cert_path: Box<str>,
@@ -127,9 +119,8 @@ pub struct DownloadTlsConfig {
 pub struct DownloadConfig {
     #[serde(default)]
     pub capabilities_refresh_interval: u64,
+    pub token: Box<str>,
     pub tls: DownloadTlsConfig,
-    #[serde(default)]
-    pub nodes: Vec<DownloadNodeConfig>,
 }
 
 #[derive(Deserialize, Clone, Debug)]

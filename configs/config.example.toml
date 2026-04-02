@@ -57,17 +57,12 @@ max_file_size = 5000000
 
 [download]
 capabilities_refresh_interval = 60
+token = "secret-token-a"
 
 [download.tls]
 ca_cert_path = "tls/ca.crt"
 cert_path = "tls/bot.crt"
 key_path = "tls/bot.key"
-
-[[download.nodes]]
-name = "local-1"
-address = "http://downloader:50051"
-token = "secret-token-a"
-max_concurrent = 5
 
 [database]
 user = "..."

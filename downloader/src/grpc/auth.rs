@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use tonic::{
     metadata::{Ascii, MetadataValue},
     service::Interceptor,
@@ -8,15 +7,13 @@ use tracing::warn;
 
 #[derive(Clone)]
 pub struct AuthInterceptor {
-    tokens: Arc<[Box<str>]>,
+    token: Box<str>,
 }
 
 impl AuthInterceptor {
     #[must_use]
-    pub fn new(tokens: Vec<Box<str>>) -> Self {
-        Self {
-            tokens: Arc::from(tokens.into_boxed_slice()),
-        }
+    pub fn new(token: Box<str>) -> Self {
+        Self { token }
     }
 }
 
@@ -27,7 +24,7 @@ impl Interceptor for AuthInterceptor {
             return Err(Status::unauthenticated("Invalid token"));
         };
 
-        if is_valid_token(header, &self.tokens) {
+        if is_valid_token(header, &self.token) {
             Ok(request)
         } else {
             warn!("Rejected request with invalid authorization token");
@@ -36,12 +33,12 @@ impl Interceptor for AuthInterceptor {
     }
 }
 
-fn is_valid_token(header: &MetadataValue<Ascii>, tokens: &[Box<str>]) -> bool {
+fn is_valid_token(header: &MetadataValue<Ascii>, token: &str) -> bool {
     let Ok(header) = header.to_str() else {
         return false;
     };
-    let Some(token) = header.strip_prefix("Bearer ") else {
+    let Some(actual_token) = header.strip_prefix("Bearer ") else {
         return false;
     };
-    tokens.iter().any(|candidate| candidate.as_ref() == token)
+    actual_token == token
 }
