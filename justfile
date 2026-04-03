@@ -1,89 +1,87 @@
 set dotenv-load
 
-host := `uname -a`
-compose := "docker compose --env-file .env -f deployment/docker-compose.yaml"
-
-help:
-    just -l
-
 lint:
     cargo clippy --all --all-features -- -W clippy::pedantic
 
 fmt:
     cargo +nightly fmt --all
 
-@docker-build:
-    {{compose}} --profile default build
+@docker-build VERSION="latest":
+    docker build -f ./deployment/Dockerfile.bot -t desiders/ytdl_tg_bot:{{VERSION}} .
 
-@docker-build-downloader:
-    {{compose}} --profile downloader build
+@docker-build-downloader VERSION="latest":
+    docker build -f ./deployment/Dockerfile.downloader -t desiders/ytdl_tg_bot.downloader:{{VERSION}} .
 
-@docker-migration-build:
-    {{compose}} build migration
-
-@docker-up:
-    {{compose}} --profile default up
-
-@docker-up-build: docker-build
-    {{compose}} --profile default up
-
-@docker-up-downloader:
-    {{compose}} --profile default --profile downloader up
-
-@docker-up-build-downloader: docker-build-downloader
-    {{compose}} --profile downloader up
-
-@docker-down:
-    {{compose}} down
-
-@docker-dev-build:
-    {{compose}} --profile dev build
-
-@docker-dev-up:
-    {{compose}} --profile dev up -d && {{compose}} --profile dev logs -f
-
-@docker-dev-up-build: docker-dev-build
-    {{compose}} --profile dev up -d && {{compose}} --profile dev logs -f
-
-@docker-dev-down:
-    {{compose}} --profile dev down
-
-@docker-migration COMMAND:
-    {{compose}} run --rm migration {{COMMAND}}
-
-@docker-migration-with-build COMMAND:
-    @just docker-migration-build
-    {{compose}} run --rm migration {{COMMAND}}
-
-@run:
-    cargo run -p ytdl_tg_bot
-
-@run-downloader:
-    cargo run -p ytdl_tg_downloader
-
-docker-pull USER VERSION="latest":
-    docker pull {{USER}}/ytdl_tg_bot:{{VERSION}}
+@docker-build-migration VERSION="latest":
+    docker build -f ./deployment/Dockerfile.migration -t desiders/ytdl_tg_bot.migration:{{VERSION}} .
 
 docker-push USER VERSION="latest":
-    @just docker-build
+    @just docker-build {{VERSION}}
     docker push {{USER}}/ytdl_tg_bot:{{VERSION}}
 
-docker-pull-downloader USER VERSION="latest":
-    docker pull {{USER}}/ytdl_tg_bot.downloader:{{VERSION}}
-
 docker-push-downloader USER VERSION="latest":
-    @just docker-build-downloader
+    @just docker-build-downloader {{VERSION}}
     docker push {{USER}}/ytdl_tg_bot.downloader:{{VERSION}}
 
-docker-migration-pull USER VERSION="latest":
-    docker pull {{USER}}/ytdl_tg_bot.migration:{{VERSION}}
-
-docker-migration-push USER VERSION="latest":
-    @just docker-migration-build
+docker-push-migration USER VERSION="latest":
+    @just docker-build-migration {{VERSION}}
     docker push {{USER}}/ytdl_tg_bot.migration:{{VERSION}}
 
-@docker-db-up:
-    {{compose}} up -d postgres
+k3s-stop:
+    sudo systemctl stop k3s
 
-@docker-db-stop:
-    {{compose}} stop postgres
+k3s-start:
+    sudo systemctl start k3s
+
+k3s-restart:
+    sudo systemctl restart k3s
+
+k3s-killall:
+    sudo /usr/local/bin/k3s-killall.sh
+
+helm-install-bot:
+    helm install bot ./charts/bot -n bot --create-namespace
+
+helm-upgrade-bot:
+    helm upgrade bot ./charts/bot -n bot
+
+helm-install-downloader:
+    helm install downloader ./charts/downloader -n downloader --create-namespace
+
+helm-upgrade-downloader:
+    helm upgrade downloader ./charts/downloader -n downloader
+
+scale-downloader REPLICAS="1":
+    helm upgrade downloader ./charts/downloader -n downloader --set downloader.replicas={{REPLICAS}}
+
+k8s-update-bot-config:
+    kubectl create secret generic bot-config --from-file=config.toml=./configs/config.toml --dry-run=client -o yaml | kubectl apply -n bot -f -
+    kubectl rollout restart deployment bot -n bot
+
+k8s-update-downloader-config:
+    kubectl create secret generic downloader-config --from-file=downloader.toml=./configs/downloader.toml --dry-run=client -o yaml | kubectl apply -n downloader -f -
+    kubectl rollout restart statefulset/downloader -n downloader
+
+k8s-migration VERSION COMMAND:
+    kubectl run db-migration --image=desiders/ytdl_tg_bot.migration:{{VERSION}} --env="DATABASE_URL=postgres://admin:admin@postgres-rw:5432/api" --restart=Never --rm -it -n bot -- {{COMMAND}}
+
+k8s-logs-bot:
+    kubectl logs -l app=bot -n bot
+
+k8s-logs-downloader:
+    kubectl logs -l app=downloader -n downloader -f
+
+k8s-logs-db:
+    kubectl logs -l cnpg.io/cluster=postgres -n bot -f
+
+k8s-logs-telegram-api:
+    kubectl logs -l app=telegram-bot-api -n bot
+
+k8s-logs-yt-toolkit:
+    kubectl logs -l app=yt-toolkit-api -n bot
+
+k8s-logs-pot-provider:
+    kubectl logs -l app=yt-pot-provider -n downloader
+
+help:
+    just -l
