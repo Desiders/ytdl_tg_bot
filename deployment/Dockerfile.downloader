@@ -12,7 +12,8 @@ RUN apk add --no-cache \
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir -U pip \
- && pip install --no-cache-dir --pre "yt-dlp[default,curl-cffi]"
+ && pip install --no-cache-dir --pre "yt-dlp[default,curl-cffi]" \
+ && pip install --no-cache-dir --pre "bgutil-ytdlp-pot-provider"
 
 FROM rust:1.91 AS build
 RUN apt-get update && apt-get install -y musl-tools protobuf-compiler upx && rm -rf /var/lib/apt/lists/*

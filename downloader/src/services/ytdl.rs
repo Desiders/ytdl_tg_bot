@@ -444,11 +444,6 @@ fn create_ytdlp_command(yt_dlp_cfg: &YtDlpConfig) -> tokio::process::Command {
     let (program, base_args) = yt_dlp_cfg.command_parts();
     let mut command = tokio::process::Command::new(program);
     command.args(base_args);
-
-    for plugin_dir in &yt_dlp_cfg.plugin_dirs {
-        command.arg("--plugin-dirs").arg(plugin_dir.as_ref());
-    }
-
     command
 }
 
