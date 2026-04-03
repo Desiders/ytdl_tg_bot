@@ -54,13 +54,19 @@ helm-upgrade-downloader:
 scale-downloader REPLICAS="1":
     helm upgrade downloader ./charts/downloader -n downloader --set downloader.replicas={{REPLICAS}}
 
+k8s-rollout-bot:
+    kubectl rollout restart deployment/bot -n bot
+
+k8s-rollout-downloader:
+    kubectl rollout restart statefulset/downloader -n downloader
+
 k8s-update-bot-config:
     kubectl create secret generic bot-config --from-file=config.toml=./configs/config.toml --dry-run=client -o yaml | kubectl apply -n bot -f -
-    kubectl rollout restart deployment bot -n bot
+    just k8s-rollout-bot
 
 k8s-update-downloader-config:
     kubectl create secret generic downloader-config --from-file=downloader.toml=./configs/downloader.toml --dry-run=client -o yaml | kubectl apply -n downloader -f -
-    kubectl rollout restart statefulset/downloader -n downloader
+    just k8s-rollout-downloader
 
 k8s-migration VERSION COMMAND:
     kubectl run db-migration --image=desiders/ytdl_tg_bot.migration:{{VERSION}} --env="DATABASE_URL=postgres://admin:admin@postgres-rw:5432/api" --restart=Never --rm -it -n bot -- {{COMMAND}}
