@@ -1,6 +1,6 @@
 use crate::{
     config::YtDlpConfig,
-    entities::{language::Language, Cookie, Playlist, Range, Sections},
+    entities::{language::Language, Playlist, Range, Sections},
 };
 
 use serde::de::DeserializeOwned;
@@ -203,7 +203,7 @@ pub async fn get_media_info(
     playlist_range: &Range,
     allow_playlist: bool,
     timeout: u64,
-    cookie: Option<&Cookie>,
+    cookie_path: Option<&Path>,
 ) -> Result<Playlist, GetInfoErrorKind> {
     use tokio::time;
 
@@ -246,7 +246,7 @@ pub async fn get_media_info(
     args.push("--extractor-args");
     args.push("youtube:player_client=default,mweb,web_music,web_creator;player_skip=configs,initial_data;use_ad_playback_context=true");
 
-    let cookie_path = cookie.map(|val| val.path.to_string_lossy());
+    let cookie_path = cookie_path.map(|val| val.to_string_lossy());
     if let Some(cookie_path) = cookie_path.as_deref() {
         trace!("Using cookies from: {cookie_path}");
         args.push("--cookies");
@@ -306,7 +306,7 @@ pub async fn download_media(
     yt_dlp_cfg: &YtDlpConfig,
     pot_provider_url: &str,
     timeout: u64,
-    cookie: Option<&Cookie>,
+    cookie_path: Option<&Path>,
     progress_sender: Option<&mpsc::UnboundedSender<String>>,
 ) -> Result<(), DownloadErrorKind> {
     use tokio::{io::BufReader, time};
@@ -366,7 +366,7 @@ pub async fn download_media(
     args.push("--extractor-args");
     args.push("youtube:player_client=default,mweb,web_music,web_creator;player_skip=configs,initial_data;use_ad_playback_context=true");
 
-    let cookie_path = cookie.map(|val| val.path.to_string_lossy());
+    let cookie_path = cookie_path.map(|val| val.to_string_lossy());
     if let Some(cookie_path) = cookie_path.as_deref() {
         trace!("Using cookies from: {cookie_path}");
         args.push("--cookies");

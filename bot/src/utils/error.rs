@@ -49,19 +49,13 @@ impl FormatErrorToMessage for media::DownloadMediaPlaylistErrorKind {
 
 impl FormatErrorToMessage for media::DownloadErrorKind {
     fn format(&self, _token: &str) -> Cow<'static, str> {
-        match self {
-            media::DownloadErrorKind::NodeUnavailable => Cow::Borrowed("All download nodes are busy, try again later."),
-            _ => Cow::Owned(self.to_string()),
-        }
+        Cow::Owned(self.to_string())
     }
 }
 
 impl FormatErrorToMessage for get_media::GetInfoErrorKind {
     fn format(&self, _token: &str) -> Cow<'static, str> {
-        match self {
-            get_media::GetInfoErrorKind::NodeUnavailable => Cow::Borrowed("All download nodes are busy, try again later."),
-            _ => Cow::Owned(self.to_string()),
-        }
+        Cow::Owned(self.to_string())
     }
 }
 
@@ -82,7 +76,7 @@ impl FormatErrorToMessage for get_media::GetMediaByURLErrorKind {
         match self {
             get_media::GetMediaByURLErrorKind::GetInfo(err) => err.format(token),
             get_media::GetMediaByURLErrorKind::Database(err) => err.format(token),
-            get_media::GetMediaByURLErrorKind::NodeUnavailable => Cow::Borrowed("All download nodes are busy, try again later."),
+            get_media::GetMediaByURLErrorKind::NodeUnavailable => Cow::Owned(self.to_string()),
         }
     }
 }

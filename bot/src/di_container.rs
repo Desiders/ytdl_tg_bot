@@ -15,7 +15,10 @@ use crate::{
     config::{Config, DatabaseConfig, RandomCmdConfig, TimeoutsConfig, TrackingParamsConfig, YtToolkitConfig},
     database::TxManager,
     interactors::{chat, download::media, downloaded_media, get_media, node_router, send_media},
-    services::node_router::{DownloaderServiceTarget, NodeRouter},
+    services::{
+        cookie_assignment::CookieAssignmentService,
+        node_router::{DownloaderServiceTarget, NodeRouter},
+    },
 };
 
 #[allow(clippy::too_many_lines)]
@@ -97,6 +100,7 @@ pub(super) fn init(bot: Bot, cfg: Config) -> Container {
                     Ok(NodeRouter::new(&cfg.download, cfg.yt_dlp.max_file_size, service_target))
                 },
             ),
+            provide(|Inject(node_router): Inject<NodeRouter>| Ok(CookieAssignmentService::new(node_router))),
             provide(|Inject(node_router): Inject<NodeRouter>| Ok(node_router::GetStats { node_router })),
             provide(|
                 Inject(node_router): Inject<NodeRouter>,

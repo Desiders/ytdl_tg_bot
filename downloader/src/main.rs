@@ -1,4 +1,5 @@
 mod config;
+mod constants;
 mod entities;
 mod grpc;
 mod services;
@@ -9,11 +10,15 @@ use tokio::sync::Semaphore;
 use tonic::transport::Server;
 use tracing::info;
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
-use ytdl_tg_bot_proto::downloader::{downloader_server::DownloaderServer, node_capabilities_server::NodeCapabilitiesServer};
+use ytdl_tg_bot_proto::downloader::{
+    downloader_server::DownloaderServer, node_capabilities_server::NodeCapabilitiesServer,
+    node_cookie_manager_server::NodeCookieManagerServer,
+};
 
 use crate::{
-    grpc::{auth::AuthInterceptor, capabilities::CapabilitiesService, downloader::DownloaderService},
-    services::get_cookies_from_directory,
+    constants::COOKIE_TMP_DIR,
+    entities::Cookies,
+    grpc::{auth::AuthInterceptor, capabilities::CapabilitiesService, cookie_manager::CookieManagerService, downloader::DownloaderService},
 };
 
 #[tokio::main(flavor = "multi_thread")]
@@ -34,8 +39,9 @@ async fn main() {
         "Loaded downloader config"
     );
 
-    let cookies = Arc::new(get_cookies_from_directory(&*config.yt_dlp.cookies_path).unwrap());
-    info!(cookie_host_count = cookies.get_hosts().len(), hosts = ?cookies.get_hosts(), "Cookies loaded");
+    let cookies = Arc::new(Cookies::new(COOKIE_TMP_DIR));
+    cookies.clear_on_startup().unwrap();
+    info!(cookie_dir = COOKIE_TMP_DIR, "Cookie storage prepared");
 
     let active_downloads = Arc::new(AtomicU32::new(0));
     let semaphore = Arc::new(Semaphore::new(config.server.max_concurrent as usize));
@@ -53,15 +59,17 @@ async fn main() {
         active_downloads: active_downloads.clone(),
         semaphore,
     };
+    let cookie_manager_service = CookieManagerService { cookies };
 
-    let auth = AuthInterceptor::new(config.auth.token);
+    let auth = AuthInterceptor::new(config.auth.token.clone());
     let addr = config.server.address.parse().unwrap();
     info!(%addr, "Starting download node");
 
     let mut server = Server::builder().tls_config(tls_config).unwrap();
     server
         .add_service(DownloaderServer::with_interceptor(downloader_service, auth.clone()))
-        .add_service(NodeCapabilitiesServer::with_interceptor(capabilities_service, auth))
+        .add_service(NodeCapabilitiesServer::with_interceptor(capabilities_service, auth.clone()))
+        .add_service(NodeCookieManagerServer::with_interceptor(cookie_manager_service, auth))
         .serve_with_shutdown(addr, shutdown_signal())
         .await
         .unwrap();

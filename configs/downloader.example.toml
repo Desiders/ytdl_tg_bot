@@ -12,7 +12,6 @@ key_path = "tls/node.key"
 
 [yt_dlp]
 command = ["python3", "-m", "yt_dlp"]
-cookies_path = "cookies"
 max_file_size = 5000000
 
 [yt_pot_provider]

@@ -33,8 +33,12 @@ pub enum DownloadErrorKind {
     Metadata(#[from] tonic::metadata::errors::InvalidMetadataValue),
     #[error("Invalid download stream")]
     InvalidStream,
-    #[error("No download node available")]
+    #[error("All download nodes are busy. Try again later.")]
     NodeUnavailable,
+    #[error(
+        "The source site rejected this download (for example: login required, geo restriction, or temporary anti-bot limits). Try another URL or try again later."
+    )]
+    NodeContextUnavailable,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -433,9 +437,13 @@ async fn download_with_retry(
     progress_sender: Option<&mpsc::UnboundedSender<String>>,
 ) -> Result<DownloadedMedia, AttemptError> {
     let mut excluded = HashSet::new();
+    let mut saw_retryable_context_error = false;
 
     loop {
         let Some(node) = node_router.pick_node(domain, &excluded) else {
+            if saw_retryable_context_error {
+                return Err(AttemptError::Download(DownloadErrorKind::NodeContextUnavailable));
+            }
             return Err(AttemptError::Download(DownloadErrorKind::NodeUnavailable));
         };
 
@@ -450,6 +458,7 @@ async fn download_with_retry(
             }
             Err(AttemptError::Download(DownloadErrorKind::Rpc(status))) if status.code() == Code::Aborted => {
                 warn!(node = %node.address, %status, "Download node returned retryable yt-dlp HTTP 400");
+                saw_retryable_context_error = true;
                 excluded.insert(node.address.to_string());
             }
             Err(AttemptError::Download(DownloadErrorKind::Rpc(status))) if status.code() == Code::Unavailable => {

@@ -2,7 +2,9 @@ bot:
   image:
     repository: desiders/ytdl_tg_bot
     tag: "5.0.0"
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
+  # Existing Secret with keys in format: <domain>_<index>.txt
+  cookiesSecretName: bot-cookies
 
 postgres:
   storage: 3Gi

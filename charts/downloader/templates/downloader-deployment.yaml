@@ -1,10 +1,9 @@
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: downloader
   namespace: {{ .Release.Namespace }}
 spec:
-  serviceName: downloader
   replicas: {{ .Values.downloader.replicas }}
   selector:
     matchLabels:
@@ -39,8 +38,6 @@ spec:
               mountPath: /app/tls/node.key
               subPath: tls.key
               readOnly: true
-            - name: cookies
-              mountPath: /app/cookies
       volumes:
         - name: config
           secret:
@@ -51,12 +48,3 @@ spec:
         - name: tls
           secret:
             secretName: downloader-tls-secret
-  volumeClaimTemplates:
-    - metadata:
-        name: cookies
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        storageClassName: {{ .Values.downloader.cookies.storageClass | default "" }}
-        resources:
-          requests:
-            storage: {{ .Values.downloader.cookies.storage | default "30Mi" }}

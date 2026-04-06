@@ -117,6 +117,21 @@ Important behavior:
 
 Keep routing policy centralized in `NodeRouter`. Do not duplicate node-picking logic across interactors.
 
+## Cookie Lifecycle
+
+- Bot cookies are mounted from Kubernetes Secret under `/app/cookies/<domain>/<n>.txt`.
+- Bot reads cookie files recursively from `/app/cookies` during assignment cycles.
+- Cookie assignments are in-memory only (no DB persistence).
+- The bot runs a background assignment loop:
+  1. poll workers
+  2. release in-memory assignments for unavailable workers
+  3. assign free cookie files to free workers
+  4. push cookie content to worker via `NodeCookieManager.PushCookie`
+- Workers are passive:
+  - they never pull cookies on their own
+  - they clear `/tmp/cookies/` at startup
+  - they keep cookies only in `/tmp/cookies/` for process lifetime
+
 ## Bot Interactor Constraints
 
 Handlers depend on the current interactor interfaces.
@@ -154,5 +169,7 @@ If you are making download-related changes, start here:
 - [bot/src/services/node_router.rs](/bot/src/services/node_router.rs)
 - [bot/src/interactors/get_media.rs](/bot/src/interactors/get_media.rs)
 - [bot/src/interactors/download/media.rs](/bot/src/interactors/download/media.rs)
+- [bot/src/services/cookie_assignment.rs](/bot/src/services/cookie_assignment.rs)
 - [downloader/src/grpc/downloader.rs](/downloader/src/grpc/downloader.rs)
+- [downloader/src/grpc/cookie_manager.rs](/downloader/src/grpc/cookie_manager.rs)
 - [downloader/src/services/ytdl.rs](/downloader/src/services/ytdl.rs)

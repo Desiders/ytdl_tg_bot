@@ -34,8 +34,12 @@ pub enum GetInfoErrorKind {
     Url(#[from] url::ParseError),
     #[error("Invalid node response: {0}")]
     InvalidResponse(Box<str>),
-    #[error("No download node available")]
+    #[error("All download nodes are busy. Try again later.")]
     NodeUnavailable,
+    #[error(
+        "The source site rejected this media (for example: login required, geo restriction, or temporary anti-bot limits). Try another URL or try again later."
+    )]
+    NodeContextUnavailable,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -44,7 +48,7 @@ pub enum GetMediaByURLErrorKind {
     GetInfo(#[from] GetInfoErrorKind),
     #[error(transparent)]
     Database(#[from] ErrorKind<Infallible>),
-    #[error("No download node available")]
+    #[error("All download nodes are busy. Try again later.")]
     NodeUnavailable,
 }
 
@@ -343,9 +347,13 @@ async fn fetch_media_info_with_retry(
     request: MediaInfoRequest,
 ) -> Result<ytdl_tg_bot_proto::downloader::MediaInfoResponse, GetInfoErrorKind> {
     let mut excluded = HashSet::new();
+    let mut saw_retryable_context_error = false;
 
     loop {
         let Some(node) = router.pick_node(domain, &excluded) else {
+            if saw_retryable_context_error {
+                return Err(GetInfoErrorKind::NodeContextUnavailable);
+            }
             return Err(GetInfoErrorKind::NodeUnavailable);
         };
 
@@ -365,6 +373,7 @@ async fn fetch_media_info_with_retry(
             }
             Err(GetInfoErrorKind::Rpc(status)) if status.code() == Code::Aborted => {
                 warn!(node = %node.address, %status, "Download node returned retryable yt-dlp HTTP 400");
+                saw_retryable_context_error = true;
                 excluded.insert(node.address.to_string());
             }
             Err(GetInfoErrorKind::Rpc(status)) if status.code() == Code::Unavailable => {

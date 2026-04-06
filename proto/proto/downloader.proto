@@ -58,6 +58,20 @@ message DownloadRequest {
   uint64 max_file_size = 7;
 }
 
+message PushCookieRequest {
+  string cookie_id = 1;
+  string domain = 2;
+  string data = 3;
+}
+
+message RemoveCookieRequest {
+  string cookie_id = 1;
+}
+
+message ListNodeCookiesResponse {
+  repeated string cookie_ids = 1;
+}
+
 message DownloadMeta {
   string ext = 1;
   optional int64 width = 2;
@@ -92,4 +106,10 @@ service Downloader {
 service NodeCapabilities {
   rpc GetStatus(Empty) returns (NodeStatus);
   rpc GetSupportedDomains(Empty) returns (SupportedDomainsResponse);
+}
+
+service NodeCookieManager {
+  rpc PushCookie(PushCookieRequest) returns (Empty);
+  rpc RemoveCookie(RemoveCookieRequest) returns (Empty);
+  rpc ListNodeCookies(Empty) returns (ListNodeCookiesResponse);
 }
