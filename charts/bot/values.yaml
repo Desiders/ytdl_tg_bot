@@ -22,3 +22,18 @@ ytToolkit:
     repository: ghcr.io/ikiovi/yt-toolkit/info-api
     tag: "v2.0.0"
     pullPolicy: IfNotPresent
+
+migration:
+  enabled: false
+  runId: ""
+  command: up
+  image:
+    repository: desiders/ytdl_tg_bot.migration
+    tag: "1.6.0"
+    pullPolicy: IfNotPresent
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  db:
+    secretName: db
+    host: postgres-rw
+    port: "5432"
