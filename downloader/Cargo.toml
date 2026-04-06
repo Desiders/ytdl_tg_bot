@@ -8,6 +8,14 @@ resolver = "2"
 lto = "thin"
 codegen-units = 1
 
+[profile.k8s-dev]
+inherits = "dev"
+opt-level = 1
+incremental = true
+codegen-units = 256
+debug = 0
+lto = "off"
+
 [dependencies]
 ytdl_tg_bot_proto = { path = "../proto" }
 tokio = { version = "1.36", features = ["rt-multi-thread", "macros", "process", "sync", "fs", "io-util", "time", "signal"], default-features = false }

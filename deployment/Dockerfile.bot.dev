@@ -1,0 +1,48 @@
+FROM debian:bookworm-slim AS base
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM rust:1.91-bookworm AS build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /usr/src/app
+
+COPY bot/Cargo.toml bot/Cargo.toml
+COPY proto/Cargo.toml proto/Cargo.toml
+
+RUN mkdir -p bot/src && echo "fn main(){}" > bot/src/main.rs
+RUN mkdir -p proto/src && echo "" > proto/src/lib.rs
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo fetch --manifest-path bot/Cargo.toml
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo fetch --manifest-path proto/Cargo.toml
+
+COPY proto proto
+RUN touch proto/src/lib.rs
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/src/app/target \
+    cargo build --profile k8s-dev --manifest-path proto/Cargo.toml --target-dir /usr/src/app/target
+
+COPY bot bot
+RUN touch bot/src/main.rs
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/src/app/target \
+    cargo build --profile k8s-dev --manifest-path bot/Cargo.toml --target-dir /usr/src/app/target
+
+RUN --mount=type=cache,target=/usr/src/app/target \
+    cp /usr/src/app/target/k8s-dev/ytdl_tg_bot /usr/src/app/ytdl_tg_bot
+
+FROM base AS final
+WORKDIR /app
+COPY --from=build /usr/src/app/ytdl_tg_bot /app/ytdl_tg_bot
+ENV RUST_BACKTRACE=full
+ENTRYPOINT ["/app/ytdl_tg_bot"]
