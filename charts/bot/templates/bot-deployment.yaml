@@ -13,6 +13,26 @@ spec:
       labels:
         app: bot
     spec:
+      initContainers:
+        - name: cookies-seeder
+          image: busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              rm -rf /app/cookies/*
+              for src in /cookies-secret/*.txt; do
+                [ -f "${src}" ] || continue
+                name="$(basename "${src}")"
+                cp "${src}" "/app/cookies/${name}"
+              done
+          volumeMounts:
+            - name: cookies-secret
+              mountPath: /cookies-secret
+              readOnly: true
+            - name: cookies
+              mountPath: /app/cookies
       containers:
         - name: bot
           image: "{{ .Values.bot.image.repository }}:{{ .Values.bot.image.tag }}"
@@ -26,6 +46,8 @@ spec:
             - name: config
               mountPath: /app/configs
               readOnly: true
+            - name: cookies
+              mountPath: /app/cookies
             - name: tls
               mountPath: /app/tls/ca.crt
               subPath: ca.crt
@@ -45,6 +67,11 @@ spec:
             items:
               - key: config.toml
                 path: config.toml
+        - name: cookies
+          emptyDir: {}
+        - name: cookies-secret
+          secret:
+            secretName: {{ .Values.bot.cookiesSecretName }}
         - name: tls
           secret:
             secretName: bot-tls-secret

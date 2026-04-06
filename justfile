@@ -58,11 +58,14 @@ k8s-rollout-bot:
     kubectl rollout restart deployment/bot -n bot
 
 k8s-rollout-downloader:
-    kubectl rollout restart statefulset/downloader -n downloader
+    kubectl rollout restart deployment/downloader -n downloader
 
 k8s-update-bot-config:
     kubectl create secret generic bot-config --from-file=config.toml=./configs/config.toml --dry-run=client -o yaml | kubectl apply -n bot -f -
     just k8s-rollout-bot
+
+k8s-sync-bot-cookies NAMESPACE="bot" SECRET_NAME="bot-cookies" SOURCE_DIR="cookies":
+    NAMESPACE={{NAMESPACE}} SECRET_NAME={{SECRET_NAME}} ./scripts/sync-cookies-secret.sh {{SOURCE_DIR}}
 
 k8s-update-downloader-config:
     kubectl create secret generic downloader-config --from-file=downloader.toml=./configs/downloader.toml --dry-run=client -o yaml | kubectl apply -n downloader -f -
@@ -72,7 +75,7 @@ k8s-migration VERSION COMMAND:
     kubectl run db-migration --image=desiders/ytdl_tg_bot.migration:{{VERSION}} --env="DATABASE_URL=postgres://admin:admin@postgres-rw:5432/api" --restart=Never --rm -it -n bot -- {{COMMAND}}
 
 k8s-logs-bot:
-    kubectl logs -l app=bot -n bot
+    kubectl logs -l app=bot -n bot -f
 
 k8s-logs-downloader:
     kubectl logs -l app=downloader -n downloader -f

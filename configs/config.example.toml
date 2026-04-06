@@ -57,6 +57,7 @@ max_file_size = 5000000
 
 [download]
 capabilities_refresh_interval = 60
+cookie_assignment_interval = 60
 token = "secret-token-a"
 
 [download.tls]

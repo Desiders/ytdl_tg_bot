@@ -93,6 +93,7 @@ impl NodeRouter {
                     node.update_remote_status(status.active_downloads, status.max_concurrent);
                 }
                 Err(err) => {
+                    node.mark_unavailable();
                     warn!(node = %node.address, error = %err, "Failed to refresh node status");
                 }
             }
@@ -131,7 +132,10 @@ impl NodeRouter {
         };
 
         if node_addresses.is_empty() {
-            warn!(dns = %self.service_target.authority(), "DNS lookup returned no downloader endpoints");
+            warn!(
+                dns = %self.service_target.authority(),
+                "DNS lookup returned no downloader endpoints"
+            );
             return;
         }
 
@@ -167,6 +171,9 @@ impl NodeRouter {
 
             if let Ok((active_downloads, max_concurrent)) = node.fetch_status().await {
                 node.update_remote_status(active_downloads, max_concurrent);
+            } else {
+                node.mark_unavailable();
+                warn!(node = %node.address, "Node marked unavailable during refresh_nodes bootstrap");
             }
 
             match node.fetch_supported_domains().await {
@@ -184,6 +191,10 @@ impl NodeRouter {
         }
 
         if nodes.is_empty() {
+            warn!(
+                dns = %self.service_target.authority(),
+                "No downloader nodes passed initialization during refresh"
+            );
             return;
         }
 

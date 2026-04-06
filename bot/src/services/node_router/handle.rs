@@ -1,6 +1,9 @@
-use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
 use tonic::transport::Channel;
-use ytdl_tg_bot_proto::downloader::{node_capabilities_client::NodeCapabilitiesClient, Empty};
+use ytdl_tg_bot_proto::downloader::{
+    node_capabilities_client::NodeCapabilitiesClient, node_cookie_manager_client::NodeCookieManagerClient, Empty, PushCookieRequest,
+    RemoveCookieRequest,
+};
 
 use super::authenticated_request;
 
@@ -21,6 +24,7 @@ pub struct NodeHandle {
     max_concurrent: AtomicU32,
     local_active_downloads: AtomicU32,
     remote_active_downloads: AtomicU32,
+    available: AtomicBool,
 }
 
 impl NodeHandle {
@@ -33,6 +37,7 @@ impl NodeHandle {
             max_concurrent: AtomicU32::new(1),
             local_active_downloads: AtomicU32::new(0),
             remote_active_downloads: AtomicU32::new(0),
+            available: AtomicBool::new(false),
         }
     }
 
@@ -50,7 +55,7 @@ impl NodeHandle {
 
     #[must_use]
     pub fn has_capacity(&self) -> bool {
-        self.estimated_active_downloads() < self.max_concurrent()
+        self.is_available() && self.estimated_active_downloads() < self.max_concurrent()
     }
 
     pub fn reserve_download_slot(&self) {
@@ -71,6 +76,16 @@ impl NodeHandle {
     pub fn update_remote_status(&self, active_downloads: u32, max_concurrent: u32) {
         self.remote_active_downloads.store(active_downloads, Relaxed);
         self.max_concurrent.store(max_concurrent, Relaxed);
+        self.available.store(true, Relaxed);
+    }
+
+    #[must_use]
+    pub fn is_available(&self) -> bool {
+        self.available.load(Relaxed)
+    }
+
+    pub fn mark_unavailable(&self) {
+        self.available.store(false, Relaxed);
     }
 }
 
@@ -86,5 +101,39 @@ impl NodeHandle {
         let response = client.get_status(authenticated_request(Empty {}, &self.token)?).await?;
         let status = response.into_inner();
         Ok((status.active_downloads, status.max_concurrent))
+    }
+
+    pub async fn push_cookie(&self, cookie_id: &str, domain: &str, data: &str) -> Result<(), NodeHandleError> {
+        let mut client = NodeCookieManagerClient::new(self.channel.clone());
+        client
+            .push_cookie(authenticated_request(
+                PushCookieRequest {
+                    cookie_id: cookie_id.to_owned(),
+                    domain: domain.to_owned(),
+                    data: data.to_owned(),
+                },
+                &self.token,
+            )?)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn remove_cookie(&self, cookie_id: &str) -> Result<(), NodeHandleError> {
+        let mut client = NodeCookieManagerClient::new(self.channel.clone());
+        client
+            .remove_cookie(authenticated_request(
+                RemoveCookieRequest {
+                    cookie_id: cookie_id.to_owned(),
+                },
+                &self.token,
+            )?)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn list_node_cookies(&self) -> Result<Vec<String>, NodeHandleError> {
+        let mut client = NodeCookieManagerClient::new(self.channel.clone());
+        let response = client.list_node_cookies(authenticated_request(Empty {}, &self.token)?).await?;
+        Ok(response.into_inner().cookie_ids)
     }
 }

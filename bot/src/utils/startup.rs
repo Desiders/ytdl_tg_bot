@@ -6,8 +6,12 @@ use telers::{
     Bot,
 };
 use tokio::fs;
+use tracing::{debug, info};
 
-use crate::{config::Config, services::node_router::NodeRouter};
+use crate::{
+    config::Config,
+    services::{cookie_assignment::CookieAssignmentService, node_router::NodeRouter},
+};
 
 async fn set_my_commands(bot: Bot) -> HandlerResult {
     let commands = [
@@ -24,6 +28,7 @@ async fn set_my_commands(bot: Bot) -> HandlerResult {
 
 async fn remove_tmp_media_files() -> HandlerResult {
     let temp_dir = env::temp_dir();
+    debug!(temp_dir = %temp_dir.display(), "Cleaning temporary media directories");
     let mut entries = fs::read_dir(&temp_dir).await?;
 
     while let Some(entry) = entries.next_entry().await? {
@@ -43,12 +48,18 @@ async fn remove_tmp_media_files() -> HandlerResult {
 }
 
 #[allow(clippy::module_name_repetitions)]
-pub async fn on_startup(bot: Bot, node_router: Arc<NodeRouter>, cfg: Arc<Config>) -> HandlerResult {
+pub async fn on_startup(
+    bot: Bot,
+    node_router: Arc<NodeRouter>,
+    cookie_assignment: Arc<CookieAssignmentService>,
+    cfg: Arc<Config>,
+) -> HandlerResult {
     set_my_commands(bot).await?;
     remove_tmp_media_files().await?;
 
     {
         let router = node_router.clone();
+        info!(interval_sec = %5, "Starting node status refresh task");
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(5));
             loop {
@@ -60,6 +71,11 @@ pub async fn on_startup(bot: Bot, node_router: Arc<NodeRouter>, cfg: Arc<Config>
 
     if cfg.download.capabilities_refresh_interval > 0 {
         let router = node_router.clone();
+        let cfg = cfg.clone();
+        info!(
+            interval_sec = %cfg.download.capabilities_refresh_interval,
+            "Starting node capabilities refresh task"
+        );
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(cfg.download.capabilities_refresh_interval));
             loop {
@@ -69,5 +85,21 @@ pub async fn on_startup(bot: Bot, node_router: Arc<NodeRouter>, cfg: Arc<Config>
         });
     }
 
+    if cfg.download.cookie_assignment_interval > 0 {
+        let cfg = cfg.clone();
+        info!(
+            interval_sec = %cfg.download.cookie_assignment_interval,
+            "Starting cookie assignment task"
+        );
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(cfg.download.cookie_assignment_interval));
+            loop {
+                interval.tick().await;
+                cookie_assignment.sync_cycle().await;
+            }
+        });
+    }
+
+    info!("Startup sequence completed");
     Ok(())
 }

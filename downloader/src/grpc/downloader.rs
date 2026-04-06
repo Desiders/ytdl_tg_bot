@@ -86,7 +86,7 @@ impl Downloader for DownloaderService {
             &playlist_range,
             allow_playlist,
             GET_INFO_TIMEOUT_SECS,
-            cookie,
+            cookie.as_deref(),
         )
         .await
         .map_err(|err| match err {
@@ -218,7 +218,7 @@ async fn stream_download(
     };
     let effective_max_file_size = resolve_max_file_size(request.max_file_size, yt_dlp_cfg.max_file_size);
     let host = url.host();
-    let cookie = cookies.get_path_by_optional_host(host.as_ref()).cloned();
+    let cookie = cookies.get_path_by_optional_host(host.as_ref());
 
     info!(
         url = %url,
@@ -287,7 +287,7 @@ async fn stream_download(
         yt_dlp_cfg.as_ref(),
         &yt_pot_provider_cfg.url,
         DOWNLOAD_TIMEOUT_SECS,
-        cookie.as_ref(),
+        cookie.as_deref(),
         Some(&progress_tx),
     )
     .await

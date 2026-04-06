@@ -31,7 +31,6 @@ pub struct TlsConfig {
 pub struct YtDlpConfig {
     #[serde(default)]
     pub command: Vec<Box<str>>,
-    pub cookies_path: Box<str>,
     pub max_file_size: u64,
 }
 
@@ -134,7 +133,6 @@ mod tests {
     fn command_parts_use_explicit_command_when_present() {
         let config = YtDlpConfig {
             command: vec!["python3".into(), "-m".into(), "yt_dlp".into()],
-            cookies_path: "./cookies".into(),
             max_file_size: 1,
         };
 
@@ -147,7 +145,6 @@ mod tests {
     fn command_parts_default_to_python_module_launcher() {
         let config = YtDlpConfig {
             command: vec![],
-            cookies_path: "./cookies".into(),
             max_file_size: 1,
         };
 
