@@ -9,6 +9,12 @@ fmt:
 @docker-build VERSION="latest":
     docker build -f ./deployment/Dockerfile.bot -t desiders/ytdl_tg_bot:{{VERSION}} .
 
+@docker-push-dev-bot:
+    ./scripts/build-bot-dev-image.sh
+
+@docker-push-dev-downloader:
+    ./scripts/build-downloader-dev-image.sh
+
 @docker-build-downloader VERSION="latest":
     docker build -f ./deployment/Dockerfile.downloader -t desiders/ytdl_tg_bot.downloader:{{VERSION}} .
 
@@ -64,8 +70,8 @@ k8s-update-bot-config:
     kubectl create secret generic bot-config --from-file=config.toml=./configs/config.toml --dry-run=client -o yaml | kubectl apply -n bot -f -
     just k8s-rollout-bot
 
-k8s-sync-bot-cookies NAMESPACE="bot" SECRET_NAME="bot-cookies" SOURCE_DIR="cookies":
-    NAMESPACE={{NAMESPACE}} SECRET_NAME={{SECRET_NAME}} ./scripts/sync-cookies-secret.sh {{SOURCE_DIR}}
+k8s-sync-bot-cookies:
+    NAMESPACE=bot SECRET_NAME=bot-cookies ./scripts/sync-cookies-secret.sh cookies
 
 k8s-update-downloader-config:
     kubectl create secret generic downloader-config --from-file=downloader.toml=./configs/downloader.toml --dry-run=client -o yaml | kubectl apply -n downloader -f -

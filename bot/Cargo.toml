@@ -8,6 +8,14 @@ resolver = "2"
 lto = "thin"
 codegen-units = 1
 
+[profile.k8s-dev]
+inherits = "dev"
+opt-level = 1
+incremental = true
+codegen-units = 256
+debug = 0
+lto = "off"
+
 [dependencies]
 telers = { version = "1.0.0-beta.1", features = ["default_signal", "rustls-tls"], default-features = false }
 tokio = { version = "1.36", features = ["rt-multi-thread", "process", "sync"], default-features = false }
