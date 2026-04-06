@@ -19,7 +19,7 @@ fmt:
     docker build -f ./deployment/Dockerfile.downloader -t desiders/ytdl_tg_bot.downloader:{{VERSION}} .
 
 @docker-build-migration VERSION="latest":
-    docker build -f ./deployment/Dockerfile.migration -t desiders/ytdl_tg_bot.migration:{{VERSION}} .
+    docker build -f ./migration/Dockerfile -t desiders/ytdl_tg_bot.migration:{{VERSION}} ./migration
 
 docker-push USER VERSION="latest":
     @just docker-build {{VERSION}}
@@ -77,8 +77,20 @@ k8s-update-downloader-config NAMESPACE:
     kubectl create secret generic downloader-config --from-file=downloader.toml=./configs/downloader.toml --dry-run=client -o yaml | kubectl apply -n {{NAMESPACE}} -f -
     just k8s-rollout-downloader {{NAMESPACE}}
 
-k8s-migration NAMESPACE VERSION COMMAND:
-    kubectl run db-migration --image=desiders/ytdl_tg_bot.migration:{{VERSION}} --env="DATABASE_URL=postgres://admin:admin@postgres-rw:5432/api" --restart=Never --rm -it -n {{NAMESPACE}} -- {{COMMAND}}
+k8s-migration NAMESPACE COMMAND="up":
+    run_id=$(date +%s); \
+    job_name=bot-migration-$run_id; \
+    helm template bot ./charts/bot -n {{NAMESPACE}} \
+      --show-only templates/migration-job.yaml \
+      --set migration.enabled=true \
+      --set migration.runId=$run_id \
+      --set-string migration.command='{{COMMAND}}' \
+      | kubectl apply -n {{NAMESPACE}} -f -; \
+    if ! kubectl wait -n {{NAMESPACE}} --for=condition=complete --timeout=10m job/$job_name; then \
+      kubectl logs -n {{NAMESPACE}} job/$job_name --all-containers=true || true; \
+      exit 1; \
+    fi; \
+    kubectl logs -n {{NAMESPACE}} job/$job_name --all-containers=true
 
 k8s-logs-bot NAMESPACE:
     kubectl logs -l app=bot -n {{NAMESPACE}} -f
