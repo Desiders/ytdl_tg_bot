@@ -30,11 +30,6 @@ if [[ ${#COOKIE_FILES[@]} -gt 0 ]]; then
   mapfile -t COOKIE_FILES < <(printf '%s\n' "${COOKIE_FILES[@]}" | sort)
 fi
 
-if [[ ${#COOKIE_FILES[@]} -eq 0 ]]; then
-  echo "No cookie files found in ${SOURCE_DIR}" >&2
-  exit 1
-fi
-
 TMP_MANIFEST="$(mktemp)"
 cleanup() {
   rm -f "${TMP_MANIFEST}"
@@ -66,4 +61,8 @@ done
 "${CMD[@]}" > "${TMP_MANIFEST}"
 "${KUBECTL_BIN}" -n "${NAMESPACE}" apply -f "${TMP_MANIFEST}"
 
-echo "Synced ${#COOKIE_FILES[@]} cookie file(s) into secret ${SECRET_NAME} in namespace ${NAMESPACE}."
+if [[ ${#COOKIE_FILES[@]} -eq 0 ]]; then
+  echo "No cookie files found in ${SOURCE_DIR}. Applied empty secret ${SECRET_NAME} in namespace ${NAMESPACE}."
+else
+  echo "Synced ${#COOKIE_FILES[@]} cookie file(s) into secret ${SECRET_NAME} in namespace ${NAMESPACE}."
+fi
