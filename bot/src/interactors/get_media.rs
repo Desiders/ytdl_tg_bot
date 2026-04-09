@@ -1,10 +1,9 @@
 use std::{convert::Infallible, sync::Arc};
 
 use reqwest::Client;
-use tonic::Code;
 use tracing::{debug, info, instrument, warn};
 use url::Url;
-use ytdl_tg_bot_proto::downloader::{downloader_client::DownloaderClient, MediaInfoRequest};
+use ytdl_tg_bot_proto::downloader::MediaInfoRequest;
 
 use crate::{
     config::{TrackingParamsConfig, YtToolkitConfig},
@@ -16,16 +15,11 @@ use crate::{
     errors::ErrorKind,
     interactors::Interactor,
     services::{
-        node_router::{
-            authenticated_request, with_node_failover, GetMediaInfoErrorKind as ClientGetMediaInfoErrorKind, NodeAttemptErrorKind,
-            NodeFailoverError, NodeRouter,
-        },
+        node_router::{get_media_info, GetMediaInfoErrorKind as ClientGetMediaInfoErrorKind, NodeRouter},
         yt_toolkit::{get_video_info, search_video, GetVideoInfoErrorKind, SearchVideoErrorKind},
     },
     value_objects::MediaType,
 };
-
-const MAX_DECODING_MESSAGE_SIZE: usize = 30 * 1024 * 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub enum GetInfoErrorKind {
@@ -35,16 +29,6 @@ pub enum GetInfoErrorKind {
     Url(#[from] url::ParseError),
     #[error("Invalid node response: {0}")]
     InvalidResponse(Box<str>),
-}
-
-impl From<NodeFailoverError<ClientGetMediaInfoErrorKind>> for GetInfoErrorKind {
-    fn from(err: NodeFailoverError<ClientGetMediaInfoErrorKind>) -> Self {
-        match err {
-            NodeFailoverError::NodeUnavailable => Self::Client(ClientGetMediaInfoErrorKind::NodeUnavailable),
-            NodeFailoverError::NodeContextUnavailable => Self::Client(ClientGetMediaInfoErrorKind::NodeContextUnavailable),
-            NodeFailoverError::Operation(err) => Self::Client(err),
-        }
-    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -179,7 +163,7 @@ impl Interactor<GetUncachedMediaByURLInput<'_>> for &GetUncachedVideoByURL {
     ) -> Result<Self::Output, Self::Err> {
         debug!("Getting media");
 
-        let response = fetch_media_info_with_retry(
+        let response = get_media_info(
             self.node_router.as_ref(),
             url.domain(),
             MediaInfoRequest {
@@ -289,7 +273,7 @@ async fn get_media_by_url(
 
     debug!("Getting media");
 
-    let response = fetch_media_info_with_retry(
+    let response = get_media_info(
         router,
         domain,
         MediaInfoRequest {
@@ -344,38 +328,6 @@ async fn get_media_by_url(
 
     info!(playlist_len, cached_len = cached.len(), unchached_len = uncached.len(), "Got media");
     Ok(GetMediaByURLKind::Playlist { cached, uncached })
-}
-
-async fn fetch_media_info_with_retry(
-    router: &NodeRouter,
-    domain: Option<&str>,
-    request: MediaInfoRequest,
-) -> Result<ytdl_tg_bot_proto::downloader::MediaInfoResponse, GetInfoErrorKind> {
-    with_node_failover(
-        router,
-        domain,
-        |node| {
-            let request = request.clone();
-            async move {
-                let mut client = DownloaderClient::new(node.channel.clone()).max_decoding_message_size(MAX_DECODING_MESSAGE_SIZE);
-                let response = client.get_media_info(authenticated_request(request.clone(), &node.token)?).await?;
-                Ok::<_, ClientGetMediaInfoErrorKind>(response.into_inner())
-            }
-        },
-        classify_get_media_info_error,
-    )
-    .await
-    .map_err(GetInfoErrorKind::from)
-}
-
-fn classify_get_media_info_error(err: &ClientGetMediaInfoErrorKind) -> NodeAttemptErrorKind {
-    match err {
-        ClientGetMediaInfoErrorKind::Rpc(status) if status.code() == Code::ResourceExhausted => NodeAttemptErrorKind::ResourceExhausted,
-        ClientGetMediaInfoErrorKind::Rpc(status) if status.code() == Code::Aborted => NodeAttemptErrorKind::ContextUnavailable,
-        ClientGetMediaInfoErrorKind::Rpc(status) if status.code() == Code::Unavailable => NodeAttemptErrorKind::Unavailable,
-        ClientGetMediaInfoErrorKind::Rpc(status) if status.code() == Code::Unauthenticated => NodeAttemptErrorKind::Unauthenticated,
-        _ => NodeAttemptErrorKind::Fatal,
-    }
 }
 
 #[allow(clippy::result_large_err)]

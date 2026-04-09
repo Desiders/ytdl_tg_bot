@@ -9,19 +9,14 @@ use std::{
 };
 use tempfile::TempDir;
 use tokio::sync::mpsc;
-use tonic::Code;
 use tracing::instrument;
 use url::Url;
-use ytdl_tg_bot_proto::downloader::{
-    download_chunk::Payload, downloader_client::DownloaderClient, DownloadChunk, DownloadRequest, Section,
-};
+use ytdl_tg_bot_proto::downloader::{DownloadRequest, Section};
 
 use crate::{
     entities::{Media, MediaByteStream, MediaForUpload, MediaFormat, RawMediaWithFormat, Sections},
     interactors::Interactor,
-    services::node_router::{
-        authenticated_request, with_node_failover, DownloadErrorKind, NodeAttemptErrorKind, NodeFailoverError, NodeHandle, NodeRouter,
-    },
+    services::node_router::{download_media, DownloadErrorKind, DownloadEvent, DownloadSession, NodeRouter},
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -415,60 +410,17 @@ async fn download_with_retry(
     base_format: &MediaFormat,
     progress_sender: Option<&mpsc::UnboundedSender<String>>,
 ) -> Result<DownloadedMedia, DownloadErrorKind> {
-    with_node_failover(
-        node_router,
-        domain,
-        |node| {
-            let request = request.clone();
-            async move { download_from_node(node.as_ref(), request, output_dir, base_format, progress_sender).await }
-        },
-        classify_download_error,
-    )
-    .await
-    .map_err(map_failover_download_error)
+    let session = download_media(node_router, domain, request).await?;
+    finish_download(session, output_dir, base_format, progress_sender).await
 }
 
-fn classify_download_error(err: &DownloadErrorKind) -> NodeAttemptErrorKind {
-    match err {
-        DownloadErrorKind::Rpc(status) if status.code() == Code::ResourceExhausted => NodeAttemptErrorKind::ResourceExhausted,
-        DownloadErrorKind::Rpc(status) if status.code() == Code::Aborted => NodeAttemptErrorKind::ContextUnavailable,
-        DownloadErrorKind::Rpc(status) if status.code() == Code::Unavailable => NodeAttemptErrorKind::Unavailable,
-        DownloadErrorKind::Rpc(status) if status.code() == Code::Unauthenticated => NodeAttemptErrorKind::Unauthenticated,
-        _ => NodeAttemptErrorKind::Fatal,
-    }
-}
-
-fn map_failover_download_error(err: NodeFailoverError<DownloadErrorKind>) -> DownloadErrorKind {
-    match err {
-        NodeFailoverError::NodeUnavailable => DownloadErrorKind::NodeUnavailable,
-        NodeFailoverError::NodeContextUnavailable => DownloadErrorKind::NodeContextUnavailable,
-        NodeFailoverError::Operation(err) => err,
-    }
-}
-
-async fn download_from_node(
-    node: &NodeHandle,
-    request: DownloadRequest,
+async fn finish_download(
+    session: DownloadSession,
     output_dir: &Path,
     base_format: &MediaFormat,
     progress_sender: Option<&mpsc::UnboundedSender<String>>,
 ) -> Result<DownloadedMedia, DownloadErrorKind> {
-    let mut client = DownloaderClient::new(node.channel.clone());
-    let response = client
-        .download_media(authenticated_request(request, &node.token).map_err(DownloadErrorKind::from)?)
-        .await
-        .map_err(DownloadErrorKind::from)?;
-    let mut stream = response.into_inner();
-
-    let first = stream
-        .message()
-        .await
-        .map_err(DownloadErrorKind::from)?
-        .ok_or(DownloadErrorKind::InvalidStream)?;
-    let Payload::Meta(meta) = first.payload.ok_or(DownloadErrorKind::InvalidStream)? else {
-        return Err(DownloadErrorKind::InvalidStream);
-    };
-
+    let meta = session.meta().clone();
     let path = output_dir.join(format!("media.{}", meta.ext));
     let (media_sender, media_receiver) = mpsc::unbounded_channel();
     let (thumb_sender, thumb_receiver) = mpsc::unbounded_channel();
@@ -478,7 +430,7 @@ async fn download_from_node(
     format.height = meta.height;
 
     tokio::spawn(forward_download_stream(
-        stream,
+        session,
         progress_sender.cloned(),
         media_sender,
         meta.has_thumbnail.then_some(thumb_sender),
@@ -541,15 +493,15 @@ impl Stream for ChannelByteStream {
 }
 
 async fn forward_download_stream(
-    mut stream: tonic::Streaming<DownloadChunk>,
+    mut session: DownloadSession,
     progress_sender: Option<mpsc::UnboundedSender<String>>,
     media_sender: mpsc::UnboundedSender<Result<Bytes, io::Error>>,
     thumb_sender: Option<mpsc::UnboundedSender<Result<Bytes, io::Error>>>,
 ) {
     loop {
-        match stream.message().await {
-            Ok(Some(chunk)) => {
-                if let Err(err) = handle_download_chunk(chunk, progress_sender.as_ref(), &media_sender, thumb_sender.as_ref()) {
+        match session.next_event().await {
+            Ok(Some(event)) => {
+                if let Err(err) = handle_download_event(event, progress_sender.as_ref(), &media_sender, thumb_sender.as_ref()) {
                     let _ = media_sender.send(Err(err));
                     return;
                 }
@@ -563,26 +515,25 @@ async fn forward_download_stream(
     }
 }
 
-fn handle_download_chunk(
-    chunk: DownloadChunk,
+fn handle_download_event(
+    event: DownloadEvent,
     progress_sender: Option<&mpsc::UnboundedSender<String>>,
     media_sender: &mpsc::UnboundedSender<Result<Bytes, io::Error>>,
     thumb_sender: Option<&mpsc::UnboundedSender<Result<Bytes, io::Error>>>,
 ) -> Result<(), io::Error> {
-    match chunk.payload {
-        Some(Payload::Progress(progress)) => {
+    match event {
+        DownloadEvent::Progress(progress) => {
             if let Some(sender) = progress_sender {
                 let _ = sender.send(progress);
             }
             Ok(())
         }
-        Some(Payload::Data(data)) => media_sender
-            .send(Ok(Bytes::from(data)))
+        DownloadEvent::Data(data) => media_sender
+            .send(Ok(data))
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "Media stream closed")),
-        Some(Payload::ThumbnailData(data)) => thumb_sender
+        DownloadEvent::ThumbnailData(data) => thumb_sender
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Unexpected thumbnail stream"))?
-            .send(Ok(Bytes::from(data)))
+            .send(Ok(data))
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "Thumbnail stream closed")),
-        Some(Payload::Meta(_)) | None => Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid download stream")),
     }
 }
