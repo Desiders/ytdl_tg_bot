@@ -6,7 +6,7 @@ use crate::{
 use serde::de::DeserializeOwned;
 use std::{
     fmt::Write as _,
-    io::{self, BufRead as _},
+    io::{self, BufRead as _, BufReader},
     path::Path,
     process::{Output, Stdio},
     time::Duration,
@@ -107,8 +107,6 @@ fn classify_retryable_error(stderr: &str) -> Option<RetryableYtdlpError> {
 }
 
 fn parse_ndjson<T: DeserializeOwned>(input: &[u8]) -> Result<Vec<(T, String)>, ParseJsonErrorKind> {
-    use std::io::BufReader;
-
     let lines = BufReader::new(input).lines();
     let mut results = Vec::with_capacity(1);
     for line in lines {
@@ -280,6 +278,7 @@ pub async fn get_media_info(
                     Err(err) => Err(err.into()),
                 }
             } else {
+                error!("{stderr}");
                 if let Some(kind) = classify_retryable_error(&stderr) {
                     return Err(GetInfoErrorKind::Retryable(kind));
                 }
@@ -423,6 +422,7 @@ pub async fn download_media(
                         }
                         Ok(())
                     } else {
+                        error!("{stderr}");
                         if let Some(kind) = classify_retryable_error(&stderr) {
                             return Err(DownloadErrorKind::Retryable(kind));
                         }
