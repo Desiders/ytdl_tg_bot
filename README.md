@@ -205,6 +205,33 @@ just k8s-sync-cookie-assignment-cookies "${NAMESPACE}"
 just k8s-rollout-cookie-assignment "${NAMESPACE}"
 ```
 
+### Migrations
+
+Database migrations are applied with the dedicated helper:
+
+```bash
+just k8s-migration "${NAMESPACE}"
+```
+
+This renders the migration Job from the bot chart, applies it, waits for completion, and prints the Job logs.
+
+To run a different migration command:
+
+```bash
+just k8s-migration "${NAMESPACE}" down
+```
+
+Run migrations:
+
+- after the database is available
+- before starting a bot version that depends on new schema changes
+
+The migration Job uses:
+
+- the `db` Secret for `username` and `password`
+- the `postgres-rw` service from the CloudNativePG cluster created by the bot chart
+- the migration image configured in `charts/bot/values.yaml`
+
 ### Validation
 
 ```bash
