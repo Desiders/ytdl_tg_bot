@@ -5312,6 +5312,7 @@ dependencies = [
 name = "ytdl_tg_downloader_client"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "thiserror 2.0.18",
  "tokio",
  "tonic",

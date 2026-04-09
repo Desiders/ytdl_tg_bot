@@ -1,4 +1,4 @@
 pub use ytdl_tg_downloader_client::{
-    authenticated_request, with_node_failover, DownloadErrorKind, DownloaderClusterConfig, DownloaderServiceTarget, DownloaderTlsConfig,
-    GetMediaInfoErrorKind, NodeAttemptErrorKind, NodeFailoverError, NodeHandle, NodeRouter,
+    download_media, get_media_info, DownloadErrorKind, DownloadEvent, DownloadSession, DownloaderClusterConfig,
+    DownloaderServiceTarget, DownloaderTlsConfig, GetMediaInfoErrorKind, NodeRouter,
 };

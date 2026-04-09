@@ -51,6 +51,11 @@ The requested new task was:
 - Rewired the Telegram bot to consume the shared downloader-client crate instead of owning that implementation directly.
 - Moved downloader-node failover/retry loops for `GetMediaInfo` and `DownloadMedia` into the shared `downloader_client` crate, while keeping Telegram-specific stream handling and error presentation inside the bot.
 - Moved shared downloader operation error enums into `downloader_client`, so the bot now wraps client-side media-info errors and directly reuses shared download errors instead of defining duplicate base enums.
+- Moved the downloader RPC adapter layer itself into `downloader_client`:
+  - shared `get_media_info(...)`
+  - shared `download_media(...)`
+  - shared `DownloadSession` / `DownloadEvent` stream decoding
+- The bot now only converts shared download events into its own upload streams and local media entities.
 
 ## Verification
 
