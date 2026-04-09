@@ -1,6 +1,9 @@
 use std::{collections::HashSet, env, fs, io, net::SocketAddr};
 
-use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
+use tonic::{
+    metadata::{Ascii, MetadataValue},
+    transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity},
+};
 use url::Url;
 use ytdl_tg_bot_proto::downloader::{
     node_capabilities_client::NodeCapabilitiesClient, node_cookie_manager_client::NodeCookieManagerClient, Empty, PushCookieRequest,
@@ -136,7 +139,8 @@ pub enum NodeHandleError {
 
 fn authenticated_request<T>(message: T, token: &str) -> Result<tonic::Request<T>, tonic::metadata::errors::InvalidMetadataValue> {
     let mut request = tonic::Request::new(message);
-    request.metadata_mut().insert("authorization", token.parse()?);
+    let value: MetadataValue<Ascii> = format!("Bearer {token}").parse()?;
+    request.metadata_mut().insert("authorization", value);
     Ok(request)
 }
 
