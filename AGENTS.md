@@ -2,9 +2,10 @@
 
 ## Purpose
 
-This workspace contains a Telegram bot, a gRPC downloader service, and a separate cookie-assignment controller.
+This workspace contains a Telegram bot, a shared downloader-client crate, a gRPC downloader service, and a separate cookie-assignment controller.
 
 - `bot`: orchestrates requests, caches metadata, routes downloads to downloader nodes, and uploads media to Telegram
+- `downloader_client`: shared downloader-node discovery, mTLS client setup, routing, and downloader failover primitives
 - `downloader`: runs `yt-dlp`, fetches thumbnails, optionally embeds thumbnails, and streams results back over gRPC
 - `cookie_assignment`: discovers downloader nodes and pushes cookie files to them over gRPC
 - `proto`: shared protobuf definitions used by the runtime services
@@ -13,11 +14,12 @@ This file describes the current architecture and the rules future changes should
 
 ## Workspace Layout
 
-- root workspace members: `bot`, `cookie_assignment`, `downloader`, `proto`
+- root workspace members: `bot`, `cookie_assignment`, `downloader_client`, `downloader`, `proto`
 - root workspace excludes: `migration`
 - crate names:
   - `ytdl_tg_bot`
   - `ytdl_tg_cookie_assignment`
+  - `ytdl_tg_downloader_client`
   - `ytdl_tg_downloader`
   - `ytdl_tg_bot_proto`
 - helm charts:
@@ -174,7 +176,7 @@ Important behavior:
 - treat `UNAUTHENTICATED` as a configuration error and surface it as node unavailability to users
 - treat retryable `ABORTED` downloader responses as node-context failures and retry other nodes first
 
-Keep download node selection centralized in [`bot/src/services/node_router.rs`](/workspace/bot/src/services/node_router.rs). Do not duplicate bot-side node-picking logic across interactors.
+Keep download node selection and downloader-node failover centralized in [`downloader_client/src/router.rs`](/workspace/downloader_client/src/router.rs) and [`downloader_client/src/retry.rs`](/workspace/downloader_client/src/retry.rs). The bot may re-export that crate locally, but the shared downloader access logic should have one source of truth.
 
 The cookie-assignment controller may do its own worker iteration for assignment. Do not reintroduce cookie ownership into the bot.
 
@@ -240,7 +242,9 @@ When modifying this workspace:
 If you are making download-related changes, start here:
 
 - [proto/proto/downloader.proto](/workspace/proto/proto/downloader.proto)
-- [bot/src/services/node_router.rs](/workspace/bot/src/services/node_router.rs)
+- [downloader_client/src/router.rs](/workspace/downloader_client/src/router.rs)
+- [downloader_client/src/client.rs](/workspace/downloader_client/src/client.rs)
+- [downloader_client/src/retry.rs](/workspace/downloader_client/src/retry.rs)
 - [bot/src/interactors/get_media.rs](/workspace/bot/src/interactors/get_media.rs)
 - [bot/src/interactors/download/media.rs](/workspace/bot/src/interactors/download/media.rs)
 - [downloader/src/grpc/downloader.rs](/workspace/downloader/src/grpc/downloader.rs)

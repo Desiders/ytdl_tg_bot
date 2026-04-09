@@ -2,9 +2,14 @@ use std::{env, fs};
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
 use url::Url;
 
-use crate::config::DownloadTlsConfig;
+#[derive(Clone, Debug)]
+pub struct DownloaderTlsConfig {
+    pub ca_cert_path: Box<str>,
+    pub cert_path: Box<str>,
+    pub key_path: Box<str>,
+}
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DownloaderServiceTarget {
     pub host: Box<str>,
     pub port: u16,
@@ -27,7 +32,7 @@ impl DownloaderServiceTarget {
 }
 
 #[derive(Clone)]
-pub(super) struct NodeClient {
+pub(crate) struct NodeClient {
     ca_cert_pem: Box<[u8]>,
     cert_pem: Box<[u8]>,
     key_pem: Box<[u8]>,
@@ -35,10 +40,12 @@ pub(super) struct NodeClient {
 }
 
 impl NodeClient {
-    pub(super) fn load(config: &DownloadTlsConfig, server_name: &str) -> Self {
-        let ca_cert_pem = fs::read(&*config.ca_cert_path).expect(&format!("Failed to read downloader CA certificate {}", config.cert_path));
-        let cert_pem = fs::read(&*config.cert_path).expect(&format!("Failed to read bot certificate {}", config.cert_path));
-        let key_pem = fs::read(&*config.key_path).expect(&format!("Failed to read bot key {}", config.key_path));
+    pub(crate) fn load(config: &DownloaderTlsConfig, server_name: &str) -> Self {
+        let ca_cert_pem =
+            fs::read(&*config.ca_cert_path).unwrap_or_else(|_| panic!("Failed to read downloader CA certificate {}", config.ca_cert_path));
+        let cert_pem = fs::read(&*config.cert_path).unwrap_or_else(|_| panic!("Failed to read client certificate {}", config.cert_path));
+        let key_pem = fs::read(&*config.key_path).unwrap_or_else(|_| panic!("Failed to read client key {}", config.key_path));
+
         Self {
             ca_cert_pem: ca_cert_pem.into(),
             cert_pem: cert_pem.into(),
@@ -47,7 +54,7 @@ impl NodeClient {
         }
     }
 
-    pub(super) fn build_channel(&self, address: &str) -> Result<Channel, tonic::transport::Error> {
+    pub(crate) fn build_channel(&self, address: &str) -> Result<Channel, tonic::transport::Error> {
         let tls_cfg = ClientTlsConfig::new()
             .ca_certificate(Certificate::from_pem(self.ca_cert_pem.as_ref()))
             .identity(Identity::from_pem(self.cert_pem.as_ref(), self.key_pem.as_ref()))

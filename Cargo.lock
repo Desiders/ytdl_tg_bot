@@ -5254,6 +5254,7 @@ dependencies = [
  "url",
  "uuid",
  "ytdl_tg_bot_proto",
+ "ytdl_tg_downloader_client",
 ]
 
 [[package]]
@@ -5303,6 +5304,18 @@ dependencies = [
  "tonic",
  "tracing",
  "tracing-subscriber",
+ "url",
+ "ytdl_tg_bot_proto",
+]
+
+[[package]]
+name = "ytdl_tg_downloader_client"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.18",
+ "tokio",
+ "tonic",
+ "tracing",
  "url",
  "ytdl_tg_bot_proto",
 ]
