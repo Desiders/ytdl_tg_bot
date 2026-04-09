@@ -2,7 +2,7 @@ use bytes::Bytes;
 use futures_util::Stream;
 use std::{
     io,
-    path::Path,
+    path::{Path, PathBuf},
     pin::Pin,
     sync::{Arc, Mutex},
     task::{Context, Poll},
@@ -168,7 +168,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
             )
             .await
             {
-                Ok(DownloadedMedia {
+                Ok(PreparedDownload {
                     path,
                     thumb_stream,
                     format,
@@ -228,7 +228,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
             )
             .await
             {
-                Ok(DownloadedMedia {
+                Ok(PreparedDownload {
                     path,
                     thumb_stream,
                     format,
@@ -291,7 +291,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
                 )
                 .await
                 {
-                    Ok(DownloadedMedia {
+                    Ok(PreparedDownload {
                         path,
                         thumb_stream,
                         format,
@@ -362,7 +362,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
                 )
                 .await
                 {
-                    Ok(DownloadedMedia {
+                    Ok(PreparedDownload {
                         path,
                         thumb_stream,
                         format,
@@ -395,8 +395,8 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
     }
 }
 
-struct DownloadedMedia {
-    path: std::path::PathBuf,
+struct PreparedDownload {
+    path: PathBuf,
     thumb_stream: Option<MediaByteStream>,
     format: MediaFormat,
     stream: MediaByteStream,
@@ -409,17 +409,17 @@ async fn download_with_retry(
     output_dir: &Path,
     base_format: &MediaFormat,
     progress_sender: Option<&mpsc::UnboundedSender<String>>,
-) -> Result<DownloadedMedia, DownloadErrorKind> {
+) -> Result<PreparedDownload, DownloadErrorKind> {
     let session = download_media(node_router, domain, request).await?;
-    finish_download(session, output_dir, base_format, progress_sender).await
+    build_downloaded_media(session, output_dir, base_format, progress_sender).await
 }
 
-async fn finish_download(
+async fn build_downloaded_media(
     session: DownloadSession,
     output_dir: &Path,
     base_format: &MediaFormat,
     progress_sender: Option<&mpsc::UnboundedSender<String>>,
-) -> Result<DownloadedMedia, DownloadErrorKind> {
+) -> Result<PreparedDownload, DownloadErrorKind> {
     let meta = session.meta().clone();
     let path = output_dir.join(format!("media.{}", meta.ext));
     let (media_sender, media_receiver) = mpsc::unbounded_channel();
@@ -441,7 +441,7 @@ async fn finish_download(
         .has_thumbnail
         .then(|| MediaByteStream::new(ChannelByteStream::new(thumb_receiver)));
 
-    Ok(DownloadedMedia {
+    Ok(PreparedDownload {
         path,
         thumb_stream,
         format,
