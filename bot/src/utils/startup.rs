@@ -8,10 +8,7 @@ use telers::{
 use tokio::fs;
 use tracing::{debug, info};
 
-use crate::{
-    config::Config,
-    services::{cookie_assignment::CookieAssignmentService, node_router::NodeRouter},
-};
+use crate::{config::Config, services::node_router::NodeRouter};
 
 async fn set_my_commands(bot: Bot) -> HandlerResult {
     let commands = [
@@ -48,12 +45,7 @@ async fn remove_tmp_media_files() -> HandlerResult {
 }
 
 #[allow(clippy::module_name_repetitions)]
-pub async fn on_startup(
-    bot: Bot,
-    node_router: Arc<NodeRouter>,
-    cookie_assignment: Arc<CookieAssignmentService>,
-    cfg: Arc<Config>,
-) -> HandlerResult {
+pub async fn on_startup(bot: Bot, node_router: Arc<NodeRouter>, cfg: Arc<Config>) -> HandlerResult {
     set_my_commands(bot).await?;
     remove_tmp_media_files().await?;
 
@@ -81,21 +73,6 @@ pub async fn on_startup(
             loop {
                 interval.tick().await;
                 router.refresh_capabilities().await;
-            }
-        });
-    }
-
-    if cfg.download.cookie_assignment_interval > 0 {
-        let cfg = cfg.clone();
-        info!(
-            interval_sec = %cfg.download.cookie_assignment_interval,
-            "Starting cookie assignment task"
-        );
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(cfg.download.cookie_assignment_interval));
-            loop {
-                interval.tick().await;
-                cookie_assignment.sync_cycle().await;
             }
         });
     }
