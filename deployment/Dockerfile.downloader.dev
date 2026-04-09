@@ -1,14 +1,13 @@
-FROM alpine:3.22 AS base
-RUN apk add --no-cache \
+FROM debian:bookworm-slim AS base
+RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg \
         python3 \
-        py3-pip \
-        py3-virtualenv \
-        deno \
+        python3-pip \
+        python3-venv \
         bash \
         curl \
         ca-certificates \
-    && rm -rf /var/cache/apk/*
+    && rm -rf /var/lib/apt/lists/*
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir -U pip \
