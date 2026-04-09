@@ -19,15 +19,25 @@ impl AuthInterceptor {
 
 impl Interceptor for AuthInterceptor {
     fn call(&mut self, request: Request<()>) -> Result<Request<()>, Status> {
+        let remote_addr = request
+            .remote_addr()
+            .map(|addr| addr.to_string())
+            .unwrap_or_else(|| String::from("unknown"));
+        let user_agent = request
+            .metadata()
+            .get("user-agent")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("unknown");
+
         let Some(header) = request.metadata().get("authorization") else {
-            warn!("Rejected request without authorization header");
+            warn!(remote_addr, user_agent, "Rejected request without authorization header");
             return Err(Status::unauthenticated("Invalid token"));
         };
 
         if is_valid_token(header, &self.token) {
             Ok(request)
         } else {
-            warn!("Rejected request with invalid authorization token");
+            warn!(remote_addr, user_agent, "Rejected request with invalid authorization token");
             Err(Status::unauthenticated("Invalid token"))
         }
     }
