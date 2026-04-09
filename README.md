@@ -22,15 +22,6 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 - Stats
 - Exclude domains list
 
-## Deployment Notes
-
-Current Kubernetes deployment is split into four Helm charts:
-
-- `infra`: shared cert-manager CA bootstrap
-- `bot`: Telegram bot, PostgreSQL, Telegram Bot API, yt-toolkit
-- `downloader`: downloader nodes and yt-pot-provider
-- `cookie-assignment`: cookie distribution controller
-
 ### Prerequisites
 
 Cluster-side prerequisites:
