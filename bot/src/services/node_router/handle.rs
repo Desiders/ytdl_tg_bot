@@ -1,9 +1,6 @@
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
 use tonic::transport::Channel;
-use ytdl_tg_bot_proto::downloader::{
-    node_capabilities_client::NodeCapabilitiesClient, node_cookie_manager_client::NodeCookieManagerClient, Empty, PushCookieRequest,
-    RemoveCookieRequest,
-};
+use ytdl_tg_bot_proto::downloader::{node_capabilities_client::NodeCapabilitiesClient, Empty};
 
 use super::authenticated_request;
 
@@ -101,39 +98,5 @@ impl NodeHandle {
         let response = client.get_status(authenticated_request(Empty {}, &self.token)?).await?;
         let status = response.into_inner();
         Ok((status.active_downloads, status.max_concurrent))
-    }
-
-    pub async fn push_cookie(&self, cookie_id: &str, domain: &str, data: &str) -> Result<(), NodeHandleError> {
-        let mut client = NodeCookieManagerClient::new(self.channel.clone());
-        client
-            .push_cookie(authenticated_request(
-                PushCookieRequest {
-                    cookie_id: cookie_id.to_owned(),
-                    domain: domain.to_owned(),
-                    data: data.to_owned(),
-                },
-                &self.token,
-            )?)
-            .await?;
-        Ok(())
-    }
-
-    pub async fn remove_cookie(&self, cookie_id: &str) -> Result<(), NodeHandleError> {
-        let mut client = NodeCookieManagerClient::new(self.channel.clone());
-        client
-            .remove_cookie(authenticated_request(
-                RemoveCookieRequest {
-                    cookie_id: cookie_id.to_owned(),
-                },
-                &self.token,
-            )?)
-            .await?;
-        Ok(())
-    }
-
-    pub async fn list_node_cookies(&self) -> Result<Vec<String>, NodeHandleError> {
-        let mut client = NodeCookieManagerClient::new(self.channel.clone());
-        let response = client.list_node_cookies(authenticated_request(Empty {}, &self.token)?).await?;
-        Ok(response.into_inner().cookie_ids)
     }
 }

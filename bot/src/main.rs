@@ -13,7 +13,6 @@ mod utils;
 mod value_objects;
 
 use froodi::telers::setup_async_default;
-use services::cookie_assignment::CookieAssignmentService;
 use services::node_router::NodeRouter;
 use std::borrow::Cow;
 use telers::{
@@ -57,7 +56,6 @@ async fn main() {
         yt_toolkit_url = %config.yt_toolkit.url,
         telegram_bot_api_url = %config.telegram_bot_api.url,
         capabilities_refresh_interval = config.download.capabilities_refresh_interval,
-        cookie_assignment_interval = config.download.cookie_assignment_interval,
         max_file_size = config.yt_dlp.max_file_size,
         "Loaded bot config"
     );
@@ -72,7 +70,6 @@ async fn main() {
 
     let container = di_container::init(bot.clone(), config);
     let node_router = container.get::<NodeRouter>().await.unwrap();
-    let cookie_assignment = container.get::<CookieAssignmentService>().await.unwrap();
     let cfg = container.get::<config::Config>().await.unwrap();
 
     let download_router = Router::new("download")
@@ -167,12 +164,7 @@ async fn main() {
                 .register(Handler::new(start).filter(Command::many(["start", "help"])))
                 .register(Handler::new(stats).filter(Command::one("stats")))
         })
-        .on_startup(|observer| {
-            observer.register(SimpleHandler::new(
-                on_startup,
-                (bot.clone(), node_router.clone(), cookie_assignment.clone(), cfg.clone()),
-            ))
-        })
+        .on_startup(|observer| observer.register(SimpleHandler::new(on_startup, (bot.clone(), node_router.clone(), cfg.clone()))))
         .on_shutdown(|observer| observer.register(SimpleHandler::new(on_shutdown, ())))
         .include(download_router);
 

@@ -119,8 +119,6 @@ pub struct DownloadTlsConfig {
 pub struct DownloadConfig {
     #[serde(default)]
     pub capabilities_refresh_interval: u64,
-    #[serde(default)]
-    pub cookie_assignment_interval: u64,
     pub token: Box<str>,
     pub tls: DownloadTlsConfig,
 }
