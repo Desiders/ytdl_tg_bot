@@ -8,6 +8,7 @@ PLATFORM="${PLATFORM:-linux/amd64}"
 DOCKERFILE="${DOCKERFILE:-deployment/Dockerfile.bot.dev}"
 CONTEXT_DIR="${CONTEXT_DIR:-.}"
 BUILDER_NAME="${BUILDER_NAME:-ytdl-builder}"
+NAMESPACE="${NAMESPACE:-dev}"
 
 if ! command -v docker >/dev/null 2>&1; then
     echo "Docker not found" >&2
@@ -38,4 +39,4 @@ docker buildx build \
     "${CONTEXT_DIR}"
 
 echo "Pushed: ${IMAGE_REPO}:${IMAGE_TAG}"
-echo "Next: helm upgrade bot ./charts/bot -n bot --set bot.image.repository=${IMAGE_REPO} --set bot.image.tag=${IMAGE_TAG} --set bot.image.pullPolicy=IfNotPresent"
+echo "Next: helm upgrade bot ./charts/bot -n ${NAMESPACE} --set bot.image.repository=${IMAGE_REPO} --set bot.image.tag=${IMAGE_TAG} --set bot.image.pullPolicy=IfNotPresent"
