@@ -8,6 +8,7 @@ PLATFORM="${PLATFORM:-linux/amd64}"
 DOCKERFILE="${DOCKERFILE:-deployment/Dockerfile.downloader.dev}"
 CONTEXT_DIR="${CONTEXT_DIR:-.}"
 BUILDER_NAME="${BUILDER_NAME:-ytdl-builder}"
+NAMESPACE="${NAMESPACE:-dev}"
 
 if ! command -v docker >/dev/null 2>&1; then
     echo "Docker not found" >&2
@@ -38,4 +39,4 @@ docker buildx build \
     "${CONTEXT_DIR}"
 
 echo "Pushed: ${IMAGE_REPO}:${IMAGE_TAG}"
-echo "Next: helm upgrade downloader ./charts/downloader -n downloader --set downloader.image.repository=${IMAGE_REPO} --set downloader.image.tag=${IMAGE_TAG} --set downloader.image.pullPolicy=IfNotPresent"
+echo "Next: helm upgrade downloader ./charts/downloader -n ${NAMESPACE} --set downloader.image.repository=${IMAGE_REPO} --set downloader.image.tag=${IMAGE_TAG} --set downloader.image.pullPolicy=IfNotPresent"

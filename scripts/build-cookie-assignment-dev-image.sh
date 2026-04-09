@@ -8,6 +8,7 @@ PLATFORM="${PLATFORM:-linux/amd64}"
 DOCKERFILE="${DOCKERFILE:-deployment/Dockerfile.cookie_assignment.dev}"
 CONTEXT_DIR="${CONTEXT_DIR:-.}"
 BUILDER_NAME="${BUILDER_NAME:-ytdl-builder}"
+NAMESPACE="${NAMESPACE:-dev}"
 
 if ! command -v docker >/dev/null 2>&1; then
     echo "Docker not found" >&2
@@ -38,4 +39,4 @@ docker buildx build \
     "${CONTEXT_DIR}"
 
 echo "Pushed: ${IMAGE_REPO}:${IMAGE_TAG}"
-echo "Next: helm upgrade cookie-assignment ./charts/cookie-assignment -n cookie-assignment --set cookieAssignment.image.repository=${IMAGE_REPO} --set cookieAssignment.image.tag=${IMAGE_TAG} --set cookieAssignment.image.pullPolicy=IfNotPresent"
+echo "Next: helm upgrade cookie-assignment ./charts/cookie-assignment -n ${NAMESPACE} --set cookieAssignment.image.repository=${IMAGE_REPO} --set cookieAssignment.image.tag=${IMAGE_TAG} --set cookieAssignment.image.pullPolicy=IfNotPresent"
