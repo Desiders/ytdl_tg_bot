@@ -3,15 +3,15 @@ set -euo pipefail
 
 # Sync cookies from local directory into Kubernetes Secret.
 # Cookie files are discovered using strict structure:
-#   cookies/<domain>/<index>.txt
-# Kubernetes Secret keys cannot contain '/', so keys are flattened to:
-#   <domain>_<index>.txt
+#   cookies/<domain>/<cookie-id>.txt
+# Mounted entry names are flattened to:
+#   <domain>__<cookie-id>.txt
 # Example:
-#   cookies/youtube.com/1.txt -> key youtube.com_1.txt
+#   cookies/youtube.com/main.txt -> key youtube.com__main.txt
 
 SOURCE_DIR="${1:-cookies}"
 NAMESPACE="${NAMESPACE:-bot}"
-SECRET_NAME="${SECRET_NAME:-bot-cookies}"
+SECRET_NAME="${SECRET_NAME:-cookie-assignment-cookies}"
 KUBECTL_BIN="${KUBECTL_BIN:-kubectl}"
 
 if [[ ! -d "${SOURCE_DIR}" ]]; then
@@ -43,18 +43,18 @@ for abs_path in "${COOKIE_FILES[@]}"; do
   domain="$(dirname "${rel_path}")"
   name="$(basename "${rel_path}")"
   if [[ "${domain}" == "." || "${name}" != *.txt ]]; then
-    echo "Unsupported cookie path: ${rel_path}. Expected <domain>/<index>.txt" >&2
+    echo "Unsupported cookie path: ${rel_path}. Expected <domain>/<cookie-id>.txt" >&2
     exit 1
   fi
   if [[ "${domain}" == *"/"* ]]; then
-    echo "Unsupported nested cookie path: ${rel_path}. Expected <domain>/<index>.txt" >&2
+    echo "Unsupported nested cookie path: ${rel_path}. Expected <domain>/<cookie-id>.txt" >&2
     exit 1
   fi
-  if [[ ! "${name}" =~ ^[0-9]+\.txt$ ]]; then
-    echo "Unsupported cookie filename: ${rel_path}. Expected numeric <index>.txt" >&2
+  if [[ "${domain}" == *"__"* || "${name}" == *"__"* ]]; then
+    echo "Unsupported cookie path: ${rel_path}. '__' is reserved for secret key encoding" >&2
     exit 1
   fi
-  key="${domain}_${name}"
+  key="${domain}__${name}"
   CMD+=(--from-file="${key}=${abs_path}")
 done
 
