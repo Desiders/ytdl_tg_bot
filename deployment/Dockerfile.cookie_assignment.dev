@@ -1,11 +1,11 @@
 FROM debian:bookworm-slim AS base
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt update && apt install -y --no-install-recommends \
         bash \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 FROM rust:1.91-bookworm AS build
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt update && apt install -y --no-install-recommends \
         protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
