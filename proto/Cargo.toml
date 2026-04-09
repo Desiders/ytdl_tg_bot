@@ -22,5 +22,6 @@ tonic = { version = "0.14", features = ["router", "codegen", "tls-ring", "tls-we
 tonic-prost = { version = "0.14", default-features = false }
 
 [build-dependencies]
+protoc-bin-vendored = "3"
 tonic-build = { version = "0.14", default-features = false }
 tonic-prost-build = { version = "0.14", default-features = false }

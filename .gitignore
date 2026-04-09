@@ -6,6 +6,7 @@ yt-dlp-cache/
 
 configs/config.toml
 configs/downloader.toml
+configs/cookie_assignment.toml
 
 __pycache__
 
