@@ -1,7 +1,6 @@
 use bytes::Bytes;
 use futures_util::Stream;
 use std::{
-    collections::HashSet,
     io,
     path::Path,
     pin::Pin,
@@ -11,7 +10,7 @@ use std::{
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 use tonic::Code;
-use tracing::{error, instrument, warn};
+use tracing::instrument;
 use url::Url;
 use ytdl_tg_bot_proto::downloader::{
     download_chunk::Payload, downloader_client::DownloaderClient, DownloadChunk, DownloadRequest, Section,
@@ -20,26 +19,10 @@ use ytdl_tg_bot_proto::downloader::{
 use crate::{
     entities::{Media, MediaByteStream, MediaForUpload, MediaFormat, RawMediaWithFormat, Sections},
     interactors::Interactor,
-    services::node_router::{authenticated_request, NodeHandle, NodeRouter},
+    services::node_router::{
+        authenticated_request, with_node_failover, DownloadErrorKind, NodeAttemptErrorKind, NodeFailoverError, NodeHandle, NodeRouter,
+    },
 };
-
-#[derive(thiserror::Error, Debug)]
-pub enum DownloadErrorKind {
-    #[error("IO error: {0}")]
-    Io(#[from] io::Error),
-    #[error(transparent)]
-    Rpc(#[from] tonic::Status),
-    #[error(transparent)]
-    Metadata(#[from] tonic::metadata::errors::InvalidMetadataValue),
-    #[error("Invalid download stream")]
-    InvalidStream,
-    #[error("All download nodes are busy. Try again later.")]
-    NodeUnavailable,
-    #[error(
-        "The source site rejected this download (for example: login required, geo restriction, or temporary anti-bot limits). Try another URL or try again later."
-    )]
-    NodeContextUnavailable,
-}
 
 #[derive(thiserror::Error, Debug)]
 pub enum DownloadMediaErrorKind {
@@ -204,7 +187,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
                     };
                     return Ok(Some((media_for_upload, format)));
                 }
-                Err(AttemptError::Download(err)) => {
+                Err(err) => {
                     err_sender.send(err)?;
                 }
             }
@@ -264,7 +247,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
                     };
                     return Ok(Some((media_for_upload, format)));
                 }
-                Err(AttemptError::Download(err)) => {
+                Err(err) => {
                     err_sender.send(err)?;
                 }
             }
@@ -329,7 +312,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
                         media_is_downloaded = true;
                         break;
                     }
-                    Err(AttemptError::Download(err)) => {
+                    Err(err) => {
                         errs.push(err);
                     }
                 }
@@ -400,7 +383,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
                         media_is_downloaded = true;
                         break;
                     }
-                    Err(AttemptError::Download(err)) => {
+                    Err(err) => {
                         errs.push(err);
                     }
                 }
@@ -417,10 +400,6 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
     }
 }
 
-enum AttemptError {
-    Download(DownloadErrorKind),
-}
-
 struct DownloadedMedia {
     path: std::path::PathBuf,
     thumb_stream: Option<MediaByteStream>,
@@ -435,42 +414,35 @@ async fn download_with_retry(
     output_dir: &Path,
     base_format: &MediaFormat,
     progress_sender: Option<&mpsc::UnboundedSender<String>>,
-) -> Result<DownloadedMedia, AttemptError> {
-    let mut excluded = HashSet::new();
-    let mut saw_retryable_context_error = false;
+) -> Result<DownloadedMedia, DownloadErrorKind> {
+    with_node_failover(
+        node_router,
+        domain,
+        |node| {
+            let request = request.clone();
+            async move { download_from_node(node.as_ref(), request, output_dir, base_format, progress_sender).await }
+        },
+        classify_download_error,
+    )
+    .await
+    .map_err(map_failover_download_error)
+}
 
-    loop {
-        let Some(node) = node_router.pick_node(domain, &excluded) else {
-            if saw_retryable_context_error {
-                return Err(AttemptError::Download(DownloadErrorKind::NodeContextUnavailable));
-            }
-            return Err(AttemptError::Download(DownloadErrorKind::NodeUnavailable));
-        };
+fn classify_download_error(err: &DownloadErrorKind) -> NodeAttemptErrorKind {
+    match err {
+        DownloadErrorKind::Rpc(status) if status.code() == Code::ResourceExhausted => NodeAttemptErrorKind::ResourceExhausted,
+        DownloadErrorKind::Rpc(status) if status.code() == Code::Aborted => NodeAttemptErrorKind::ContextUnavailable,
+        DownloadErrorKind::Rpc(status) if status.code() == Code::Unavailable => NodeAttemptErrorKind::Unavailable,
+        DownloadErrorKind::Rpc(status) if status.code() == Code::Unauthenticated => NodeAttemptErrorKind::Unauthenticated,
+        _ => NodeAttemptErrorKind::Fatal,
+    }
+}
 
-        node.reserve_download_slot();
-        let result = download_from_node(node.as_ref(), request.clone(), output_dir, base_format, progress_sender).await;
-        node.release_download_slot();
-
-        match result {
-            Ok(result) => return Ok(result),
-            Err(AttemptError::Download(DownloadErrorKind::Rpc(status))) if status.code() == Code::ResourceExhausted => {
-                excluded.insert(node.address.to_string());
-            }
-            Err(AttemptError::Download(DownloadErrorKind::Rpc(status))) if status.code() == Code::Aborted => {
-                warn!(node = %node.address, %status, "Download node returned retryable yt-dlp HTTP 400");
-                saw_retryable_context_error = true;
-                excluded.insert(node.address.to_string());
-            }
-            Err(AttemptError::Download(DownloadErrorKind::Rpc(status))) if status.code() == Code::Unavailable => {
-                warn!(node = %node.address, %status, "Download node unavailable");
-                excluded.insert(node.address.to_string());
-            }
-            Err(AttemptError::Download(DownloadErrorKind::Rpc(status))) if status.code() == Code::Unauthenticated => {
-                error!(node = %node.address, %status, "Download node authentication failed");
-                return Err(AttemptError::Download(DownloadErrorKind::NodeUnavailable));
-            }
-            Err(other) => return Err(other),
-        }
+fn map_failover_download_error(err: NodeFailoverError<DownloadErrorKind>) -> DownloadErrorKind {
+    match err {
+        NodeFailoverError::NodeUnavailable => DownloadErrorKind::NodeUnavailable,
+        NodeFailoverError::NodeContextUnavailable => DownloadErrorKind::NodeContextUnavailable,
+        NodeFailoverError::Operation(err) => err,
     }
 }
 
@@ -480,30 +452,21 @@ async fn download_from_node(
     output_dir: &Path,
     base_format: &MediaFormat,
     progress_sender: Option<&mpsc::UnboundedSender<String>>,
-) -> Result<DownloadedMedia, AttemptError> {
+) -> Result<DownloadedMedia, DownloadErrorKind> {
     let mut client = DownloaderClient::new(node.channel.clone());
     let response = client
-        .download_media(
-            authenticated_request(request, &node.token)
-                .map_err(DownloadErrorKind::from)
-                .map_err(AttemptError::Download)?,
-        )
+        .download_media(authenticated_request(request, &node.token).map_err(DownloadErrorKind::from)?)
         .await
-        .map_err(DownloadErrorKind::from)
-        .map_err(AttemptError::Download)?;
+        .map_err(DownloadErrorKind::from)?;
     let mut stream = response.into_inner();
 
     let first = stream
         .message()
         .await
-        .map_err(DownloadErrorKind::from)
-        .map_err(AttemptError::Download)?
-        .ok_or_else(|| AttemptError::Download(DownloadErrorKind::InvalidStream))?;
-    let Payload::Meta(meta) = first
-        .payload
-        .ok_or_else(|| AttemptError::Download(DownloadErrorKind::InvalidStream))?
-    else {
-        return Err(AttemptError::Download(DownloadErrorKind::InvalidStream));
+        .map_err(DownloadErrorKind::from)?
+        .ok_or(DownloadErrorKind::InvalidStream)?;
+    let Payload::Meta(meta) = first.payload.ok_or(DownloadErrorKind::InvalidStream)? else {
+        return Err(DownloadErrorKind::InvalidStream);
     };
 
     let path = output_dir.join(format!("media.{}", meta.ext));

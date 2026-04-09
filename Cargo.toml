@@ -2,6 +2,7 @@
 members = [
     "bot",
     "cookie_assignment",
+    "downloader_client",
     "downloader",
     "proto",
     "migration",

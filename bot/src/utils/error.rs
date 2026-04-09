@@ -2,6 +2,7 @@ use crate::{
     entities::{ParseRangeError, ParseSectionError},
     errors::ErrorKind,
     interactors::{download::media, get_media},
+    services::node_router,
 };
 
 use std::{borrow::Cow, fmt::Debug, fmt::Write, iter};
@@ -47,7 +48,7 @@ impl FormatErrorToMessage for media::DownloadMediaPlaylistErrorKind {
     }
 }
 
-impl FormatErrorToMessage for media::DownloadErrorKind {
+impl FormatErrorToMessage for node_router::DownloadErrorKind {
     fn format(&self, _token: &str) -> Cow<'static, str> {
         Cow::Owned(self.to_string())
     }

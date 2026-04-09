@@ -1,8 +1,8 @@
-use std::{collections::HashSet, convert::Infallible, sync::Arc};
+use std::{convert::Infallible, sync::Arc};
 
 use reqwest::Client;
 use tonic::Code;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, info, instrument, warn};
 use url::Url;
 use ytdl_tg_bot_proto::downloader::{downloader_client::DownloaderClient, MediaInfoRequest};
 
@@ -16,7 +16,10 @@ use crate::{
     errors::ErrorKind,
     interactors::Interactor,
     services::{
-        node_router::{authenticated_request, NodeRouter},
+        node_router::{
+            authenticated_request, with_node_failover, GetMediaInfoErrorKind as ClientGetMediaInfoErrorKind, NodeAttemptErrorKind,
+            NodeFailoverError, NodeRouter,
+        },
         yt_toolkit::{get_video_info, search_video, GetVideoInfoErrorKind, SearchVideoErrorKind},
     },
     value_objects::MediaType,
@@ -27,19 +30,21 @@ const MAX_DECODING_MESSAGE_SIZE: usize = 30 * 1024 * 1024;
 #[derive(Debug, thiserror::Error)]
 pub enum GetInfoErrorKind {
     #[error(transparent)]
-    Rpc(#[from] tonic::Status),
-    #[error(transparent)]
-    Metadata(#[from] tonic::metadata::errors::InvalidMetadataValue),
+    Client(#[from] ClientGetMediaInfoErrorKind),
     #[error(transparent)]
     Url(#[from] url::ParseError),
     #[error("Invalid node response: {0}")]
     InvalidResponse(Box<str>),
-    #[error("All download nodes are busy. Try again later.")]
-    NodeUnavailable,
-    #[error(
-        "The source site rejected this media (for example: login required, geo restriction, or temporary anti-bot limits). Try another URL or try again later."
-    )]
-    NodeContextUnavailable,
+}
+
+impl From<NodeFailoverError<ClientGetMediaInfoErrorKind>> for GetInfoErrorKind {
+    fn from(err: NodeFailoverError<ClientGetMediaInfoErrorKind>) -> Self {
+        match err {
+            NodeFailoverError::NodeUnavailable => Self::Client(ClientGetMediaInfoErrorKind::NodeUnavailable),
+            NodeFailoverError::NodeContextUnavailable => Self::Client(ClientGetMediaInfoErrorKind::NodeContextUnavailable),
+            NodeFailoverError::Operation(err) => Self::Client(err),
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -295,7 +300,7 @@ async fn get_media_by_url(
         },
     )
     .await
-    .map_err(map_get_media_info_error)?;
+    .map_err(|err| map_get_media_info_error(GetInfoErrorKind::from(err)))?;
     let playlist = playlist_from_response(response)?;
     let playlist_len = playlist.inner.len();
 
@@ -346,46 +351,30 @@ async fn fetch_media_info_with_retry(
     domain: Option<&str>,
     request: MediaInfoRequest,
 ) -> Result<ytdl_tg_bot_proto::downloader::MediaInfoResponse, GetInfoErrorKind> {
-    let mut excluded = HashSet::new();
-    let mut saw_retryable_context_error = false;
+    with_node_failover(
+        router,
+        domain,
+        |node| {
+            let request = request.clone();
+            async move {
+                let mut client = DownloaderClient::new(node.channel.clone()).max_decoding_message_size(MAX_DECODING_MESSAGE_SIZE);
+                let response = client.get_media_info(authenticated_request(request.clone(), &node.token)?).await?;
+                Ok::<_, ClientGetMediaInfoErrorKind>(response.into_inner())
+            }
+        },
+        classify_get_media_info_error,
+    )
+    .await
+    .map_err(GetInfoErrorKind::from)
+}
 
-    loop {
-        let Some(node) = router.pick_node(domain, &excluded) else {
-            if saw_retryable_context_error {
-                return Err(GetInfoErrorKind::NodeContextUnavailable);
-            }
-            return Err(GetInfoErrorKind::NodeUnavailable);
-        };
-
-        node.reserve_download_slot();
-        let result = async {
-            let mut client = DownloaderClient::new(node.channel.clone()).max_decoding_message_size(MAX_DECODING_MESSAGE_SIZE);
-            let response = client.get_media_info(authenticated_request(request.clone(), &node.token)?).await?;
-            Ok::<_, GetInfoErrorKind>(response.into_inner())
-        }
-        .await;
-        node.release_download_slot();
-
-        match result {
-            Ok(response) => return Ok(response),
-            Err(GetInfoErrorKind::Rpc(status)) if status.code() == Code::ResourceExhausted => {
-                excluded.insert(node.address.to_string());
-            }
-            Err(GetInfoErrorKind::Rpc(status)) if status.code() == Code::Aborted => {
-                warn!(node = %node.address, %status, "Download node returned retryable yt-dlp HTTP 400");
-                saw_retryable_context_error = true;
-                excluded.insert(node.address.to_string());
-            }
-            Err(GetInfoErrorKind::Rpc(status)) if status.code() == Code::Unavailable => {
-                warn!(node = %node.address, %status, "Download node unavailable");
-                excluded.insert(node.address.to_string());
-            }
-            Err(GetInfoErrorKind::Rpc(status)) if status.code() == Code::Unauthenticated => {
-                error!(node = %node.address, %status, "Download node authentication failed");
-                return Err(GetInfoErrorKind::NodeUnavailable);
-            }
-            Err(err) => return Err(err),
-        }
+fn classify_get_media_info_error(err: &ClientGetMediaInfoErrorKind) -> NodeAttemptErrorKind {
+    match err {
+        ClientGetMediaInfoErrorKind::Rpc(status) if status.code() == Code::ResourceExhausted => NodeAttemptErrorKind::ResourceExhausted,
+        ClientGetMediaInfoErrorKind::Rpc(status) if status.code() == Code::Aborted => NodeAttemptErrorKind::ContextUnavailable,
+        ClientGetMediaInfoErrorKind::Rpc(status) if status.code() == Code::Unavailable => NodeAttemptErrorKind::Unavailable,
+        ClientGetMediaInfoErrorKind::Rpc(status) if status.code() == Code::Unauthenticated => NodeAttemptErrorKind::Unauthenticated,
+        _ => NodeAttemptErrorKind::Fatal,
     }
 }
 
@@ -435,7 +424,7 @@ fn playlist_from_response(response: ytdl_tg_bot_proto::downloader::MediaInfoResp
 
 fn map_get_media_info_error(err: GetInfoErrorKind) -> GetMediaByURLErrorKind {
     match err {
-        GetInfoErrorKind::NodeUnavailable => GetMediaByURLErrorKind::NodeUnavailable,
+        GetInfoErrorKind::Client(ClientGetMediaInfoErrorKind::NodeUnavailable) => GetMediaByURLErrorKind::NodeUnavailable,
         err => GetMediaByURLErrorKind::GetInfo(err),
     }
 }

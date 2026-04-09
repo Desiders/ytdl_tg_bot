@@ -46,11 +46,17 @@ The requested new task was:
 - Switched cookie inventory from flat filename parsing to strict directory layout: `cookies/<domain>/<cookie-id>.txt`.
 - Updated cookie secret sync to flatten keys as `<domain>__<cookie-id>.txt`.
 - Removed the cookie-assignment init-container reconstruction script and moved mounted entry-name decoding into the Rust loader instead.
+- Added a new shared workspace crate: `downloader_client` (`ytdl_tg_downloader_client`).
+- Moved downloader-node discovery, mTLS channel setup, request authentication, node selection, and node refresh logic into the shared `downloader_client` crate.
+- Rewired the Telegram bot to consume the shared downloader-client crate instead of owning that implementation directly.
+- Moved downloader-node failover/retry loops for `GetMediaInfo` and `DownloadMedia` into the shared `downloader_client` crate, while keeping Telegram-specific stream handling and error presentation inside the bot.
+- Moved shared downloader operation error enums into `downloader_client`, so the bot now wraps client-side media-info errors and directly reuses shared download errors instead of defining duplicate base enums.
 
 ## Verification
 
 - `cargo check -p ytdl_tg_bot -p ytdl_tg_cookie_assignment -p ytdl_tg_downloader` passed.
 - `cargo check -p ytdl_tg_cookie_assignment` passed after the later reconcile and balancing changes.
+- `cargo check -p ytdl_tg_downloader_client -p ytdl_tg_bot` passed after extracting shared downloader-node routing/client logic.
 - `cargo fmt` could not be run in this environment because `cargo-fmt` / `rustfmt` is not installed for the available toolchains.
 
 ## Design Notes To Discuss
@@ -61,3 +67,4 @@ The requested new task was:
 ## Next Reasonable Steps
 
 - Deployment notes were added to `README.md`.
+- Decide whether the Telegram bot should keep the small `bot/src/services/node_router.rs` re-export wrapper for local import stability, or whether we should switch bot code to import `ytdl_tg_downloader_client` directly.

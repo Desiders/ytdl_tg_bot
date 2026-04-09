@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
 use tonic::transport::Channel;
 use ytdl_tg_bot_proto::downloader::{node_capabilities_client::NodeCapabilitiesClient, Empty};
 
-use super::authenticated_request;
+use crate::authenticated_request;
 
 #[derive(Debug, thiserror::Error)]
 pub enum NodeHandleError {
@@ -25,7 +25,7 @@ pub struct NodeHandle {
 }
 
 impl NodeHandle {
-    pub(super) fn new(name: Box<str>, address: Box<str>, token: Box<str>, channel: Channel) -> Self {
+    pub(crate) fn new(name: Box<str>, address: Box<str>, token: Box<str>, channel: Channel) -> Self {
         Self {
             name,
             address,
@@ -84,9 +84,7 @@ impl NodeHandle {
     pub fn mark_unavailable(&self) {
         self.available.store(false, Relaxed);
     }
-}
 
-impl NodeHandle {
     pub async fn fetch_supported_domains(&self) -> Result<Vec<String>, NodeHandleError> {
         let mut client = NodeCapabilitiesClient::new(self.channel.clone());
         let response = client.get_supported_domains(authenticated_request(Empty {}, &self.token)?).await?;
