@@ -56,18 +56,27 @@ The requested new task was:
   - shared `download_media(...)`
   - shared `DownloadSession` / `DownloadEvent` stream decoding
 - The bot now only converts shared download events into its own upload streams and local media entities.
+- Added a Telegram outbound adapter boundary for handler-side messaging:
+  - introduced `MessengerPort` plus a `TelegramMessenger` implementation
+  - moved handler-side text send/edit/delete and inline-answer operations behind the adapter
+  - updated handler progress helpers to use the adapter instead of calling the Telegram bot directly
+  - kept existing interactor orchestration in handlers for now, per the current scope
+- Removed direct token-aware error formatting from handlers by adding an injected `ErrorMessageFormatter`.
+- Cleaned the Telegram adapter conversion layer to use `From` impls instead of local conversion helpers for parse mode and inline-query result mapping.
 
 ## Verification
 
 - `cargo check -p ytdl_tg_bot -p ytdl_tg_cookie_assignment -p ytdl_tg_downloader` passed.
 - `cargo check -p ytdl_tg_cookie_assignment` passed after the later reconcile and balancing changes.
 - `cargo check -p ytdl_tg_downloader_client -p ytdl_tg_bot` passed after extracting shared downloader-node routing/client logic.
+- `cargo check -p ytdl_tg_bot` passed after introducing the handler-side Telegram adapter layer.
 - `cargo fmt` could not be run in this environment because `cargo-fmt` / `rustfmt` is not installed for the available toolchains.
 
 ## Design Notes To Discuss
 
 - Downloader cookie storage is still one file per domain path (`/tmp/cookies/<domain>.txt`) even though assignments are tracked by `cookie_id`. That works with the current “at most one cookie per domain per node” policy, but it becomes a limitation if you want multiple cookies for the same domain on one node.
 - If `ListNodeCookies` fails for a worker during a cycle, current logic still treats that worker as effectively untrusted for reconciliation. You said reassigning cookies away from a down node is acceptable, so I left that behavior as-is, but it is still a deliberate tradeoff.
+- The new adapter boundary is only applied at the handler/progress layer so far. `send_media` interactors and lower-level Telegram send helpers still use Telegram-specific APIs directly and can be moved behind ports later if we continue the refactor.
 
 ## Next Reasonable Steps
 

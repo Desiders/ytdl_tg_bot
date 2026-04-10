@@ -2,19 +2,16 @@ use crate::{
     entities::{language::Language, Range, ShortMedia},
     handlers_utils::progress,
     interactors::{get_media, Interactor as _},
+    services::messenger::{telegram::TelegramMessenger, AnswerInlineQueryRequest, InlineQueryArticle, MessengerPort as _, TextFormat},
     services::yt_toolkit::GetVideoInfoErrorKind,
     utils::format_error_report,
 };
 
 use froodi::Inject;
 use telers::{
-    enums::ParseMode,
     event::{telegram::HandlerResult, EventReturn},
-    methods::AnswerInlineQuery,
-    types::{
-        InlineKeyboardButton, InlineKeyboardMarkup, InlineQuery, InlineQueryResult, InlineQueryResultArticle, InputTextMessageContent,
-    },
-    Bot, Extension,
+    types::InlineQuery,
+    Extension,
 };
 use tracing::{debug, error, instrument, warn};
 use url::Url;
@@ -24,9 +21,9 @@ const SELECT_INLINE_QUERY_CACHE_TIME: i64 = 86400; // 24 hours
 
 #[instrument(skip_all, fields(query_id, url = url.as_str()))]
 pub async fn select_by_url(
-    bot: Bot,
     InlineQuery { id: query_id, .. }: InlineQuery,
     Extension(url): Extension<Url>,
+    Inject(messenger): Inject<TelegramMessenger>,
     Inject(get_basic_info_media): Inject<get_media::GetShortMediaByURL>,
     Inject(get_media): Inject<get_media::GetUncachedVideoByURL>,
 ) -> HandlerResult {
@@ -51,7 +48,7 @@ pub async fn select_by_url(
                 Ok(playlist) => playlist.inner.into_iter().map(|(val, _)| val.into()).collect(),
                 Err(err) => {
                     error!(err = format_error_report(&err), "Get info error");
-                    progress::is_error_in_inline_query(&bot, &query_id, "Sorry, an error to get media").await?;
+                    progress::is_error_in_inline_query(&*messenger, &query_id, "Sorry, an error to get media").await?;
                     return Ok(EventReturn::Finish);
                 }
             }
@@ -59,59 +56,53 @@ pub async fn select_by_url(
     };
     if media_many.is_empty() {
         warn!("Empty playlist");
-        progress::is_error_in_inline_query(&bot, &query_id, "Playlist is empty").await?;
+        progress::is_error_in_inline_query(&*messenger, &query_id, "Playlist is empty").await?;
         return Ok(EventReturn::Finish);
     }
 
-    let mut results: Vec<InlineQueryResult> = Vec::with_capacity(media_many.len());
+    let mut results: Vec<InlineQueryArticle> = Vec::with_capacity(media_many.len() * 2);
     for media in media_many {
         let title = media.title.as_deref().unwrap_or("No name");
         let thumbnail = media.thumbnail.map(|val| val.to_string());
         let result_id = Uuid::new_v4();
 
-        results.push(
-            InlineQueryResultArticle::new(
-                format!("video_{result_id}"),
-                title,
-                InputTextMessageContent::new("🔍 Preparing download...").parse_mode(ParseMode::HTML),
-            )
-            .thumbnail_url_option(thumbnail.clone())
-            .description("Click to download video")
-            .reply_markup(InlineKeyboardMarkup::new([[
-                InlineKeyboardButton::new("...").callback_data("video_download")
-            ]]))
-            .into(),
-        );
-        results.push(
-            InlineQueryResultArticle::new(
-                format!("audio_{result_id}"),
-                "↑",
-                InputTextMessageContent::new("🔍 Preparing download...").parse_mode(ParseMode::HTML),
-            )
-            .thumbnail_url_option(thumbnail)
-            .description("Click to download audio")
-            .reply_markup(InlineKeyboardMarkup::new([[
-                InlineKeyboardButton::new("...").callback_data("audio_download")
-            ]]))
-            .into(),
-        );
+        results.push(InlineQueryArticle {
+            id: format!("video_{result_id}"),
+            title: title.to_owned(),
+            content_text: "🔍 Preparing download...".to_owned(),
+            content_format: Some(TextFormat::Html),
+            thumbnail_url: thumbnail.clone(),
+            description: Some("Click to download video".to_owned()),
+            callback_data: Some("video_download".to_owned()),
+        });
+        results.push(InlineQueryArticle {
+            id: format!("audio_{result_id}"),
+            title: "↑".to_owned(),
+            content_text: "🔍 Preparing download...".to_owned(),
+            content_format: Some(TextFormat::Html),
+            thumbnail_url: thumbnail,
+            description: Some("Click to download audio".to_owned()),
+            callback_data: Some("audio_download".to_owned()),
+        });
     }
 
-    bot.send(
-        AnswerInlineQuery::new(query_id, results)
-            .is_personal(false)
-            .cache_time(SELECT_INLINE_QUERY_CACHE_TIME),
-    )
-    .await?;
+    messenger
+        .answer_inline_query(AnswerInlineQueryRequest {
+            query_id: &query_id,
+            results,
+            cache_time: SELECT_INLINE_QUERY_CACHE_TIME,
+            is_personal: false,
+        })
+        .await?;
     Ok(EventReturn::Finish)
 }
 
 #[instrument(skip_all, fields(query_id, text))]
 pub async fn select_by_text(
-    bot: Bot,
     InlineQuery {
         id: query_id, query: text, ..
     }: InlineQuery,
+    Inject(messenger): Inject<TelegramMessenger>,
     Inject(get_basic_info_media): Inject<get_media::SearchMediaInfo>,
 ) -> HandlerResult {
     debug!("Got text");
@@ -129,55 +120,49 @@ pub async fn select_by_text(
             .collect(),
         Err(err) => {
             error!(err = format_error_report(&err), "Search media error");
-            progress::is_error_in_inline_query(&bot, &query_id, "Sorry, an error to search media").await?;
+            progress::is_error_in_inline_query(&*messenger, &query_id, "Sorry, an error to search media").await?;
             return Ok(EventReturn::Finish);
         }
     };
     if media_many.is_empty() {
         warn!("Empty playlist");
-        progress::is_error_in_inline_query(&bot, &query_id, "Playlist is empty").await?;
+        progress::is_error_in_inline_query(&*messenger, &query_id, "Playlist is empty").await?;
         return Ok(EventReturn::Finish);
     }
 
-    let mut results: Vec<InlineQueryResult> = Vec::with_capacity(media_many.len());
+    let mut results: Vec<InlineQueryArticle> = Vec::with_capacity(media_many.len() * 2);
     for media in media_many {
         let title = media.title.as_deref().unwrap_or("No name");
         let thumbnail = media.thumbnail.map(|val| val.to_string());
         let id = &media.id;
 
-        results.push(
-            InlineQueryResultArticle::new(
-                format!("video_{id}"),
-                title,
-                InputTextMessageContent::new("🔍 Preparing download...").parse_mode(ParseMode::HTML),
-            )
-            .thumbnail_url_option(thumbnail.clone())
-            .description("Click to download video")
-            .reply_markup(InlineKeyboardMarkup::new([[
-                InlineKeyboardButton::new("...").callback_data("video_download")
-            ]]))
-            .into(),
-        );
-        results.push(
-            InlineQueryResultArticle::new(
-                format!("audio_{id}"),
-                "↑",
-                InputTextMessageContent::new("🔍 Preparing download...").parse_mode(ParseMode::HTML),
-            )
-            .thumbnail_url_option(thumbnail)
-            .description("Click to download audio")
-            .reply_markup(InlineKeyboardMarkup::new([[
-                InlineKeyboardButton::new("...").callback_data("audio_download")
-            ]]))
-            .into(),
-        );
+        results.push(InlineQueryArticle {
+            id: format!("video_{id}"),
+            title: title.to_owned(),
+            content_text: "🔍 Preparing download...".to_owned(),
+            content_format: Some(TextFormat::Html),
+            thumbnail_url: thumbnail.clone(),
+            description: Some("Click to download video".to_owned()),
+            callback_data: Some("video_download".to_owned()),
+        });
+        results.push(InlineQueryArticle {
+            id: format!("audio_{id}"),
+            title: "↑".to_owned(),
+            content_text: "🔍 Preparing download...".to_owned(),
+            content_format: Some(TextFormat::Html),
+            thumbnail_url: thumbnail,
+            description: Some("Click to download audio".to_owned()),
+            callback_data: Some("audio_download".to_owned()),
+        });
     }
 
-    bot.send(
-        AnswerInlineQuery::new(query_id, results)
-            .is_personal(false)
-            .cache_time(SELECT_INLINE_QUERY_CACHE_TIME),
-    )
-    .await?;
+    messenger
+        .answer_inline_query(AnswerInlineQueryRequest {
+            query_id: &query_id,
+            results,
+            cache_time: SELECT_INLINE_QUERY_CACHE_TIME,
+            is_personal: false,
+        })
+        .await?;
     Ok(EventReturn::Finish)
 }

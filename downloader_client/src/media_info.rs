@@ -1,9 +1,7 @@
 use tonic::Code;
 use ytdl_tg_bot_proto::downloader::{downloader_client::DownloaderClient, MediaInfoRequest, MediaInfoResponse};
 
-use crate::{
-    authenticated_request, with_node_failover, GetMediaInfoErrorKind, NodeAttemptErrorKind, NodeRouter,
-};
+use crate::{authenticated_request, with_node_failover, GetMediaInfoErrorKind, NodeAttemptErrorKind, NodeRouter};
 
 const MAX_DECODING_MESSAGE_SIZE: usize = 30 * 1024 * 1024;
 

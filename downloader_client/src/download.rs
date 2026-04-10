@@ -52,7 +52,11 @@ pub async fn download_media(
                 let response = client.download_media(authenticated_request(request, &node.token)?).await?;
                 let mut stream = response.into_inner();
 
-                let first = stream.message().await.map_err(DownloadErrorKind::from)?.ok_or(DownloadErrorKind::InvalidStream)?;
+                let first = stream
+                    .message()
+                    .await
+                    .map_err(DownloadErrorKind::from)?
+                    .ok_or(DownloadErrorKind::InvalidStream)?;
                 let Payload::Meta(meta) = first.payload.ok_or(DownloadErrorKind::InvalidStream)? else {
                     return Err(DownloadErrorKind::InvalidStream);
                 };
