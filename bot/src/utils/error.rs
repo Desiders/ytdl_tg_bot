@@ -1,8 +1,7 @@
 use crate::{
     entities::{ParseRangeError, ParseSectionError},
     errors::ErrorKind,
-    interactors::{download::media, get_media},
-    services::{messenger::MessengerError, node_router},
+    services::{download::media, get_media, messenger::MessengerError, node_router},
 };
 
 use std::{borrow::Cow, fmt::Debug, fmt::Write, iter};

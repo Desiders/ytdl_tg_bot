@@ -1,8 +1,8 @@
-use super::Interactor;
 use crate::{
     database::TxManager,
     entities::{Chat, ChatConfig, ChatConfigExcludeDomain, ChatConfigExcludeDomains, ChatConfigUpdate},
     errors::ErrorKind,
+    interactors::Interactor,
 };
 
 use std::convert::Infallible;
