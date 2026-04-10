@@ -15,7 +15,11 @@ use crate::{
     config::{Config, DatabaseConfig, RandomCmdConfig, TimeoutsConfig, TrackingParamsConfig, YtToolkitConfig},
     database::TxManager,
     interactors::{chat, download::media, downloaded_media, get_media, node_router, send_media},
-    services::node_router::{DownloaderClusterConfig, DownloaderServiceTarget, DownloaderTlsConfig, NodeRouter},
+    services::{
+        messenger::telegram::TelegramMessenger,
+        node_router::{DownloaderClusterConfig, DownloaderServiceTarget, DownloaderTlsConfig, NodeRouter},
+    },
+    utils::ErrorMessageFormatter,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -40,6 +44,8 @@ pub(super) fn init(bot: Bot, cfg: Config) -> Container {
 
             provide(|| Ok(Mutex::new(ContextV7::new()))),
             provide(|| Ok(Client::new())),
+            provide(|Inject(bot_cfg): Inject<crate::config::BotConfig>| Ok(ErrorMessageFormatter::new(bot_cfg.token.clone()))),
+            provide(|Inject(bot): Inject<Bot>| Ok(TelegramMessenger::new(bot))),
             provide(|| Ok(chat::SaveChat {})),
             provide(|| Ok(chat::AddExcludeDomain {})),
             provide(|| Ok(chat::RemoveExcludeDomain {})),

@@ -12,7 +12,8 @@ use crate::{
         },
         send_media, Interactor as _,
     },
-    utils::{format_error_report, FormatErrorToMessage as _},
+    services::{messenger::telegram::TelegramMessenger, messenger::TextFormat},
+    utils::{format_error_report, ErrorMessageFormatter},
 };
 
 use froodi::{Inject, InjectTransient};
@@ -21,23 +22,23 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 use telers::{
-    enums::ParseMode,
     event::{telegram::HandlerResult, EventReturn},
     types::Message,
     utils::text::{html_expandable_blockquote, html_quote},
-    Bot, Extension,
+    Extension,
 };
 use tracing::{debug, error, instrument, warn};
 use url::Url;
 
 #[instrument(skip_all, fields(%message_id = message.message_id(), %url = url.as_str(), ?params))]
 pub async fn download(
-    bot: Bot,
     message: Message,
     params: Params,
     Extension(url): Extension<Url>,
     Extension(chat_cfg): Extension<ChatConfig>,
     Inject(cfg): Inject<Config>,
+    Inject(error_formatter): Inject<ErrorMessageFormatter>,
+    Inject(messenger): Inject<TelegramMessenger>,
     Inject(get_media): Inject<get_media::GetVideoByURL>,
     Inject(download_playlist): Inject<media::DownloadVideoPlaylist>,
     Inject(upload_media): Inject<send_media::upload::SendVideo>,
@@ -51,8 +52,8 @@ pub async fn download(
     let message_id = message.message_id();
     let chat_id = message.chat().id();
 
-    let progress_message = progress::new(&bot, "🔍 Preparing download...", chat_id, Some(message_id), None).await?;
-    let progress_message_id = progress_message.message_id();
+    let progress_message = progress::new(&*messenger, "🔍 Preparing download...", chat_id, Some(message_id), None).await?;
+    let progress_message_id = progress_message.message_id;
 
     let playlist_range = match params.0.get("items") {
         Some(raw_value) => match Range::from_str(raw_value) {
@@ -61,9 +62,9 @@ pub async fn download(
                 error!(%err, "Parse range error");
                 let text = format!(
                     "Sorry, an error to parse range\n{}",
-                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                    html_expandable_blockquote(html_quote(error_formatter.format(&err).as_ref()))
                 );
-                let _ = progress::is_error_in_progress(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
+                let _ = progress::is_error_in_progress(&*messenger, chat_id, progress_message_id, &text, Some(TextFormat::Html)).await;
                 return Ok(EventReturn::Finish);
             }
         },
@@ -76,9 +77,9 @@ pub async fn download(
                 error!(%err, "Parse sections error");
                 let text = format!(
                     "Sorry, an error to parse sections\n{}",
-                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                    html_expandable_blockquote(html_quote(error_formatter.format(&err).as_ref()))
                 );
-                let _ = progress::is_error_in_progress(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
+                let _ = progress::is_error_in_progress(&*messenger, chat_id, progress_message_id, &text, Some(TextFormat::Html)).await;
                 return Ok(EventReturn::Finish);
             }
         }),
@@ -115,11 +116,11 @@ pub async fn download(
                 error!(err = format_error_report(&err), "Send error");
                 let text = format!(
                     "Sorry, an error to send media\n{}",
-                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                    html_expandable_blockquote(html_quote(error_formatter.format(&err).as_ref()))
                 );
-                let _ = progress::is_error_in_progress(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
+                let _ = progress::is_error_in_progress(&*messenger, chat_id, progress_message_id, &text, Some(TextFormat::Html)).await;
             } else {
-                let _ = progress::delete(&bot, chat_id, progress_message_id).await;
+                let _ = progress::delete(&*messenger, chat_id, progress_message_id).await;
             }
         }
         Ok(Playlist { cached, uncached }) => {
@@ -135,7 +136,7 @@ pub async fn download(
             tokio::join!(
                 async {
                     while let Some((media_for_upload, media, format)) = media_receiver.recv().await {
-                        let _ = progress::is_sending(&bot, chat_id, progress_message_id).await;
+                        let _ = progress::is_sending(&*messenger, chat_id, progress_message_id).await;
                         let file_id = match upload_media
                             .execute(send_media::upload::SendVideoInput {
                                 chat_id: cfg.chat.receiver_chat_id,
@@ -155,7 +156,7 @@ pub async fn download(
                             Ok(val) => val,
                             Err(err) => {
                                 error!(err = format_error_report(&err), "Send error");
-                                send_err = Some(html_quote(err.format(&bot.token)));
+                                send_err = Some(html_quote(error_formatter.format(&err).as_ref()));
                                 continue;
                             }
                         };
@@ -185,13 +186,17 @@ pub async fn download(
                 },
                 async {
                     while let Some(errs) = errs_receiver.recv().await {
-                        download_errs.push(errs.into_iter().map(|err| html_quote(err.format(&bot.token))).collect());
+                        download_errs.push(
+                            errs.into_iter()
+                                .map(|err| html_quote(error_formatter.format(&err).as_ref()))
+                                .collect(),
+                        );
                     }
                 },
                 async {
                     while let Some(progress_str) = progress_receiver.recv().await {
                         if progress::is_downloading_with_progress(
-                            &bot,
+                            &*messenger,
                             chat_id,
                             progress_message_id,
                             progress_str,
@@ -210,15 +215,16 @@ pub async fn download(
                         error!(%err, "Download error");
                         let text = format!(
                             "Sorry, an error to download playlist\n{}",
-                            html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                            html_expandable_blockquote(html_quote(error_formatter.format(&err).as_ref()))
                         );
-                        let _ = progress::is_error_in_progress(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
+                        let _ =
+                            progress::is_error_in_progress(&*messenger, chat_id, progress_message_id, &text, Some(TextFormat::Html)).await;
                     }
                 }
             );
             let errs = download_errs.into_iter().chain(send_err.map(|err| vec![err])).collect::<Vec<_>>();
             let media_to_send_count = downloaded_playlist.len();
-            let _ = progress::is_errors_if_exist(&bot, chat_id, progress_message_id, &errs, media_to_send_count).await;
+            let _ = progress::is_errors_if_exist(&*messenger, chat_id, progress_message_id, &errs, media_to_send_count).await;
 
             downloaded_playlist.sort_by_key(|val| val.playlist_index);
             if let Err(err) = send_playlist
@@ -233,25 +239,25 @@ pub async fn download(
                 error!(%err, "Send error");
                 let text = format!(
                     "Sorry, an error to send playlist\n{}",
-                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                    html_expandable_blockquote(html_quote(error_formatter.format(&err).as_ref()))
                 );
-                let _ = progress::is_error_in_progress(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
+                let _ = progress::is_error_in_progress(&*messenger, chat_id, progress_message_id, &text, Some(TextFormat::Html)).await;
             } else if errs.is_empty() {
-                let _ = progress::delete(&bot, chat_id, progress_message_id).await;
+                let _ = progress::delete(&*messenger, chat_id, progress_message_id).await;
             }
         }
         Ok(Empty) => {
             warn!("Empty playlist");
             let text = "Playlist is empty";
-            let _ = progress::is_error_in_progress(&bot, chat_id, message_id, text, Some(ParseMode::HTML)).await;
+            let _ = progress::is_error_in_progress(&*messenger, chat_id, message_id, text, Some(TextFormat::Html)).await;
         }
         Err(err) => {
             error!(err = format_error_report(&err), "Get error");
             let text = format!(
                 "Sorry, an error to get info\n{}",
-                html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                html_expandable_blockquote(html_quote(error_formatter.format(&err).as_ref()))
             );
-            let _ = progress::is_error_in_progress(&bot, chat_id, progress_message_id, &text, Some(ParseMode::HTML)).await;
+            let _ = progress::is_error_in_progress(&*messenger, chat_id, progress_message_id, &text, Some(TextFormat::Html)).await;
             return Ok(EventReturn::Finish);
         }
     }

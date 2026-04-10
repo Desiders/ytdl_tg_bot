@@ -26,6 +26,21 @@ pub trait FormatErrorToMessage {
     fn format(&self, token: &str) -> Cow<'static, str>;
 }
 
+#[derive(Clone)]
+pub struct ErrorMessageFormatter {
+    token: Box<str>,
+}
+
+impl ErrorMessageFormatter {
+    pub fn new(token: impl Into<Box<str>>) -> Self {
+        Self { token: token.into() }
+    }
+
+    pub fn format(&self, err: &(impl FormatErrorToMessage + ?Sized)) -> Cow<'static, str> {
+        err.format(&self.token)
+    }
+}
+
 impl FormatErrorToMessage for SessionErrorKind {
     fn format(&self, token: &str) -> Cow<'static, str> {
         match self {

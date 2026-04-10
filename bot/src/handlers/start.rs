@@ -1,19 +1,20 @@
 use crate::config::Config;
+use crate::services::{
+    messenger::telegram::TelegramMessenger,
+    messenger::{MessengerPort as _, SendTextRequest, TextFormat},
+};
 
 use froodi::Inject;
 use telers::{
-    enums::ParseMode,
     event::{telegram::HandlerResult, EventReturn},
-    methods::{GetMe, SendMessage},
-    types::{LinkPreviewOptions, Message, ReplyParameters},
+    types::Message,
     utils::text::{html_quote, html_text_link},
-    Bot,
 };
 use tracing::instrument;
 
 #[instrument(skip_all)]
-pub async fn start(bot: Bot, message: Message, Inject(cfg): Inject<Config>) -> HandlerResult {
-    let bot_info = bot.send(GetMe {}).await?;
+pub async fn start(message: Message, Inject(cfg): Inject<Config>, Inject(messenger): Inject<TelegramMessenger>) -> HandlerResult {
+    let bot_username = messenger.username().await?;
     let text = format!(
         "<b>Commands</b>\n\
         - <code>/vd</code> — download video. Calling this command is required to display download progress; otherwise, downloading will occur in \"silent\" mode.\n\
@@ -46,23 +47,20 @@ pub async fn start(bot: Bot, message: Message, Inject(cfg): Inject<Config>) -> H
         - I download media in the best quality under {max_file_size_in_mb}MB;\n\
         - The bot is open source: {source_code}.\
         ",
-        bot_username = bot_info.username.expect("Bots always have a username"),
+        bot_username = bot_username,
         max_file_size_in_mb = cfg.yt_dlp.max_file_size / 1000 / 1000,
         source_code = html_text_link("source code", html_quote(&cfg.bot.src_url)),
     );
 
-    bot.send(
-        SendMessage::new(message.chat().id(), text)
-            .parse_mode(ParseMode::HTML)
-            .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
-            .reply_parameters_option(
-                message
-                    .reply_to_message()
-                    .as_ref()
-                    .map(|message| ReplyParameters::new(message.message_id()).allow_sending_without_reply(true)),
-            ),
-    )
-    .await?;
+    messenger
+        .send_text(SendTextRequest {
+            chat_id: message.chat().id(),
+            text: &text,
+            reply_to_message_id: message.reply_to_message().as_ref().map(|message| message.message_id()),
+            format: Some(TextFormat::Html),
+            disable_link_preview: true,
+        })
+        .await?;
 
     Ok(EventReturn::Finish)
 }

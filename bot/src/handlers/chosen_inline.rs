@@ -12,24 +12,23 @@ use crate::{
         },
         send_media, Interactor as _,
     },
-    utils::{format_error_report, FormatErrorToMessage as _},
+    services::{messenger::telegram::TelegramMessenger, messenger::TextFormat},
+    utils::{format_error_report, ErrorMessageFormatter},
 };
 
 use froodi::{Inject, InjectTransient};
 use std::str::FromStr as _;
 use telers::{
-    enums::ParseMode,
     event::{telegram::HandlerResult, EventReturn},
     types::ChosenInlineResult,
     utils::text::{html_expandable_blockquote, html_quote},
-    Bot, Extension,
+    Extension,
 };
 use tracing::{debug, error, instrument, warn, Span};
 use url::Url;
 
 #[instrument(skip_all, fields(inline_message_id, url, ?params))]
 pub async fn download_video(
-    bot: Bot,
     params: Params,
     url_option: Option<Extension<Url>>,
     Extension(chat_cfg): Extension<ChatConfig>,
@@ -39,6 +38,8 @@ pub async fn download_video(
         ..
     }: ChosenInlineResult,
     Inject(cfg): Inject<Config>,
+    Inject(error_formatter): Inject<ErrorMessageFormatter>,
+    Inject(messenger): Inject<TelegramMessenger>,
     Inject(get_media): Inject<get_media::GetVideoByURL>,
     Inject(download_media): Inject<media::DownloadVideo>,
     Inject(upload_media): Inject<send_media::upload::SendVideo>,
@@ -68,9 +69,9 @@ pub async fn download_video(
                 error!(%err, "Parse sections error");
                 let text = format!(
                     "Sorry, an error to parse sections\n{}",
-                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                    html_expandable_blockquote(html_quote(error_formatter.format(&err).as_ref()))
                 );
-                let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
+                let _ = progress::is_error_in_chosen_inline(&*messenger, inline_message_id, &text, Some(TextFormat::Html)).await;
                 return Ok(EventReturn::Finish);
             }
         }),
@@ -105,9 +106,9 @@ pub async fn download_video(
                 error!(err = format_error_report(&err), "Edit error");
                 let text = format!(
                     "Sorry, an error to edit the message\n{}",
-                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                    html_expandable_blockquote(html_quote(error_formatter.format(&err).as_ref()))
                 );
-                let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
+                let _ = progress::is_error_in_chosen_inline(&*messenger, inline_message_id, &text, Some(TextFormat::Html)).await;
             }
         }
         Ok(Playlist { mut cached, .. }) if !cached.is_empty() => {
@@ -126,9 +127,9 @@ pub async fn download_video(
                 error!(err = format_error_report(&err), "Edit error");
                 let text = format!(
                     "Sorry, an error to edit the message\n{}",
-                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                    html_expandable_blockquote(html_quote(error_formatter.format(&err).as_ref()))
                 );
-                let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
+                let _ = progress::is_error_in_chosen_inline(&*messenger, inline_message_id, &text, Some(TextFormat::Html)).await;
             }
         }
         Ok(Playlist { mut uncached, .. }) if !uncached.is_empty() => {
@@ -141,7 +142,7 @@ pub async fn download_video(
             let ((), (), download_res) = tokio::join!(
                 async {
                     while let Some(progress_str) = progress_receiver.recv().await {
-                        if progress::is_downloading_with_progress_in_chosen_inline(&bot, inline_message_id, progress_str)
+                        if progress::is_downloading_with_progress_in_chosen_inline(&*messenger, inline_message_id, progress_str)
                             .await
                             .is_err()
                         {
@@ -151,7 +152,7 @@ pub async fn download_video(
                 },
                 async {
                     while let Some(err) = err_receiver.recv().await {
-                        errs.push(html_quote(err.format(&bot.token)));
+                        errs.push(html_quote(error_formatter.format(&err).as_ref()));
                     }
                 },
                 async { download_media.execute(input).await }
@@ -159,23 +160,23 @@ pub async fn download_video(
             let (media_for_upload, format) = match download_res {
                 Ok(Some(val)) => val,
                 Ok(None) => {
-                    let _ = progress::is_errors_in_chosen_inline(&bot, inline_message_id, &errs, Some(ParseMode::HTML)).await;
+                    let _ = progress::is_errors_in_chosen_inline(&*messenger, inline_message_id, &errs, Some(TextFormat::Html)).await;
                     return Ok(EventReturn::Finish);
                 }
                 Err(err) => {
                     error!(%err, "Download error");
                     let _ = progress::is_error_in_chosen_inline(
-                        &bot,
+                        &*messenger,
                         inline_message_id,
-                        &html_quote(err.format(&bot.token)),
-                        Some(ParseMode::HTML),
+                        &html_quote(error_formatter.format(&err).as_ref()),
+                        Some(TextFormat::Html),
                     )
                     .await;
                     return Ok(EventReturn::Finish);
                 }
             };
 
-            let _ = progress::is_sending_in_chosen_inline(&bot, inline_message_id).await;
+            let _ = progress::is_sending_in_chosen_inline(&*messenger, inline_message_id).await;
             let file_id = match upload_media
                 .execute(send_media::upload::SendVideoInput {
                     chat_id: cfg.chat.receiver_chat_id,
@@ -196,10 +197,10 @@ pub async fn download_video(
                 Err(err) => {
                     error!(err = format_error_report(&err), "Send error");
                     let _ = progress::is_error_in_chosen_inline(
-                        &bot,
+                        &*messenger,
                         inline_message_id,
-                        &html_quote(err.format(&bot.token)),
-                        Some(ParseMode::HTML),
+                        &html_quote(error_formatter.format(&err).as_ref()),
+                        Some(TextFormat::Html),
                     )
                     .await;
                     return Ok(EventReturn::Finish);
@@ -218,9 +219,9 @@ pub async fn download_video(
                 error!(err = format_error_report(&err), "Edit error");
                 let text = format!(
                     "Sorry, an error to edit the message\n{}",
-                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                    html_expandable_blockquote(html_quote(error_formatter.format(&err).as_ref()))
                 );
-                let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
+                let _ = progress::is_error_in_chosen_inline(&*messenger, inline_message_id, &text, Some(TextFormat::Html)).await;
                 return Ok(EventReturn::Finish);
             }
 
@@ -242,15 +243,15 @@ pub async fn download_video(
         Ok(Empty) => {
             warn!("Empty playlist");
             let text = "Playlist is empty";
-            let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, text, Some(ParseMode::HTML)).await;
+            let _ = progress::is_error_in_chosen_inline(&*messenger, inline_message_id, text, Some(TextFormat::Html)).await;
         }
         Err(err) => {
             error!(err = format_error_report(&err), "Get error");
             let text = format!(
                 "Sorry, an error to get info\n{}",
-                html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                html_expandable_blockquote(html_quote(error_formatter.format(&err).as_ref()))
             );
-            let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
+            let _ = progress::is_error_in_chosen_inline(&*messenger, inline_message_id, &text, Some(TextFormat::Html)).await;
             return Ok(EventReturn::Finish);
         }
         _ => unreachable!("Incorrect branch"),
@@ -260,7 +261,6 @@ pub async fn download_video(
 
 #[instrument(skip_all, fields(inline_message_id, url, ?params))]
 pub async fn download_audio(
-    bot: Bot,
     params: Params,
     url_option: Option<Extension<Url>>,
     Extension(chat_cfg): Extension<ChatConfig>,
@@ -270,6 +270,8 @@ pub async fn download_audio(
         ..
     }: ChosenInlineResult,
     Inject(cfg): Inject<Config>,
+    Inject(error_formatter): Inject<ErrorMessageFormatter>,
+    Inject(messenger): Inject<TelegramMessenger>,
     Inject(get_media): Inject<get_media::GetAudioByURL>,
     Inject(download_media): Inject<media::DownloadAudio>,
     Inject(upload_media): Inject<send_media::upload::SendAudio>,
@@ -299,9 +301,9 @@ pub async fn download_audio(
                 error!(%err, "Parse sections error");
                 let text = format!(
                     "Sorry, an error to parse sections\n{}",
-                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                    html_expandable_blockquote(html_quote(error_formatter.format(&err).as_ref()))
                 );
-                let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
+                let _ = progress::is_error_in_chosen_inline(&*messenger, inline_message_id, &text, Some(TextFormat::Html)).await;
                 return Ok(EventReturn::Finish);
             }
         }),
@@ -336,9 +338,9 @@ pub async fn download_audio(
                 error!(err = format_error_report(&err), "Edit error");
                 let text = format!(
                     "Sorry, an error to edit the message\n{}",
-                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                    html_expandable_blockquote(html_quote(error_formatter.format(&err).as_ref()))
                 );
-                let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
+                let _ = progress::is_error_in_chosen_inline(&*messenger, inline_message_id, &text, Some(TextFormat::Html)).await;
             }
         }
         Ok(Playlist { mut cached, .. }) if !cached.is_empty() => {
@@ -357,9 +359,9 @@ pub async fn download_audio(
                 error!(err = format_error_report(&err), "Edit error");
                 let text = format!(
                     "Sorry, an error to edit the message\n{}",
-                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                    html_expandable_blockquote(html_quote(error_formatter.format(&err).as_ref()))
                 );
-                let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
+                let _ = progress::is_error_in_chosen_inline(&*messenger, inline_message_id, &text, Some(TextFormat::Html)).await;
             }
         }
         Ok(Playlist { mut uncached, .. }) if !uncached.is_empty() => {
@@ -372,7 +374,7 @@ pub async fn download_audio(
             let ((), (), download_res) = tokio::join!(
                 async {
                     while let Some(progress_str) = progress_receiver.recv().await {
-                        if progress::is_downloading_with_progress_in_chosen_inline(&bot, inline_message_id, progress_str)
+                        if progress::is_downloading_with_progress_in_chosen_inline(&*messenger, inline_message_id, progress_str)
                             .await
                             .is_err()
                         {
@@ -382,7 +384,7 @@ pub async fn download_audio(
                 },
                 async {
                     while let Some(err) = err_receiver.recv().await {
-                        download_errs.push(html_quote(err.format(&bot.token)));
+                        download_errs.push(html_quote(error_formatter.format(&err).as_ref()));
                     }
                 },
                 async { download_media.execute(input).await }
@@ -390,23 +392,24 @@ pub async fn download_audio(
             let (media_for_upload, _format) = match download_res {
                 Ok(Some(val)) => val,
                 Ok(None) => {
-                    let _ = progress::is_errors_in_chosen_inline(&bot, inline_message_id, &download_errs, Some(ParseMode::HTML)).await;
+                    let _ =
+                        progress::is_errors_in_chosen_inline(&*messenger, inline_message_id, &download_errs, Some(TextFormat::Html)).await;
                     return Ok(EventReturn::Finish);
                 }
                 Err(err) => {
                     error!(%err, "Download error");
                     let _ = progress::is_error_in_chosen_inline(
-                        &bot,
+                        &*messenger,
                         inline_message_id,
-                        &html_quote(err.format(&bot.token)),
-                        Some(ParseMode::HTML),
+                        &html_quote(error_formatter.format(&err).as_ref()),
+                        Some(TextFormat::Html),
                     )
                     .await;
                     return Ok(EventReturn::Finish);
                 }
             };
 
-            let _ = progress::is_sending_in_chosen_inline(&bot, inline_message_id).await;
+            let _ = progress::is_sending_in_chosen_inline(&*messenger, inline_message_id).await;
             let file_id = match upload_media
                 .execute(send_media::upload::SendAudioInput {
                     chat_id: cfg.chat.receiver_chat_id,
@@ -427,10 +430,10 @@ pub async fn download_audio(
                 Err(err) => {
                     error!(err = format_error_report(&err), "Send error");
                     let _ = progress::is_error_in_chosen_inline(
-                        &bot,
+                        &*messenger,
                         inline_message_id,
-                        &html_quote(err.format(&bot.token)),
-                        Some(ParseMode::HTML),
+                        &html_quote(error_formatter.format(&err).as_ref()),
+                        Some(TextFormat::Html),
                     )
                     .await;
                     return Ok(EventReturn::Finish);
@@ -449,9 +452,9 @@ pub async fn download_audio(
                 error!(err = format_error_report(&err), "Edit error");
                 let text = format!(
                     "Sorry, an error to edit the message\n{}",
-                    html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                    html_expandable_blockquote(html_quote(error_formatter.format(&err).as_ref()))
                 );
-                let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
+                let _ = progress::is_error_in_chosen_inline(&*messenger, inline_message_id, &text, Some(TextFormat::Html)).await;
                 return Ok(EventReturn::Finish);
             }
 
@@ -473,15 +476,15 @@ pub async fn download_audio(
         Ok(Empty) => {
             warn!("Empty playlist");
             let text = "Playlist is empty";
-            let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, text, Some(ParseMode::HTML)).await;
+            let _ = progress::is_error_in_chosen_inline(&*messenger, inline_message_id, text, Some(TextFormat::Html)).await;
         }
         Err(err) => {
             error!(err = format_error_report(&err), "Get error");
             let text = format!(
                 "Sorry, an error to get info\n{}",
-                html_expandable_blockquote(html_quote(err.format(&bot.token)))
+                html_expandable_blockquote(html_quote(error_formatter.format(&err).as_ref()))
             );
-            let _ = progress::is_error_in_chosen_inline(&bot, inline_message_id, &text, Some(ParseMode::HTML)).await;
+            let _ = progress::is_error_in_chosen_inline(&*messenger, inline_message_id, &text, Some(TextFormat::Html)).await;
             return Ok(EventReturn::Finish);
         }
         _ => unreachable!("Incorrect branch"),
