@@ -36,8 +36,11 @@ use crate::{
     },
     handlers::{audio, chosen_inline, inline_query, start, stats, video},
     middlewares::{CreateChatMiddleware, ReactionMiddleware, RemoveTrackingParamsMiddleware, ReplaceDomainsMiddleware},
+    services::messenger::telegram::TelegramMessenger,
     utils::{on_shutdown, on_startup},
 };
+
+type Messenger = TelegramMessenger;
 
 #[tokio::main(flavor = "multi_thread")]
 #[allow(clippy::too_many_lines)]
@@ -68,7 +71,20 @@ async fn main() {
         Reqwest::default().with_api_server(Cow::Owned(APIServer::new(&base_url, &files_url, true, BareFilesPathWrapper))),
     );
 
-    let container = di_container::init(bot.clone(), config);
+    let cfg_registry = di_container::cfg_registry(config.clone());
+    let tg_messenger_registry = di_container::tg_messenger_registry(bot.clone(), cfg_registry.clone());
+    let node_router_registry = di_container::node_router_registry(cfg_registry.clone());
+    let interactors_registry =
+        di_container::interactors_registry::<Messenger>(cfg_registry.clone(), tg_messenger_registry.clone(), node_router_registry.clone());
+    let database_registry = di_container::database_registry(cfg_registry.clone());
+
+    let container = di_container::init(
+        cfg_registry,
+        tg_messenger_registry,
+        node_router_registry,
+        interactors_registry,
+        database_registry,
+    );
     let node_router = container.get::<NodeRouter>().await.unwrap();
     let cfg = container.get::<config::Config>().await.unwrap();
 
@@ -79,55 +95,55 @@ async fn main() {
                 .register_inner_middleware(ReplaceDomainsMiddleware)
                 .register_inner_middleware(ReactionMiddleware)
                 .register(
-                    Handler::new(video::download)
+                    Handler::new(video::download::<Messenger>)
                         .filter(MessageType::one(Text))
                         .filter(Command::many(["vd", "video", "video_download"]))
                         .filter(text_contains_url_with_reply),
                 )
                 .register(
-                    Handler::new(audio::download)
+                    Handler::new(audio::download::<Messenger>)
                         .filter(MessageType::one(Text))
                         .filter(Command::many(["ad", "audio", "audio_download"]))
                         .filter(text_contains_url_with_reply),
                 )
                 .register(
-                    Handler::new(video::random)
+                    Handler::new(video::random::<Messenger>)
                         .filter(MessageType::one(Text))
                         .filter(Command::many(["rv", "random_video"]))
                         .filter(random_cmd_is_enabled),
                 )
                 .register(
-                    Handler::new(audio::random)
+                    Handler::new(audio::random::<Messenger>)
                         .filter(MessageType::one(Text))
                         .filter(Command::many(["ra", "random_audio"]))
                         .filter(random_cmd_is_enabled),
                 )
                 .register(
-                    Handler::new(handlers::config::add_exclude_domain)
+                    Handler::new(handlers::config::add_exclude_domain::<Messenger>)
                         .filter(MessageType::one(Text))
                         .filter(Command::many(["add_ed", "add_exclude_domain"]))
                         .filter(text_contains_host_with_reply),
                 )
                 .register(
-                    Handler::new(handlers::config::remove_exclude_domain)
+                    Handler::new(handlers::config::remove_exclude_domain::<Messenger>)
                         .filter(MessageType::one(Text))
                         .filter(Command::many(["rm_ed", "remove_ed", "rm_exclude_domain", "remove_exclude_domain"]))
                         .filter(text_contains_host_with_reply),
                 )
                 .register(
-                    Handler::new(handlers::config::change_link_visibility)
+                    Handler::new(handlers::config::change_link_visibility::<Messenger>)
                         .filter(MessageType::one(Text))
                         .filter(Command::one("change_link_visibility")),
                 )
                 .register(
-                    Handler::new(video::download)
+                    Handler::new(video::download::<Messenger>)
                         .filter(ChatType::one(Private))
                         .filter(text_contains_url_with_reply)
                         .filter(is_via_bot.invert())
                         .filter(is_exclude_domain.invert()),
                 )
                 .register(
-                    Handler::new(video::download_quiet)
+                    Handler::new(video::download_quiet::<Messenger>)
                         .filter(text_contains_url)
                         .filter(url_is_blacklisted.invert())
                         .filter(url_is_skippable_by_param.invert())
@@ -138,20 +154,20 @@ async fn main() {
         .on_inline_query(|observer| {
             observer
                 .register_inner_middleware(RemoveTrackingParamsMiddleware)
-                .register(Handler::new(inline_query::select_by_url).filter(text_contains_url))
-                .register(Handler::new(inline_query::select_by_text).filter(text_empty.invert()))
+                .register(Handler::new(inline_query::select_by_url::<Messenger>).filter(text_contains_url))
+                .register(Handler::new(inline_query::select_by_text::<Messenger>).filter(text_empty.invert()))
         })
         .on_chosen_inline_result(|observer| {
             observer
                 .register_inner_middleware(RemoveTrackingParamsMiddleware)
                 .register_inner_middleware(ReplaceDomainsMiddleware)
                 .register(
-                    Handler::new(chosen_inline::download_video)
+                    Handler::new(chosen_inline::download_video::<Messenger>)
                         .filter(is_video_inline_result)
                         .filter(text_contains_url.or(text_empty.invert())),
                 )
                 .register(
-                    Handler::new(chosen_inline::download_audio)
+                    Handler::new(chosen_inline::download_audio::<Messenger>)
                         .filter(is_audio_inline_result)
                         .filter(text_contains_url.or(text_empty.invert())),
                 )
@@ -161,8 +177,8 @@ async fn main() {
         .on_update(|observer| observer.register_outer_middleware(CreateChatMiddleware))
         .on_message(|observer| {
             observer
-                .register(Handler::new(start).filter(Command::many(["start", "help"])))
-                .register(Handler::new(stats).filter(Command::one("stats")))
+                .register(Handler::new(start::<Messenger>).filter(Command::many(["start", "help"])))
+                .register(Handler::new(stats::<Messenger>).filter(Command::one("stats")))
         })
         .on_startup(|observer| observer.register(SimpleHandler::new(on_startup, (bot.clone(), node_router.clone(), cfg.clone()))))
         .on_shutdown(|observer| observer.register(SimpleHandler::new(on_shutdown, ())))

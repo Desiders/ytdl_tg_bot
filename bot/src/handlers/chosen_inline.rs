@@ -12,7 +12,7 @@ use crate::{
         },
         send_media, Interactor as _,
     },
-    services::{messenger::telegram::TelegramMessenger, messenger::TextFormat},
+    services::messenger::{MessengerPort, TextFormat},
     utils::{format_error_report, ErrorMessageFormatter},
 };
 
@@ -28,7 +28,7 @@ use tracing::{debug, error, instrument, warn, Span};
 use url::Url;
 
 #[instrument(skip_all, fields(inline_message_id, url, ?params))]
-pub async fn download_video(
+pub async fn download_video<Messenger>(
     params: Params,
     url_option: Option<Extension<Url>>,
     Extension(chat_cfg): Extension<ChatConfig>,
@@ -39,14 +39,17 @@ pub async fn download_video(
     }: ChosenInlineResult,
     Inject(cfg): Inject<Config>,
     Inject(error_formatter): Inject<ErrorMessageFormatter>,
-    Inject(messenger): Inject<TelegramMessenger>,
+    Inject(messenger): Inject<Messenger>,
     Inject(get_media): Inject<get_media::GetVideoByURL>,
     Inject(download_media): Inject<media::DownloadVideo>,
-    Inject(upload_media): Inject<send_media::upload::SendVideo>,
-    Inject(edit_media_by_id): Inject<send_media::id::EditVideo>,
+    Inject(upload_media): Inject<send_media::upload::SendVideo<Messenger>>,
+    Inject(edit_media_by_id): Inject<send_media::id::EditVideo<Messenger>>,
     Inject(add_downloaded_media): Inject<downloaded_media::AddVideo>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
-) -> HandlerResult {
+) -> HandlerResult
+where
+    Messenger: MessengerPort,
+{
     let inline_message_id = inline_message_id.as_deref().unwrap();
     let url = if let Some(Extension(val)) = url_option {
         val
@@ -260,7 +263,7 @@ pub async fn download_video(
 }
 
 #[instrument(skip_all, fields(inline_message_id, url, ?params))]
-pub async fn download_audio(
+pub async fn download_audio<Messenger>(
     params: Params,
     url_option: Option<Extension<Url>>,
     Extension(chat_cfg): Extension<ChatConfig>,
@@ -271,14 +274,17 @@ pub async fn download_audio(
     }: ChosenInlineResult,
     Inject(cfg): Inject<Config>,
     Inject(error_formatter): Inject<ErrorMessageFormatter>,
-    Inject(messenger): Inject<TelegramMessenger>,
+    Inject(messenger): Inject<Messenger>,
     Inject(get_media): Inject<get_media::GetAudioByURL>,
     Inject(download_media): Inject<media::DownloadAudio>,
-    Inject(upload_media): Inject<send_media::upload::SendAudio>,
-    Inject(edit_media_by_id): Inject<send_media::id::EditAudio>,
+    Inject(upload_media): Inject<send_media::upload::SendAudio<Messenger>>,
+    Inject(edit_media_by_id): Inject<send_media::id::EditAudio<Messenger>>,
     Inject(add_downloaded_media): Inject<downloaded_media::AddAudio>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
-) -> HandlerResult {
+) -> HandlerResult
+where
+    Messenger: MessengerPort,
+{
     let inline_message_id = inline_message_id.as_deref().unwrap();
     let url = if let Some(Extension(val)) = url_option {
         val

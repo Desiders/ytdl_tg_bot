@@ -1,9 +1,6 @@
 use crate::database::TxManager;
 use crate::interactors::{downloaded_media, node_router, Interactor as _};
-use crate::services::{
-    messenger::telegram::TelegramMessenger,
-    messenger::{MessengerPort as _, SendTextRequest, TextFormat},
-};
+use crate::services::messenger::{MessengerPort, SendTextRequest, TextFormat};
 use crate::utils::{format_error_report, ErrorMessageFormatter};
 
 use froodi::{Inject, InjectTransient};
@@ -16,14 +13,17 @@ use telers::{
 use tracing::{error, instrument};
 
 #[instrument(skip_all)]
-pub async fn stats(
+pub async fn stats<Messenger>(
     message: Message,
     Inject(error_formatter): Inject<ErrorMessageFormatter>,
-    Inject(messenger): Inject<TelegramMessenger>,
+    Inject(messenger): Inject<Messenger>,
     Inject(get_media_stats): Inject<downloaded_media::GetStats>,
     Inject(node_node_stats): Inject<node_router::GetStats>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
-) -> HandlerResult {
+) -> HandlerResult
+where
+    Messenger: MessengerPort,
+{
     let media_stats = get_media_stats
         .execute(downloaded_media::GetStatsInput {
             top_domains_limit: 5,

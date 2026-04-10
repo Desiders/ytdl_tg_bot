@@ -12,7 +12,7 @@ use crate::{
         },
         send_media, Interactor as _,
     },
-    services::{messenger::telegram::TelegramMessenger, messenger::TextFormat},
+    services::messenger::{MessengerPort, TextFormat},
     utils::{format_error_report, ErrorMessageFormatter},
 };
 
@@ -31,22 +31,25 @@ use tracing::{debug, error, instrument, warn};
 use url::Url;
 
 #[instrument(skip_all, fields(%message_id = message.message_id(), %url = url.as_str(), ?params))]
-pub async fn download(
+pub async fn download<Messenger>(
     message: Message,
     params: Params,
     Extension(url): Extension<Url>,
     Extension(chat_cfg): Extension<ChatConfig>,
     Inject(cfg): Inject<Config>,
     Inject(error_formatter): Inject<ErrorMessageFormatter>,
-    Inject(messenger): Inject<TelegramMessenger>,
+    Inject(messenger): Inject<Messenger>,
     Inject(get_media): Inject<get_media::GetAudioByURL>,
     Inject(download_playlist): Inject<media::DownloadAudioPlaylist>,
-    Inject(upload_media): Inject<send_media::upload::SendAudio>,
-    Inject(send_media_by_id): Inject<send_media::id::SendAudio>,
-    Inject(send_playlist): Inject<send_media::id::SendAudioPlaylist>,
+    Inject(upload_media): Inject<send_media::upload::SendAudio<Messenger>>,
+    Inject(send_media_by_id): Inject<send_media::id::SendAudio<Messenger>>,
+    Inject(send_playlist): Inject<send_media::id::SendAudioPlaylist<Messenger>>,
     Inject(add_downloaded_media): Inject<downloaded_media::AddAudio>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
-) -> HandlerResult {
+) -> HandlerResult
+where
+    Messenger: MessengerPort,
+{
     debug!("Got url");
 
     let message_id = message.message_id();
@@ -264,13 +267,16 @@ pub async fn download(
 }
 
 #[instrument(skip_all, fields(%message_id = message.message_id()))]
-pub async fn random(
+pub async fn random<Messenger>(
     message: Message,
     params: Params,
     Inject(get_media): Inject<downloaded_media::GetRandomAudio>,
-    Inject(send_playlist): Inject<send_media::id::SendAudioPlaylist>,
+    Inject(send_playlist): Inject<send_media::id::SendAudioPlaylist<Messenger>>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
-) -> HandlerResult {
+) -> HandlerResult
+where
+    Messenger: MessengerPort,
+{
     let message_id = message.message_id();
     let chat_id = message.chat().id();
 

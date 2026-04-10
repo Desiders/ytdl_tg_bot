@@ -2,7 +2,7 @@ use crate::{
     entities::{language::Language, Range, ShortMedia},
     handlers_utils::progress,
     interactors::{get_media, Interactor as _},
-    services::messenger::{telegram::TelegramMessenger, AnswerInlineQueryRequest, InlineQueryArticle, MessengerPort as _, TextFormat},
+    services::messenger::{AnswerInlineQueryRequest, InlineQueryArticle, MessengerPort, TextFormat},
     services::yt_toolkit::GetVideoInfoErrorKind,
     utils::format_error_report,
 };
@@ -20,13 +20,16 @@ use uuid::Uuid;
 const SELECT_INLINE_QUERY_CACHE_TIME: i64 = 86400; // 24 hours
 
 #[instrument(skip_all, fields(query_id, url = url.as_str()))]
-pub async fn select_by_url(
+pub async fn select_by_url<Messenger>(
     InlineQuery { id: query_id, .. }: InlineQuery,
     Extension(url): Extension<Url>,
-    Inject(messenger): Inject<TelegramMessenger>,
+    Inject(messenger): Inject<Messenger>,
     Inject(get_basic_info_media): Inject<get_media::GetShortMediaByURL>,
     Inject(get_media): Inject<get_media::GetUncachedVideoByURL>,
-) -> HandlerResult {
+) -> HandlerResult
+where
+    Messenger: MessengerPort,
+{
     debug!("Got url");
 
     let media_many: Vec<ShortMedia> = match get_basic_info_media.execute(get_media::GetShortMediaByURLInput { url: &url }).await {
@@ -98,13 +101,16 @@ pub async fn select_by_url(
 }
 
 #[instrument(skip_all, fields(query_id, text))]
-pub async fn select_by_text(
+pub async fn select_by_text<Messenger>(
     InlineQuery {
         id: query_id, query: text, ..
     }: InlineQuery,
-    Inject(messenger): Inject<TelegramMessenger>,
+    Inject(messenger): Inject<Messenger>,
     Inject(get_basic_info_media): Inject<get_media::SearchMediaInfo>,
-) -> HandlerResult {
+) -> HandlerResult
+where
+    Messenger: MessengerPort,
+{
     debug!("Got text");
 
     let media_many: Vec<ShortMedia> = match get_basic_info_media

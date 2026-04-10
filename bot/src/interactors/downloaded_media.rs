@@ -115,7 +115,7 @@ pub struct GetRandomMediaInput<'a> {
 }
 
 pub struct GetRandomVideo {
-    pub random_cfg: Arc<RandomCmdConfig>,
+    pub cfg: Arc<RandomCmdConfig>,
 }
 
 impl Interactor<GetRandomMediaInput<'_>> for &GetRandomVideo {
@@ -139,7 +139,7 @@ impl Interactor<GetRandomMediaInput<'_>> for &GetRandomVideo {
             .get_random(
                 limit,
                 MediaType::Video,
-                domains.map_or(&self.random_cfg.domains, |val| val.domains.as_ref()),
+                domains.map_or(&self.cfg.domains, |val| val.domains.as_ref()),
             )
             .await?;
         info!(len = media.len(), ?media, "Got random video");
@@ -149,7 +149,7 @@ impl Interactor<GetRandomMediaInput<'_>> for &GetRandomVideo {
 }
 
 pub struct GetRandomAudio {
-    pub random_cfg: Arc<RandomCmdConfig>,
+    pub cfg: Arc<RandomCmdConfig>,
 }
 
 impl Interactor<GetRandomMediaInput<'_>> for &GetRandomAudio {
@@ -173,7 +173,7 @@ impl Interactor<GetRandomMediaInput<'_>> for &GetRandomAudio {
             .get_random(
                 limit,
                 MediaType::Audio,
-                domains.map_or(&self.random_cfg.domains, |val| val.domains.as_ref()),
+                domains.map_or(&self.cfg.domains, |val| val.domains.as_ref()),
             )
             .await?;
         info!(len = media.len(), "Got random audio");
