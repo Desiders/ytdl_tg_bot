@@ -75,16 +75,10 @@ async fn main() {
     let tg_messenger_registry = di_container::tg_messenger_registry(bot.clone(), cfg_registry.clone());
     let node_router_registry = di_container::node_router_registry(cfg_registry.clone());
     let interactors_registry =
-        di_container::interactors_registry::<Messenger>(cfg_registry.clone(), tg_messenger_registry.clone(), node_router_registry.clone());
+        di_container::interactors_registry::<Messenger>(cfg_registry.clone(), tg_messenger_registry, node_router_registry);
     let database_registry = di_container::database_registry(cfg_registry.clone());
 
-    let container = di_container::init(
-        cfg_registry,
-        tg_messenger_registry,
-        node_router_registry,
-        interactors_registry,
-        database_registry,
-    );
+    let container = di_container::init(interactors_registry, database_registry);
     let node_router = container.get::<NodeRouter>().await.unwrap();
     let cfg = container.get::<config::Config>().await.unwrap();
 

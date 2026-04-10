@@ -11,7 +11,8 @@ use tracing::{error, instrument};
 use crate::{
     database::TxManager,
     entities::{Chat, ChatConfig},
-    interactors::{chat, Interactor as _},
+    interactors::Interactor as _,
+    services::chat,
 };
 
 #[derive(Clone)]
