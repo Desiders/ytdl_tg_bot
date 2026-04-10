@@ -1,6 +1,10 @@
 pub mod telegram;
 
+use crate::entities::MediaForUpload;
+
+use std::future::Future;
 use telers::errors::HandlerError;
+use url::Url;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TextFormat {
@@ -77,16 +81,85 @@ pub struct AnswerInlineQueryRequest<'a> {
     pub is_personal: bool,
 }
 
+pub struct UploadVideoRequest<'a> {
+    pub chat_id: i64,
+    pub reply_to_message_id: Option<i64>,
+    pub media_for_upload: MediaForUpload,
+    pub name: &'a str,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub duration: Option<i64>,
+    pub with_delete: bool,
+    pub webpage_url: &'a Url,
+    pub link_is_visible: bool,
+}
+
+pub struct UploadAudioRequest<'a> {
+    pub chat_id: i64,
+    pub reply_to_message_id: Option<i64>,
+    pub media_for_upload: MediaForUpload,
+    pub name: &'a str,
+    pub title: Option<&'a str>,
+    pub performer: Option<&'a str>,
+    pub duration: Option<i64>,
+    pub with_delete: bool,
+    pub webpage_url: &'a Url,
+    pub link_is_visible: bool,
+}
+
+pub struct SendMediaByIdRequest<'a> {
+    pub chat_id: i64,
+    pub reply_to_message_id: Option<i64>,
+    pub remote_id: &'a str,
+    pub webpage_url: Option<&'a Url>,
+    pub link_is_visible: bool,
+}
+
+pub struct EditMediaByIdRequest<'a> {
+    pub inline_message_id: &'a str,
+    pub remote_id: &'a str,
+    pub webpage_url: Option<&'a Url>,
+    pub link_is_visible: bool,
+}
+
+pub struct MediaGroupItem {
+    pub remote_id: Box<str>,
+    pub webpage_url: Option<Url>,
+}
+
+pub struct SendMediaGroupRequest {
+    pub chat_id: i64,
+    pub reply_to_message_id: Option<i64>,
+    pub items: Vec<MediaGroupItem>,
+    pub link_is_visible: bool,
+}
+
 pub trait MessengerPort: Send + Sync {
-    async fn username(&self) -> Result<String, MessengerError>;
+    fn username(&self) -> impl Future<Output = Result<String, MessengerError>> + Send;
 
-    async fn send_text(&self, request: SendTextRequest<'_>) -> Result<SentMessage, MessengerError>;
+    fn send_text(&self, request: SendTextRequest<'_>) -> impl Future<Output = Result<SentMessage, MessengerError>> + Send;
 
-    async fn edit_text(&self, request: EditTextRequest<'_>) -> Result<(), MessengerError>;
+    fn edit_text(&self, request: EditTextRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
 
-    async fn delete_message(&self, request: DeleteMessageRequest) -> Result<(), MessengerError>;
+    fn delete_message(&self, request: DeleteMessageRequest) -> impl Future<Output = Result<(), MessengerError>> + Send;
 
-    async fn answer_inline_error(&self, request: AnswerInlineErrorRequest<'_>) -> Result<(), MessengerError>;
+    fn answer_inline_error(&self, request: AnswerInlineErrorRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
 
-    async fn answer_inline_query(&self, request: AnswerInlineQueryRequest<'_>) -> Result<(), MessengerError>;
+    fn answer_inline_query(&self, request: AnswerInlineQueryRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
+
+    fn upload_video(&self, request: UploadVideoRequest<'_>) -> impl Future<Output = Result<Box<str>, MessengerError>> + Send;
+
+    fn upload_audio(&self, request: UploadAudioRequest<'_>) -> impl Future<Output = Result<Box<str>, MessengerError>> + Send;
+
+    fn send_video_by_id(&self, request: SendMediaByIdRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
+
+    fn send_audio_by_id(&self, request: SendMediaByIdRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
+
+    fn edit_video_by_id(&self, request: EditMediaByIdRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
+
+    fn edit_audio_by_id(&self, request: EditMediaByIdRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
+
+    fn send_video_group(&self, request: SendMediaGroupRequest) -> impl Future<Output = Result<(), MessengerError>> + Send;
+
+    fn send_audio_group(&self, request: SendMediaGroupRequest) -> impl Future<Output = Result<(), MessengerError>> + Send;
 }

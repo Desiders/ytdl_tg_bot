@@ -63,6 +63,15 @@ The requested new task was:
   - kept existing interactor orchestration in handlers for now, per the current scope
 - Removed direct token-aware error formatting from handlers by adding an injected `ErrorMessageFormatter`.
 - Cleaned the Telegram adapter conversion layer to use `From` impls instead of local conversion helpers for parse mode and inline-query result mapping.
+- Extended the messenger port to cover bot-side media delivery operations:
+  - upload video/audio
+  - send cached media by remote ID
+  - edit inline media by remote ID
+  - send cached media groups
+- Moved Telegram media send/edit/retry code out of `send_media` interactors and into the `TelegramMessenger` adapter.
+- Reworked `send_media` interactors to depend on the messenger port instead of building Telegram methods directly.
+- Removed the old `handlers_utils/send.rs` Telegram helper module because that transport logic now lives in the adapter.
+- Switched DI and bot consumers from the concrete `TelegramMessenger` type to `Messenger` so the composition root now wires against the port instead of the adapter implementation.
 
 ## Verification
 
@@ -77,6 +86,7 @@ The requested new task was:
 - Downloader cookie storage is still one file per domain path (`/tmp/cookies/<domain>.txt`) even though assignments are tracked by `cookie_id`. That works with the current “at most one cookie per domain per node” policy, but it becomes a limitation if you want multiple cookies for the same domain on one node.
 - If `ListNodeCookies` fails for a worker during a cycle, current logic still treats that worker as effectively untrusted for reconciliation. You said reassigning cookies away from a down node is acceptable, so I left that behavior as-is, but it is still a deliberate tradeoff.
 - The new adapter boundary is only applied at the handler/progress layer so far. `send_media` interactors and lower-level Telegram send helpers still use Telegram-specific APIs directly and can be moved behind ports later if we continue the refactor.
+- The outbound adapter boundary is now used by both handlers and `send_media` interactors, but handler inputs and some port DTOs still use Telegram-shaped identifiers such as `chat_id`, `message_id`, and `inline_message_id`. If we want a stronger messenger-neutral application boundary later, those IDs should become app-level wrapper types instead of raw Telegram-shaped fields.
 
 ## Next Reasonable Steps
 

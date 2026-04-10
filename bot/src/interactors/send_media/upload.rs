@@ -1,20 +1,14 @@
-use crate::{config::TimeoutsConfig, entities::MediaForUpload, handlers_utils::send, interactors::Interactor};
-
-use crate::utils::{media_link, sanitize_send_filename};
-use std::sync::Arc;
-use telers::enums::ParseMode;
-use telers::{
-    errors::SessionErrorKind,
-    methods,
-    types::{InputFile, ReplyParameters},
-    Bot,
+use crate::{
+    entities::MediaForUpload,
+    interactors::Interactor,
+    services::messenger::{MessengerError, MessengerPort, UploadAudioRequest, UploadVideoRequest},
 };
-use tracing::{debug, error, info, instrument};
+
+use std::sync::Arc;
 use url::Url;
 
-pub struct SendVideo {
-    pub bot: Arc<Bot>,
-    pub timeouts_cfg: Arc<TimeoutsConfig>,
+pub struct SendVideo<Messenger> {
+    pub messenger: Arc<Messenger>,
 }
 
 pub struct SendVideoInput<'a> {
@@ -30,9 +24,8 @@ pub struct SendVideoInput<'a> {
     pub link_is_visible: bool,
 }
 
-pub struct SendAudio {
-    pub bot: Arc<Bot>,
-    pub timeouts_cfg: Arc<TimeoutsConfig>,
+pub struct SendAudio<Messenger> {
+    pub messenger: Arc<Messenger>,
 }
 
 pub struct SendAudioInput<'a> {
@@ -48,134 +41,54 @@ pub struct SendAudioInput<'a> {
     pub link_is_visible: bool,
 }
 
-impl Interactor<SendVideoInput<'_>> for &SendVideo {
-    type Output = Box<str>;
-    type Err = SessionErrorKind;
+impl<Messenger> Interactor<SendVideoInput<'_>> for &SendVideo<Messenger>
+where
+    Messenger: MessengerPort,
+{
+    type Output = String;
+    type Err = MessengerError;
 
-    #[instrument(skip_all, fields(%name, ?width, ?height, %with_delete, path = ?path.to_string_lossy()))]
-    async fn execute(
-        self,
-        SendVideoInput {
-            chat_id,
-            reply_to_message_id,
-            media_for_upload:
-                MediaForUpload {
-                    path,
-                    thumb_stream,
-                    temp_dir,
-                    stream,
-                },
-            name,
-            width,
-            height,
-            duration,
-            with_delete,
-            webpage_url,
-            link_is_visible,
-        }: SendVideoInput<'_>,
-    ) -> Result<Self::Output, Self::Err> {
-        let send_name = sanitize_send_filename(path.as_ref(), name);
-        let video = InputFile::stream_with_name(stream.into_inner(), &send_name);
-        let thumbnail = thumb_stream.map(|stream| InputFile::stream_with_name(stream.into_inner(), "thumbnail.jpg"));
-        let method = methods::SendVideo::new(chat_id, video)
-            .width_option(width)
-            .height_option(height)
-            .supports_streaming(true)
-            .duration_option(duration)
-            .disable_notification(true)
-            .thumbnail_option(thumbnail)
-            .caption_option(if link_is_visible { media_link(Some(webpage_url)) } else { None })
-            .parse_mode(ParseMode::HTML)
-            .reply_parameters_option(reply_to_message_id.map(|val| ReplyParameters::new(val).allow_sending_without_reply(true)));
-
-        debug!("Video sending");
-        let message = send::once(&self.bot, method, Some(self.timeouts_cfg.send_by_upload)).await?;
-        drop(temp_dir);
-        let message_id = message.message_id();
-        let file_id = match message.video() {
-            Some(video) => video.file_id.clone(),
-            None => message.document().unwrap().file_id.clone(),
-        };
-        drop(message);
-        info!("Video sent");
-
-        if with_delete {
-            tokio::spawn({
-                let bot = self.bot.clone();
-                async move {
-                    if let Err(err) = bot.send(methods::DeleteMessage::new(chat_id, message_id)).await {
-                        error!(%err, "Delete message error");
-                    }
-                }
-            });
-        }
-
-        Ok(file_id)
+    async fn execute(self, input: SendVideoInput<'_>) -> Result<Self::Output, Self::Err> {
+        self.messenger
+            .upload_video(UploadVideoRequest {
+                chat_id: input.chat_id,
+                reply_to_message_id: input.reply_to_message_id,
+                media_for_upload: input.media_for_upload,
+                name: input.name,
+                width: input.width,
+                height: input.height,
+                duration: input.duration,
+                with_delete: input.with_delete,
+                webpage_url: input.webpage_url,
+                link_is_visible: input.link_is_visible,
+            })
+            .await
+            .map(Into::into)
     }
 }
 
-impl Interactor<SendAudioInput<'_>> for &SendAudio {
-    type Output = Box<str>;
-    type Err = SessionErrorKind;
+impl<Messenger> Interactor<SendAudioInput<'_>> for &SendAudio<Messenger>
+where
+    Messenger: MessengerPort,
+{
+    type Output = String;
+    type Err = MessengerError;
 
-    #[instrument(skip_all, fields(name, uploader, with_delete))]
-    async fn execute(
-        self,
-        SendAudioInput {
-            chat_id,
-            reply_to_message_id,
-            media_for_upload:
-                MediaForUpload {
-                    path,
-                    thumb_stream,
-                    temp_dir,
-                    stream,
-                },
-            name,
-            performer,
-            title,
-            duration,
-            with_delete,
-            webpage_url,
-            link_is_visible,
-        }: SendAudioInput<'_>,
-    ) -> Result<Self::Output, Self::Err> {
-        let send_name = sanitize_send_filename(path.as_ref(), name);
-        let audio = InputFile::stream_with_name(stream.into_inner(), &send_name);
-        let thumbnail = thumb_stream.map(|stream| InputFile::stream_with_name(stream.into_inner(), "thumbnail.jpg"));
-        let method = methods::SendAudio::new(chat_id, audio)
-            .title_option(title)
-            .duration_option(duration)
-            .disable_notification(true)
-            .performer_option(performer)
-            .thumbnail_option(thumbnail)
-            .caption_option(if link_is_visible { media_link(Some(webpage_url)) } else { None })
-            .parse_mode(ParseMode::HTML)
-            .reply_parameters_option(reply_to_message_id.map(|val| ReplyParameters::new(val).allow_sending_without_reply(true)));
-
-        debug!("Audio sending");
-        let message = send::once(&self.bot, method, Some(self.timeouts_cfg.send_by_upload)).await?;
-        drop(temp_dir);
-        let message_id = message.message_id();
-        let file_id = message
-            .audio()
-            .map(|val| val.file_id.clone())
-            .or(message.voice().map(|val| val.file_id.clone()))
-            .unwrap();
-        drop(message);
-        info!("Audio sent");
-
-        if with_delete {
-            tokio::spawn({
-                let bot = self.bot.clone();
-                async move {
-                    if let Err(err) = bot.send(methods::DeleteMessage::new(chat_id, message_id)).await {
-                        error!(%err, "Delete message error");
-                    }
-                }
-            });
-        }
-
-        Ok(file_id)
+    async fn execute(self, input: SendAudioInput<'_>) -> Result<Self::Output, Self::Err> {
+        self.messenger
+            .upload_audio(UploadAudioRequest {
+                chat_id: input.chat_id,
+                reply_to_message_id: input.reply_to_message_id,
+                media_for_upload: input.media_for_upload,
+                name: input.name,
+                title: input.title,
+                performer: input.performer,
+                duration: input.duration,
+                with_delete: input.with_delete,
+                webpage_url: input.webpage_url,
+                link_is_visible: input.link_is_visible,
+            })
+            .await
+            .map(Into::into)
     }
 }

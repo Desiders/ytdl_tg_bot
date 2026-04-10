@@ -2,7 +2,7 @@ use crate::{
     entities::{ParseRangeError, ParseSectionError},
     errors::ErrorKind,
     interactors::{download::media, get_media},
-    services::node_router,
+    services::{messenger::MessengerError, node_router},
 };
 
 use std::{borrow::Cow, fmt::Debug, fmt::Write, iter};
@@ -94,6 +94,12 @@ impl FormatErrorToMessage for get_media::GetMediaByURLErrorKind {
             get_media::GetMediaByURLErrorKind::Database(err) => err.format(token),
             get_media::GetMediaByURLErrorKind::NodeUnavailable => Cow::Owned(self.to_string()),
         }
+    }
+}
+
+impl FormatErrorToMessage for MessengerError {
+    fn format(&self, _token: &str) -> Cow<'static, str> {
+        Cow::Owned(self.to_string())
     }
 }
 

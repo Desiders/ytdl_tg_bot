@@ -1,8 +1,5 @@
 use crate::config::Config;
-use crate::services::{
-    messenger::telegram::TelegramMessenger,
-    messenger::{MessengerPort as _, SendTextRequest, TextFormat},
-};
+use crate::services::messenger::{MessengerPort, SendTextRequest, TextFormat};
 
 use froodi::Inject;
 use telers::{
@@ -13,7 +10,10 @@ use telers::{
 use tracing::instrument;
 
 #[instrument(skip_all)]
-pub async fn start(message: Message, Inject(cfg): Inject<Config>, Inject(messenger): Inject<TelegramMessenger>) -> HandlerResult {
+pub async fn start<Messenger>(message: Message, Inject(cfg): Inject<Config>, Inject(messenger): Inject<Messenger>) -> HandlerResult
+where
+    Messenger: MessengerPort,
+{
     let bot_username = messenger.username().await?;
     let text = format!(
         "<b>Commands</b>\n\

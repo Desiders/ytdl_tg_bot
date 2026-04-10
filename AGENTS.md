@@ -97,6 +97,13 @@ If this rule is broken, the TLS handshake fails with certificate verification er
 - refreshes node status periodically
 - refreshes downloader capabilities from node-reported cookie domains
 
+### Bot Messenger Boundary
+
+- Outbound messenger operations should go through `MessengerPort`.
+- `TelegramMessenger` is the adapter that owns Telegram API calls, retries, parse modes, inline answer wiring, and Telegram media send/edit method construction.
+- Bot handlers and `send_media` interactors should depend on the messenger port layer, not construct Telegram methods directly.
+- Keep Telegram SDK/API types isolated to the Telegram adapter. Utility string helpers such as HTML escaping may still live elsewhere, but Telegram request construction should have one source of truth.
+
 ### Cookie-assignment Controller
 
 - reads cookie files mounted into its own pod

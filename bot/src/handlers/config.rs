@@ -2,7 +2,7 @@ use crate::database::TxManager;
 use crate::entities::{ChatConfig, ChatConfigExcludeDomain, ChatConfigExcludeDomains, ChatConfigUpdate};
 use crate::handlers_utils::progress;
 use crate::interactors::{chat, Interactor as _};
-use crate::services::{messenger::telegram::TelegramMessenger, messenger::TextFormat};
+use crate::services::messenger::{MessengerPort, TextFormat};
 use crate::utils::{format_error_report, ErrorMessageFormatter};
 
 use froodi::{Inject, InjectTransient};
@@ -17,14 +17,17 @@ use telers::{
 use tracing::{error, instrument};
 use url::Host;
 
-pub async fn change_link_visibility(
+pub async fn change_link_visibility<Messenger>(
     message: Message,
     Extension(chat_cfg): Extension<ChatConfig>,
     Inject(error_formatter): Inject<ErrorMessageFormatter>,
-    Inject(messenger): Inject<TelegramMessenger>,
+    Inject(messenger): Inject<Messenger>,
     Inject(update_chat_cfg): Inject<chat::UpdateChatConfig>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
-) -> HandlerResult {
+) -> HandlerResult
+where
+    Messenger: MessengerPort,
+{
     let link_is_visible = !chat_cfg.link_is_visible;
 
     let text = match update_chat_cfg
@@ -62,15 +65,18 @@ pub async fn change_link_visibility(
 }
 
 #[instrument(skip_all, fields(%message_id = message.message_id(), %host))]
-pub async fn add_exclude_domain(
+pub async fn add_exclude_domain<Messenger>(
     message: Message,
     Extension(chat_cfg_domains): Extension<ChatConfigExcludeDomains>,
     Extension(host): Extension<Host>,
     Inject(error_formatter): Inject<ErrorMessageFormatter>,
-    Inject(messenger): Inject<TelegramMessenger>,
+    Inject(messenger): Inject<Messenger>,
     Inject(add_domain): Inject<chat::AddExcludeDomain>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
-) -> HandlerResult {
+) -> HandlerResult
+where
+    Messenger: MessengerPort,
+{
     let chat_id = message.chat().id();
     let host = host.to_string();
 
@@ -141,15 +147,18 @@ pub async fn add_exclude_domain(
 }
 
 #[instrument(skip_all, fields(%message_id = message.message_id(), %host))]
-pub async fn remove_exclude_domain(
+pub async fn remove_exclude_domain<Messenger>(
     message: Message,
     Extension(chat_cfg_domains): Extension<ChatConfigExcludeDomains>,
     Extension(host): Extension<Host>,
     Inject(error_formatter): Inject<ErrorMessageFormatter>,
-    Inject(messenger): Inject<TelegramMessenger>,
+    Inject(messenger): Inject<Messenger>,
     Inject(remove_domain): Inject<chat::RemoveExcludeDomain>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
-) -> HandlerResult {
+) -> HandlerResult
+where
+    Messenger: MessengerPort,
+{
     let chat_id = message.chat().id();
     let host = host.to_string();
 

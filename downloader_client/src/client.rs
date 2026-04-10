@@ -40,11 +40,11 @@ pub(crate) struct NodeClient {
 }
 
 impl NodeClient {
-    pub(crate) fn load(config: &DownloaderTlsConfig, server_name: &str) -> Self {
+    pub(crate) fn load(cfg: &DownloaderTlsConfig, server_name: &str) -> Self {
         let ca_cert_pem =
-            fs::read(&*config.ca_cert_path).unwrap_or_else(|_| panic!("Failed to read downloader CA certificate {}", config.ca_cert_path));
-        let cert_pem = fs::read(&*config.cert_path).unwrap_or_else(|_| panic!("Failed to read client certificate {}", config.cert_path));
-        let key_pem = fs::read(&*config.key_path).unwrap_or_else(|_| panic!("Failed to read client key {}", config.key_path));
+            fs::read(&*cfg.ca_cert_path).unwrap_or_else(|_| panic!("Failed to read downloader CA certificate {}", cfg.ca_cert_path));
+        let cert_pem = fs::read(&*cfg.cert_path).unwrap_or_else(|_| panic!("Failed to read client certificate {}", cfg.cert_path));
+        let key_pem = fs::read(&*cfg.key_path).unwrap_or_else(|_| panic!("Failed to read client key {}", cfg.key_path));
 
         Self {
             ca_cert_pem: ca_cert_pem.into(),

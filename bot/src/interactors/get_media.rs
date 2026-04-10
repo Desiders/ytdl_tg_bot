@@ -68,7 +68,7 @@ pub enum GetMediaByURLKind {
 
 pub struct GetVideoByURL {
     pub node_router: Arc<NodeRouter>,
-    pub tracking_params_cfg: Arc<TrackingParamsConfig>,
+    pub cfg: Arc<TrackingParamsConfig>,
 }
 
 impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
@@ -90,7 +90,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
     ) -> Result<Self::Output, Self::Err> {
         get_media_by_url(
             self.node_router.as_ref(),
-            self.tracking_params_cfg.as_ref(),
+            self.cfg.as_ref(),
             url,
             playlist_range,
             cache_search,
@@ -107,7 +107,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
 
 pub struct GetAudioByURL {
     pub node_router: Arc<NodeRouter>,
-    pub tracking_params_cfg: Arc<TrackingParamsConfig>,
+    pub cfg: Arc<TrackingParamsConfig>,
 }
 
 impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
@@ -129,7 +129,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
     ) -> Result<Self::Output, Self::Err> {
         get_media_by_url(
             self.node_router.as_ref(),
-            self.tracking_params_cfg.as_ref(),
+            self.cfg.as_ref(),
             url,
             playlist_range,
             cache_search,
@@ -146,7 +146,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
 
 pub struct GetUncachedVideoByURL {
     pub node_router: Arc<NodeRouter>,
-    pub tracking_params_cfg: Arc<TrackingParamsConfig>,
+    pub cfg: Arc<TrackingParamsConfig>,
 }
 
 impl Interactor<GetUncachedMediaByURLInput<'_>> for &GetUncachedVideoByURL {
@@ -177,7 +177,7 @@ impl Interactor<GetUncachedMediaByURLInput<'_>> for &GetUncachedVideoByURL {
         let mut playlist = playlist_from_response(response)?;
 
         for (media, _) in &mut playlist.inner {
-            media.remove_url_tracking_params(self.tracking_params_cfg.as_ref());
+            media.remove_url_tracking_params(self.cfg.as_ref());
         }
 
         info!(playlist_len = playlist.inner.len(), "Got media");
@@ -187,7 +187,7 @@ impl Interactor<GetUncachedMediaByURLInput<'_>> for &GetUncachedVideoByURL {
 
 pub struct GetShortMediaByURL {
     pub client: Arc<Client>,
-    pub yt_toolkit_cfg: Arc<YtToolkitConfig>,
+    pub cfg: Arc<YtToolkitConfig>,
 }
 
 pub struct GetShortMediaByURLInput<'a> {
@@ -201,7 +201,7 @@ impl Interactor<GetShortMediaByURLInput<'_>> for &GetShortMediaByURL {
     #[instrument(skip_all)]
     async fn execute(self, GetShortMediaByURLInput { url }: GetShortMediaByURLInput<'_>) -> Result<Self::Output, Self::Err> {
         debug!("Getting media");
-        let res = get_video_info(&self.client, &self.yt_toolkit_cfg.url, url.as_str()).await?;
+        let res = get_video_info(&self.client, &self.cfg.url, url.as_str()).await?;
         info!("Got media");
         Ok(res)
     }
@@ -209,7 +209,7 @@ impl Interactor<GetShortMediaByURLInput<'_>> for &GetShortMediaByURL {
 
 pub struct SearchMediaInfo {
     pub client: Arc<Client>,
-    pub yt_toolkit_cfg: Arc<YtToolkitConfig>,
+    pub cfg: Arc<YtToolkitConfig>,
 }
 
 pub struct SearchMediaInfoInput<'a> {
@@ -223,7 +223,7 @@ impl Interactor<SearchMediaInfoInput<'_>> for &SearchMediaInfo {
     #[instrument(skip_all)]
     async fn execute(self, SearchMediaInfoInput { text }: SearchMediaInfoInput<'_>) -> Result<Self::Output, Self::Err> {
         debug!("Searching media");
-        let res = search_video(&self.client, &self.yt_toolkit_cfg.url, text).await?;
+        let res = search_video(&self.client, &self.cfg.url, text).await?;
         info!("Got media");
         Ok(res)
     }

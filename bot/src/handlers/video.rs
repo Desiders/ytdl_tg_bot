@@ -12,7 +12,7 @@ use crate::{
         },
         send_media, Interactor as _,
     },
-    services::{messenger::telegram::TelegramMessenger, messenger::TextFormat},
+    services::messenger::{MessengerPort, TextFormat},
     utils::{format_error_report, ErrorMessageFormatter},
 };
 
@@ -31,22 +31,25 @@ use tracing::{debug, error, instrument, warn};
 use url::Url;
 
 #[instrument(skip_all, fields(%message_id = message.message_id(), %url = url.as_str(), ?params))]
-pub async fn download(
+pub async fn download<Messenger>(
     message: Message,
     params: Params,
     Extension(url): Extension<Url>,
     Extension(chat_cfg): Extension<ChatConfig>,
     Inject(cfg): Inject<Config>,
     Inject(error_formatter): Inject<ErrorMessageFormatter>,
-    Inject(messenger): Inject<TelegramMessenger>,
+    Inject(messenger): Inject<Messenger>,
     Inject(get_media): Inject<get_media::GetVideoByURL>,
     Inject(download_playlist): Inject<media::DownloadVideoPlaylist>,
-    Inject(upload_media): Inject<send_media::upload::SendVideo>,
-    Inject(send_media_by_id): Inject<send_media::id::SendVideo>,
-    Inject(send_playlist): Inject<send_media::id::SendVideoPlaylist>,
+    Inject(upload_media): Inject<send_media::upload::SendVideo<Messenger>>,
+    Inject(send_media_by_id): Inject<send_media::id::SendVideo<Messenger>>,
+    Inject(send_playlist): Inject<send_media::id::SendVideoPlaylist<Messenger>>,
     Inject(add_downloaded_media): Inject<downloaded_media::AddVideo>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
-) -> HandlerResult {
+) -> HandlerResult
+where
+    Messenger: MessengerPort,
+{
     debug!("Got url");
 
     let message_id = message.message_id();
@@ -265,7 +268,7 @@ pub async fn download(
 }
 
 #[instrument(skip_all, fields(%message_id = message.message_id(), %url = url.as_str(), ?params))]
-pub async fn download_quiet(
+pub async fn download_quiet<Messenger>(
     message: Message,
     params: Params,
     Extension(url): Extension<Url>,
@@ -273,12 +276,15 @@ pub async fn download_quiet(
     Inject(cfg): Inject<Config>,
     Inject(get_media): Inject<get_media::GetVideoByURL>,
     Inject(download_playlist): Inject<media::DownloadVideoPlaylist>,
-    Inject(upload_media): Inject<send_media::upload::SendVideo>,
-    Inject(send_media_by_id): Inject<send_media::id::SendVideo>,
-    Inject(send_playlist): Inject<send_media::id::SendVideoPlaylist>,
+    Inject(upload_media): Inject<send_media::upload::SendVideo<Messenger>>,
+    Inject(send_media_by_id): Inject<send_media::id::SendVideo<Messenger>>,
+    Inject(send_playlist): Inject<send_media::id::SendVideoPlaylist<Messenger>>,
     Inject(add_downloaded_media): Inject<downloaded_media::AddVideo>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
-) -> HandlerResult {
+) -> HandlerResult
+where
+    Messenger: MessengerPort,
+{
     debug!("Got url");
 
     let message_id = message.message_id();
@@ -423,13 +429,16 @@ pub async fn download_quiet(
 }
 
 #[instrument(skip_all, fields(%message_id = message.message_id()))]
-pub async fn random(
+pub async fn random<Messenger>(
     message: Message,
     params: Params,
     Inject(get_media): Inject<downloaded_media::GetRandomVideo>,
-    Inject(send_playlist): Inject<send_media::id::SendVideoPlaylist>,
+    Inject(send_playlist): Inject<send_media::id::SendVideoPlaylist<Messenger>>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
-) -> HandlerResult {
+) -> HandlerResult
+where
+    Messenger: MessengerPort,
+{
     let message_id = message.message_id();
     let chat_id = message.chat().id();
 
