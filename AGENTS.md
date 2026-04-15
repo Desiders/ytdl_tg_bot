@@ -101,8 +101,35 @@ If this rule is broken, the TLS handshake fails with certificate verification er
 
 - Outbound messenger operations should go through `MessengerPort`.
 - `TelegramMessenger` is the adapter that owns Telegram API calls, retries, parse modes, inline answer wiring, and Telegram media send/edit method construction.
-- Bot handlers and `send_media` interactors should depend on the messenger port layer, not construct Telegram methods directly.
+- Bot handlers, top-level bot interactors, and `send_media` interactors should depend on the messenger port layer, not construct Telegram methods directly.
 - Keep Telegram SDK/API types isolated to the Telegram adapter. Utility string helpers such as HTML escaping may still live elsewhere, but Telegram request construction should have one source of truth.
+
+### Bot Handler / Interactor Boundary
+
+- Handlers are Telegram inbound adapters.
+- A handler should:
+  - extract Telegram input
+  - inject one use case
+  - call it
+  - return `EventReturn::Finish`
+- Do not let handlers orchestrate business flow across multiple use cases or services again.
+- Handler-facing orchestration lives in `bot/src/use_cases/`.
+- Lower-level reusable building blocks live under `bot/src/services/`, not in the use-case namespace.
+- Current service modules used by interactors are:
+  - `chat`
+  - `download`
+  - `downloaded_media`
+  - `get_media`
+  - `node_router`
+  - `send_media`
+- Use cases may call these services.
+- Services must not call use cases.
+
+### Bot DI Style
+
+- Keep the current generic DI style around `Messenger`.
+- The composition root builds `TelegramMessenger`, but use cases should be wired generically over `Messenger` rather than directly against the concrete adapter type.
+- If you add a new use case, register it in `interactors_registry<Messenger>(...)` and keep the same generic pattern.
 
 ### Cookie-assignment Controller
 
@@ -221,13 +248,12 @@ If you change cookie file layout, node cookie semantics, or assignment policy, u
 
 ## Bot Interactor Constraints
 
-Handlers depend on the current interactor interfaces.
+When changing bot logic:
 
-When changing bot download or media-info logic:
-
-- keep public interactor names stable unless there is a strong reason not to
-- keep handler-facing input and output types stable when possible
-- prefer changing internals in interactors and router instead of touching handlers
+- keep use-case names stable unless there is a strong reason not to
+- keep handlers thin and transport-focused
+- prefer changing internals in use cases, services, and router layers instead of pushing orchestration back into handlers
+- keep quiet-mode behavior structurally separate when it has different presentation rules
 
 ## Error Message Style
 
@@ -261,12 +287,18 @@ If you are making download-related changes, start here:
 - [downloader_client/src/retry.rs](/workspace/downloader_client/src/retry.rs)
 - [downloader_client/src/media_info.rs](/workspace/downloader_client/src/media_info.rs)
 - [downloader_client/src/download.rs](/workspace/downloader_client/src/download.rs)
-- [bot/src/interactors/get_media.rs](/workspace/bot/src/interactors/get_media.rs)
-- [bot/src/interactors/download/media.rs](/workspace/bot/src/interactors/download/media.rs)
+- [bot/src/services/get_media.rs](/workspace/bot/src/services/get_media.rs)
+- [bot/src/services/download/media.rs](/workspace/bot/src/services/download/media.rs)
 - [downloader/src/grpc/downloader.rs](/workspace/downloader/src/grpc/downloader.rs)
 - [downloader/src/grpc/capabilities.rs](/workspace/downloader/src/grpc/capabilities.rs)
 - [downloader/src/grpc/cookie_manager.rs](/workspace/downloader/src/grpc/cookie_manager.rs)
 - [downloader/src/services/ytdl.rs](/workspace/downloader/src/services/ytdl.rs)
+- [bot/src/services.rs](/workspace/bot/src/services.rs)
+- [bot/src/use_cases/video.rs](/workspace/bot/src/use_cases/video.rs)
+- [bot/src/use_cases/audio.rs](/workspace/bot/src/use_cases/audio.rs)
+- [bot/src/use_cases/chosen_inline.rs](/workspace/bot/src/use_cases/chosen_inline.rs)
+- [bot/src/use_cases/inline_query.rs](/workspace/bot/src/use_cases/inline_query.rs)
+- [bot/src/di_container.rs](/workspace/bot/src/di_container.rs)
 
 If you are making cookie-assignment changes, start here:
 
