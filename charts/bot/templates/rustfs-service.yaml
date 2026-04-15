@@ -1,0 +1,15 @@
+{{- if .Values.rustfs.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: s3
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: ClusterIP
+  selector:
+    app: rustfs
+  ports:
+    - port: 9000
+      targetPort: 9000
+      protocol: TCP
+{{- end }}

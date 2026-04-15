@@ -6,11 +6,32 @@ bot:
 
 postgres:
   storage: 3Gi
-  torageClass: ""
+  storageClass: ""
   database: api
   owner: admin
   secretName: db
   superuserSecretName: db-superuser
+
+  backup:
+    enabled: true
+    schedule: "0 3 * * *"
+
+s3:
+  enabled: true
+  destinationPath: "s3://backups/"
+  endpointURL: "http://s3:9000"
+  secretName: s3
+
+rustfs:
+  enabled: true
+  replicas: 1
+  storage: 3Gi
+  storageClass: ""
+  image:
+    repository: rustfs/rustfs
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  secretName: s3
 
 telegramBotApi:
   image:
