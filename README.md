@@ -61,6 +61,11 @@ Secrets you create manually:
 - `db-superuser`
   - used by CloudNativePG as the superuser secret
   - create it with the same general username/password shape as the main DB secret
+- `s3`
+  - used by CNPG ObjectStore (barman backup)
+  - required keys:
+    - `access-key-id`
+    - `secret-access-key`
 
 Example commands:
 
@@ -76,7 +81,10 @@ kubectl -n "${NAMESPACE}" create secret generic db \
 kubectl -n "${NAMESPACE}" create secret generic db-superuser \
   --from-literal=username='postgres' \
   --from-literal=password='<db superuser password>'
-```
+
+kubectl -n "${NAMESPACE}" create secret generic s3 \
+  --from-literal=access-key-id='<s3 access key>' \
+  --from-literal=secret-access-key='<s3 secret key>'
 
 Secrets generated from local config files:
 
