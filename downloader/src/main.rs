@@ -61,15 +61,16 @@ async fn main() {
     };
     let cookie_manager_service = CookieManagerService { cookies };
 
-    let node_auth = AuthInterceptor::new(config.auth.token.clone());
-    let cookie_manager_auth = AuthInterceptor::new(config.auth.cookie_manager_token.clone());
+    let node_auth = AuthInterceptor::new(vec![config.auth.node_token.clone()]);
+    let capabilities_auth = AuthInterceptor::new(vec![config.auth.node_token.clone(), config.auth.cookie_manager_token.clone()]);
+    let cookie_manager_auth = AuthInterceptor::new(vec![config.auth.cookie_manager_token.clone()]);
     let addr = config.server.address.parse().unwrap();
     info!(%addr, "Starting download node");
 
     let mut server = Server::builder().tls_config(tls_config).unwrap();
     server
-        .add_service(DownloaderServer::with_interceptor(downloader_service, node_auth.clone()))
-        .add_service(NodeCapabilitiesServer::with_interceptor(capabilities_service, node_auth))
+        .add_service(DownloaderServer::with_interceptor(downloader_service, node_auth))
+        .add_service(NodeCapabilitiesServer::with_interceptor(capabilities_service, capabilities_auth))
         .add_service(NodeCookieManagerServer::with_interceptor(
             cookie_manager_service,
             cookie_manager_auth,

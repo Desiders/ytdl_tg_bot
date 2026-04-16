@@ -36,21 +36,25 @@ impl CookieAssignmentService {
         let Some(cookies) = self.load_source_cookies() else {
             return;
         };
-        let available_workers = self.load_available_workers().await;
-        if available_workers.is_empty() {
-            warn!("Skipping cookie assignment cycle because no downloader workers are currently available");
+        let workers = self.load_workers().await;
+        if workers.is_empty() {
+            warn!("Skipping cookie assignment cycle because no downloader workers were resolved");
             return;
         }
 
-        self.revoke_removed_source_cookies(&cookies, &available_workers).await;
-        let listed_worker_cookie_ids = self.load_worker_cookie_ids(&available_workers).await;
+        let listed_worker_cookie_ids = self.load_worker_cookie_ids(&workers).await;
+        if listed_worker_cookie_ids.is_empty() {
+            warn!("Skipping cookie assignment cycle because no worker cookie state could be loaded");
+            return;
+        }
 
-        self.reconcile_assignments(&available_workers, &listed_worker_cookie_ids).await;
-        self.assign_free_cookies(&cookies, &available_workers, &listed_worker_cookie_ids)
+        self.revoke_removed_source_cookies(&cookies, &workers, &listed_worker_cookie_ids)
             .await;
+        self.reconcile_assignments(&workers, &listed_worker_cookie_ids).await;
+        self.assign_free_cookies(&cookies, &workers, &listed_worker_cookie_ids).await;
     }
 
-    async fn load_available_workers(&self) -> HashMap<String, AssignmentNodeHandle> {
+    async fn load_workers(&self) -> HashMap<String, AssignmentNodeHandle> {
         let node_addresses = match self.service_target.resolve_nodes().await {
             Ok(nodes) => nodes,
             Err(err) => {
@@ -77,14 +81,7 @@ impl CookieAssignmentService {
                 }
             };
 
-            match worker.fetch_status().await {
-                Ok(()) => {
-                    workers.insert(worker.address.to_string(), worker);
-                }
-                Err(err) => {
-                    warn!(node = %worker.address, error = %err, "Failed to refresh node status");
-                }
-            }
+            workers.insert(worker.address.to_string(), worker);
         }
 
         workers
@@ -94,6 +91,11 @@ impl CookieAssignmentService {
         let mut worker_cookie_ids = HashMap::new();
 
         for worker in available_workers.values() {
+            if let Err(err) = worker.fetch_status().await {
+                warn!(node = %worker.address, error = %err, "Failed to refresh node status");
+                continue;
+            }
+
             match worker.list_node_cookies().await {
                 Ok(cookie_ids) => {
                     worker_cookie_ids.insert(worker.address.to_string(), cookie_ids.into_iter().collect::<HashSet<_>>());
@@ -213,7 +215,12 @@ impl CookieAssignmentService {
         }
     }
 
-    async fn revoke_removed_source_cookies(&mut self, cookies: &[CookieRecord], available_workers: &HashMap<String, AssignmentNodeHandle>) {
+    async fn revoke_removed_source_cookies(
+        &mut self,
+        cookies: &[CookieRecord],
+        available_workers: &HashMap<String, AssignmentNodeHandle>,
+        worker_cookie_ids: &HashMap<String, HashSet<String>>,
+    ) {
         let source_cookie_ids = cookies.iter().map(|cookie| cookie.cookie_id.as_str()).collect::<HashSet<_>>();
         let removed_assignments = self
             .assignments
@@ -228,6 +235,11 @@ impl CookieAssignmentService {
         let mut pending_unavailable_count = 0usize;
 
         for (cookie_id, worker_id) in removed_assignments {
+            if available_workers.contains_key(&worker_id) && !worker_cookie_ids.contains_key(&worker_id) {
+                pending_unavailable_count += 1;
+                continue;
+            }
+
             let Some(worker) = available_workers.get(&worker_id) else {
                 removable_cookie_ids.insert(cookie_id);
                 pending_unavailable_count += 1;

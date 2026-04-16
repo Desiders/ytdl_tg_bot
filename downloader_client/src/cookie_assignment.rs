@@ -14,16 +14,14 @@ use crate::{
 #[derive(Clone)]
 pub struct AssignmentNodeClient {
     client: NodeClient,
-    node_token: Box<str>,
     cookie_manager_token: Box<str>,
 }
 
 impl AssignmentNodeClient {
     #[must_use]
-    pub fn load(config: &DownloaderTlsConfig, server_name: &str, node_token: Box<str>, cookie_manager_token: Box<str>) -> Self {
+    pub fn load(config: &DownloaderTlsConfig, server_name: &str, cookie_manager_token: Box<str>) -> Self {
         Self {
             client: NodeClient::load(config, server_name),
-            node_token,
             cookie_manager_token,
         }
     }
@@ -34,7 +32,6 @@ impl AssignmentNodeClient {
 
         Ok(AssignmentNodeHandle {
             address: address.into_boxed_str(),
-            node_token: self.node_token.clone(),
             cookie_manager_token: self.cookie_manager_token.clone(),
             channel,
         })
@@ -44,7 +41,6 @@ impl AssignmentNodeClient {
 #[derive(Clone)]
 pub struct AssignmentNodeHandle {
     pub address: Box<str>,
-    node_token: Box<str>,
     cookie_manager_token: Box<str>,
     channel: Channel,
 }
@@ -52,7 +48,9 @@ pub struct AssignmentNodeHandle {
 impl AssignmentNodeHandle {
     pub async fn fetch_status(&self) -> Result<(), AssignmentNodeHandleError> {
         let mut client = NodeCapabilitiesClient::new(self.channel.clone());
-        client.get_status(authenticated_request(Empty {}, &self.node_token)?).await?;
+        client
+            .get_status(authenticated_request(Empty {}, &self.cookie_manager_token)?)
+            .await?;
         Ok(())
     }
 

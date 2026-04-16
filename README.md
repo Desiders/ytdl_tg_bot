@@ -22,14 +22,17 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 - Stats
 - Exclude domains list
 
-### Prerequisites
+## Self Install
 
-Cluster-side prerequisites:
+This guide assumes Kubernetes, Helm, and a working image registry. If you are deploying from this repository instead of using already-published images, build and push dev images first.
 
-- `cert-manager` must already be installed in the cluster
-- CloudNativePG `1.26+` CRDs/operator must already be installed, because the bot chart creates a `postgresql.cnpg.io/v1` `Cluster` with `spec.plugins`
-- For new deployments, prefer CloudNativePG `1.29+`
-- Barman Cloud CNPG-I Plugin must already be installed in the same namespace as the CloudNativePG operator, because the bot chart creates a `barmancloud.cnpg.io/v1` `ObjectStore` and uses plugin-based backups
+### 1. Prerequisites
+
+Cluster prerequisites:
+
+- `cert-manager`
+- CloudNativePG `1.26+`; use `1.29+` for new installs
+- Barman Cloud CNPG-I Plugin installed in the same namespace as the CloudNativePG operator
 
 Local prerequisites:
 
@@ -37,146 +40,96 @@ Local prerequisites:
 - `helm`
 - `just`
 
-Choose a namespace first:
+Quick checks:
 
 ```bash
-export NAMESPACE=bot
+kubectl get crd certificates.cert-manager.io
+kubectl get crd clusters.postgresql.cnpg.io
+kubectl get crd objectstores.barmancloud.cnpg.io
+```
+
+### 2. Namespace
+
+```bash
+export NAMESPACE=dev
 kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-### Required Secrets
+Use `NAMESPACE=prod` for production.
 
-These secrets must exist for the deployment to become healthy.
+### 3. Required Secrets
 
-Secrets you create manually:
-
-- `telegram-bot-api`
-  - used by the `telegram-bot-api` Deployment in the bot chart
-  - required keys:
-    - `api_id`
-    - `hash`
-- `db`
-  - used by CloudNativePG bootstrap and bot migration flow
-  - expected keys:
-    - `username`
-    - `password`
-- `db-superuser`
-  - used by CloudNativePG as the superuser secret
-  - create it with the same general username/password shape as the main DB secret
-- `s3`
-  - used by RustFS and the CNPG Barman Cloud Plugin `ObjectStore`
-  - required keys:
-    - `access-key-id`
-    - `secret-access-key` (must be at least 8 characters)
-
-Example commands:
+Create these once. These commands are safe to re-run because they render YAML client-side and apply it.
 
 ```bash
 kubectl -n "${NAMESPACE}" create secret generic telegram-bot-api \
   --from-literal=api_id='<telegram api id>' \
-  --from-literal=hash='<telegram api hash>'
+  --from-literal=hash='<telegram api hash>' \
+  --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n "${NAMESPACE}" create secret generic db \
   --from-literal=username='admin' \
-  --from-literal=password='<db password>'
+  --from-literal=password='<db password>' \
+  --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n "${NAMESPACE}" create secret generic db-superuser \
   --from-literal=username='postgres' \
-  --from-literal=password='<db superuser password>'
+  --from-literal=password='<db superuser password>' \
+  --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n "${NAMESPACE}" create secret generic s3 \
-  --from-literal=access-key-id='<s3 access key>' \
-  --from-literal=secret-access-key='<at least 8 characters>'
+  --from-literal=access-key-id='rustfsadmin' \
+  --from-literal=secret-access-key='<at least 8 characters>' \
+  --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-The bot chart creates an internal single-node RustFS deployment by default and bootstraps the `backups` bucket through a Helm hook Job. If you disable RustFS and use an external S3-compatible service, create the bucket from `charts/bot/values.yaml` yourself before enabling backups.
+The `s3` Secret is used by the internal RustFS backup store and CNPG backup plugin. The chart creates a single-node RustFS instance and bootstraps the `backups` bucket automatically.
 
-Secrets generated from local config files:
+### 4. Config Files
 
-- `bot-config`
-  - created from `configs/config.toml`
-- `downloader-config`
-  - created from `configs/downloader.toml`
-- `cookie-assignment-config`
-  - created from `configs/cookie_assignment.toml`
-
-Create or refresh them with:
+Create local config files if they do not exist:
 
 ```bash
-just k8s-update-bot-config "${NAMESPACE}"
-just k8s-update-downloader-config "${NAMESPACE}"
-just k8s-update-cookie-assignment-config "${NAMESPACE}"
+cp -n configs/config.example.toml configs/config.toml
+cp -n configs/downloader.example.toml configs/downloader.toml
+cp -n configs/cookie_assignment.example.toml configs/cookie_assignment.toml
 ```
 
-These helpers are safe before first install:
-
-- they always create or update the Secret
-- they only trigger a rollout if the corresponding Deployment already exists
-
-Cookie inventory Secret:
-
-- `cookie-assignment-cookies`
-  - mounted by the cookie-assignment chart
-  - source layout in the repo:
-
-```text
-cookies/<domain>/<cookie-id>.txt
-```
-
-Create or refresh it with:
-
-```bash
-just k8s-sync-cookie-assignment-cookies "${NAMESPACE}"
-```
-
-This command also creates an empty `cookie-assignment-cookies` Secret when no cookie files are present.
-
-Only if you are not using the sync script, create the empty Secret manually:
-
-```bash
-kubectl -n "${NAMESPACE}" create secret generic cookie-assignment-cookies --dry-run=client -o yaml | kubectl apply -f -
-```
-
-TLS secrets created automatically by cert-manager:
-
-- `bot-tls-secret`
-- `downloader-tls-secret`
-- `cookie-assignment-tls-secret`
-
-Do not create those manually. They are issued from the `Certificate` resources after the `infra` chart creates `ca-issuer`.
-
-### Config Preparation
-
-Before deploying, review and fill:
+Edit these files before installing:
 
 - `configs/config.toml`
 - `configs/downloader.toml`
 - `configs/cookie_assignment.toml`
 
-At minimum, make sure:
+Required config checks:
 
-- bot token is set in `configs/config.toml`
-- downloader node auth token matches `configs/config.toml` `[download].token`, `configs/downloader.toml` `[auth].token`, and `configs/cookie_assignment.toml` `[download].token`
-- cookie-manager auth token matches `configs/downloader.toml` `[auth].cookie_manager_token` and `configs/cookie_assignment.toml` `[download].cookie_manager_token`
-- database credentials in `configs/config.toml` match the `db` Secret
-- Telegram Bot API URL and downloader DNS assumptions match your namespace/service names
+- `configs/config.toml` has the real Telegram bot token.
+- Database credentials in `configs/config.toml` match the `db` Secret.
+- Normal downloader token matches in `configs/config.toml` `[download].node_token` and `configs/downloader.toml` `[auth].node_token`.
+- Cookie-manager token matches in `configs/downloader.toml` `[auth].cookie_manager_token` and `configs/cookie_assignment.toml` `[download].cookie_manager_token`.
+- Default in-cluster service URLs are correct if all charts are installed into the same namespace.
 
-### Install Sequence
+### 5. Optional Cookies
+
+Cookie files are optional. Put them here if you have them:
+
+```text
+cookies/<domain>/<cookie-id>.txt
+```
+
+The sync helper also creates an empty cookie Secret when no cookie files exist.
+
+### 6. Install
 
 Install order matters:
-
-1. install `infra`
-2. install `bot`
-3. install `downloader`
-4. install `cookie-assignment`
-
-Recommended sequence:
 
 ```bash
 just helm-install-infra "${NAMESPACE}"
 
 just k8s-update-bot-config "${NAMESPACE}"
 just helm-install-bot "${NAMESPACE}"
+
+just k8s-migration "${NAMESPACE}"
 
 just k8s-update-downloader-config "${NAMESPACE}"
 just helm-install-downloader "${NAMESPACE}"
@@ -186,7 +139,60 @@ just k8s-sync-cookie-assignment-cookies "${NAMESPACE}"
 just helm-install-cookie-assignment "${NAMESPACE}"
 ```
 
-For upgrades:
+Notes:
+
+- `infra` creates the shared internal CA issuer.
+- `bot` creates PostgreSQL, RustFS, Telegram Bot API, yt-toolkit, and the bot Deployment.
+- `k8s-migration` runs DB migrations after PostgreSQL exists.
+- The bot pod can restart until PostgreSQL is ready and migrations have run.
+- `downloader` creates the headless downloader service and worker pods.
+- `cookie-assignment` distributes cookies to downloader nodes and is safe with an empty cookie inventory.
+
+### 7. Verify
+
+```bash
+kubectl get pods -n "${NAMESPACE}"
+kubectl get certificates -n "${NAMESPACE}"
+kubectl get clusters.postgresql.cnpg.io -n "${NAMESPACE}"
+kubectl get backups.postgresql.cnpg.io -n "${NAMESPACE}"
+kubectl get scheduledbackups.postgresql.cnpg.io -n "${NAMESPACE}"
+kubectl get objectstores.barmancloud.cnpg.io -n "${NAMESPACE}"
+kubectl get secret -n "${NAMESPACE}" bot-config downloader-config cookie-assignment-config cookie-assignment-cookies
+```
+
+Logs:
+
+```bash
+just k8s-logs-bot "${NAMESPACE}"
+just k8s-logs-downloader "${NAMESPACE}"
+just k8s-logs-cookie-assignment "${NAMESPACE}"
+```
+
+Manual backup check:
+
+```bash
+kubectl -n "${NAMESPACE}" delete backup postgres-manual-backup --ignore-not-found
+
+cat > /tmp/postgres-manual-backup.yaml <<'EOF'
+apiVersion: postgresql.cnpg.io/v1
+kind: Backup
+metadata:
+  name: postgres-manual-backup
+spec:
+  cluster:
+    name: postgres
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+EOF
+
+kubectl -n "${NAMESPACE}" create -f /tmp/postgres-manual-backup.yaml
+kubectl -n "${NAMESPACE}" get backup postgres-manual-backup -w
+```
+
+## Operations
+
+Upgrade charts:
 
 ```bash
 just helm-upgrade-infra "${NAMESPACE}"
@@ -195,7 +201,7 @@ just helm-upgrade-downloader "${NAMESPACE}"
 just helm-upgrade-cookie-assignment "${NAMESPACE}"
 ```
 
-If configs change, refresh the corresponding config Secret and rollout:
+Refresh configs:
 
 ```bash
 just k8s-update-bot-config "${NAMESPACE}"
@@ -203,61 +209,34 @@ just k8s-update-downloader-config "${NAMESPACE}"
 just k8s-update-cookie-assignment-config "${NAMESPACE}"
 ```
 
-If cookies change:
+Refresh cookies:
 
 ```bash
 just k8s-sync-cookie-assignment-cookies "${NAMESPACE}"
 just k8s-rollout-cookie-assignment "${NAMESPACE}"
 ```
 
-### Migrations
+Scale downloader nodes:
 
-Database migrations are applied with the dedicated helper:
+```bash
+just scale-downloader "${NAMESPACE}" 3
+```
+
+Run migrations:
 
 ```bash
 just k8s-migration "${NAMESPACE}"
 ```
 
-This renders the migration Job from the bot chart, applies it, waits for completion, and prints the Job logs.
-
-To run a different migration command:
+Run a different migration command:
 
 ```bash
 just k8s-migration "${NAMESPACE}" down
 ```
 
-Run migrations:
-
-- after the database is available
-- before starting a bot version that depends on new schema changes
-
-The migration Job uses:
-
-- the `db` Secret for `username` and `password`
-- the `postgres-rw` service from the CloudNativePG cluster created by the bot chart
-- the migration image configured in `charts/bot/values.yaml`
-
-### Validation
-
-```bash
-kubectl get pods -n "${NAMESPACE}"
-kubectl get certificates -n "${NAMESPACE}"
-kubectl get objectstores.barmancloud.cnpg.io -n "${NAMESPACE}"
-kubectl get scheduledbackups.postgresql.cnpg.io -n "${NAMESPACE}"
-kubectl get secret -n "${NAMESPACE}" bot-config downloader-config cookie-assignment-config cookie-assignment-cookies
-```
-
-Useful log commands:
-
-```bash
-just k8s-logs-bot "${NAMESPACE}"
-just k8s-logs-downloader "${NAMESPACE}"
-just k8s-logs-cookie-assignment "${NAMESPACE}"
-```
-
 ## Dev Images
 
-If you build and push dev images, use:
+Use this when deploying images built from your local checkout.
 
 ```bash
 just docker-push-dev-bot
@@ -265,28 +244,11 @@ just docker-push-dev-downloader
 just docker-push-dev-cookie-assignment
 ```
 
-These commands use the helper scripts in `scripts/`:
+Each script builds with Docker `buildx`, pushes to the registry, uses remote cache, and defaults to `dev-<git-short-sha>`. The scripts print the next `helm upgrade` command after a successful push.
 
-- `scripts/build-bot-dev-image.sh`
-- `scripts/build-downloader-dev-image.sh`
-- `scripts/build-cookie-assignment-dev-image.sh`
+Useful overrides:
 
-Each script:
-
-- builds with Docker `buildx`
-- pushes directly to the registry
-- uses the corresponding `*.dev` Dockerfile from `deployment/`
-- uses a remote build cache
-- defaults the image tag to `dev-<git-short-sha>`
-
-Default image repositories:
-
-- bot: `desiders/ytdl_tg_bot`
-- downloader: `desiders/ytdl_tg_bot.downloader`
-- cookie-assignment: `desiders/ytdl_tg_bot.cookie_assignment`
-
-Useful environment overrides:
-
+- `NAMESPACE`
 - `IMAGE_REPO`
 - `IMAGE_TAG`
 - `CACHE_REF`
@@ -295,31 +257,15 @@ Useful environment overrides:
 - `CONTEXT_DIR`
 - `BUILDER_NAME`
 
-Example with an explicit tag:
+Example:
 
 ```bash
-IMAGE_TAG=dev-manual-1 just docker-push-dev-bot
-IMAGE_TAG=dev-manual-1 just docker-push-dev-downloader
-IMAGE_TAG=dev-manual-1 just docker-push-dev-cookie-assignment
+export NAMESPACE=dev
+export IMAGE_TAG=dev-manual-1
+
+IMAGE_TAG="${IMAGE_TAG}" just docker-push-dev-bot
+IMAGE_TAG="${IMAGE_TAG}" just docker-push-dev-downloader
+IMAGE_TAG="${IMAGE_TAG}" just docker-push-dev-cookie-assignment
 ```
 
-Then roll those images into the charts:
-
-```bash
-helm upgrade bot ./charts/bot -n "${NAMESPACE}" \
-  --set bot.image.repository=desiders/ytdl_tg_bot \
-  --set bot.image.tag=dev-manual-1 \
-  --set bot.image.pullPolicy=IfNotPresent
-
-helm upgrade downloader ./charts/downloader -n "${NAMESPACE}" \
-  --set downloader.image.repository=desiders/ytdl_tg_bot.downloader \
-  --set downloader.image.tag=dev-manual-1 \
-  --set downloader.image.pullPolicy=IfNotPresent
-
-helm upgrade cookie-assignment ./charts/cookie-assignment -n "${NAMESPACE}" \
-  --set cookieAssignment.image.repository=desiders/ytdl_tg_bot.cookie_assignment \
-  --set cookieAssignment.image.tag=dev-manual-1 \
-  --set cookieAssignment.image.pullPolicy=IfNotPresent
-```
-
-If you only changed one component, only rebuild and upgrade that chart.
+If only one component changed, rebuild and upgrade only that component.

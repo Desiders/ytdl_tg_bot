@@ -119,7 +119,7 @@ pub struct DownloaderTlsConfig {
 pub struct DownloadConfig {
     #[serde(default)]
     pub capabilities_refresh_interval: u64,
-    pub token: Box<str>,
+    pub node_token: Box<str>,
     pub tls: DownloaderTlsConfig,
 }
 
@@ -191,7 +191,7 @@ impl From<DownloaderTlsConfig> for downloader_client::DownloaderTlsConfig {
 impl From<DownloadConfig> for downloader_client::DownloaderClusterConfig {
     fn from(value: DownloadConfig) -> Self {
         Self {
-            token: value.token,
+            node_token: value.node_token,
             tls: value.tls.into(),
         }
     }

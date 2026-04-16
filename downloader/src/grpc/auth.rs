@@ -7,13 +7,14 @@ use tracing::warn;
 
 #[derive(Clone)]
 pub struct AuthInterceptor {
-    token: Box<str>,
+    tokens: Vec<Box<str>>,
 }
 
 impl AuthInterceptor {
+    #[inline]
     #[must_use]
-    pub fn new(token: Box<str>) -> Self {
-        Self { token }
+    pub const fn new(tokens: Vec<Box<str>>) -> Self {
+        Self { tokens }
     }
 }
 
@@ -34,7 +35,7 @@ impl Interceptor for AuthInterceptor {
             return Err(Status::unauthenticated("Invalid token"));
         };
 
-        if is_valid_token(header, &self.token) {
+        if self.tokens.iter().any(|token| is_valid_token(header, token)) {
             Ok(request)
         } else {
             warn!(remote_addr, user_agent, "Rejected request with invalid authorization token");

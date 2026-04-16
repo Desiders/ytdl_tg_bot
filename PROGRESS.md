@@ -19,7 +19,7 @@ The bot no longer owns cookie assignment.
 - Improved cookie reconciliation:
   - removed source cookies are actively revoked from nodes
   - free cookies are placed by least-loaded eligible worker instead of first-fit
-  - empty DNS/status cycles keep previous assignments instead of clearing state
+  - empty DNS/status/list cycles keep previous assignments instead of clearing state
   - `ListNodeCookies` failures keep existing assignments for the affected worker and skip it for new assignments in that cycle
 - Extracted shared downloader access into `downloader_client`:
   - node discovery
@@ -27,8 +27,9 @@ The bot no longer owns cookie assignment.
   - node selection
   - failover/retry
   - downloader RPC wrappers and stream decoding
-  - cookie-assignment node status and cookie-manager RPC wrappers
-- Split downloader-node auth into normal node token and cookie-manager token so the bot cannot call cookie mutation RPCs.
+  - cookie-assignment cookie-manager RPC wrappers
+- Split downloader-node auth into normal node token and cookie-manager token so the bot cannot call cookie mutation RPCs, and cookie assignment no longer needs the normal node token.
+- Allowed `NodeCapabilities` to accept either token so cookie assignment can check node status with the cookie-manager token only.
 - Bot startup now runs an initial downloader-node status/capability refresh before accepting updates; refresh errors are logged and ignored by the router.
 - Introduced `MessengerPort` with `TelegramMessenger` as the outbound Telegram adapter.
 - Moved bot-side Telegram send/edit/upload/media-group logic behind the messenger adapter.

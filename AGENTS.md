@@ -147,8 +147,8 @@ If this rule is broken, the TLS handshake fails with certificate verification er
 
 - reads cookie files mounted into its own pod
 - discovers downloader nodes through the headless downloader service DNS using `downloader_client`
-- checks node availability with `NodeCapabilities.GetStatus`
-- lists node cookies with `NodeCookieManager.ListNodeCookies`
+- checks node availability with `NodeCapabilities.GetStatus` using the cookie-manager token
+- lists node cookies with `NodeCookieManager.ListNodeCookies` and treats successful status plus cookie-list responses as worker availability for new assignments during the cycle
 - removes stale unassigned cookies from nodes
 - pushes free cookies to eligible nodes with `NodeCookieManager.PushCookie`
 - keeps assignments in memory only
@@ -157,10 +157,11 @@ If this rule is broken, the TLS handshake fails with certificate verification er
 
 Downloader nodes use separate bearer tokens for separate RPC surfaces.
 
-- `Downloader` and `NodeCapabilities` use the normal node token.
+- `Downloader` uses the normal node token.
+- `NodeCapabilities` accepts either the normal node token or the cookie-manager token.
 - `NodeCookieManager` uses the cookie-manager token.
 - The bot config must only contain the normal node token.
-- The cookie-assignment config contains both tokens because it checks node status and mutates node cookies.
+- The cookie-assignment config must only contain the cookie-manager token.
 - Do not give the bot the cookie-manager token.
 
 ### Downloader Node
@@ -254,8 +255,8 @@ The bot no longer owns cookie distribution.
 - Cookie assignments are in-memory only inside the cookie-assignment controller.
 - The controller assignment cycle currently:
   1. resolves downloader nodes from DNS
-  2. filters nodes that answer status RPCs
-  3. loads each node's current cookie IDs
+  2. checks node status through `NodeCapabilities.GetStatus` using the cookie-manager token
+  3. loads each node's current cookie IDs through `NodeCookieManager.ListNodeCookies`
   4. releases stale in-memory assignments
   5. removes stale unassigned cookies from nodes
   6. assigns free cookie files to eligible nodes
@@ -265,6 +266,7 @@ The bot no longer owns cookie distribution.
   - they clear `/tmp/cookies/` at startup
   - they keep cookies only for process lifetime
 - If DNS returns no workers, the controller skips the cycle and keeps previous assignments.
+- If `GetStatus` fails for a worker, the controller keeps that worker's existing assignments but does not assign new cookies to it during that cycle.
 - If `ListNodeCookies` fails for a worker, the controller keeps that worker's existing assignments but does not assign new cookies to it during that cycle.
 
 If you change cookie file layout, node cookie semantics, or assignment policy, update both this file and the cookie-assignment code.
