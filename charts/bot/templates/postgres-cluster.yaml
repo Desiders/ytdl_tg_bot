@@ -17,17 +17,9 @@ spec:
       secret:
         name: {{ .Values.postgres.secretName }}
   {{- if and .Values.postgres.backup.enabled .Values.s3.enabled }}
-  backup:
-    barmanObjectStore:
-      destinationPath: {{ .Values.s3.destinationPath }}
-      endpointURL: {{ .Values.s3.endpointURL }}
-      s3Credentials:
-        accessKeyId:
-          name: {{ .Values.s3.secretName }}
-          key: access-key-id
-        secretAccessKey:
-          name: {{ .Values.s3.secretName }}
-          key: secret-access-key
-      wal:
-        compression: gzip
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: {{ .Values.s3.objectStoreName | quote }}
   {{- end }}

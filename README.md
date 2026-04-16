@@ -27,7 +27,9 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 Cluster-side prerequisites:
 
 - `cert-manager` must already be installed in the cluster
-- CloudNativePG CRDs/operator must already be installed, because the bot chart creates a `postgresql.cnpg.io/v1` `Cluster`
+- CloudNativePG `1.26+` CRDs/operator must already be installed, because the bot chart creates a `postgresql.cnpg.io/v1` `Cluster` with `spec.plugins`
+- For new deployments, prefer CloudNativePG `1.29+`
+- Barman Cloud CNPG-I Plugin must already be installed in the same namespace as the CloudNativePG operator, because the bot chart creates a `barmancloud.cnpg.io/v1` `ObjectStore` and uses plugin-based backups
 
 Local prerequisites:
 
@@ -62,10 +64,10 @@ Secrets you create manually:
   - used by CloudNativePG as the superuser secret
   - create it with the same general username/password shape as the main DB secret
 - `s3`
-  - used by CNPG ObjectStore (barman backup)
+  - used by RustFS and the CNPG Barman Cloud Plugin `ObjectStore`
   - required keys:
     - `access-key-id`
-    - `secret-access-key`
+    - `secret-access-key` (must be at least 8 characters)
 
 Example commands:
 
@@ -84,7 +86,10 @@ kubectl -n "${NAMESPACE}" create secret generic db-superuser \
 
 kubectl -n "${NAMESPACE}" create secret generic s3 \
   --from-literal=access-key-id='<s3 access key>' \
-  --from-literal=secret-access-key='<s3 secret key>'
+  --from-literal=secret-access-key='<at least 8 characters>'
+```
+
+The bot chart creates an internal single-node RustFS deployment by default and bootstraps the `backups` bucket through a Helm hook Job. If you disable RustFS and use an external S3-compatible service, create the bucket from `charts/bot/values.yaml` yourself before enabling backups.
 
 Secrets generated from local config files:
 
@@ -236,6 +241,8 @@ The migration Job uses:
 ```bash
 kubectl get pods -n "${NAMESPACE}"
 kubectl get certificates -n "${NAMESPACE}"
+kubectl get objectstores.barmancloud.cnpg.io -n "${NAMESPACE}"
+kubectl get scheduledbackups.postgresql.cnpg.io -n "${NAMESPACE}"
 kubectl get secret -n "${NAMESPACE}" bot-config downloader-config cookie-assignment-config cookie-assignment-cookies
 ```
 

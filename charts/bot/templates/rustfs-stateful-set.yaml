@@ -6,7 +6,7 @@ metadata:
   namespace: {{ .Release.Namespace }}
 spec:
   serviceName: rustfs
-  replicas: {{ .Values.rustfs.replicas }}
+  replicas: 1
   selector:
     matchLabels:
       app: rustfs
@@ -19,8 +19,11 @@ spec:
         - name: rustfs
           image: "{{ .Values.rustfs.image.repository }}:{{ .Values.rustfs.image.tag }}"
           imagePullPolicy: {{ .Values.rustfs.image.pullPolicy }}
+          args:
+            - /data
           ports:
-            - containerPort: 9000
+            - name: s3
+              containerPort: 9000
           env:
             - name: RUSTFS_ACCESS_KEY
               valueFrom:
@@ -35,6 +38,12 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+          readinessProbe:
+            tcpSocket:
+              port: s3
+          livenessProbe:
+            tcpSocket:
+              port: s3
   volumeClaimTemplates:
     - metadata:
         name: data
