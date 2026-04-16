@@ -17,7 +17,7 @@ pub struct ServerConfig {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct AuthConfig {
-    pub token: Box<str>,
+    pub node_token: Box<str>,
     pub cookie_manager_token: Box<str>,
 }
 

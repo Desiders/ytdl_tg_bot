@@ -22,7 +22,6 @@ pub struct DownloadTlsConfig {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct DownloadConfig {
-    pub token: Box<str>,
     pub cookie_manager_token: Box<str>,
     pub tls: DownloadTlsConfig,
 }

@@ -15,7 +15,7 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub struct DownloaderClusterConfig {
-    pub token: Box<str>,
+    pub node_token: Box<str>,
     pub tls: DownloaderTlsConfig,
 }
 
@@ -38,7 +38,7 @@ impl NodeRouter {
             max_file_size,
             client,
             service_target,
-            node_token: config.token.clone(),
+            node_token: config.node_token.clone(),
         }
     }
 

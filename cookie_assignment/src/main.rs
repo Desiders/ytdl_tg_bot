@@ -33,7 +33,6 @@ async fn main() {
     let client = AssignmentNodeClient::load(
         &config.download.tls.clone().into(),
         service_target.host.as_ref(),
-        config.download.token.clone(),
         config.download.cookie_manager_token.clone(),
     );
     let mut service = CookieAssignmentService::new(client, service_target);
