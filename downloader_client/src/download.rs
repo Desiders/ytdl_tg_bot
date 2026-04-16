@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use tonic::Code;
-use ytdl_tg_bot_proto::downloader::{
+use proto::downloader::{
     download_chunk::Payload, downloader_client::DownloaderClient, DownloadChunk, DownloadMeta, DownloadRequest,
 };
 

@@ -4,7 +4,7 @@ use std::sync::{
 };
 use tonic::{Request, Response, Status};
 use tracing::info;
-use ytdl_tg_bot_proto::downloader::{node_capabilities_server::NodeCapabilities, Empty, NodeStatus, SupportedDomainsResponse};
+use proto::downloader::{node_capabilities_server::NodeCapabilities, Empty, NodeStatus, SupportedDomainsResponse};
 
 use crate::entities::Cookies;
 

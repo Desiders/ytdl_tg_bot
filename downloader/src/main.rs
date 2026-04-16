@@ -10,7 +10,7 @@ use tokio::sync::Semaphore;
 use tonic::transport::Server;
 use tracing::info;
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
-use ytdl_tg_bot_proto::downloader::{
+use proto::downloader::{
     downloader_server::DownloaderServer, node_capabilities_server::NodeCapabilitiesServer,
     node_cookie_manager_server::NodeCookieManagerServer,
 };
@@ -61,15 +61,16 @@ async fn main() {
     };
     let cookie_manager_service = CookieManagerService { cookies };
 
-    let auth = AuthInterceptor::new(config.auth.token.clone());
+    let node_auth = AuthInterceptor::new(config.auth.token.clone());
+    let cookie_manager_auth = AuthInterceptor::new(config.auth.cookie_manager_token.clone());
     let addr = config.server.address.parse().unwrap();
     info!(%addr, "Starting download node");
 
     let mut server = Server::builder().tls_config(tls_config).unwrap();
     server
-        .add_service(DownloaderServer::with_interceptor(downloader_service, auth.clone()))
-        .add_service(NodeCapabilitiesServer::with_interceptor(capabilities_service, auth.clone()))
-        .add_service(NodeCookieManagerServer::with_interceptor(cookie_manager_service, auth))
+        .add_service(DownloaderServer::with_interceptor(downloader_service, node_auth.clone()))
+        .add_service(NodeCapabilitiesServer::with_interceptor(capabilities_service, node_auth))
+        .add_service(NodeCookieManagerServer::with_interceptor(cookie_manager_service, cookie_manager_auth))
         .serve_with_shutdown(addr, shutdown_signal())
         .await
         .unwrap();

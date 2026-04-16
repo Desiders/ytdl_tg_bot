@@ -5,11 +5,9 @@ use std::{
 };
 
 use tracing::{info, warn};
+use downloader_client::{AssignmentNodeClient, AssignmentNodeHandle, DownloaderServiceTarget};
 
-use crate::{
-    cookies::{load_cookies_from_directory, CookieRecord},
-    node_client::{DownloaderServiceTarget, NodeClient, NodeHandle},
-};
+use crate::cookies::{load_cookies_from_directory, CookieRecord};
 
 const COOKIE_DIR: &str = "/app/cookies";
 
@@ -20,18 +18,16 @@ struct WorkerAssignments<'a> {
 }
 
 pub struct CookieAssignmentService {
-    client: NodeClient,
+    client: AssignmentNodeClient,
     service_target: DownloaderServiceTarget,
-    node_token: Box<str>,
     assignments: HashMap<String, String>,
 }
 
 impl CookieAssignmentService {
-    pub fn new(client: NodeClient, service_target: DownloaderServiceTarget, node_token: Box<str>) -> Self {
+    pub fn new(client: AssignmentNodeClient, service_target: DownloaderServiceTarget) -> Self {
         Self {
             client,
             service_target,
-            node_token,
             assignments: HashMap::new(),
         }
     }
@@ -41,14 +37,20 @@ impl CookieAssignmentService {
             return;
         };
         let available_workers = self.load_available_workers().await;
-        self.revoke_removed_source_cookies(&cookies, &available_workers).await;
-        let worker_cookie_ids = self.load_worker_cookie_ids(&available_workers).await;
+        if available_workers.is_empty() {
+            warn!("Skipping cookie assignment cycle because no downloader workers are currently available");
+            return;
+        }
 
-        self.reconcile_assignments(&available_workers, &worker_cookie_ids).await;
-        self.assign_free_cookies(&cookies, &available_workers).await;
+        self.revoke_removed_source_cookies(&cookies, &available_workers).await;
+        let listed_worker_cookie_ids = self.load_worker_cookie_ids(&available_workers).await;
+
+        self.reconcile_assignments(&available_workers, &listed_worker_cookie_ids).await;
+        self.assign_free_cookies(&cookies, &available_workers, &listed_worker_cookie_ids)
+            .await;
     }
 
-    async fn load_available_workers(&self) -> HashMap<String, NodeHandle> {
+    async fn load_available_workers(&self) -> HashMap<String, AssignmentNodeHandle> {
         let node_addresses = match self.service_target.resolve_nodes().await {
             Ok(nodes) => nodes,
             Err(err) => {
@@ -67,7 +69,7 @@ impl CookieAssignmentService {
 
         let mut workers = HashMap::new();
         for address in node_addresses {
-            let worker = match self.client.build_handle(address, &self.node_token) {
+            let worker = match self.client.build_handle(address) {
                 Ok(worker) => worker,
                 Err(err) => {
                     warn!(node = %address, error = %err, "Failed to initialize node channel");
@@ -88,7 +90,10 @@ impl CookieAssignmentService {
         workers
     }
 
-    async fn load_worker_cookie_ids(&self, available_workers: &HashMap<String, NodeHandle>) -> HashMap<String, HashSet<String>> {
+    async fn load_worker_cookie_ids(
+        &self,
+        available_workers: &HashMap<String, AssignmentNodeHandle>,
+    ) -> HashMap<String, HashSet<String>> {
         let mut worker_cookie_ids = HashMap::new();
 
         for worker in available_workers.values() {
@@ -107,7 +112,7 @@ impl CookieAssignmentService {
 
     async fn reconcile_assignments(
         &mut self,
-        available_workers: &HashMap<String, NodeHandle>,
+        available_workers: &HashMap<String, AssignmentNodeHandle>,
         worker_cookie_ids: &HashMap<String, HashSet<String>>,
     ) {
         let available_worker_ids = available_workers.keys().map(String::as_str).collect::<HashSet<_>>();
@@ -116,7 +121,7 @@ impl CookieAssignmentService {
         self.assignments.retain(|cookie_id, worker_id| {
             worker_cookie_ids
                 .get(worker_id)
-                .is_some_and(|cookie_ids| cookie_ids.contains(cookie_id))
+                .map_or(true, |cookie_ids| cookie_ids.contains(cookie_id))
         });
 
         let assigned_cookie_ids = self.assignments.keys().cloned().collect::<HashSet<_>>();
@@ -147,7 +152,12 @@ impl CookieAssignmentService {
         }
     }
 
-    async fn assign_free_cookies(&mut self, cookies: &[CookieRecord], available_workers: &HashMap<String, NodeHandle>) {
+    async fn assign_free_cookies(
+        &mut self,
+        cookies: &[CookieRecord],
+        available_workers: &HashMap<String, AssignmentNodeHandle>,
+        worker_cookie_ids: &HashMap<String, HashSet<String>>,
+    ) {
         let cookie_domains = self.cookie_domains(cookies);
         let assigned_cookies = self.assignments.keys().cloned().collect::<HashSet<_>>();
         let mut worker_assignments = self.build_worker_assignments(&cookie_domains);
@@ -158,7 +168,10 @@ impl CookieAssignmentService {
             .collect::<Vec<_>>();
         free_cookies.sort_by(|a, b| a.cookie_id.cmp(&b.cookie_id));
 
-        let mut workers = available_workers.values().collect::<Vec<_>>();
+        let mut workers = available_workers
+            .iter()
+            .filter_map(|(worker_id, worker)| worker_cookie_ids.contains_key(worker_id).then_some(worker))
+            .collect::<Vec<_>>();
         workers.sort_by(|a, b| a.address.cmp(&b.address));
 
         let mut assigned_count = 0usize;
@@ -203,7 +216,11 @@ impl CookieAssignmentService {
         }
     }
 
-    async fn revoke_removed_source_cookies(&mut self, cookies: &[CookieRecord], available_workers: &HashMap<String, NodeHandle>) {
+    async fn revoke_removed_source_cookies(
+        &mut self,
+        cookies: &[CookieRecord],
+        available_workers: &HashMap<String, AssignmentNodeHandle>,
+    ) {
         let source_cookie_ids = cookies.iter().map(|cookie| cookie.cookie_id.as_str()).collect::<HashSet<_>>();
         let removed_assignments = self
             .assignments
@@ -277,10 +294,10 @@ impl CookieAssignmentService {
 
     fn select_worker_for_cookie<'a>(
         &self,
-        workers: &[&'a NodeHandle],
+        workers: &[&'a AssignmentNodeHandle],
         worker_assignments: &WorkerAssignments<'_>,
         domain: &str,
-    ) -> Option<&'a NodeHandle> {
+    ) -> Option<&'a AssignmentNodeHandle> {
         workers
             .iter()
             .copied()
@@ -288,7 +305,12 @@ impl CookieAssignmentService {
             .min_by(|left, right| self.compare_workers(worker_assignments, left, right))
     }
 
-    fn compare_workers(&self, worker_assignments: &WorkerAssignments<'_>, left: &NodeHandle, right: &NodeHandle) -> std::cmp::Ordering {
+    fn compare_workers(
+        &self,
+        worker_assignments: &WorkerAssignments<'_>,
+        left: &AssignmentNodeHandle,
+        right: &AssignmentNodeHandle,
+    ) -> std::cmp::Ordering {
         worker_assignments
             .cookie_count(left.address.as_ref())
             .cmp(&worker_assignments.cookie_count(right.address.as_ref()))

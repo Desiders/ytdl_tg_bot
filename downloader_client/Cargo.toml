@@ -1,11 +1,11 @@
 [package]
-name = "ytdl_tg_downloader_client"
+name = "downloader_client"
 version = "0.1.0"
 edition = "2021"
 resolver = "2"
 
 [dependencies]
-ytdl_tg_bot_proto = { path = "../proto" }
+proto = { path = "../proto" }
 tokio = { version = "1.36", features = ["net"], default-features = false }
 tonic = { version = "0.14", features = ["transport", "tls-ring", "tls-webpki-roots"], default-features = false }
 tracing = { version = "0.1", default-features = false }

@@ -50,11 +50,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --profile k8s-dev --manifest-path downloader/Cargo.toml --target-dir /usr/src/app/target
 
 RUN --mount=type=cache,target=/usr/src/app/target \
-    cp /usr/src/app/target/k8s-dev/ytdl_tg_downloader /usr/src/app/ytdl_tg_downloader
+    cp /usr/src/app/target/k8s-dev/downloader /usr/src/app/downloader
 
 FROM base AS final
 WORKDIR /app
-COPY --from=build /usr/src/app/ytdl_tg_downloader /app/ytdl_tg_downloader
+COPY --from=build /usr/src/app/downloader /app/downloader
 ENV RUST_BACKTRACE=full
 ENV PATH="/opt/venv/bin:$PATH"
-ENTRYPOINT ["/app/ytdl_tg_downloader"]
+ENTRYPOINT ["/app/downloader"]

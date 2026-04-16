@@ -1,5 +1,5 @@
 use tonic::Code;
-use ytdl_tg_bot_proto::downloader::{downloader_client::DownloaderClient, MediaInfoRequest, MediaInfoResponse};
+use proto::downloader::{downloader_client::DownloaderClient, MediaInfoRequest, MediaInfoResponse};
 
 use crate::{authenticated_request, with_node_failover, GetMediaInfoErrorKind, NodeAttemptErrorKind, NodeRouter};
 

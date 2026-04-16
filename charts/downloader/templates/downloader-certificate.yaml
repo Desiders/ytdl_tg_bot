@@ -11,4 +11,4 @@ spec:
     name: ca-issuer
     kind: ClusterIssuer
   dnsNames:
-    - {{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local
+    - "downloader.{{ .Release.Namespace }}.svc.cluster.local"

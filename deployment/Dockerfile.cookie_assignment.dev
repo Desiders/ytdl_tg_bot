@@ -39,10 +39,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --profile k8s-dev --manifest-path cookie_assignment/Cargo.toml --target-dir /usr/src/app/target
 
 RUN --mount=type=cache,target=/usr/src/app/target \
-    cp /usr/src/app/target/k8s-dev/ytdl_tg_cookie_assignment /usr/src/app/ytdl_tg_cookie_assignment
+    cp /usr/src/app/target/k8s-dev/cookie_assignment /usr/src/app/cookie_assignment
 
 FROM base AS final
 WORKDIR /app
-COPY --from=build /usr/src/app/ytdl_tg_cookie_assignment /app/ytdl_tg_cookie_assignment
+COPY --from=build /usr/src/app/cookie_assignment /app/cookie_assignment
 ENV RUST_BACKTRACE=full
-ENTRYPOINT ["/app/ytdl_tg_cookie_assignment"]
+ENTRYPOINT ["/app/cookie_assignment"]

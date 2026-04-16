@@ -21,7 +21,7 @@ use tokio_stream::{wrappers::UnboundedReceiverStream, Stream};
 use tonic::{Code, Request, Response, Status};
 use tracing::{error, info, warn};
 use url::Url;
-use ytdl_tg_bot_proto::downloader::{
+use proto::downloader::{
     download_chunk::Payload, downloader_server::Downloader, DownloadChunk, DownloadMeta, DownloadRequest, MediaEntry, MediaFormatEntry,
     MediaInfoRequest, MediaInfoResponse, Section,
 };
@@ -357,7 +357,7 @@ fn map_playlist_response(playlist: Playlist) -> MediaInfoResponse {
 }
 
 #[allow(clippy::result_large_err)]
-fn parse_range(range: Option<ytdl_tg_bot_proto::downloader::Range>) -> Result<Range, Status> {
+fn parse_range(range: Option<proto::downloader::Range>) -> Result<Range, Status> {
     let Some(range) = range else {
         return Ok(Range::default());
     };

@@ -156,7 +156,8 @@ Before deploying, review and fill:
 At minimum, make sure:
 
 - bot token is set in `configs/config.toml`
-- downloader auth token matches between bot, downloader, and cookie-assignment configs
+- downloader node auth token matches `configs/config.toml` `[download].token`, `configs/downloader.toml` `[auth].token`, and `configs/cookie_assignment.toml` `[download].token`
+- cookie-manager auth token matches `configs/downloader.toml` `[auth].cookie_manager_token` and `configs/cookie_assignment.toml` `[download].cookie_manager_token`
 - database credentials in `configs/config.toml` match the `db` Secret
 - Telegram Bot API URL and downloader DNS assumptions match your namespace/service names
 

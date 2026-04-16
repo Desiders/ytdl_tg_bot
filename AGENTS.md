@@ -17,11 +17,11 @@ This file describes the current architecture and the rules future changes should
 - root workspace members: `bot`, `cookie_assignment`, `downloader_client`, `downloader`, `proto`
 - root workspace excludes: `migration`
 - crate names:
-  - `ytdl_tg_bot`
-  - `ytdl_tg_cookie_assignment`
-  - `ytdl_tg_downloader_client`
-  - `ytdl_tg_downloader`
-  - `ytdl_tg_bot_proto`
+  - `bot`
+  - `cookie_assignment`
+  - `downloader_client`
+  - `downloader`
+  - `proto`
 - helm charts:
   - `charts/infra`
   - `charts/bot`
@@ -146,12 +146,22 @@ If this rule is broken, the TLS handshake fails with certificate verification er
 ### Cookie-assignment Controller
 
 - reads cookie files mounted into its own pod
-- discovers downloader nodes through the headless downloader service DNS
+- discovers downloader nodes through the headless downloader service DNS using `downloader_client`
 - checks node availability with `NodeCapabilities.GetStatus`
 - lists node cookies with `NodeCookieManager.ListNodeCookies`
 - removes stale unassigned cookies from nodes
 - pushes free cookies to eligible nodes with `NodeCookieManager.PushCookie`
 - keeps assignments in memory only
+
+### Downloader Auth Boundary
+
+Downloader nodes use separate bearer tokens for separate RPC surfaces.
+
+- `Downloader` and `NodeCapabilities` use the normal node token.
+- `NodeCookieManager` uses the cookie-manager token.
+- The bot config must only contain the normal node token.
+- The cookie-assignment config contains both tokens because it checks node status and mutates node cookies.
+- Do not give the bot the cookie-manager token.
 
 ### Downloader Node
 
@@ -228,10 +238,9 @@ Keep download node selection, downloader-node failover, and downloader RPC adapt
 - [`downloader_client/src/retry.rs`](/workspace/downloader_client/src/retry.rs)
 - [`downloader_client/src/media_info.rs`](/workspace/downloader_client/src/media_info.rs)
 - [`downloader_client/src/download.rs`](/workspace/downloader_client/src/download.rs)
+- [`downloader_client/src/cookie_assignment.rs`](/workspace/downloader_client/src/cookie_assignment.rs)
 
-The bot may re-export that crate locally, but the shared downloader access logic should have one source of truth.
-
-The cookie-assignment controller may do its own worker iteration for assignment. Do not reintroduce cookie ownership into the bot.
+The bot may re-export that crate locally, and the cookie-assignment controller may keep its own assignment policy, but DNS discovery, mTLS channel setup, auth request construction, and downloader RPC adapters should stay in `downloader_client`.
 
 ## Cookie Lifecycle
 
@@ -255,6 +264,8 @@ The bot no longer owns cookie distribution.
   - they never pull cookies
   - they clear `/tmp/cookies/` at startup
   - they keep cookies only for process lifetime
+- If DNS returns no workers, the controller skips the cycle and keeps previous assignments.
+- If `ListNodeCookies` fails for a worker, the controller keeps that worker's existing assignments but does not assign new cookies to it during that cycle.
 
 If you change cookie file layout, node cookie semantics, or assignment policy, update both this file and the cookie-assignment code.
 
@@ -325,5 +336,5 @@ If you are making cookie-assignment changes, start here:
 
 - [cookie_assignment/src/main.rs](/workspace/cookie_assignment/src/main.rs)
 - [cookie_assignment/src/service.rs](/workspace/cookie_assignment/src/service.rs)
-- [cookie_assignment/src/node_client.rs](/workspace/cookie_assignment/src/node_client.rs)
+- [downloader_client/src/cookie_assignment.rs](/workspace/downloader_client/src/cookie_assignment.rs)
 - [charts/cookie-assignment/templates/cookie-assignment-deployment.yaml](/workspace/charts/cookie-assignment/templates/cookie-assignment-deployment.yaml)
