@@ -51,10 +51,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --profile k8s-dev --manifest-path bot/Cargo.toml --target-dir /usr/src/app/target
 
 RUN --mount=type=cache,target=/usr/src/app/target \
-    cp /usr/src/app/target/k8s-dev/bot /usr/src/app/bot
+    mkdir -p /usr/src/app/bin \
+    && cp /usr/src/app/target/k8s-dev/bot /usr/src/app/bin/bot
 
 FROM base AS final
 WORKDIR /app
-COPY --from=build /usr/src/app/bot /app/bot
+COPY --from=build /usr/src/app/bin/bot /app/bot
 ENV RUST_BACKTRACE=full
 ENTRYPOINT ["/app/bot"]

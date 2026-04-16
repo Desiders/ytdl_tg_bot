@@ -11,16 +11,24 @@ RUN rustup target add x86_64-unknown-linux-musl
 WORKDIR /usr/src/app
 
 COPY cookie_assignment/Cargo.toml cookie_assignment/Cargo.toml
+COPY downloader_client/Cargo.toml downloader_client/Cargo.toml
 COPY proto/Cargo.toml proto/Cargo.toml
 RUN mkdir -p cookie_assignment/src && echo "fn main(){}" > cookie_assignment/src/main.rs
+RUN mkdir -p downloader_client/src && echo "fn main(){}" > downloader_client/src/main.rs
 RUN mkdir -p proto/src && echo "" > proto/src/lib.rs
 RUN cargo fetch --manifest-path cookie_assignment/Cargo.toml
+RUN cargo fetch --manifest-path downloader_client/Cargo.toml
 RUN cargo fetch --manifest-path proto/Cargo.toml
 
 COPY proto proto
 RUN touch proto/src/lib.rs
 
 RUN cargo build --release --target x86_64-unknown-linux-musl --manifest-path proto/Cargo.toml --target-dir target
+
+COPY downloader_client downloader_client
+RUN touch downloader_client/src/main.rs
+
+RUN cargo build --release --target x86_64-unknown-linux-musl --manifest-path downloader_client/Cargo.toml --target-dir target
 
 COPY cookie_assignment cookie_assignment
 RUN touch cookie_assignment/src/main.rs
