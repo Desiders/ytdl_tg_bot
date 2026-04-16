@@ -507,6 +507,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "bot"
+version = "5.0.0"
+dependencies = [
+ "backoff",
+ "bytes",
+ "downloader_client",
+ "froodi",
+ "futures-util",
+ "mutagen-rs",
+ "nix 0.31.2",
+ "proto",
+ "psl",
+ "regex",
+ "reqwest",
+ "sea-orm 1.1.19",
+ "serde",
+ "serde_json",
+ "telers",
+ "tempfile",
+ "thiserror 2.0.18",
+ "time",
+ "tokio",
+ "tokio-util",
+ "toml",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -697,6 +729,19 @@ dependencies = [
  "getrandom 0.2.17",
  "once_cell",
  "tiny-keccak",
+]
+
+[[package]]
+name = "cookie_assignment"
+version = "1.0.0"
+dependencies = [
+ "downloader_client",
+ "serde",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -946,6 +991,43 @@ name = "dotenvy"
 version = "0.15.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
+
+[[package]]
+name = "downloader"
+version = "1.0.0"
+dependencies = [
+ "backoff",
+ "bytes",
+ "futures-util",
+ "mutagen-rs",
+ "nix 0.31.2",
+ "proto",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "toml",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "downloader_client"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "proto",
+ "thiserror 2.0.18",
+ "tokio",
+ "tonic",
+ "tracing",
+ "url",
+]
 
 [[package]]
 name = "dunce"
@@ -2507,6 +2589,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8991c4cbdb8bc5b11f0b074ffe286c30e523de90fee5ba8132f1399f23cb3dd7"
 dependencies = [
  "prost",
+]
+
+[[package]]
+name = "proto"
+version = "1.0.0"
+dependencies = [
+ "prost",
+ "protoc-bin-vendored",
+ "tonic",
+ "tonic-build",
+ "tonic-prost",
+ "tonic-prost-build",
 ]
 
 [[package]]
@@ -5223,102 +5317,6 @@ dependencies = [
  "quote",
  "syn 2.0.117",
  "synstructure",
-]
-
-[[package]]
-name = "ytdl_tg_bot"
-version = "5.0.0"
-dependencies = [
- "backoff",
- "bytes",
- "froodi",
- "futures-util",
- "mutagen-rs",
- "nix 0.31.2",
- "psl",
- "regex",
- "reqwest",
- "sea-orm 1.1.19",
- "serde",
- "serde_json",
- "telers",
- "tempfile",
- "thiserror 2.0.18",
- "time",
- "tokio",
- "tokio-util",
- "toml",
- "tonic",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
- "ytdl_tg_bot_proto",
- "ytdl_tg_downloader_client",
-]
-
-[[package]]
-name = "ytdl_tg_bot_proto"
-version = "1.0.0"
-dependencies = [
- "prost",
- "protoc-bin-vendored",
- "tonic",
- "tonic-build",
- "tonic-prost",
- "tonic-prost-build",
-]
-
-[[package]]
-name = "ytdl_tg_cookie_assignment"
-version = "1.0.0"
-dependencies = [
- "serde",
- "thiserror 2.0.18",
- "tokio",
- "toml",
- "tonic",
- "tracing",
- "tracing-subscriber",
- "url",
- "ytdl_tg_bot_proto",
-]
-
-[[package]]
-name = "ytdl_tg_downloader"
-version = "1.0.0"
-dependencies = [
- "backoff",
- "bytes",
- "futures-util",
- "mutagen-rs",
- "nix 0.31.2",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "toml",
- "tonic",
- "tracing",
- "tracing-subscriber",
- "url",
- "ytdl_tg_bot_proto",
-]
-
-[[package]]
-name = "ytdl_tg_downloader_client"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "thiserror 2.0.18",
- "tokio",
- "tonic",
- "tracing",
- "url",
- "ytdl_tg_bot_proto",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
 [package]
-name = "ytdl_tg_cookie_assignment"
+name = "cookie_assignment"
 version = "1.0.0"
 edition = "2021"
 resolver = "2"
@@ -17,12 +17,10 @@ debug = 0
 lto = "off"
 
 [dependencies]
-ytdl_tg_bot_proto = { path = "../proto" }
+downloader_client = { path = "../downloader_client" }
 tokio = { version = "1.36", features = ["rt-multi-thread", "macros", "time", "net"], default-features = false }
-tonic = { version = "0.14", features = ["transport", "tls-ring", "tls-webpki-roots"], default-features = false }
 tracing = { version = "0.1", default-features = false }
 tracing-subscriber = { version = "0.3", features = ["registry", "fmt", "ansi", "env-filter"], default-features = false }
 thiserror = { version = "2.0", default-features = false }
 serde = { version = "1.0", features = ["derive"], default-features = false }
 toml = { version = "1.0.6", features = ["parse", "serde"], default-features = false }
-url = { version = "2.5", default-features = false }

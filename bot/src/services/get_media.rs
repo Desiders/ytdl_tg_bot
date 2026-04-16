@@ -3,7 +3,7 @@ use std::{convert::Infallible, sync::Arc};
 use reqwest::Client;
 use tracing::{debug, info, instrument, warn};
 use url::Url;
-use ytdl_tg_bot_proto::downloader::MediaInfoRequest;
+use proto::downloader::MediaInfoRequest;
 
 use crate::{
     config::{TrackingParamsConfig, YtToolkitConfig},
@@ -331,7 +331,7 @@ async fn get_media_by_url(
 }
 
 #[allow(clippy::result_large_err)]
-fn playlist_from_response(response: ytdl_tg_bot_proto::downloader::MediaInfoResponse) -> Result<Playlist, GetInfoErrorKind> {
+fn playlist_from_response(response: proto::downloader::MediaInfoResponse) -> Result<Playlist, GetInfoErrorKind> {
     let inner = response
         .entries
         .into_iter()
@@ -381,8 +381,8 @@ fn map_get_media_info_error(err: GetInfoErrorKind) -> GetMediaByURLErrorKind {
     }
 }
 
-fn to_proto_range(range: &Range) -> ytdl_tg_bot_proto::downloader::Range {
-    ytdl_tg_bot_proto::downloader::Range {
+fn to_proto_range(range: &Range) -> proto::downloader::Range {
+    proto::downloader::Range {
         start: i32::from(range.start),
         count: i32::from(range.count),
         step: i32::from(range.step),

@@ -1,4 +1,4 @@
-use std::{env, fs};
+use std::{collections::HashSet, env, fs, io, net::SocketAddr};
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
 use url::Url;
 
@@ -28,6 +28,14 @@ impl DownloaderServiceTarget {
 
     pub fn authority(&self) -> String {
         format!("{}:{}", self.host, self.port)
+    }
+
+    pub async fn resolve_nodes(&self) -> io::Result<Vec<SocketAddr>> {
+        Ok(tokio::net::lookup_host(self.authority())
+            .await?
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect())
     }
 }
 

@@ -1,12 +1,10 @@
 use std::{
     collections::{HashMap, HashSet},
-    io,
-    net::SocketAddr,
     sync::{Arc, RwLock},
 };
 
 use tracing::{error, info, warn};
-use ytdl_tg_bot_proto::downloader::{node_capabilities_client::NodeCapabilitiesClient, Empty};
+use proto::downloader::{node_capabilities_client::NodeCapabilitiesClient, Empty};
 
 use crate::{
     authenticated_request,
@@ -119,7 +117,7 @@ impl NodeRouter {
     }
 
     async fn refresh_nodes(&self) {
-        let node_addresses = match self.resolve_nodes().await {
+        let node_addresses = match self.service_target.resolve_nodes().await {
             Ok(nodes) => nodes,
             Err(err) => {
                 warn!(dns = %self.service_target.authority(), error = %err, "Failed to resolve downloader service DNS");
@@ -190,14 +188,6 @@ impl NodeRouter {
 
         info!(dns = %self.service_target.authority(), node_count = nodes.len(), "Refreshed downloader nodes from DNS");
         self.replace_nodes(nodes, domain_cookie_map);
-    }
-
-    async fn resolve_nodes(&self) -> io::Result<Vec<SocketAddr>> {
-        Ok(tokio::net::lookup_host(self.service_target.authority())
-            .await?
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect())
     }
 
     fn replace_nodes(&self, nodes: Vec<Arc<NodeHandle>>, domain_cookie_map: HashMap<String, Vec<usize>>) {

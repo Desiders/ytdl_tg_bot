@@ -27,10 +27,10 @@ RUN touch cookie_assignment/src/main.rs
 
 RUN cargo build --release --target x86_64-unknown-linux-musl --manifest-path cookie_assignment/Cargo.toml --target-dir target
 
-RUN upx --best --lzma target/x86_64-unknown-linux-musl/release/ytdl_tg_cookie_assignment
+RUN upx --best --lzma target/x86_64-unknown-linux-musl/release/cookie_assignment
 
 FROM base AS final
 WORKDIR /app
-COPY --from=build /usr/src/app/target/x86_64-unknown-linux-musl/release/ytdl_tg_cookie_assignment /app/ytdl_tg_cookie_assignment
+COPY --from=build /usr/src/app/target/x86_64-unknown-linux-musl/release/cookie_assignment /app/cookie_assignment
 ENV RUST_BACKTRACE=full
-ENTRYPOINT ["/app/ytdl_tg_cookie_assignment"]
+ENTRYPOINT ["/app/cookie_assignment"]

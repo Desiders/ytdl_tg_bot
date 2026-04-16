@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
 use tonic::transport::Channel;
-use ytdl_tg_bot_proto::downloader::{node_capabilities_client::NodeCapabilitiesClient, Empty};
+use proto::downloader::{node_capabilities_client::NodeCapabilitiesClient, Empty};
 
 use crate::authenticated_request;
 

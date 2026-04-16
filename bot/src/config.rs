@@ -178,7 +178,7 @@ pub fn parse_from_fs(path: impl AsRef<Path>) -> Result<Config, ParseError> {
     Ok(cfg)
 }
 
-impl From<DownloaderTlsConfig> for ytdl_tg_downloader_client::DownloaderTlsConfig {
+impl From<DownloaderTlsConfig> for downloader_client::DownloaderTlsConfig {
     fn from(value: DownloaderTlsConfig) -> Self {
         Self {
             ca_cert_path: value.ca_cert_path,
@@ -188,7 +188,7 @@ impl From<DownloaderTlsConfig> for ytdl_tg_downloader_client::DownloaderTlsConfi
     }
 }
 
-impl From<DownloadConfig> for ytdl_tg_downloader_client::DownloaderClusterConfig {
+impl From<DownloadConfig> for downloader_client::DownloaderClusterConfig {
     fn from(value: DownloadConfig) -> Self {
         Self {
             token: value.token,

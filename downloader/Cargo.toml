@@ -1,5 +1,5 @@
 [package]
-name = "ytdl_tg_downloader"
+name = "downloader"
 version = "1.0.0"
 edition = "2021"
 resolver = "2"
@@ -17,7 +17,7 @@ debug = 0
 lto = "off"
 
 [dependencies]
-ytdl_tg_bot_proto = { path = "../proto" }
+proto = { path = "../proto" }
 tokio = { version = "1.36", features = ["rt-multi-thread", "macros", "process", "sync", "fs", "io-util", "time", "signal"], default-features = false }
 tonic = { version = "0.14", features = ["transport", "tls-ring", "tls-webpki-roots"], default-features = false }
 tokio-stream = { version = "0.1", default-features = false }

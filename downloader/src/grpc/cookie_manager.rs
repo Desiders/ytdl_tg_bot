@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tonic::{Request, Response, Status};
 use tracing::{error, info};
-use ytdl_tg_bot_proto::downloader::{
+use proto::downloader::{
     node_cookie_manager_server::NodeCookieManager, Empty, ListNodeCookiesResponse, PushCookieRequest, RemoveCookieRequest,
 };
 

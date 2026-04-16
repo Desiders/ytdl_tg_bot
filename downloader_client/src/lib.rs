@@ -1,5 +1,6 @@
 mod auth;
 mod client;
+mod cookie_assignment;
 mod download;
 mod errors;
 mod handle;
@@ -10,6 +11,7 @@ mod selection;
 
 pub use auth::authenticated_request;
 pub use client::{DownloaderServiceTarget, DownloaderTlsConfig};
+pub use cookie_assignment::{AssignmentNodeClient, AssignmentNodeHandle, AssignmentNodeHandleError};
 pub use download::{download_media, DownloadEvent, DownloadSession};
 pub use errors::{DownloadErrorKind, GetMediaInfoErrorKind};
 pub use handle::{NodeHandle, NodeHandleError};

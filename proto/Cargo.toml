@@ -1,5 +1,5 @@
 [package]
-name = "ytdl_tg_bot_proto"
+name = "proto"
 version = "1.0.0"
 edition = "2021"
 resolver = "2"

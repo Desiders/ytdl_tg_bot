@@ -11,7 +11,7 @@ use tempfile::TempDir;
 use tokio::sync::mpsc;
 use tracing::instrument;
 use url::Url;
-use ytdl_tg_bot_proto::downloader::{DownloadRequest, Section};
+use proto::downloader::{DownloadRequest, Section};
 
 use crate::{
     entities::{Media, MediaByteStream, MediaForUpload, MediaFormat, RawMediaWithFormat, Sections},

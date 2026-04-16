@@ -6,6 +6,7 @@ interval = 60
 
 [download]
 token = "secret-token-a"
+cookie_manager_token = "secret-token-b"
 
 [download.tls]
 ca_cert_path = "tls/ca.crt"

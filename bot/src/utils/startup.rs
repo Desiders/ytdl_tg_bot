@@ -49,6 +49,14 @@ pub async fn on_startup(bot: Bot, node_router: Arc<NodeRouter>, cfg: Arc<Config>
     set_my_commands(bot).await?;
     remove_tmp_media_files().await?;
 
+    info!("Running initial downloader node status refresh");
+    node_router.refresh_status().await;
+
+    if cfg.download.capabilities_refresh_interval > 0 {
+        info!("Running initial downloader node capabilities refresh");
+        node_router.refresh_capabilities().await;
+    }
+
     {
         let router = node_router.clone();
         info!(interval_sec = %5, "Starting node status refresh task");

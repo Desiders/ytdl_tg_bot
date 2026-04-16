@@ -35,10 +35,10 @@ RUN touch bot/src/main.rs
 
 RUN cargo build --release --target x86_64-unknown-linux-musl --manifest-path bot/Cargo.toml --target-dir target
 
-RUN upx --best --lzma target/x86_64-unknown-linux-musl/release/ytdl_tg_bot
+RUN upx --best --lzma target/x86_64-unknown-linux-musl/release/bot
 
 FROM base AS final
 WORKDIR /app
-COPY --from=build /usr/src/app/target/x86_64-unknown-linux-musl/release/ytdl_tg_bot /app/ytdl_tg_bot
+COPY --from=build /usr/src/app/target/x86_64-unknown-linux-musl/release/bot /app/bot
 ENV RUST_BACKTRACE=full
-ENTRYPOINT ["/app/ytdl_tg_bot"]
+ENTRYPOINT ["/app/bot"]

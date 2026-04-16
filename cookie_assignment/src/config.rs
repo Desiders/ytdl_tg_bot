@@ -23,7 +23,18 @@ pub struct DownloadTlsConfig {
 #[derive(Deserialize, Clone, Debug)]
 pub struct DownloadConfig {
     pub token: Box<str>,
+    pub cookie_manager_token: Box<str>,
     pub tls: DownloadTlsConfig,
+}
+
+impl From<DownloadTlsConfig> for downloader_client::DownloaderTlsConfig {
+    fn from(value: DownloadTlsConfig) -> Self {
+        Self {
+            ca_cert_path: value.ca_cert_path,
+            cert_path: value.cert_path,
+            key_path: value.key_path,
+        }
+    }
 }
 
 #[derive(Deserialize, Clone, Debug)]

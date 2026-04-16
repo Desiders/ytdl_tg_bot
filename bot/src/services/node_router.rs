@@ -1,6 +1,6 @@
 use std::{convert::Infallible, sync::Arc};
 use tracing::{info, instrument};
-pub use ytdl_tg_downloader_client::{
+pub use downloader_client::{
     download_media, get_media_info, DownloadErrorKind, DownloadEvent, DownloadSession, DownloaderServiceTarget, GetMediaInfoErrorKind,
     NodeRouter,
 };
