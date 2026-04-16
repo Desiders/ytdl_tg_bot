@@ -37,11 +37,23 @@ This file describes the current architecture and the rules future changes should
 The project is deployed to Kubernetes with separate Helm charts for:
 
 - shared infrastructure
-- bot runtime
+- bot runtime, PostgreSQL, internal RustFS backup storage, and PostgreSQL scheduled backup resources
 - downloader nodes
 - cookie assignment
 
-Install the infra chart before the app charts so `ca-issuer` exists before certificate resources are reconciled.
+Install the infra chart before the app charts so `ca-issuer` exists before certificate resources are reconciled. CloudNativePG `1.26+` and the Barman Cloud CNPG-I Plugin must already be installed before the bot chart is installed. Prefer CloudNativePG `1.29+` for new deployments.
+
+### PostgreSQL Backup
+
+The bot chart uses the current CloudNativePG plugin-based backup path.
+
+- `charts/bot` creates a `barmancloud.cnpg.io/v1` `ObjectStore`.
+- The `postgresql.cnpg.io/v1` `Cluster` references that object store through `spec.plugins`.
+- `ScheduledBackup` uses `method: plugin` with `barman-cloud.cloudnative-pg.io`.
+- Do not reintroduce `Cluster.spec.backup.barmanObjectStore`; that is the deprecated in-tree Barman Cloud path.
+- CNPG backup schedules use six-field cron syntax with seconds first, for example `0 0 3 * * *`.
+- The default chart includes single-node RustFS and bootstraps the `backups` bucket through a Helm hook Job.
+- If RustFS is disabled and an external S3-compatible store is used, the bucket must exist before backups run.
 
 ### Service Discovery (Dynamic Nodes)
 
@@ -109,12 +121,12 @@ If this rule is broken, the TLS handshake fails with certificate verification er
 - Handlers are Telegram inbound adapters.
 - A handler should:
   - extract Telegram input
-  - inject one use case
+  - inject one top-level interactor
   - call it
   - return `EventReturn::Finish`
-- Do not let handlers orchestrate business flow across multiple use cases or services again.
-- Handler-facing orchestration lives in `bot/src/use_cases/`.
-- Lower-level reusable building blocks live under `bot/src/services/`, not in the use-case namespace.
+- Do not let handlers orchestrate business flow across multiple top-level interactors or services again.
+- Handler-facing orchestration lives in `bot/src/interactors/`.
+- Lower-level reusable building blocks live under `bot/src/services/`, not in the interactor namespace.
 - Current service modules used by interactors are:
   - `chat`
   - `download`
@@ -122,14 +134,14 @@ If this rule is broken, the TLS handshake fails with certificate verification er
   - `get_media`
   - `node_router`
   - `send_media`
-- Use cases may call these services.
-- Services must not call use cases.
+- Top-level interactors may call these services.
+- Services must not call top-level interactors.
 
 ### Bot DI Style
 
 - Keep the current generic DI style around `Messenger`.
-- The composition root builds `TelegramMessenger`, but use cases should be wired generically over `Messenger` rather than directly against the concrete adapter type.
-- If you add a new use case, register it in `interactors_registry<Messenger>(...)` and keep the same generic pattern.
+- The composition root builds `TelegramMessenger`, but top-level interactors should be wired generically over `Messenger` rather than directly against the concrete adapter type.
+- If you add a new top-level interactor, register it in `interactors_registry<Messenger>(...)` and keep the same generic pattern.
 
 ### Cookie-assignment Controller
 
@@ -250,9 +262,9 @@ If you change cookie file layout, node cookie semantics, or assignment policy, u
 
 When changing bot logic:
 
-- keep use-case names stable unless there is a strong reason not to
+- keep top-level interactor names stable unless there is a strong reason not to
 - keep handlers thin and transport-focused
-- prefer changing internals in use cases, services, and router layers instead of pushing orchestration back into handlers
+- prefer changing internals in top-level interactors, services, and router layers instead of pushing orchestration back into handlers
 - keep quiet-mode behavior structurally separate when it has different presentation rules
 
 ## Error Message Style
@@ -294,11 +306,20 @@ If you are making download-related changes, start here:
 - [downloader/src/grpc/cookie_manager.rs](/workspace/downloader/src/grpc/cookie_manager.rs)
 - [downloader/src/services/ytdl.rs](/workspace/downloader/src/services/ytdl.rs)
 - [bot/src/services.rs](/workspace/bot/src/services.rs)
-- [bot/src/use_cases/video.rs](/workspace/bot/src/use_cases/video.rs)
-- [bot/src/use_cases/audio.rs](/workspace/bot/src/use_cases/audio.rs)
-- [bot/src/use_cases/chosen_inline.rs](/workspace/bot/src/use_cases/chosen_inline.rs)
-- [bot/src/use_cases/inline_query.rs](/workspace/bot/src/use_cases/inline_query.rs)
+- [bot/src/interactors/video.rs](/workspace/bot/src/interactors/video.rs)
+- [bot/src/interactors/audio.rs](/workspace/bot/src/interactors/audio.rs)
+- [bot/src/interactors/chosen_inline.rs](/workspace/bot/src/interactors/chosen_inline.rs)
+- [bot/src/interactors/inline_query.rs](/workspace/bot/src/interactors/inline_query.rs)
 - [bot/src/di_container.rs](/workspace/bot/src/di_container.rs)
+
+If you are making PostgreSQL backup or object-storage chart changes, start here:
+
+- [charts/bot/templates/postgres-cluster.yaml](/workspace/charts/bot/templates/postgres-cluster.yaml)
+- [charts/bot/templates/postgres-backup-object-store.yaml](/workspace/charts/bot/templates/postgres-backup-object-store.yaml)
+- [charts/bot/templates/postgres-scheduled-backup.yaml](/workspace/charts/bot/templates/postgres-scheduled-backup.yaml)
+- [charts/bot/templates/rustfs-stateful-set.yaml](/workspace/charts/bot/templates/rustfs-stateful-set.yaml)
+- [charts/bot/templates/rustfs-service.yaml](/workspace/charts/bot/templates/rustfs-service.yaml)
+- [charts/bot/templates/rustfs-bucket-bootstrap-job.yaml](/workspace/charts/bot/templates/rustfs-bucket-bootstrap-job.yaml)
 
 If you are making cookie-assignment changes, start here:
 

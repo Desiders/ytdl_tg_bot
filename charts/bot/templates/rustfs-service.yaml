@@ -12,4 +12,18 @@ spec:
     - port: 9000
       targetPort: 9000
       protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rustfs
+  namespace: {{ .Release.Namespace }}
+spec:
+  clusterIP: None
+  selector:
+    app: rustfs
+  ports:
+    - port: 9000
+      targetPort: 9000
+      protocol: TCP
 {{- end }}

@@ -5,7 +5,7 @@
 The project now has four clear runtime/deployment areas:
 
 - `infra`: shared internal TLS bootstrap
-- `bot`: Telegram-facing application
+- `bot`: Telegram-facing application plus PostgreSQL, RustFS, and database backup resources
 - `downloader`: media worker nodes plus shared `yt-pot-provider`
 - `cookie_assignment`: independent cookie distribution controller
 
@@ -29,9 +29,9 @@ The bot no longer owns cookie assignment.
 - Moved bot-side Telegram send/edit/upload/media-group logic behind the messenger adapter.
 - Reworked DI to use the current generic `Messenger` pattern instead of binding bot code directly to the concrete Telegram adapter.
 - Split bot internals conceptually into:
-  - `use_cases` for handler-facing orchestration
+  - `interactors` for handler-facing orchestration
   - lower-level `services` for reusable internal services and integration adapters
-- Moved handler orchestration into flat use cases:
+- Moved handler orchestration into flat top-level interactors:
   - `start`
   - `stats`
   - `config`
@@ -41,8 +41,13 @@ The bot no longer owns cookie assignment.
   - `chosen_inline`
 - Reduced handlers to thin Telegram adapters that:
   - extract Telegram input
-  - inject one use case
+  - inject one top-level interactor
   - call it
+- Switched PostgreSQL backups to the current CloudNativePG Barman Cloud Plugin model:
+  - `ObjectStore` owns S3/RustFS backup destination configuration
+  - `Cluster.spec.plugins` enables WAL archiving through `barman-cloud.cloudnative-pg.io`
+  - `ScheduledBackup` uses `method: plugin`
+  - RustFS stays single-node and bootstraps the `backups` bucket with a Helm hook Job
 
 ## Verification
 
