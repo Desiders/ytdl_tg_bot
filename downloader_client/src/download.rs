@@ -1,8 +1,6 @@
 use bytes::Bytes;
+use proto::downloader::{download_chunk::Payload, downloader_client::DownloaderClient, DownloadChunk, DownloadMeta, DownloadRequest};
 use tonic::Code;
-use proto::downloader::{
-    download_chunk::Payload, downloader_client::DownloaderClient, DownloadChunk, DownloadMeta, DownloadRequest,
-};
 
 use crate::{authenticated_request, with_node_failover, DownloadErrorKind, NodeAttemptErrorKind, NodeRouter};
 

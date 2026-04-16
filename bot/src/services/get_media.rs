@@ -1,9 +1,9 @@
 use std::{convert::Infallible, sync::Arc};
 
+use proto::downloader::MediaInfoRequest;
 use reqwest::Client;
 use tracing::{debug, info, instrument, warn};
 use url::Url;
-use proto::downloader::MediaInfoRequest;
 
 use crate::{
     config::{TrackingParamsConfig, YtToolkitConfig},

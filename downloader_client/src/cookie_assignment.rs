@@ -1,10 +1,10 @@
 use std::net::SocketAddr;
 
-use tonic::transport::Channel;
 use proto::downloader::{
     node_capabilities_client::NodeCapabilitiesClient, node_cookie_manager_client::NodeCookieManagerClient, Empty, PushCookieRequest,
     RemoveCookieRequest,
 };
+use tonic::transport::Channel;
 
 use crate::{
     authenticated_request,
@@ -52,9 +52,7 @@ pub struct AssignmentNodeHandle {
 impl AssignmentNodeHandle {
     pub async fn fetch_status(&self) -> Result<(), AssignmentNodeHandleError> {
         let mut client = NodeCapabilitiesClient::new(self.channel.clone());
-        client
-            .get_status(authenticated_request(Empty {}, &self.node_token)?)
-            .await?;
+        client.get_status(authenticated_request(Empty {}, &self.node_token)?).await?;
         Ok(())
     }
 

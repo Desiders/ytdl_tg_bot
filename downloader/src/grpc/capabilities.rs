@@ -1,10 +1,10 @@
+use proto::downloader::{node_capabilities_server::NodeCapabilities, Empty, NodeStatus, SupportedDomainsResponse};
 use std::sync::{
     atomic::{AtomicU32, Ordering},
     Arc,
 };
 use tonic::{Request, Response, Status};
 use tracing::info;
-use proto::downloader::{node_capabilities_server::NodeCapabilities, Empty, NodeStatus, SupportedDomainsResponse};
 
 use crate::entities::Cookies;
 

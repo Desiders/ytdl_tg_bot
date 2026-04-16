@@ -1,5 +1,5 @@
-use tonic::Code;
 use proto::downloader::{downloader_client::DownloaderClient, MediaInfoRequest, MediaInfoResponse};
+use tonic::Code;
 
 use crate::{authenticated_request, with_node_failover, GetMediaInfoErrorKind, NodeAttemptErrorKind, NodeRouter};
 

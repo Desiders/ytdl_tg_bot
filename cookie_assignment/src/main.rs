@@ -4,10 +4,10 @@ mod service;
 
 use std::time::Duration;
 
+use downloader_client::{AssignmentNodeClient, DownloaderServiceTarget};
 use service::CookieAssignmentService;
 use tracing::info;
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
-use downloader_client::{AssignmentNodeClient, DownloaderServiceTarget};
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {

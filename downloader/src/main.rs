@@ -5,15 +5,15 @@ mod grpc;
 mod services;
 mod utils;
 
+use proto::downloader::{
+    downloader_server::DownloaderServer, node_capabilities_server::NodeCapabilitiesServer,
+    node_cookie_manager_server::NodeCookieManagerServer,
+};
 use std::sync::{atomic::AtomicU32, Arc};
 use tokio::sync::Semaphore;
 use tonic::transport::Server;
 use tracing::info;
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
-use proto::downloader::{
-    downloader_server::DownloaderServer, node_capabilities_server::NodeCapabilitiesServer,
-    node_cookie_manager_server::NodeCookieManagerServer,
-};
 
 use crate::{
     constants::COOKIE_TMP_DIR,
@@ -70,7 +70,10 @@ async fn main() {
     server
         .add_service(DownloaderServer::with_interceptor(downloader_service, node_auth.clone()))
         .add_service(NodeCapabilitiesServer::with_interceptor(capabilities_service, node_auth))
-        .add_service(NodeCookieManagerServer::with_interceptor(cookie_manager_service, cookie_manager_auth))
+        .add_service(NodeCookieManagerServer::with_interceptor(
+            cookie_manager_service,
+            cookie_manager_auth,
+        ))
         .serve_with_shutdown(addr, shutdown_signal())
         .await
         .unwrap();

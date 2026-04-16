@@ -4,8 +4,8 @@ use std::{
     path::Path,
 };
 
-use tracing::{info, warn};
 use downloader_client::{AssignmentNodeClient, AssignmentNodeHandle, DownloaderServiceTarget};
+use tracing::{info, warn};
 
 use crate::cookies::{load_cookies_from_directory, CookieRecord};
 
@@ -90,10 +90,7 @@ impl CookieAssignmentService {
         workers
     }
 
-    async fn load_worker_cookie_ids(
-        &self,
-        available_workers: &HashMap<String, AssignmentNodeHandle>,
-    ) -> HashMap<String, HashSet<String>> {
+    async fn load_worker_cookie_ids(&self, available_workers: &HashMap<String, AssignmentNodeHandle>) -> HashMap<String, HashSet<String>> {
         let mut worker_cookie_ids = HashMap::new();
 
         for worker in available_workers.values() {
@@ -216,11 +213,7 @@ impl CookieAssignmentService {
         }
     }
 
-    async fn revoke_removed_source_cookies(
-        &mut self,
-        cookies: &[CookieRecord],
-        available_workers: &HashMap<String, AssignmentNodeHandle>,
-    ) {
+    async fn revoke_removed_source_cookies(&mut self, cookies: &[CookieRecord], available_workers: &HashMap<String, AssignmentNodeHandle>) {
         let source_cookie_ids = cookies.iter().map(|cookie| cookie.cookie_id.as_str()).collect::<HashSet<_>>();
         let removed_assignments = self
             .assignments
