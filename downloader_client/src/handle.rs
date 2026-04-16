@@ -1,6 +1,6 @@
+use proto::downloader::{node_capabilities_client::NodeCapabilitiesClient, Empty};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
 use tonic::transport::Channel;
-use proto::downloader::{node_capabilities_client::NodeCapabilitiesClient, Empty};
 
 use crate::authenticated_request;
 

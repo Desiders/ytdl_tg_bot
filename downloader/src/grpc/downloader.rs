@@ -8,6 +8,10 @@ use std::{
     time::Instant,
 };
 
+use proto::downloader::{
+    download_chunk::Payload, downloader_server::Downloader, DownloadChunk, DownloadMeta, DownloadRequest, MediaEntry, MediaFormatEntry,
+    MediaInfoRequest, MediaInfoResponse, Section,
+};
 use tempfile::TempDir;
 use tokio::{
     fs::File,
@@ -21,10 +25,6 @@ use tokio_stream::{wrappers::UnboundedReceiverStream, Stream};
 use tonic::{Code, Request, Response, Status};
 use tracing::{error, info, warn};
 use url::Url;
-use proto::downloader::{
-    download_chunk::Payload, downloader_server::Downloader, DownloadChunk, DownloadMeta, DownloadRequest, MediaEntry, MediaFormatEntry,
-    MediaInfoRequest, MediaInfoResponse, Section,
-};
 
 use crate::{
     config::{YtDlpConfig, YtPotProviderConfig},

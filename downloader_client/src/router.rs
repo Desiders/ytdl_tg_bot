@@ -3,8 +3,8 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use tracing::{error, info, warn};
 use proto::downloader::{node_capabilities_client::NodeCapabilitiesClient, Empty};
+use tracing::{error, info, warn};
 
 use crate::{
     authenticated_request,
