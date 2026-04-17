@@ -28,7 +28,8 @@ The bot no longer owns cookie assignment.
   - failover/retry
   - downloader RPC wrappers and stream decoding
   - cookie-assignment cookie-manager RPC wrappers
-- Split downloader-node auth into normal node token and cookie-manager token so the bot cannot call cookie mutation RPCs, and cookie assignment no longer needs the normal node token.
+- Split downloader-node auth into normal node tokens and cookie-manager token so bots cannot call cookie mutation RPCs, and cookie assignment no longer needs any normal node token.
+- Downloader now accepts a list of bot/node tokens through `[auth].node_tokens`, which allows separate tokens per bot.
 - Allowed `NodeCapabilities` to accept either token so cookie assignment can check node status with the cookie-manager token only.
 - Bot startup now runs an initial downloader-node status/capability refresh before accepting updates; refresh errors are logged and ignored by the router.
 - Introduced `MessengerPort` with `TelegramMessenger` as the outbound Telegram adapter.

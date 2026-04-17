@@ -105,7 +105,7 @@ Required config checks:
 
 - `configs/config.toml` has the real Telegram bot token.
 - Database credentials in `configs/config.toml` match the `db` Secret.
-- Normal downloader token matches in `configs/config.toml` `[download].node_token` and `configs/downloader.toml` `[auth].node_token`.
+- Normal downloader token from `configs/config.toml` `[download].node_token` is listed in `configs/downloader.toml` `[auth].node_tokens`.
 - Cookie-manager token matches in `configs/downloader.toml` `[auth].cookie_manager_token` and `configs/cookie_assignment.toml` `[download].cookie_manager_token`.
 - Default in-cluster service URLs are correct if all charts are installed into the same namespace.
 
