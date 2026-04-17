@@ -28,24 +28,70 @@ This guide assumes Kubernetes, Helm, and a working image registry. If you are de
 
 ### 1. Prerequisites
 
-Cluster prerequisites:
-
-- `cert-manager`
-- CloudNativePG `1.26+`; use `1.29+` for new installs
-- Barman Cloud CNPG-I Plugin installed in the same namespace as the CloudNativePG operator
-
-Local prerequisites:
+Required local tools:
 
 - `kubectl`
 - `helm`
 - `just`
 
-Quick checks:
+Check local tools:
+
+```bash
+kubectl version --client
+helm version
+just --version
+```
+
+Cluster components:
+
+- `cert-manager`
+- CloudNativePG `1.26+`; use `1.29+` for new installs
+- Barman Cloud CNPG-I Plugin installed in the same namespace as the CloudNativePG operator
+
+Install `cert-manager`:
+
+```bash
+helm install cert-manager oci://quay.io/jetstack/charts/cert-manager \
+  --version v1.20.2 \
+  --namespace cert-manager \
+  --create-namespace \
+  --set crds.enabled=true \
+  --wait
+
+kubectl rollout status deployment/cert-manager -n cert-manager
+kubectl rollout status deployment/cert-manager-webhook -n cert-manager
+kubectl rollout status deployment/cert-manager-cainjector -n cert-manager
+```
+
+Install CloudNativePG:
+
+```bash
+kubectl apply --server-side -f \
+  https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.29/releases/cnpg-1.29.0.yaml
+
+kubectl rollout status deployment/cnpg-controller-manager -n cnpg-system
+```
+
+Install the Barman Cloud CNPG-I Plugin:
+
+```bash
+kubectl get deployment -n cnpg-system cnpg-controller-manager \
+  -o jsonpath="{.spec.template.spec.containers[*].image}{'\n'}"
+
+kubectl apply -f \
+  https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.12.0/manifest.yaml
+
+kubectl rollout status deployment/barman-cloud -n cnpg-system
+```
+
+Final checks:
 
 ```bash
 kubectl get crd certificates.cert-manager.io
 kubectl get crd clusters.postgresql.cnpg.io
 kubectl get crd objectstores.barmancloud.cnpg.io
+kubectl get deploy -n cert-manager
+kubectl get deploy -n cnpg-system
 ```
 
 ### 2. Namespace
