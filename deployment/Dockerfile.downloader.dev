@@ -1,0 +1,61 @@
+FROM debian:bookworm-slim AS base
+RUN apt update && apt install -y --no-install-recommends \
+        ffmpeg \
+        python3 \
+        python3-pip \
+        python3-venv \
+        bash \
+        curl \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+RUN pip install --no-cache-dir -U pip \
+ && pip install --no-cache-dir --pre "yt-dlp[default,curl-cffi,deno]" \
+ && pip install --no-cache-dir --pre "bgutil-ytdlp-pot-provider"
+
+FROM rust:1.91-bookworm AS build
+RUN apt update && apt install -y --no-install-recommends \
+        protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /usr/src/app
+
+COPY downloader/Cargo.toml downloader/Cargo.toml
+COPY proto/Cargo.toml proto/Cargo.toml
+
+RUN mkdir -p downloader/src && echo "fn main(){}" > downloader/src/main.rs
+RUN mkdir -p proto/src && echo "" > proto/src/lib.rs
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo fetch --manifest-path downloader/Cargo.toml
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo fetch --manifest-path proto/Cargo.toml
+
+COPY proto proto
+RUN touch proto/src/lib.rs
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/src/app/target \
+    cargo build --profile k8s-dev --manifest-path proto/Cargo.toml --target-dir /usr/src/app/target
+
+COPY downloader downloader
+RUN touch downloader/src/main.rs
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/src/app/target \
+    cargo build --profile k8s-dev --manifest-path downloader/Cargo.toml --target-dir /usr/src/app/target
+
+RUN --mount=type=cache,target=/usr/src/app/target \
+    mkdir -p /usr/src/app/bin \
+    && cp /usr/src/app/target/k8s-dev/downloader /usr/src/app/bin/downloader
+
+FROM base AS final
+WORKDIR /app
+COPY --from=build /usr/src/app/bin/downloader /app/downloader
+ENV RUST_BACKTRACE=full
+ENV PATH="/opt/venv/bin:$PATH"
+ENTRYPOINT ["/app/downloader"]

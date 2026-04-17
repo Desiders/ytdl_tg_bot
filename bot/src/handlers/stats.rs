@@ -1,94 +1,31 @@
-use crate::database::TxManager;
-use crate::interactors::{downloaded_media, node_router, Interactor as _};
-use crate::utils::{format_error_report, FormatErrorToMessage as _};
+use crate::{
+    database::TxManager,
+    interactors::{stats, Interactor as _},
+    services::messenger::MessengerPort,
+};
 
 use froodi::{Inject, InjectTransient};
-use std::fmt::Write as _;
-use telers::utils::text::{html_expandable_blockquote, html_quote};
 use telers::{
-    enums::ParseMode,
     event::{telegram::HandlerResult, EventReturn},
-    methods::SendMessage,
-    types::{LinkPreviewOptions, Message, ReplyParameters},
-    Bot,
+    types::Message,
 };
-use tracing::{error, instrument};
+use tracing::instrument;
 
 #[instrument(skip_all)]
-pub async fn stats(
-    bot: Bot,
+pub async fn stats<Messenger>(
     message: Message,
-    Inject(get_media_stats): Inject<downloaded_media::GetStats>,
-    Inject(node_node_stats): Inject<node_router::GetStats>,
+    Inject(interactor): Inject<stats::Stats<Messenger>>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
-) -> HandlerResult {
-    let media_stats = get_media_stats
-        .execute(downloaded_media::GetStatsInput {
-            top_domains_limit: 5,
+) -> HandlerResult
+where
+    Messenger: MessengerPort,
+{
+    interactor
+        .execute(stats::StatsInput {
+            chat_id: message.chat().id(),
+            reply_to_message_id: message.reply_to_message().as_ref().map(|message| message.message_id()),
             tx_manager: &mut tx_manager,
         })
-        .await;
-    let nodes_stats = node_node_stats.execute(node_router::GetStatsInput {}).await.unwrap_or_default();
-
-    let text = match media_stats {
-        Ok((media_stats, chat_stats)) => {
-            let mut nodes_text = "- Nodes:\n".to_owned();
-            for node_stats in nodes_stats {
-                let _ = writeln!(
-                    nodes_text,
-                    "{}. ({}/{})",
-                    html_quote(node_stats.name),
-                    node_stats.active_downloads,
-                    node_stats.max_concurrent,
-                );
-            }
-
-            let mut top_domains_text = "- Most used domains:\n".to_owned();
-            for (index, top_domain) in media_stats.top_domains.iter().enumerate() {
-                let _ = writeln!(
-                    top_domains_text,
-                    "{}. {} ({} count)",
-                    index + 1,
-                    top_domain.domain,
-                    top_domain.count
-                );
-            }
-
-            format!(
-                "<b>Stats</b>\n\
-                - Chats count: {}\n\
-                - Downloads last 1/7/30/total days: {}/{}/{}/{} count\n\
-                {nodes_text}\
-                {top_domains_text}\
-                ",
-                chat_stats.count,
-                media_stats.last_day.count,
-                media_stats.last_week.count,
-                media_stats.last_month.count,
-                media_stats.total.count,
-            )
-        }
-        Err(err) => {
-            error!(err = format_error_report(&err), "Get error");
-            format!(
-                "Sorry, an error to get stats\n{}",
-                html_expandable_blockquote(html_quote(err.format(&bot.token)))
-            )
-        }
-    };
-
-    bot.send(
-        SendMessage::new(message.chat().id(), text)
-            .parse_mode(ParseMode::HTML)
-            .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
-            .reply_parameters_option(
-                message
-                    .reply_to_message()
-                    .as_ref()
-                    .map(|message| ReplyParameters::new(message.message_id()).allow_sending_without_reply(true)),
-            ),
-    )
-    .await?;
-
+        .await?;
     Ok(EventReturn::Finish)
 }

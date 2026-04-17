@@ -1,5 +1,5 @@
 [package]
-name = "ytdl_tg_downloader"
+name = "downloader"
 version = "1.0.0"
 edition = "2021"
 resolver = "2"
@@ -8,8 +8,16 @@ resolver = "2"
 lto = "thin"
 codegen-units = 1
 
+[profile.k8s-dev]
+inherits = "dev"
+opt-level = 1
+incremental = true
+codegen-units = 256
+debug = 0
+lto = "off"
+
 [dependencies]
-ytdl_tg_bot_proto = { path = "../proto" }
+proto = { path = "../proto" }
 tokio = { version = "1.36", features = ["rt-multi-thread", "macros", "process", "sync", "fs", "io-util", "time", "signal"], default-features = false }
 tonic = { version = "0.14", features = ["transport", "tls-ring", "tls-webpki-roots"], default-features = false }
 tokio-stream = { version = "0.1", default-features = false }
@@ -25,6 +33,5 @@ serde_json = { version = "1.0", features = ["std"], default-features = false }
 bytes = { version = "1", default-features = false }
 backoff = { version = "0.4", features = ["tokio"], default-features = false }
 toml = { version = "1.0.6", features = ["parse", "serde"], default-features = false }
-anyhow = { version = "1.0", default-features = false }
 mutagen-rs = { version = "0.2.5", default-features = false }
 url = { version = "2.5", features = ["serde"], default-features = false }

@@ -57,16 +57,12 @@ max_file_size = 5000000
 
 [download]
 capabilities_refresh_interval = 60
+node_token = "secret-token-a"
 
-# Optional: enable this if any node uses https:// and is signed by your private CA.
-# [download.tls]
-# ca_cert_path = "configs/tls/ca/ca.crt"
-
-[[download.nodes]]
-name = "local-1"
-address = "http://downloader:50051"
-token = "secret-token-a"
-max_concurrent = 5
+[download.tls]
+ca_cert_path = "tls/ca.crt"
+cert_path = "tls/bot.crt"
+key_path = "tls/bot.key"
 
 [database]
 user = "..."
@@ -78,11 +74,11 @@ port = 5432
 database = "api"
 
 [yt_toolkit]
-url = "http://yt_toolkit_api:8080"
+url = "http://yt-toolkit-api:8080"
 # url = "http://127.0.0.1:8080"
 
 [telegram_bot_api]
-url = "http://telegram_bot_api:8081"
+url = "http://telegram-bot-api:8081"
 # url = "https://api.telegram.org"
 api_id = "..."
 api_hash = "..."

@@ -6,6 +6,7 @@ use telers::{
     Bot,
 };
 use tokio::fs;
+use tracing::{debug, info};
 
 use crate::{config::Config, services::node_router::NodeRouter};
 
@@ -24,6 +25,7 @@ async fn set_my_commands(bot: Bot) -> HandlerResult {
 
 async fn remove_tmp_media_files() -> HandlerResult {
     let temp_dir = env::temp_dir();
+    debug!(temp_dir = %temp_dir.display(), "Cleaning temporary media directories");
     let mut entries = fs::read_dir(&temp_dir).await?;
 
     while let Some(entry) = entries.next_entry().await? {
@@ -47,8 +49,17 @@ pub async fn on_startup(bot: Bot, node_router: Arc<NodeRouter>, cfg: Arc<Config>
     set_my_commands(bot).await?;
     remove_tmp_media_files().await?;
 
+    info!("Running initial downloader node status refresh");
+    node_router.refresh_status().await;
+
+    if cfg.download.capabilities_refresh_interval > 0 {
+        info!("Running initial downloader node capabilities refresh");
+        node_router.refresh_capabilities().await;
+    }
+
     {
         let router = node_router.clone();
+        info!(interval_sec = %5, "Starting node status refresh task");
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(5));
             loop {
@@ -60,6 +71,11 @@ pub async fn on_startup(bot: Bot, node_router: Arc<NodeRouter>, cfg: Arc<Config>
 
     if cfg.download.capabilities_refresh_interval > 0 {
         let router = node_router.clone();
+        let cfg = cfg.clone();
+        info!(
+            interval_sec = %cfg.download.capabilities_refresh_interval,
+            "Starting node capabilities refresh task"
+        );
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(cfg.download.capabilities_refresh_interval));
             loop {
@@ -69,5 +85,6 @@ pub async fn on_startup(bot: Bot, node_router: Arc<NodeRouter>, cfg: Arc<Config>
         });
     }
 
+    info!("Startup sequence completed");
     Ok(())
 }

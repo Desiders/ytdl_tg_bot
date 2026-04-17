@@ -1,0 +1,61 @@
+FROM debian:bookworm-slim AS base
+RUN apt update && apt install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM rust:1.91-bookworm AS build
+RUN apt update && apt install -y --no-install-recommends \
+        protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /usr/src/app
+
+COPY cookie_assignment/Cargo.toml cookie_assignment/Cargo.toml
+COPY downloader_client/Cargo.toml downloader_client/Cargo.toml
+COPY proto/Cargo.toml proto/Cargo.toml
+
+RUN mkdir -p cookie_assignment/src && echo "fn main(){}" > cookie_assignment/src/main.rs
+RUN mkdir -p downloader_client/src && echo "fn main(){}" > downloader_client/src/main.rs
+RUN mkdir -p proto/src && echo "" > proto/src/lib.rs
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo fetch --manifest-path cookie_assignment/Cargo.toml
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo fetch --manifest-path downloader_client/Cargo.toml
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo fetch --manifest-path proto/Cargo.toml
+
+COPY proto proto
+RUN touch proto/src/lib.rs
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/src/app/target \
+    cargo build --profile k8s-dev --manifest-path proto/Cargo.toml --target-dir /usr/src/app/target
+
+COPY downloader_client downloader_client
+RUN touch downloader_client/src/main.rs
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/src/app/target \
+    cargo build --profile k8s-dev --manifest-path downloader_client/Cargo.toml --target-dir /usr/src/app/target
+
+COPY cookie_assignment cookie_assignment
+RUN touch cookie_assignment/src/main.rs
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/src/app/target \
+    cargo build --profile k8s-dev --manifest-path cookie_assignment/Cargo.toml --target-dir /usr/src/app/target
+
+RUN --mount=type=cache,target=/usr/src/app/target \
+    mkdir -p /usr/src/app/bin \
+    && cp /usr/src/app/target/k8s-dev/cookie_assignment /usr/src/app/bin/cookie_assignment
+
+FROM base AS final
+WORKDIR /app
+COPY --from=build /usr/src/app/bin/cookie_assignment /app/cookie_assignment
+ENV RUST_BACKTRACE=full
+ENTRYPOINT ["/app/cookie_assignment"]

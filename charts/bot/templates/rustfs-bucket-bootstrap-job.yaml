@@ -1,0 +1,39 @@
+{{- if and .Values.rustfs.enabled .Values.rustfs.bucketBootstrap.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rustfs-bucket-bootstrap
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.rustfs.bucketBootstrap.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.rustfs.bucketBootstrap.activeDeadlineSeconds }}
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: create-bucket
+          image: "{{ .Values.rustfs.bucketBootstrap.image.repository }}:{{ .Values.rustfs.bucketBootstrap.image.tag }}"
+          imagePullPolicy: {{ .Values.rustfs.bucketBootstrap.image.pullPolicy }}
+          env:
+            - name: ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.rustfs.secretName }}
+                  key: access-key-id
+            - name: SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.rustfs.secretName }}
+                  key: secret-access-key
+            - name: MC_HOST_rustfs
+              value: "http://$(ACCESS_KEY_ID):$(SECRET_ACCESS_KEY)@s3:9000"
+          command:
+            - /bin/mc
+          args:
+            - mb
+            - --ignore-existing
+            - rustfs/{{ .Values.s3.bucketName }}
+{{- end }}

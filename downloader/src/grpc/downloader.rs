@@ -8,6 +8,10 @@ use std::{
     time::Instant,
 };
 
+use proto::downloader::{
+    download_chunk::Payload, downloader_server::Downloader, DownloadChunk, DownloadMeta, DownloadRequest, MediaEntry, MediaFormatEntry,
+    MediaInfoRequest, MediaInfoResponse, Section,
+};
 use tempfile::TempDir;
 use tokio::{
     fs::File,
@@ -21,10 +25,6 @@ use tokio_stream::{wrappers::UnboundedReceiverStream, Stream};
 use tonic::{Code, Request, Response, Status};
 use tracing::{error, info, warn};
 use url::Url;
-use ytdl_tg_bot_proto::downloader::{
-    download_chunk::Payload, downloader_server::Downloader, DownloadChunk, DownloadMeta, DownloadRequest, MediaEntry, MediaFormatEntry,
-    MediaInfoRequest, MediaInfoResponse, Section,
-};
 
 use crate::{
     config::{YtDlpConfig, YtPotProviderConfig},
@@ -41,7 +41,6 @@ const AUDIO_EXT: &str = "m4a";
 const THUMBNAIL_TIMEOUT_SECS: u64 = 5;
 const FFMPEG_PATH: &str = "/usr/bin/ffmpeg";
 const STREAM_CHUNK_SIZE: usize = 256 * 1024;
-const RETRYABLE_YTDLP_MESSAGE: &str = "Yt-dlp requires a different node context";
 
 type DownloadStream = Pin<Box<dyn Stream<Item = Result<DownloadChunk, Status>> + Send + 'static>>;
 
@@ -86,18 +85,12 @@ impl Downloader for DownloaderService {
             &playlist_range,
             allow_playlist,
             GET_INFO_TIMEOUT_SECS,
-            cookie,
+            cookie.as_deref(),
         )
         .await
         .map_err(|err| match err {
-            ytdl::GetInfoErrorKind::Retryable(kind) => {
-                warn!(url = %url, media_type = %request.media_type, reason = %kind, "Get media info hit retryable yt-dlp error");
-                Status::aborted(RETRYABLE_YTDLP_MESSAGE)
-            }
-            err => {
-                error!(url = %url, media_type = %request.media_type, %err, "Get media info failed");
-                Status::internal(err.to_string())
-            }
+            ytdl::GetInfoErrorKind::Retryable(kind) => Status::aborted(kind.to_string()),
+            err => Status::internal(err.to_string()),
         })?;
 
         let entries_count = playlist.inner.len();
@@ -218,7 +211,7 @@ async fn stream_download(
     };
     let effective_max_file_size = resolve_max_file_size(request.max_file_size, yt_dlp_cfg.max_file_size);
     let host = url.host();
-    let cookie = cookies.get_path_by_optional_host(host.as_ref()).cloned();
+    let cookie = cookies.get_path_by_optional_host(host.as_ref());
 
     info!(
         url = %url,
@@ -287,15 +280,12 @@ async fn stream_download(
         yt_dlp_cfg.as_ref(),
         &yt_pot_provider_cfg.url,
         DOWNLOAD_TIMEOUT_SECS,
-        cookie.as_ref(),
+        cookie.as_deref(),
         Some(&progress_tx),
     )
     .await
     .map_err(|err| match err {
-        ytdl::DownloadErrorKind::Retryable(kind) => {
-            warn!(url = %url, format_id = %request.format_id, reason = %kind, "Download hit retryable yt-dlp error");
-            Status::aborted(RETRYABLE_YTDLP_MESSAGE)
-        }
+        ytdl::DownloadErrorKind::Retryable(kind) => Status::aborted(kind.to_string()),
         err => Status::internal(err.to_string()),
     })?;
     drop(progress_tx);
@@ -367,7 +357,7 @@ fn map_playlist_response(playlist: Playlist) -> MediaInfoResponse {
 }
 
 #[allow(clippy::result_large_err)]
-fn parse_range(range: Option<ytdl_tg_bot_proto::downloader::Range>) -> Result<Range, Status> {
+fn parse_range(range: Option<proto::downloader::Range>) -> Result<Range, Status> {
     let Some(range) = range else {
         return Ok(Range::default());
     };

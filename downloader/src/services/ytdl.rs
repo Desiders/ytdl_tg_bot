@@ -1,12 +1,12 @@
 use crate::{
     config::YtDlpConfig,
-    entities::{language::Language, Cookie, Playlist, Range, Sections},
+    entities::{language::Language, Playlist, Range, Sections},
 };
 
 use serde::de::DeserializeOwned;
 use std::{
     fmt::Write as _,
-    io::{self, BufRead as _},
+    io::{self, BufRead as _, BufReader},
     path::Path,
     process::{Output, Stdio},
     time::Duration,
@@ -107,8 +107,6 @@ fn classify_retryable_error(stderr: &str) -> Option<RetryableYtdlpError> {
 }
 
 fn parse_ndjson<T: DeserializeOwned>(input: &[u8]) -> Result<Vec<(T, String)>, ParseJsonErrorKind> {
-    use std::io::BufReader;
-
     let lines = BufReader::new(input).lines();
     let mut results = Vec::with_capacity(1);
     for line in lines {
@@ -203,7 +201,7 @@ pub async fn get_media_info(
     playlist_range: &Range,
     allow_playlist: bool,
     timeout: u64,
-    cookie: Option<&Cookie>,
+    cookie_path: Option<&Path>,
 ) -> Result<Playlist, GetInfoErrorKind> {
     use tokio::time;
 
@@ -246,7 +244,7 @@ pub async fn get_media_info(
     args.push("--extractor-args");
     args.push("youtube:player_client=default,mweb,web_music,web_creator;player_skip=configs,initial_data;use_ad_playback_context=true");
 
-    let cookie_path = cookie.map(|val| val.path.to_string_lossy());
+    let cookie_path = cookie_path.map(|val| val.to_string_lossy());
     if let Some(cookie_path) = cookie_path.as_deref() {
         trace!("Using cookies from: {cookie_path}");
         args.push("--cookies");
@@ -280,6 +278,7 @@ pub async fn get_media_info(
                     Err(err) => Err(err.into()),
                 }
             } else {
+                error!("{stderr}");
                 if let Some(kind) = classify_retryable_error(&stderr) {
                     return Err(GetInfoErrorKind::Retryable(kind));
                 }
@@ -306,7 +305,7 @@ pub async fn download_media(
     yt_dlp_cfg: &YtDlpConfig,
     pot_provider_url: &str,
     timeout: u64,
-    cookie: Option<&Cookie>,
+    cookie_path: Option<&Path>,
     progress_sender: Option<&mpsc::UnboundedSender<String>>,
 ) -> Result<(), DownloadErrorKind> {
     use tokio::{io::BufReader, time};
@@ -366,7 +365,7 @@ pub async fn download_media(
     args.push("--extractor-args");
     args.push("youtube:player_client=default,mweb,web_music,web_creator;player_skip=configs,initial_data;use_ad_playback_context=true");
 
-    let cookie_path = cookie.map(|val| val.path.to_string_lossy());
+    let cookie_path = cookie_path.map(|val| val.to_string_lossy());
     if let Some(cookie_path) = cookie_path.as_deref() {
         trace!("Using cookies from: {cookie_path}");
         args.push("--cookies");
@@ -423,6 +422,7 @@ pub async fn download_media(
                         }
                         Ok(())
                     } else {
+                        error!("{stderr}");
                         if let Some(kind) = classify_retryable_error(&stderr) {
                             return Err(DownloadErrorKind::Retryable(kind));
                         }
@@ -444,11 +444,6 @@ fn create_ytdlp_command(yt_dlp_cfg: &YtDlpConfig) -> tokio::process::Command {
     let (program, base_args) = yt_dlp_cfg.command_parts();
     let mut command = tokio::process::Command::new(program);
     command.args(base_args);
-
-    for plugin_dir in &yt_dlp_cfg.plugin_dirs {
-        command.arg("--plugin-dirs").arg(plugin_dir.as_ref());
-    }
-
     command
 }
 

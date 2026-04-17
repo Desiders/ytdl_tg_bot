@@ -4,7 +4,7 @@ pub enum ErrorKind<E> {
     #[allow(dead_code)]
     Expected(E),
     #[error(transparent)]
-    Unexpected(#[from] anyhow::Error),
+    Unexpected(Box<dyn std::error::Error + Send + Sync>),
 }
 
 #[macro_export]
@@ -13,7 +13,7 @@ macro_rules! impl_from_unexpected_error {
         $(
             impl<E> From<$err_type> for $crate::errors::ErrorKind<E> {
                 fn from(err: $err_type) -> Self {
-                    Self::Unexpected(err.into())
+                    Self::Unexpected(Box::new(err))
                 }
             }
         )*

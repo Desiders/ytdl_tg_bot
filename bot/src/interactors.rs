@@ -1,10 +1,11 @@
 mod base;
 
-pub mod chat;
-pub mod download;
-pub mod downloaded_media;
-pub mod get_media;
-pub mod node_router;
-pub mod send_media;
+pub mod audio;
+pub mod chosen_inline;
+pub mod config;
+pub mod inline_query;
+pub mod start;
+pub mod stats;
+pub mod video;
 
-pub use base::Interactor;
+pub(super) use base::Interactor;

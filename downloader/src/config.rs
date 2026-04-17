@@ -1,6 +1,5 @@
 #![allow(clippy::module_name_repetitions)]
 
-use anyhow::Context;
 use serde::Deserialize;
 use std::{
     env::{self, VarError},
@@ -8,7 +7,7 @@ use std::{
     path::Path,
 };
 use thiserror::Error;
-use tonic::transport::{Identity, ServerTlsConfig};
+use tonic::transport::{Certificate, Identity, ServerTlsConfig};
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct ServerConfig {
@@ -18,11 +17,13 @@ pub struct ServerConfig {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct AuthConfig {
-    pub tokens: Vec<Box<str>>,
+    pub node_tokens: Vec<Box<str>>,
+    pub cookie_manager_token: Box<str>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct TlsConfig {
+    pub ca_cert_path: Box<str>,
     pub cert_path: Box<str>,
     pub key_path: Box<str>,
 }
@@ -31,11 +32,6 @@ pub struct TlsConfig {
 pub struct YtDlpConfig {
     #[serde(default)]
     pub command: Vec<Box<str>>,
-    #[serde(default)]
-    pub executable_path: Option<Box<str>>,
-    #[serde(default)]
-    pub plugin_dirs: Vec<Box<str>>,
-    pub cookies_path: Box<str>,
     pub max_file_size: u64,
 }
 
@@ -45,11 +41,6 @@ impl YtDlpConfig {
         if let Some((program, args)) = self.command.split_first() {
             return (program.as_ref(), args.iter().map(AsRef::as_ref).collect());
         }
-
-        if let Some(executable_path) = self.executable_path.as_deref() {
-            return (executable_path, Vec::new());
-        }
-
         ("python3", vec!["-m", "yt_dlp"])
     }
 }
@@ -68,23 +59,42 @@ pub struct LoggingConfig {
 pub struct Config {
     pub server: ServerConfig,
     pub auth: AuthConfig,
-    #[serde(default)]
-    pub tls: Option<TlsConfig>,
+    pub tls: TlsConfig,
     pub yt_dlp: YtDlpConfig,
     pub yt_pot_provider: YtPotProviderConfig,
     pub logging: LoggingConfig,
 }
 
-impl Config {
-    pub fn load_server_tls_config(&self) -> anyhow::Result<Option<ServerTlsConfig>> {
-        let Some(config) = self.tls.as_ref() else {
-            return Ok(None);
-        };
+#[derive(Error, Debug)]
+pub enum TlsLoadError {
+    #[error("Failed to read downloader CA certificate {path}: {source}")]
+    ReadCa { path: Box<str>, source: io::Error },
+    #[error("Failed to read node certificate {path}: {source}")]
+    ReadCert { path: Box<str>, source: io::Error },
+    #[error("Failed to read node key {path}: {source}")]
+    ReadKey { path: Box<str>, source: io::Error },
+}
 
-        let cert = fs::read(&*config.cert_path).with_context(|| format!("Failed to read TLS certificate {}", config.cert_path))?;
-        let key = fs::read(&*config.key_path).with_context(|| format!("Failed to read TLS key {}", config.key_path))?;
-        let identity = Identity::from_pem(cert, key);
-        Ok(Some(ServerTlsConfig::new().identity(identity)))
+impl Config {
+    pub fn load_server_tls_cfg(&self) -> Result<ServerTlsConfig, TlsLoadError> {
+        let config = &self.tls;
+        let ca_cert_pem = fs::read(&*config.ca_cert_path).map_err(|source| TlsLoadError::ReadCa {
+            path: config.ca_cert_path.clone(),
+            source,
+        })?;
+        let cert_pem = fs::read(&*config.cert_path).map_err(|source| TlsLoadError::ReadCert {
+            path: config.cert_path.clone(),
+            source,
+        })?;
+        let key_pem = fs::read(&*config.key_path).map_err(|source| TlsLoadError::ReadKey {
+            path: config.key_path.clone(),
+            source,
+        })?;
+
+        let tls_cfg = ServerTlsConfig::new()
+            .client_ca_root(Certificate::from_pem(ca_cert_pem))
+            .identity(Identity::from_pem(cert_pem, key_pem));
+        Ok(tls_cfg)
     }
 }
 
@@ -124,9 +134,6 @@ mod tests {
     fn command_parts_use_explicit_command_when_present() {
         let config = YtDlpConfig {
             command: vec!["python3".into(), "-m".into(), "yt_dlp".into()],
-            executable_path: Some("./yt-dlp/executable".into()),
-            plugin_dirs: vec![],
-            cookies_path: "./cookies".into(),
             max_file_size: 1,
         };
 
@@ -136,27 +143,9 @@ mod tests {
     }
 
     #[test]
-    fn command_parts_fall_back_to_legacy_executable_path() {
-        let config = YtDlpConfig {
-            command: vec![],
-            executable_path: Some("./yt-dlp/executable".into()),
-            plugin_dirs: vec![],
-            cookies_path: "./cookies".into(),
-            max_file_size: 1,
-        };
-
-        let (program, args) = config.command_parts();
-        assert_eq!(program, "./yt-dlp/executable");
-        assert!(args.is_empty());
-    }
-
-    #[test]
     fn command_parts_default_to_python_module_launcher() {
         let config = YtDlpConfig {
             command: vec![],
-            executable_path: None,
-            plugin_dirs: vec![],
-            cookies_path: "./cookies".into(),
             max_file_size: 1,
         };
 
