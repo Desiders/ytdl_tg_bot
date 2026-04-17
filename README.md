@@ -148,7 +148,20 @@ Notes:
 - `downloader` creates the headless downloader service and worker pods.
 - `cookie-assignment` distributes cookies to downloader nodes and is safe with an empty cookie inventory.
 
-### 7. Verify
+### 7. Adding Another Bot
+
+Another bot can reuse the same downloader nodes without using the Telegram bot crate.
+
+- Create a new bot crate, for example `bot_discord`, and depend on `downloader_client` directly.
+- Create a separate chart for the new bot, usually by copying `charts/bot` only as a starting point and removing Telegram-specific resources.
+- Give the new bot its own config Secret and client TLS certificate.
+- Put the new bot's normal downloader token in its bot config, then add the same token to downloader config `[auth].node_tokens`.
+- Do not give the new bot `cookie_manager_token`; only `cookie_assignment` should have that token.
+- Keep cookie distribution in `cookie_assignment`; do not add cookie assignment logic to a bot.
+- PostgreSQL, RustFS, migrations, and upload cache are optional for another bot. A simple bot can use downloader nodes without any cache.
+- If another bot has a cache, design that cache for that messenger. Do not blindly reuse the Telegram `file_id` cache model.
+
+### 8. Verify
 
 ```bash
 kubectl get pods -n "${NAMESPACE}"

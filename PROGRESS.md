@@ -31,6 +31,7 @@ The bot no longer owns cookie assignment.
 - Split downloader-node auth into normal node tokens and cookie-manager token so bots cannot call cookie mutation RPCs, and cookie assignment no longer needs any normal node token.
 - Downloader now accepts a list of bot/node tokens through `[auth].node_tokens`, which allows separate tokens per bot.
 - Allowed `NodeCapabilities` to accept either token so cookie assignment can check node status with the cookie-manager token only.
+- Documented the intended path for adding another bot: new crate, own chart/config/TLS cert, direct `downloader_client` usage, optional messenger-specific cache, and no cookie-manager token.
 - Bot startup now runs an initial downloader-node status/capability refresh before accepting updates; refresh errors are logged and ignored by the router.
 - Introduced `MessengerPort` with `TelegramMessenger` as the outbound Telegram adapter.
 - Moved bot-side Telegram send/edit/upload/media-group logic behind the messenger adapter.

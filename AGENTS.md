@@ -164,6 +164,22 @@ Downloader nodes use separate bearer tokens for separate RPC surfaces.
 - The cookie-assignment config must only contain the cookie-manager token.
 - Do not give the bot the cookie-manager token.
 
+### Adding Another Bot
+
+New messenger bots should be separate applications, not modes inside the Telegram bot.
+
+- Add a new crate such as `bot_discord` when another messenger is needed.
+- The new bot should depend on `downloader_client` directly for downloader DNS discovery, mTLS setup, node routing, failover, media info, and download streams.
+- Do not depend on the existing `bot` crate from another bot.
+- Add an independent chart for the new bot. Copying `charts/bot` as a starting point is acceptable, but remove resources that are not needed by the new bot.
+- The current `charts/bot` PostgreSQL, RustFS, migrations, Telegram Bot API, yt-toolkit, and upload cache resources are Telegram-bot runtime choices, not mandatory shared infrastructure for every bot.
+- Another bot may be simple and have no database or upload cache.
+- If another bot needs a cache, design it around that messenger's remote media identifiers. Do not reuse Telegram `file_id` semantics as shared state.
+- Each bot must have its own config Secret and client TLS certificate.
+- Each bot config should contain exactly one normal downloader token, and downloader config `[auth].node_tokens` must include that token.
+- Never give a bot the cookie-manager token.
+- Keep downloader nodes and cookie assignment shared only through `downloader_client`, gRPC, mTLS, and Kubernetes service discovery.
+
 ### Downloader Node
 
 - exposes `Downloader`, `NodeCapabilities`, and `NodeCookieManager` gRPC services
