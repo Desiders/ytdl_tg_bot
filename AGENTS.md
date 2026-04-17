@@ -157,10 +157,10 @@ If this rule is broken, the TLS handshake fails with certificate verification er
 
 Downloader nodes use separate bearer tokens for separate RPC surfaces.
 
-- `Downloader` uses the normal node token.
-- `NodeCapabilities` accepts either the normal node token or the cookie-manager token.
+- `Downloader` accepts any token listed in downloader config `[auth].node_tokens`.
+- `NodeCapabilities` accepts any token listed in `[auth].node_tokens` or the cookie-manager token.
 - `NodeCookieManager` uses the cookie-manager token.
-- The bot config must only contain the normal node token.
+- Each bot config must only contain one normal node token, and that token must be present in downloader `[auth].node_tokens`.
 - The cookie-assignment config must only contain the cookie-manager token.
 - Do not give the bot the cookie-manager token.
 

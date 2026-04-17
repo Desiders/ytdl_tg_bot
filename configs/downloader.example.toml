@@ -3,7 +3,7 @@ address = "0.0.0.0:50051"
 max_concurrent = 5
 
 [auth]
-node_token = "secret-token-a"
+node_tokens = ["secret-token-a"]
 cookie_manager_token = "secret-token-b"
 
 [tls]

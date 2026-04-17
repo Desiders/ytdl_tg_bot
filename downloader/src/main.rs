@@ -46,6 +46,10 @@ async fn main() {
     let active_downloads = Arc::new(AtomicU32::new(0));
     let semaphore = Arc::new(Semaphore::new(config.server.max_concurrent as usize));
     let tls_config = config.load_server_tls_cfg().unwrap();
+    assert!(
+        !config.auth.node_tokens.is_empty(),
+        "`auth.node_tokens` must contain at least one token"
+    );
 
     let capabilities_service = CapabilitiesService {
         cookies: cookies.clone(),
@@ -61,8 +65,10 @@ async fn main() {
     };
     let cookie_manager_service = CookieManagerService { cookies };
 
-    let node_auth = AuthInterceptor::new(vec![config.auth.node_token.clone()]);
-    let capabilities_auth = AuthInterceptor::new(vec![config.auth.node_token.clone(), config.auth.cookie_manager_token.clone()]);
+    let node_auth = AuthInterceptor::new(config.auth.node_tokens.clone());
+    let mut capabilities_tokens = config.auth.node_tokens.clone();
+    capabilities_tokens.push(config.auth.cookie_manager_token.clone());
+    let capabilities_auth = AuthInterceptor::new(capabilities_tokens);
     let cookie_manager_auth = AuthInterceptor::new(vec![config.auth.cookie_manager_token.clone()]);
     let addr = config.server.address.parse().unwrap();
     info!(%addr, "Starting download node");
