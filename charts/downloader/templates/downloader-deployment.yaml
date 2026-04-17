@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: downloader
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: {{ .Values.downloader.replicas }}
+  selector:
+    matchLabels:
+      app: downloader
+  template:
+    metadata:
+      labels:
+        app: downloader
+    spec:
+      containers:
+        - name: downloader
+          image: "{{ .Values.downloader.image.repository }}:{{ .Values.downloader.image.tag }}"
+          imagePullPolicy: {{ .Values.downloader.image.pullPolicy }}
+          ports:
+            - containerPort: 50051
+          env:
+            - name: DOWNLOADER_CONFIG_PATH
+              value: /app/configs/downloader.toml
+          volumeMounts:
+            - name: config
+              mountPath: /app/configs
+              readOnly: true
+            - name: tls
+              mountPath: /app/tls/ca.crt
+              subPath: ca.crt
+              readOnly: true
+            - name: tls
+              mountPath: /app/tls/node.crt
+              subPath: tls.crt
+              readOnly: true
+            - name: tls
+              mountPath: /app/tls/node.key
+              subPath: tls.key
+              readOnly: true
+      volumes:
+        - name: config
+          secret:
+            secretName: downloader-config
+            items:
+              - key: downloader.toml
+                path: downloader.toml
+        - name: tls
+          secret:
+            secretName: downloader-tls-secret

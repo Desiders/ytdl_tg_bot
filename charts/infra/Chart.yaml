@@ -1,0 +1,6 @@
+apiVersion: v2
+name: infra
+description: Shared infrastructure resources for the workspace
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

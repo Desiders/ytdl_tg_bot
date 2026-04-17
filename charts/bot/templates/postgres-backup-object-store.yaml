@@ -1,0 +1,20 @@
+{{- if and .Values.postgres.backup.enabled .Values.s3.enabled }}
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: {{ .Values.s3.objectStoreName }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  configuration:
+    destinationPath: {{ .Values.s3.destinationPath | quote }}
+    endpointURL: {{ .Values.s3.endpointURL | quote }}
+    s3Credentials:
+      accessKeyId:
+        name: {{ .Values.s3.secretName }}
+        key: access-key-id
+      secretAccessKey:
+        name: {{ .Values.s3.secretName }}
+        key: secret-access-key
+    wal:
+      compression: {{ .Values.postgres.backup.walCompression }}
+{{- end }}

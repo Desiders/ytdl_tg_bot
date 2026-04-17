@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: yt-pot-provider
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: yt-pot-provider
+  template:
+    metadata:
+      labels:
+        app: yt-pot-provider
+    spec:
+      containers:
+        - name: yt-pot-provider
+          image: "{{ .Values.ytPotProvider.image.repository }}:{{ .Values.ytPotProvider.image.tag }}"
+          imagePullPolicy: {{ .Values.ytPotProvider.image.pullPolicy }}
+          ports:
+            - containerPort: 4416

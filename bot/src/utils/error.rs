@@ -1,7 +1,7 @@
 use crate::{
     entities::{ParseRangeError, ParseSectionError},
     errors::ErrorKind,
-    interactors::{download::media, get_media},
+    services::{download::media, get_media, messenger::MessengerError, node_router},
 };
 
 use std::{borrow::Cow, fmt::Debug, fmt::Write, iter};
@@ -23,6 +23,21 @@ pub fn format_error_report(err: &(impl std::error::Error + ?Sized)) -> String {
 
 pub trait FormatErrorToMessage {
     fn format(&self, token: &str) -> Cow<'static, str>;
+}
+
+#[derive(Clone)]
+pub struct ErrorMessageFormatter {
+    token: Box<str>,
+}
+
+impl ErrorMessageFormatter {
+    pub fn new(token: impl Into<Box<str>>) -> Self {
+        Self { token: token.into() }
+    }
+
+    pub fn format(&self, err: &(impl FormatErrorToMessage + ?Sized)) -> Cow<'static, str> {
+        err.format(&self.token)
+    }
 }
 
 impl FormatErrorToMessage for SessionErrorKind {
@@ -47,21 +62,15 @@ impl FormatErrorToMessage for media::DownloadMediaPlaylistErrorKind {
     }
 }
 
-impl FormatErrorToMessage for media::DownloadErrorKind {
+impl FormatErrorToMessage for node_router::DownloadErrorKind {
     fn format(&self, _token: &str) -> Cow<'static, str> {
-        match self {
-            media::DownloadErrorKind::NodeUnavailable => Cow::Borrowed("All download nodes are busy, try again later."),
-            _ => Cow::Owned(self.to_string()),
-        }
+        Cow::Owned(self.to_string())
     }
 }
 
 impl FormatErrorToMessage for get_media::GetInfoErrorKind {
     fn format(&self, _token: &str) -> Cow<'static, str> {
-        match self {
-            get_media::GetInfoErrorKind::NodeUnavailable => Cow::Borrowed("All download nodes are busy, try again later."),
-            _ => Cow::Owned(self.to_string()),
-        }
+        Cow::Owned(self.to_string())
     }
 }
 
@@ -82,8 +91,14 @@ impl FormatErrorToMessage for get_media::GetMediaByURLErrorKind {
         match self {
             get_media::GetMediaByURLErrorKind::GetInfo(err) => err.format(token),
             get_media::GetMediaByURLErrorKind::Database(err) => err.format(token),
-            get_media::GetMediaByURLErrorKind::NodeUnavailable => Cow::Borrowed("All download nodes are busy, try again later."),
+            get_media::GetMediaByURLErrorKind::NodeUnavailable => Cow::Owned(self.to_string()),
         }
+    }
+}
+
+impl FormatErrorToMessage for MessengerError {
+    fn format(&self, _token: &str) -> Cow<'static, str> {
+        Cow::Owned(self.to_string())
     }
 }
 

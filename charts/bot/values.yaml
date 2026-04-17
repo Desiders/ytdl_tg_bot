@@ -1,0 +1,69 @@
+bot:
+  image:
+    repository: desiders/ytdl_tg_bot
+    tag: "5.0.0"
+    pullPolicy: Always
+
+postgres:
+  storage: 3Gi
+  storageClass: ""
+  database: api
+  owner: admin
+  secretName: db
+  superuserSecretName: db-superuser
+
+  backup:
+    enabled: true
+    schedule: "0 0 3 * * *"
+    walCompression: gzip
+
+s3:
+  enabled: true
+  objectStoreName: postgres-backup-store
+  bucketName: backups
+  destinationPath: "s3://backups/"
+  endpointURL: "http://s3:9000"
+  secretName: s3
+
+rustfs:
+  enabled: true
+  storage: 3Gi
+  storageClass: ""
+  image:
+    repository: rustfs/rustfs
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  secretName: s3
+  bucketBootstrap:
+    enabled: true
+    backoffLimit: 30
+    activeDeadlineSeconds: 300
+    image:
+      repository: quay.io/minio/mc
+      tag: "latest"
+      pullPolicy: IfNotPresent
+
+telegramBotApi:
+  image:
+    pullPolicy: IfNotPresent
+
+ytToolkit:
+  image:
+    repository: ghcr.io/ikiovi/yt-toolkit/info-api
+    tag: "v2.0.0"
+    pullPolicy: IfNotPresent
+
+migration:
+  enabled: false
+  runId: ""
+  command: up
+  image:
+    repository: desiders/ytdl_tg_bot.migration
+    tag: "1.6.0"
+    pullPolicy: IfNotPresent
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  db:
+    secretName: db
+    host: postgres-rw
+    port: "5432"

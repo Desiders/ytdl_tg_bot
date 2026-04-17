@@ -1,48 +1,48 @@
 use std::fmt::Write as _;
-use telers::{
-    enums::ParseMode,
-    errors::SessionErrorKind,
-    methods::{AnswerInlineQuery, DeleteMessage, EditMessageText, SendMessage},
-    types::{InlineKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent, LinkPreviewOptions, Message, ReplyParameters},
-    utils::text::html_expandable_blockquote,
-    Bot,
+use telers::utils::text::html_expandable_blockquote;
+
+use crate::services::messenger::{
+    AnswerInlineErrorRequest, DeleteMessageRequest, EditTarget, EditTextRequest, MessengerError, MessengerPort, SendTextRequest,
+    SentMessage, TextFormat,
 };
 
 pub async fn new(
-    bot: &Bot,
+    messenger: &(impl MessengerPort + ?Sized),
     text: &str,
     chat_id: i64,
     reply_to_message_id: Option<i64>,
-    parse_mode: Option<ParseMode>,
-) -> Result<Message, SessionErrorKind> {
-    bot.send(
-        SendMessage::new(chat_id, text)
-            .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
-            .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)))
-            .parse_mode_option(parse_mode),
-    )
-    .await
+    format: Option<TextFormat>,
+) -> Result<SentMessage, MessengerError> {
+    messenger
+        .send_text(SendTextRequest {
+            chat_id,
+            text,
+            reply_to_message_id,
+            format,
+            disable_link_preview: true,
+        })
+        .await
 }
 
-pub async fn is_sending(bot: &Bot, chat_id: i64, message_id: i64) -> Result<(), SessionErrorKind> {
-    bot.send(
-        EditMessageText::new("📨 Sending...")
-            .chat_id(chat_id)
-            .message_id(message_id)
-            .parse_mode(ParseMode::HTML)
-            .link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
-    )
-    .await?;
-    Ok(())
+pub async fn is_sending(messenger: &(impl MessengerPort + ?Sized), chat_id: i64, message_id: i64) -> Result<(), MessengerError> {
+    messenger
+        .edit_text(EditTextRequest {
+            target: EditTarget::ChatMessage { chat_id, message_id },
+            text: "📨 Sending...",
+            format: Some(TextFormat::Html),
+            disable_link_preview: true,
+            clear_inline_keyboard: false,
+        })
+        .await
 }
 
 pub async fn is_errors_if_exist(
-    bot: &Bot,
+    messenger: &(impl MessengerPort + ?Sized),
     chat_id: i64,
     message_id: i64,
     media_errs: &[Vec<String>],
     media_to_send_count: usize,
-) -> Result<(), SessionErrorKind> {
+) -> Result<(), MessengerError> {
     let mut errs_text = String::new();
     for (failed_media_index, format_errs) in media_errs.iter().enumerate() {
         let mut format_errs_text = String::new();
@@ -76,36 +76,37 @@ pub async fn is_errors_if_exist(
         (_, _) => return Ok(()),
     };
 
-    bot.send(
-        EditMessageText::new(text)
-            .chat_id(chat_id)
-            .message_id(message_id)
-            .parse_mode(ParseMode::HTML)
-            .link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
-    )
-    .await?;
-    Ok(())
+    messenger
+        .edit_text(EditTextRequest {
+            target: EditTarget::ChatMessage { chat_id, message_id },
+            text: &text,
+            format: Some(TextFormat::Html),
+            disable_link_preview: true,
+            clear_inline_keyboard: false,
+        })
+        .await
 }
 
-pub async fn is_sending_in_chosen_inline(bot: &Bot, inline_message_id: &str) -> Result<(), SessionErrorKind> {
-    bot.send(
-        EditMessageText::new("📨 Sending...")
-            .inline_message_id(inline_message_id)
-            .reply_markup(InlineKeyboardMarkup::new([[]]))
-            .link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
-    )
-    .await?;
-    Ok(())
+pub async fn is_sending_in_chosen_inline(messenger: &(impl MessengerPort + ?Sized), inline_message_id: &str) -> Result<(), MessengerError> {
+    messenger
+        .edit_text(EditTextRequest {
+            target: EditTarget::InlineMessage { inline_message_id },
+            text: "📨 Sending...",
+            format: None,
+            disable_link_preview: true,
+            clear_inline_keyboard: true,
+        })
+        .await
 }
 
 pub async fn is_downloading_with_progress(
-    bot: &Bot,
+    messenger: &(impl MessengerPort + ?Sized),
     chat_id: i64,
     message_id: i64,
     progress: String,
     current_media_index: usize,
     playlist_len: usize,
-) -> Result<(), SessionErrorKind> {
+) -> Result<(), MessengerError> {
     let text = if playlist_len > 1 {
         format!(
             "📥 Downloading playlist... {current_media_index}/{playlist_len}\n\n\
@@ -117,70 +118,78 @@ pub async fn is_downloading_with_progress(
             Media download progress: {progress}"
         )
     };
-    bot.send(EditMessageText::new(text).chat_id(chat_id).message_id(message_id)).await?;
-    Ok(())
+    messenger
+        .edit_text(EditTextRequest {
+            target: EditTarget::ChatMessage { chat_id, message_id },
+            text: &text,
+            format: None,
+            disable_link_preview: false,
+            clear_inline_keyboard: false,
+        })
+        .await
 }
 
 pub async fn is_downloading_with_progress_in_chosen_inline(
-    bot: &Bot,
+    messenger: &(impl MessengerPort + ?Sized),
     inline_message_id: &str,
     progress: String,
-) -> Result<(), SessionErrorKind> {
+) -> Result<(), MessengerError> {
     let text = format!(
         "📥 Downloading...\n\n\
         Media download progress: {progress}"
     );
-    bot.send(
-        EditMessageText::new(text)
-            .inline_message_id(inline_message_id)
-            .reply_markup(InlineKeyboardMarkup::new([[]]))
-            .link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
-    )
-    .await?;
-    Ok(())
+    messenger
+        .edit_text(EditTextRequest {
+            target: EditTarget::InlineMessage { inline_message_id },
+            text: &text,
+            format: None,
+            disable_link_preview: true,
+            clear_inline_keyboard: true,
+        })
+        .await
 }
 
 pub async fn is_error_in_progress(
-    bot: &Bot,
+    messenger: &(impl MessengerPort + ?Sized),
     chat_id: i64,
     message_id: i64,
     text: &str,
-    parse_mode: Option<ParseMode>,
-) -> Result<(), SessionErrorKind> {
-    bot.send(
-        EditMessageText::new(text)
-            .chat_id(chat_id)
-            .message_id(message_id)
-            .parse_mode_option(parse_mode)
-            .link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
-    )
-    .await?;
-    Ok(())
+    format: Option<TextFormat>,
+) -> Result<(), MessengerError> {
+    messenger
+        .edit_text(EditTextRequest {
+            target: EditTarget::ChatMessage { chat_id, message_id },
+            text,
+            format,
+            disable_link_preview: true,
+            clear_inline_keyboard: false,
+        })
+        .await
 }
 
 pub async fn is_error_in_chosen_inline(
-    bot: &Bot,
+    messenger: &(impl MessengerPort + ?Sized),
     inline_message_id: &str,
     text: &str,
-    parse_mode: Option<ParseMode>,
-) -> Result<(), SessionErrorKind> {
-    bot.send(
-        EditMessageText::new(text)
-            .inline_message_id(inline_message_id)
-            .reply_markup(InlineKeyboardMarkup::new([[]]))
-            .parse_mode_option(parse_mode)
-            .link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
-    )
-    .await?;
-    Ok(())
+    format: Option<TextFormat>,
+) -> Result<(), MessengerError> {
+    messenger
+        .edit_text(EditTextRequest {
+            target: EditTarget::InlineMessage { inline_message_id },
+            text,
+            format,
+            disable_link_preview: true,
+            clear_inline_keyboard: true,
+        })
+        .await
 }
 
 pub async fn is_errors_in_chosen_inline(
-    bot: &Bot,
+    messenger: &(impl MessengerPort + ?Sized),
     inline_message_id: &str,
     format_errs: &[String],
-    parse_mode: Option<ParseMode>,
-) -> Result<(), SessionErrorKind> {
+    format: Option<TextFormat>,
+) -> Result<(), MessengerError> {
     let mut errs_text = String::new();
     for (index, err) in format_errs.iter().enumerate() {
         let _ = writeln!(errs_text, "{}. {}", index + 1, err);
@@ -193,18 +202,13 @@ pub async fn is_errors_in_chosen_inline(
         {}",
         html_expandable_blockquote(&errs_text),
     );
-    is_error_in_chosen_inline(bot, inline_message_id, &text, parse_mode).await
+    is_error_in_chosen_inline(messenger, inline_message_id, &text, format).await
 }
 
-pub async fn is_error_in_inline_query(bot: &Bot, query_id: &str, text: &str) -> Result<(), SessionErrorKind> {
-    let result = InlineQueryResultArticle::new(query_id, text, InputTextMessageContent::new(text));
-    let results = [result];
-
-    bot.send(AnswerInlineQuery::new(query_id, results).cache_time(0)).await?;
-    Ok(())
+pub async fn is_error_in_inline_query(messenger: &(impl MessengerPort + ?Sized), query_id: &str, text: &str) -> Result<(), MessengerError> {
+    messenger.answer_inline_error(AnswerInlineErrorRequest { query_id, text }).await
 }
 
-pub async fn delete(bot: &Bot, chat_id: i64, message_id: i64) -> Result<(), SessionErrorKind> {
-    bot.send(DeleteMessage::new(chat_id, message_id)).await?;
-    Ok(())
+pub async fn delete(messenger: &(impl MessengerPort + ?Sized), chat_id: i64, message_id: i64) -> Result<(), MessengerError> {
+    messenger.delete_message(DeleteMessageRequest { chat_id, message_id }).await
 }

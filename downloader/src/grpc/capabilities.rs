@@ -1,10 +1,10 @@
+use proto::downloader::{node_capabilities_server::NodeCapabilities, Empty, NodeStatus, SupportedDomainsResponse};
 use std::sync::{
     atomic::{AtomicU32, Ordering},
     Arc,
 };
 use tonic::{Request, Response, Status};
 use tracing::info;
-use ytdl_tg_bot_proto::downloader::{node_capabilities_server::NodeCapabilities, Empty, NodeStatus, SupportedDomainsResponse};
 
 use crate::entities::Cookies;
 
@@ -27,7 +27,7 @@ impl NodeCapabilities for CapabilitiesService {
     }
 
     async fn get_supported_domains(&self, _request: Request<Empty>) -> Result<Response<SupportedDomainsResponse>, Status> {
-        let domains_with_cookies: Vec<_> = self.cookies.get_hosts().into_iter().map(ToString::to_string).collect();
+        let domains_with_cookies = self.cookies.get_domains();
         info!(domain_count = domains_with_cookies.len(), domains = ?domains_with_cookies, "Reported supported cookie domains");
 
         Ok(Response::new(SupportedDomainsResponse { domains_with_cookies }))

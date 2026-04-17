@@ -109,26 +109,18 @@ pub struct ReplaceDomainsConfig {
 }
 
 #[derive(Deserialize, Clone, Debug)]
-pub struct DownloadNodeConfig {
-    pub name: Box<str>,
-    pub address: Box<str>,
-    pub token: Box<str>,
-    pub max_concurrent: u32,
+pub struct DownloaderTlsConfig {
+    pub ca_cert_path: Box<str>,
+    pub cert_path: Box<str>,
+    pub key_path: Box<str>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
-pub struct DownloadTlsConfig {
-    pub ca_cert_path: Box<str>,
-}
-
-#[derive(Default, Deserialize, Clone, Debug)]
 pub struct DownloadConfig {
     #[serde(default)]
     pub capabilities_refresh_interval: u64,
-    #[serde(default)]
-    pub tls: Option<DownloadTlsConfig>,
-    #[serde(default)]
-    pub nodes: Vec<DownloadNodeConfig>,
+    pub node_token: Box<str>,
+    pub tls: DownloaderTlsConfig,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -184,4 +176,23 @@ pub fn parse_from_fs(path: impl AsRef<Path>) -> Result<Config, ParseError> {
     let raw = fs::read_to_string(path)?;
     let cfg = toml::from_str(&raw)?;
     Ok(cfg)
+}
+
+impl From<DownloaderTlsConfig> for downloader_client::DownloaderTlsConfig {
+    fn from(value: DownloaderTlsConfig) -> Self {
+        Self {
+            ca_cert_path: value.ca_cert_path,
+            cert_path: value.cert_path,
+            key_path: value.key_path,
+        }
+    }
+}
+
+impl From<DownloadConfig> for downloader_client::DownloaderClusterConfig {
+    fn from(value: DownloadConfig) -> Self {
+        Self {
+            node_token: value.node_token,
+            tls: value.tls.into(),
+        }
+    }
 }
