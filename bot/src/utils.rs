@@ -6,7 +6,7 @@ mod startup;
 mod text;
 mod url;
 
-pub use error::{format_error_report, ErrorMessageFormatter};
+pub use error::ErrorFormatter;
 pub use fs::sanitize_send_filename;
 pub use media::AspectKind;
 pub use shutdown::on_shutdown;

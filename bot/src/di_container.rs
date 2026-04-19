@@ -26,7 +26,7 @@ use crate::{
         node_router::{self, DownloaderServiceTarget, NodeRouter},
         send_media,
     },
-    utils::ErrorMessageFormatter,
+    utils::ErrorFormatter,
 };
 
 pub(super) fn cfg_registry(cfg: Config) -> Registry {
@@ -55,8 +55,10 @@ pub(super) fn tg_messenger_registry(bot: Bot, cfg_registry: Registry) -> Registr
     registry! {
         scope(App) [
             provide(instance(bot)),
-            provide(|Inject(cfg): Inject<BotConfig>| Ok(ErrorMessageFormatter::new(cfg.token.clone()))),
-            provide(|Inject(bot): Inject<Bot>, Inject(cfg): Inject<TimeoutsConfig>| Ok(TelegramMessenger::new(bot, cfg))),
+            provide(|Inject(cfg): Inject<BotConfig>| Ok(ErrorFormatter::new(cfg.token.clone()))),
+            provide(|Inject(bot): Inject<Bot>, Inject(error_formatter): Inject<ErrorFormatter>, Inject(cfg): Inject<TimeoutsConfig>| {
+                Ok(TelegramMessenger::new(bot, error_formatter, cfg))
+            }),
         ],
         extend(cfg_registry),
     }
@@ -148,9 +150,19 @@ where
             provide(|Inject(messenger): Inject<Messenger>| Ok(send_media::id::SendVideoPlaylist { messenger })),
             provide(|Inject(messenger): Inject<Messenger>| Ok(send_media::id::SendAudioPlaylist { messenger })),
 
-            provide(|Inject(cfg): Inject<Config>, Inject(messenger): Inject<Messenger>| Ok(start::Start { cfg, messenger })),
             provide(|
-                Inject(error_formatter): Inject<ErrorMessageFormatter>,
+                Inject(cfg): Inject<Config>,
+                Inject(error_formatter): Inject<ErrorFormatter>,
+                Inject(messenger): Inject<Messenger>| {
+                    Ok(start::Start {
+                        cfg,
+                        error_formatter,
+                        messenger,
+                    })
+                }
+            ),
+            provide(|
+                Inject(error_formatter): Inject<ErrorFormatter>,
                 Inject(messenger): Inject<Messenger>,
                 Inject(get_media_stats): Inject<downloaded_media::GetStats>,
                 Inject(get_node_stats): Inject<node_router::GetStats>| {
@@ -163,7 +175,7 @@ where
                 }
             ),
             provide(|
-                Inject(error_formatter): Inject<ErrorMessageFormatter>,
+                Inject(error_formatter): Inject<ErrorFormatter>,
                 Inject(messenger): Inject<Messenger>,
                 Inject(update_chat_cfg): Inject<chat::UpdateChatConfig>| {
                     Ok(config::ChangeLinkVisibility {
@@ -174,7 +186,7 @@ where
                 }
             ),
             provide(|
-                Inject(error_formatter): Inject<ErrorMessageFormatter>,
+                Inject(error_formatter): Inject<ErrorFormatter>,
                 Inject(messenger): Inject<Messenger>,
                 Inject(add_domain): Inject<chat::AddExcludeDomain>| {
                     Ok(config::AddExcludeDomain {
@@ -185,7 +197,7 @@ where
                 }
             ),
             provide(|
-                Inject(error_formatter): Inject<ErrorMessageFormatter>,
+                Inject(error_formatter): Inject<ErrorFormatter>,
                 Inject(messenger): Inject<Messenger>,
                 Inject(remove_domain): Inject<chat::RemoveExcludeDomain>| {
                     Ok(config::RemoveExcludeDomain {
@@ -223,10 +235,12 @@ where
             provide(|Inject(node_router): Inject<NodeRouter>|  Ok(media::DownloadAudioPlaylist { node_router })),
 
             provide(|
+                Inject(error_formatter): Inject<ErrorFormatter>,
                 Inject(messenger): Inject<Messenger>,
                 Inject(get_basic_info_media): Inject<get_media::GetShortMediaByURL>,
                 Inject(get_media): Inject<get_media::GetUncachedVideoByURL>| {
                     Ok(inline_query::SelectByUrl {
+                        error_formatter,
                         messenger,
                         get_basic_info_media,
                         get_media,
@@ -234,9 +248,11 @@ where
                 }
             ),
             provide(|
+                Inject(error_formatter): Inject<ErrorFormatter>,
                 Inject(messenger): Inject<Messenger>,
                 Inject(get_basic_info_media): Inject<get_media::SearchMediaInfo>| {
                     Ok(inline_query::SelectByText {
+                        error_formatter,
                         messenger,
                         get_basic_info_media,
                     })
@@ -244,7 +260,7 @@ where
             ),
             provide(|
                 Inject(cfg): Inject<Config>,
-                Inject(error_formatter): Inject<ErrorMessageFormatter>,
+                Inject(error_formatter): Inject<ErrorFormatter>,
                 Inject(messenger): Inject<Messenger>,
                 Inject(get_media): Inject<get_media::GetVideoByURL>,
                 Inject(download_playlist): Inject<media::DownloadVideoPlaylist>,
@@ -267,6 +283,7 @@ where
             ),
             provide(|
                 Inject(cfg): Inject<Config>,
+                Inject(error_formatter): Inject<ErrorFormatter>,
                 Inject(get_media): Inject<get_media::GetVideoByURL>,
                 Inject(download_playlist): Inject<media::DownloadVideoPlaylist>,
                 Inject(upload_media): Inject<send_media::upload::SendVideo<Messenger>>,
@@ -275,6 +292,7 @@ where
                 Inject(add_downloaded_media): Inject<downloaded_media::AddVideo>| {
                     Ok(video::DownloadQuiet {
                         cfg,
+                        error_formatter,
                         get_media,
                         download_playlist,
                         upload_media,
@@ -285,9 +303,11 @@ where
                 }
             ),
             provide(|
+                Inject(error_formatter): Inject<ErrorFormatter>,
                 Inject(get_media): Inject<downloaded_media::GetRandomVideo>,
                 Inject(send_playlist): Inject<send_media::id::SendVideoPlaylist<Messenger>>| {
                     Ok(video::Random {
+                        error_formatter,
                         get_media,
                         send_playlist,
                     })
@@ -295,7 +315,7 @@ where
             ),
             provide(|
                 Inject(cfg): Inject<Config>,
-                Inject(error_formatter): Inject<ErrorMessageFormatter>,
+                Inject(error_formatter): Inject<ErrorFormatter>,
                 Inject(messenger): Inject<Messenger>,
                 Inject(get_media): Inject<get_media::GetAudioByURL>,
                 Inject(download_playlist): Inject<media::DownloadAudioPlaylist>,
@@ -317,9 +337,11 @@ where
                 }
             ),
             provide(|
+                Inject(error_formatter): Inject<ErrorFormatter>,
                 Inject(get_media): Inject<downloaded_media::GetRandomAudio>,
                 Inject(send_playlist): Inject<send_media::id::SendAudioPlaylist<Messenger>>| {
                     Ok(audio::Random {
+                        error_formatter,
                         get_media,
                         send_playlist,
                     })
@@ -327,7 +349,7 @@ where
             ),
             provide(|
                 Inject(cfg): Inject<Config>,
-                Inject(error_formatter): Inject<ErrorMessageFormatter>,
+                Inject(error_formatter): Inject<ErrorFormatter>,
                 Inject(messenger): Inject<Messenger>,
                 Inject(get_media): Inject<get_media::GetVideoByURL>,
                 Inject(download_media): Inject<media::DownloadVideo>,
@@ -348,7 +370,7 @@ where
             ),
             provide(|
                 Inject(cfg): Inject<Config>,
-                Inject(error_formatter): Inject<ErrorMessageFormatter>,
+                Inject(error_formatter): Inject<ErrorFormatter>,
                 Inject(messenger): Inject<Messenger>,
                 Inject(get_media): Inject<get_media::GetAudioByURL>,
                 Inject(download_media): Inject<media::DownloadAudio>,

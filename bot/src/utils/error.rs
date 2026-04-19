@@ -1,24 +1,53 @@
 use crate::{
     entities::{ParseRangeError, ParseSectionError},
     errors::ErrorKind,
-    services::{download::media, get_media, messenger::MessengerError, node_router},
+    services::{download::media, get_media, messenger::MessengerError, node_router, yt_toolkit},
 };
 
-use std::{borrow::Cow, fmt::Debug, fmt::Write, iter};
+use std::{borrow::Cow, fmt::Debug, fmt::Write};
 use telers::errors::SessionErrorKind;
 
-pub fn format_error_report(err: &(impl std::error::Error + ?Sized)) -> String {
+fn format_error_report(err: &(impl std::error::Error + ?Sized)) -> String {
     let mut output = String::new();
     write!(&mut output, "{err}").unwrap();
 
     if let Some(cause) = err.source() {
         write!(&mut output, ". Caused by:").unwrap();
-        for (i, err) in iter::successors(Some(cause), |err| err.source()).enumerate() {
-            write!(&mut output, " {i}: {err}").unwrap();
+        let mut cause = Some(cause);
+        let mut index = 0;
+        while let Some(err) = cause {
+            write!(&mut output, " {index}: {err}").unwrap();
+            cause = err.source();
+            index += 1;
         }
     }
 
     output
+}
+
+fn redact_token(message: impl Into<String>, token: &str) -> String {
+    let message = message.into();
+    let mut redacted = String::with_capacity(message.len());
+    let mut rest = message.as_str();
+
+    while let Some(marker_index) = rest.find("/bot") {
+        let token_start = marker_index + "/bot".len();
+        let Some(token_end_offset) = rest[token_start..].find('/') else {
+            break;
+        };
+        let token_end = token_start + token_end_offset;
+
+        redacted.push_str(&rest[..token_start]);
+        redacted.push_str("...");
+        rest = &rest[token_end..];
+    }
+
+    redacted.push_str(rest);
+    if token.is_empty() {
+        redacted
+    } else {
+        redacted.replace(token, "...")
+    }
 }
 
 pub trait FormatErrorToMessage {
@@ -26,11 +55,11 @@ pub trait FormatErrorToMessage {
 }
 
 #[derive(Clone)]
-pub struct ErrorMessageFormatter {
+pub struct ErrorFormatter {
     token: Box<str>,
 }
 
-impl ErrorMessageFormatter {
+impl ErrorFormatter {
     pub fn new(token: impl Into<Box<str>>) -> Self {
         Self { token: token.into() }
     }
@@ -74,6 +103,18 @@ impl FormatErrorToMessage for get_media::GetInfoErrorKind {
     }
 }
 
+impl FormatErrorToMessage for yt_toolkit::GetVideoInfoErrorKind {
+    fn format(&self, token: &str) -> Cow<'static, str> {
+        Cow::Owned(redact_token(format_error_report(self), token))
+    }
+}
+
+impl FormatErrorToMessage for yt_toolkit::SearchVideoErrorKind {
+    fn format(&self, token: &str) -> Cow<'static, str> {
+        Cow::Owned(redact_token(format_error_report(self), token))
+    }
+}
+
 impl FormatErrorToMessage for ParseRangeError {
     fn format(&self, _token: &str) -> Cow<'static, str> {
         Cow::Owned(self.to_string())
@@ -97,8 +138,8 @@ impl FormatErrorToMessage for get_media::GetMediaByURLErrorKind {
 }
 
 impl FormatErrorToMessage for MessengerError {
-    fn format(&self, _token: &str) -> Cow<'static, str> {
-        Cow::Owned(self.to_string())
+    fn format(&self, token: &str) -> Cow<'static, str> {
+        Cow::Owned(redact_token(self.to_string(), token))
     }
 }
 
@@ -106,7 +147,26 @@ impl<E> FormatErrorToMessage for ErrorKind<E>
 where
     E: std::error::Error + Debug,
 {
-    fn format(&self, _token: &str) -> Cow<'static, str> {
-        Cow::Owned(self.to_string())
+    fn format(&self, token: &str) -> Cow<'static, str> {
+        Cow::Owned(redact_token(format_error_report(self), token))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn messenger_error_message_redacts_bot_token() {
+        let token = "123:SECRET";
+        let err = MessengerError::new(format!(
+            "error sending request for url (http://telegram-bot-api:8081/bot{token}/sendVideo)"
+        ));
+
+        let formatter = ErrorFormatter::new(token);
+        let message = formatter.format(&err);
+
+        assert!(!message.contains(token));
+        assert!(message.contains("bot.../sendVideo"));
     }
 }

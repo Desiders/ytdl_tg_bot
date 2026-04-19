@@ -15,12 +15,13 @@ use crate::{
         messenger::{AnswerInlineQueryRequest, InlineQueryArticle, MessengerPort, TextFormat},
         yt_toolkit::GetVideoInfoErrorKind,
     },
-    utils::format_error_report,
+    utils::ErrorFormatter,
 };
 
 const SELECT_INLINE_QUERY_CACHE_TIME: i64 = 86_400;
 
 pub struct SelectByUrl<Messenger> {
+    pub error_formatter: Arc<ErrorFormatter>,
     pub messenger: Arc<Messenger>,
     pub get_basic_info_media: Arc<get_media::GetShortMediaByURL>,
     pub get_media: Arc<get_media::GetUncachedVideoByURL>,
@@ -52,7 +53,7 @@ where
                 if let GetVideoInfoErrorKind::GetVideoId(err) = err {
                     warn!(%err, "Unsupported YT Toolkit URL");
                 } else {
-                    error!(err = format_error_report(&err), "Get YT Toolkit media error");
+                    error!(err = %self.error_formatter.format(&err), "Get YT Toolkit media error");
                 }
 
                 match self
@@ -66,8 +67,13 @@ where
                 {
                     Ok(playlist) => playlist.inner.into_iter().map(|(val, _)| val.into()).collect(),
                     Err(err) => {
-                        error!(err = format_error_report(&err), "Get info error");
-                        progress::is_error_in_inline_query(self.messenger.as_ref(), input.query_id, "Sorry, an error to get media").await?;
+                        error!(err = %self.error_formatter.format(&err), "Get info error");
+                        if let Err(err) =
+                            progress::is_error_in_inline_query(self.messenger.as_ref(), input.query_id, "Sorry, an error to get media")
+                                .await
+                        {
+                            error!(err = %self.error_formatter.format(&err), "Answer inline query error");
+                        }
                         return Ok(());
                     }
                 }
@@ -76,7 +82,9 @@ where
 
         if media_many.is_empty() {
             warn!("Empty playlist");
-            progress::is_error_in_inline_query(self.messenger.as_ref(), input.query_id, "Playlist is empty").await?;
+            if let Err(err) = progress::is_error_in_inline_query(self.messenger.as_ref(), input.query_id, "Playlist is empty").await {
+                error!(err = %self.error_formatter.format(&err), "Answer inline query error");
+            }
             return Ok(());
         }
 
@@ -106,20 +114,25 @@ where
             });
         }
 
-        self.messenger
+        if let Err(err) = self
+            .messenger
             .answer_inline_query(AnswerInlineQueryRequest {
                 query_id: input.query_id,
                 results,
                 cache_time: SELECT_INLINE_QUERY_CACHE_TIME,
                 is_personal: false,
             })
-            .await?;
+            .await
+        {
+            error!(err = %self.error_formatter.format(&err), "Answer inline query error");
+        }
 
         Ok(())
     }
 }
 
 pub struct SelectByText<Messenger> {
+    pub error_formatter: Arc<ErrorFormatter>,
     pub messenger: Arc<Messenger>,
     pub get_basic_info_media: Arc<get_media::SearchMediaInfo>,
 }
@@ -153,15 +166,21 @@ where
                 .map(|(_, video)| video)
                 .collect(),
             Err(err) => {
-                error!(err = format_error_report(&err), "Search media error");
-                progress::is_error_in_inline_query(self.messenger.as_ref(), input.query_id, "Sorry, an error to search media").await?;
+                error!(err = %self.error_formatter.format(&err), "Search media error");
+                if let Err(err) =
+                    progress::is_error_in_inline_query(self.messenger.as_ref(), input.query_id, "Sorry, an error to search media").await
+                {
+                    error!(err = %self.error_formatter.format(&err), "Answer inline query error");
+                }
                 return Ok(());
             }
         };
 
         if media_many.is_empty() {
             warn!("Empty playlist");
-            progress::is_error_in_inline_query(self.messenger.as_ref(), input.query_id, "Playlist is empty").await?;
+            if let Err(err) = progress::is_error_in_inline_query(self.messenger.as_ref(), input.query_id, "Playlist is empty").await {
+                error!(err = %self.error_formatter.format(&err), "Answer inline query error");
+            }
             return Ok(());
         }
 
@@ -191,14 +210,18 @@ where
             });
         }
 
-        self.messenger
+        if let Err(err) = self
+            .messenger
             .answer_inline_query(AnswerInlineQueryRequest {
                 query_id: input.query_id,
                 results,
                 cache_time: SELECT_INLINE_QUERY_CACHE_TIME,
                 is_personal: false,
             })
-            .await?;
+            .await
+        {
+            error!(err = %self.error_formatter.format(&err), "Answer inline query error");
+        }
 
         Ok(())
     }
