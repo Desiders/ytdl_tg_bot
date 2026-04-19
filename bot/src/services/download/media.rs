@@ -40,13 +40,18 @@ pub enum DownloadMediaPlaylistErrorKind {
     MediaChannel(#[from] mpsc::error::SendError<(MediaForUpload, Media, MediaFormat)>),
 }
 
+pub enum DownloadProgressEvent {
+    Progress(String),
+    Finished,
+}
+
 pub struct DownloadMediaInput<'a> {
     url: &'a Url,
     media: &'a Media,
     sections: Option<&'a Sections>,
     formats: Vec<(MediaFormat, RawMediaWithFormat)>,
     err_sender: mpsc::UnboundedSender<DownloadErrorKind>,
-    progress_sender: Option<mpsc::UnboundedSender<String>>,
+    progress_sender: Option<mpsc::UnboundedSender<DownloadProgressEvent>>,
 }
 
 impl<'a> DownloadMediaInput<'a> {
@@ -55,7 +60,11 @@ impl<'a> DownloadMediaInput<'a> {
         media: &'a Media,
         sections: Option<&'a Sections>,
         formats: Vec<(MediaFormat, RawMediaWithFormat)>,
-    ) -> (Self, mpsc::UnboundedReceiver<DownloadErrorKind>, mpsc::UnboundedReceiver<String>) {
+    ) -> (
+        Self,
+        mpsc::UnboundedReceiver<DownloadErrorKind>,
+        mpsc::UnboundedReceiver<DownloadProgressEvent>,
+    ) {
         let (err_sender, err_receiver) = mpsc::unbounded_channel();
         let (progress_sender, progress_receiver) = mpsc::unbounded_channel();
         (
@@ -79,7 +88,7 @@ pub struct DownloadMediaPlaylistInput<'a> {
     sections: Option<&'a Sections>,
     media_sender: mpsc::UnboundedSender<(MediaForUpload, Media, MediaFormat)>,
     errs_sender: Option<mpsc::UnboundedSender<Vec<DownloadErrorKind>>>,
-    progress_sender: Option<mpsc::UnboundedSender<String>>,
+    progress_sender: Option<mpsc::UnboundedSender<DownloadProgressEvent>>,
 }
 
 impl<'a> DownloadMediaPlaylistInput<'a> {
@@ -92,7 +101,7 @@ impl<'a> DownloadMediaPlaylistInput<'a> {
         Self,
         mpsc::UnboundedReceiver<(MediaForUpload, Media, MediaFormat)>,
         mpsc::UnboundedReceiver<Vec<DownloadErrorKind>>,
-        mpsc::UnboundedReceiver<String>,
+        mpsc::UnboundedReceiver<DownloadProgressEvent>,
     ) {
         let (media_sender, media_receiver) = mpsc::unbounded_channel();
         let (errs_sender, errs_receiver) = mpsc::unbounded_channel();
@@ -408,7 +417,7 @@ async fn download_with_retry(
     request: DownloadRequest,
     output_dir: &Path,
     base_format: &MediaFormat,
-    progress_sender: Option<&mpsc::UnboundedSender<String>>,
+    progress_sender: Option<&mpsc::UnboundedSender<DownloadProgressEvent>>,
 ) -> Result<PreparedDownload, DownloadErrorKind> {
     let session = download_media(node_router, domain, request).await?;
     build_downloaded_media(session, output_dir, base_format, progress_sender).await
@@ -418,7 +427,7 @@ async fn build_downloaded_media(
     session: DownloadSession,
     output_dir: &Path,
     base_format: &MediaFormat,
-    progress_sender: Option<&mpsc::UnboundedSender<String>>,
+    progress_sender: Option<&mpsc::UnboundedSender<DownloadProgressEvent>>,
 ) -> Result<PreparedDownload, DownloadErrorKind> {
     let meta = session.meta().clone();
     let path = output_dir.join(format!("media.{}", meta.ext));
@@ -494,7 +503,7 @@ impl Stream for ChannelByteStream {
 
 async fn forward_download_stream(
     mut session: DownloadSession,
-    progress_sender: Option<mpsc::UnboundedSender<String>>,
+    progress_sender: Option<mpsc::UnboundedSender<DownloadProgressEvent>>,
     media_sender: mpsc::UnboundedSender<Result<Bytes, io::Error>>,
     thumb_sender: Option<mpsc::UnboundedSender<Result<Bytes, io::Error>>>,
 ) {
@@ -506,7 +515,12 @@ async fn forward_download_stream(
                     return;
                 }
             }
-            Ok(None) => return,
+            Ok(None) => {
+                if let Some(sender) = progress_sender {
+                    let _ = sender.send(DownloadProgressEvent::Finished);
+                }
+                return;
+            }
             Err(err) => {
                 let _ = media_sender.send(Err(io::Error::other(err)));
                 return;
@@ -517,14 +531,14 @@ async fn forward_download_stream(
 
 fn handle_download_event(
     event: DownloadEvent,
-    progress_sender: Option<&mpsc::UnboundedSender<String>>,
+    progress_sender: Option<&mpsc::UnboundedSender<DownloadProgressEvent>>,
     media_sender: &mpsc::UnboundedSender<Result<Bytes, io::Error>>,
     thumb_sender: Option<&mpsc::UnboundedSender<Result<Bytes, io::Error>>>,
 ) -> Result<(), io::Error> {
     match event {
         DownloadEvent::Progress(progress) => {
             if let Some(sender) = progress_sender {
-                let _ = sender.send(progress);
+                let _ = sender.send(DownloadProgressEvent::Progress(progress));
             }
             Ok(())
         }
