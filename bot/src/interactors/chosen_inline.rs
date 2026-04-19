@@ -180,16 +180,23 @@ where
 
             let ((), (), download_res) = tokio::join!(
                 async {
-                    while let Some(progress_str) = progress_receiver.recv().await {
-                        if progress::is_downloading_with_progress_in_chosen_inline(
-                            this.messenger.as_ref(),
-                            input.inline_message_id,
-                            progress_str,
-                        )
-                        .await
-                        .is_err()
-                        {
-                            break;
+                    while let Some(event) = progress_receiver.recv().await {
+                        match event {
+                            media::DownloadProgressEvent::Progress(progress_str) => {
+                                if progress::is_downloading_with_progress_in_chosen_inline(
+                                    this.messenger.as_ref(),
+                                    input.inline_message_id,
+                                    progress_str,
+                                )
+                                .await
+                                .is_err()
+                                {
+                                    break;
+                                }
+                            }
+                            media::DownloadProgressEvent::Finished => {
+                                let _ = progress::is_sending_in_chosen_inline(this.messenger.as_ref(), input.inline_message_id).await;
+                            }
                         }
                     }
                 },
@@ -226,7 +233,6 @@ where
                 }
             };
 
-            let _ = progress::is_sending_in_chosen_inline(this.messenger.as_ref(), input.inline_message_id).await;
             let file_id = match this
                 .upload_media
                 .execute(send_media::upload::SendVideoInput {
@@ -416,16 +422,23 @@ where
 
             let ((), (), download_res) = tokio::join!(
                 async {
-                    while let Some(progress_str) = progress_receiver.recv().await {
-                        if progress::is_downloading_with_progress_in_chosen_inline(
-                            this.messenger.as_ref(),
-                            input.inline_message_id,
-                            progress_str,
-                        )
-                        .await
-                        .is_err()
-                        {
-                            break;
+                    while let Some(event) = progress_receiver.recv().await {
+                        match event {
+                            media::DownloadProgressEvent::Progress(progress_str) => {
+                                if progress::is_downloading_with_progress_in_chosen_inline(
+                                    this.messenger.as_ref(),
+                                    input.inline_message_id,
+                                    progress_str,
+                                )
+                                .await
+                                .is_err()
+                                {
+                                    break;
+                                }
+                            }
+                            media::DownloadProgressEvent::Finished => {
+                                let _ = progress::is_sending_in_chosen_inline(this.messenger.as_ref(), input.inline_message_id).await;
+                            }
                         }
                     }
                 },
@@ -462,7 +475,6 @@ where
                 }
             };
 
-            let _ = progress::is_sending_in_chosen_inline(this.messenger.as_ref(), input.inline_message_id).await;
             let file_id = match this
                 .upload_media
                 .execute(send_media::upload::SendAudioInput {

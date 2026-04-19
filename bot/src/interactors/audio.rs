@@ -180,7 +180,6 @@ where
                 tokio::join!(
                     async {
                         while let Some((media_for_upload, media, _format)) = media_receiver.recv().await {
-                            let _ = progress::is_sending(self.messenger.as_ref(), input.chat_id, progress_message_id).await;
                             let file_id = match self
                                 .upload_media
                                 .execute(send_media::upload::SendAudioInput {
@@ -240,19 +239,26 @@ where
                         }
                     },
                     async {
-                        while let Some(progress_str) = progress_receiver.recv().await {
-                            if progress::is_downloading_with_progress(
-                                self.messenger.as_ref(),
-                                input.chat_id,
-                                progress_message_id,
-                                progress_str,
-                                downloaded_media_count.load(Ordering::SeqCst),
-                                cached_len + uncached_len,
-                            )
-                            .await
-                            .is_err()
-                            {
-                                break;
+                        while let Some(event) = progress_receiver.recv().await {
+                            match event {
+                                media::DownloadProgressEvent::Progress(progress_str) => {
+                                    if progress::is_downloading_with_progress(
+                                        self.messenger.as_ref(),
+                                        input.chat_id,
+                                        progress_message_id,
+                                        progress_str,
+                                        downloaded_media_count.load(Ordering::SeqCst),
+                                        cached_len + uncached_len,
+                                    )
+                                    .await
+                                    .is_err()
+                                    {
+                                        break;
+                                    }
+                                }
+                                media::DownloadProgressEvent::Finished => {
+                                    let _ = progress::is_sending(self.messenger.as_ref(), input.chat_id, progress_message_id).await;
+                                }
                             }
                         }
                     },
