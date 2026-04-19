@@ -9,10 +9,13 @@ use crate::{
     config::Config,
     interactors::Interactor,
     services::messenger::{MessengerPort, SendTextRequest, TextFormat},
+    utils::ErrorFormatter,
 };
+use tracing::error;
 
 pub struct Start<Messenger> {
     pub cfg: Arc<Config>,
+    pub error_formatter: Arc<ErrorFormatter>,
     pub messenger: Arc<Messenger>,
 }
 
@@ -29,7 +32,13 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: StartInput) -> Result<Self::Output, Self::Err> {
-        let username = self.messenger.username().await?;
+        let username = match self.messenger.username().await {
+            Ok(username) => username,
+            Err(err) => {
+                error!(err = %self.error_formatter.format(&err), "Get messenger username error");
+                return Ok(());
+            }
+        };
         let text = format!(
             "<b>Commands</b>\n\
             - <code>/vd</code> — download video. Calling this command is required to display download progress; otherwise, downloading will occur in \"silent\" mode.\n\
@@ -66,7 +75,8 @@ where
             source_code = html_text_link("source code", html_quote(&self.cfg.bot.src_url)),
         );
 
-        self.messenger
+        if let Err(err) = self
+            .messenger
             .send_text(SendTextRequest {
                 chat_id: input.chat_id,
                 text: &text,
@@ -74,7 +84,10 @@ where
                 format: Some(TextFormat::Html),
                 disable_link_preview: true,
             })
-            .await?;
+            .await
+        {
+            error!(err = %self.error_formatter.format(&err), "Send error");
+        }
 
         Ok(())
     }

@@ -2,7 +2,7 @@ use crate::{
     config::TimeoutsConfig,
     entities::MediaForUpload,
     services::messenger::MessengerPort,
-    utils::{media_link, sanitize_send_filename},
+    utils::{media_link, sanitize_send_filename, ErrorFormatter},
 };
 
 use backoff::ExponentialBackoff;
@@ -34,12 +34,17 @@ use super::{
 
 pub struct TelegramMessenger {
     bot: Arc<Bot>,
+    error_formatter: Arc<ErrorFormatter>,
     timeouts_cfg: Arc<TimeoutsConfig>,
 }
 
 impl TelegramMessenger {
-    pub fn new(bot: Arc<Bot>, timeouts_cfg: Arc<TimeoutsConfig>) -> Self {
-        Self { bot, timeouts_cfg }
+    pub fn new(bot: Arc<Bot>, error_formatter: Arc<ErrorFormatter>, timeouts_cfg: Arc<TimeoutsConfig>) -> Self {
+        Self {
+            bot,
+            error_formatter,
+            timeouts_cfg,
+        }
     }
 }
 
@@ -168,9 +173,11 @@ impl MessengerPort for TelegramMessenger {
         if with_delete {
             tokio::spawn({
                 let bot = self.bot.clone();
+                let error_formatter = self.error_formatter.clone();
                 async move {
                     if let Err(err) = bot.send(methods::DeleteMessage::new(chat_id, message_id)).await {
-                        error!(%err, "Delete message error");
+                        let err = MessengerError::from(err);
+                        error!(err = %error_formatter.format(&err), "Delete message error");
                     }
                 }
             });
@@ -224,9 +231,11 @@ impl MessengerPort for TelegramMessenger {
         if with_delete {
             tokio::spawn({
                 let bot = self.bot.clone();
+                let error_formatter = self.error_formatter.clone();
                 async move {
                     if let Err(err) = bot.send(methods::DeleteMessage::new(chat_id, message_id)).await {
-                        error!(%err, "Delete message error");
+                        let err = MessengerError::from(err);
+                        error!(err = %error_formatter.format(&err), "Delete message error");
                     }
                 }
             });

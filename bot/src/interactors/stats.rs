@@ -4,6 +4,7 @@ use telers::{
     errors::HandlerError,
     utils::text::{html_expandable_blockquote, html_quote},
 };
+use tracing::error;
 
 use crate::{
     database::TxManager,
@@ -13,11 +14,11 @@ use crate::{
         messenger::{MessengerPort, SendTextRequest, TextFormat},
         node_router,
     },
-    utils::{format_error_report, ErrorMessageFormatter},
+    utils::ErrorFormatter,
 };
 
 pub struct Stats<Messenger> {
-    pub error_formatter: Arc<ErrorMessageFormatter>,
+    pub error_formatter: Arc<ErrorFormatter>,
     pub messenger: Arc<Messenger>,
     pub get_media_stats: Arc<downloaded_media::GetStats>,
     pub get_node_stats: Arc<node_router::GetStats>,
@@ -85,7 +86,7 @@ where
                 )
             }
             Err(err) => {
-                tracing::error!(err = format_error_report(&err), "Get error");
+                error!(err = %self.error_formatter.format(&err), "Get error");
                 format!(
                     "Sorry, an error to get stats\n{}",
                     html_expandable_blockquote(html_quote(self.error_formatter.format(&err).as_ref()))
@@ -93,7 +94,8 @@ where
             }
         };
 
-        self.messenger
+        if let Err(err) = self
+            .messenger
             .send_text(SendTextRequest {
                 chat_id: input.chat_id,
                 text: &text,
@@ -101,7 +103,10 @@ where
                 format: Some(TextFormat::Html),
                 disable_link_preview: true,
             })
-            .await?;
+            .await
+        {
+            error!(err = %self.error_formatter.format(&err), "Send error");
+        }
 
         Ok(())
     }

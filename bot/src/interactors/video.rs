@@ -29,12 +29,12 @@ use crate::{
         messenger::{MessengerPort, TextFormat},
         send_media,
     },
-    utils::{format_error_report, ErrorMessageFormatter},
+    utils::ErrorFormatter,
 };
 
 pub struct Download<Messenger> {
     pub cfg: Arc<Config>,
-    pub error_formatter: Arc<ErrorMessageFormatter>,
+    pub error_formatter: Arc<ErrorFormatter>,
     pub messenger: Arc<Messenger>,
     pub get_media: Arc<get_media::GetVideoByURL>,
     pub download_playlist: Arc<media::DownloadVideoPlaylist>,
@@ -64,14 +64,21 @@ where
     async fn execute(self, input: DownloadInput<'_>) -> Result<Self::Output, Self::Err> {
         debug!("Got url");
 
-        let progress_message = progress::new(
+        let progress_message = match progress::new(
             self.messenger.as_ref(),
             "🔍 Preparing download...",
             input.chat_id,
             Some(input.message_id),
             None,
         )
-        .await?;
+        .await
+        {
+            Ok(progress_message) => progress_message,
+            Err(err) => {
+                error!(err = %self.error_formatter.format(&err), "Send progress error");
+                return Ok(());
+            }
+        };
         let progress_message_id = progress_message.message_id;
 
         let playlist_range = match input.params.0.get("items") {
@@ -150,10 +157,11 @@ where
                     })
                     .await
                 {
-                    error!(err = format_error_report(&err), "Send error");
+                    let err = self.error_formatter.format(&err);
+                    error!(%err, "Send error");
                     let text = format!(
                         "Sorry, an error to send media\n{}",
-                        html_expandable_blockquote(html_quote(self.error_formatter.format(&err).as_ref()))
+                        html_expandable_blockquote(html_quote(err.as_ref()))
                     );
                     let _ = progress::is_error_in_progress(
                         self.messenger.as_ref(),
@@ -198,8 +206,9 @@ where
                             {
                                 Ok(val) => val,
                                 Err(err) => {
-                                    error!(err = format_error_report(&err), "Send error");
-                                    send_err = Some(html_quote(self.error_formatter.format(&err).as_ref()));
+                                    let err = self.error_formatter.format(&err);
+                                    error!(%err, "Send error");
+                                    send_err = Some(html_quote(err.as_ref()));
                                     continue;
                                 }
                             };
@@ -303,10 +312,11 @@ where
                     })
                     .await
                 {
+                    let err = self.error_formatter.format(&err);
                     error!(%err, "Send error");
                     let text = format!(
                         "Sorry, an error to send playlist\n{}",
-                        html_expandable_blockquote(html_quote(self.error_formatter.format(&err).as_ref()))
+                        html_expandable_blockquote(html_quote(err.as_ref()))
                     );
                     let _ = progress::is_error_in_progress(
                         self.messenger.as_ref(),
@@ -332,7 +342,7 @@ where
                 .await;
             }
             Err(err) => {
-                error!(err = format_error_report(&err), "Get error");
+                error!(err = %self.error_formatter.format(&err), "Get error");
                 let text = format!(
                     "Sorry, an error to get info\n{}",
                     html_expandable_blockquote(html_quote(self.error_formatter.format(&err).as_ref()))
@@ -354,6 +364,7 @@ where
 
 pub struct DownloadQuiet<Messenger> {
     pub cfg: Arc<Config>,
+    pub error_formatter: Arc<ErrorFormatter>,
     pub get_media: Arc<get_media::GetVideoByURL>,
     pub download_playlist: Arc<media::DownloadVideoPlaylist>,
     pub upload_media: Arc<send_media::upload::SendVideo<Messenger>>,
@@ -432,7 +443,7 @@ where
                     })
                     .await
                 {
-                    error!(err = format_error_report(&err), "Send error");
+                    error!(err = %self.error_formatter.format(&err), "Send error");
                 }
             }
             Ok(Playlist { cached, uncached }) => {
@@ -461,7 +472,7 @@ where
                             {
                                 Ok(val) => val,
                                 Err(err) => {
-                                    error!(err = format_error_report(&err), "Send error");
+                                    error!(err = %self.error_formatter.format(&err), "Send error");
                                     continue;
                                 }
                             };
@@ -507,14 +518,14 @@ where
                     })
                     .await
                 {
-                    error!(%err, "Send error");
+                    error!(err = %self.error_formatter.format(&err), "Send error");
                 }
             }
             Ok(Empty) => {
                 warn!("Empty playlist");
             }
             Err(err) => {
-                error!(err = format_error_report(&err), "Get error");
+                error!(err = %self.error_formatter.format(&err), "Get error");
             }
         }
 
@@ -523,6 +534,7 @@ where
 }
 
 pub struct Random<Messenger> {
+    pub error_formatter: Arc<ErrorFormatter>,
     pub get_media: Arc<downloaded_media::GetRandomVideo>,
     pub send_playlist: Arc<send_media::id::SendVideoPlaylist<Messenger>>,
 }
@@ -573,11 +585,11 @@ where
                     })
                     .await
                 {
-                    error!(%err, "Send error");
+                    error!(err = %self.error_formatter.format(&err), "Send error");
                 }
             }
             Err(err) => {
-                error!(err = format_error_report(&err), "Get error");
+                error!(err = %self.error_formatter.format(&err), "Get error");
             }
         }
 

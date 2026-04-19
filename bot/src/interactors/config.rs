@@ -3,6 +3,7 @@ use telers::{
     errors::HandlerError,
     utils::text::{html_bold, html_code, html_expandable_blockquote, html_quote},
 };
+use tracing::error;
 
 use crate::{
     database::TxManager,
@@ -13,11 +14,11 @@ use crate::{
         chat,
         messenger::{MessengerPort, TextFormat},
     },
-    utils::{format_error_report, ErrorMessageFormatter},
+    utils::ErrorFormatter,
 };
 
 pub struct ChangeLinkVisibility<Messenger> {
-    pub error_formatter: Arc<ErrorMessageFormatter>,
+    pub error_formatter: Arc<ErrorFormatter>,
     pub messenger: Arc<Messenger>,
     pub update_chat_cfg: Arc<chat::UpdateChatConfig>,
 }
@@ -52,7 +53,7 @@ where
                 )
             }
             Err(err) => {
-                tracing::error!(err = format_error_report(&err), "Update error");
+                error!(err = %self.error_formatter.format(&err), "Update error");
                 format!(
                     "Sorry, an error to change link visibility\n{}",
                     html_expandable_blockquote(html_quote(self.error_formatter.format(&err).as_ref()))
@@ -60,21 +61,24 @@ where
             }
         };
 
-        progress::new(
+        if let Err(err) = progress::new(
             self.messenger.as_ref(),
             &text,
             input.chat_cfg.tg_id,
             input.reply_to_message_id,
             Some(TextFormat::Html),
         )
-        .await?;
+        .await
+        {
+            error!(err = %self.error_formatter.format(&err), "Send error");
+        }
 
         Ok(())
     }
 }
 
 pub struct AddExcludeDomain<Messenger> {
-    pub error_formatter: Arc<ErrorMessageFormatter>,
+    pub error_formatter: Arc<ErrorFormatter>,
     pub messenger: Arc<Messenger>,
     pub add_domain: Arc<chat::AddExcludeDomain>,
 }
@@ -96,25 +100,31 @@ where
 
     async fn execute(self, input: AddExcludeDomainInput<'_>) -> Result<Self::Output, Self::Err> {
         if input.exclude_domains.0.contains(&input.host.to_owned()) {
-            progress::new(
+            if let Err(err) = progress::new(
                 self.messenger.as_ref(),
                 "Domain already exists in exclude list",
                 input.chat_id,
                 input.reply_to_message_id,
                 None,
             )
-            .await?;
+            .await
+            {
+                error!(err = %self.error_formatter.format(&err), "Send error");
+            }
             return Ok(());
         }
         if input.exclude_domains.0.len() >= 15 {
-            progress::new(
+            if let Err(err) = progress::new(
                 self.messenger.as_ref(),
                 "Too many domains in exclude list. Limit is 15.",
                 input.chat_id,
                 input.reply_to_message_id,
                 None,
             )
-            .await?;
+            .await
+            {
+                error!(err = %self.error_formatter.format(&err), "Send error");
+            }
             return Ok(());
         }
 
@@ -144,7 +154,7 @@ where
                 )
             }
             Err(err) => {
-                tracing::error!(err = format_error_report(&err), "Add error");
+                error!(err = %self.error_formatter.format(&err), "Add error");
                 format!(
                     "Sorry, an error to add domain\n{}",
                     html_expandable_blockquote(html_quote(self.error_formatter.format(&err).as_ref()))
@@ -152,20 +162,23 @@ where
             }
         };
 
-        progress::new(
+        if let Err(err) = progress::new(
             self.messenger.as_ref(),
             &text,
             input.chat_id,
             input.reply_to_message_id,
             Some(TextFormat::Html),
         )
-        .await?;
+        .await
+        {
+            error!(err = %self.error_formatter.format(&err), "Send error");
+        }
         Ok(())
     }
 }
 
 pub struct RemoveExcludeDomain<Messenger> {
-    pub error_formatter: Arc<ErrorMessageFormatter>,
+    pub error_formatter: Arc<ErrorFormatter>,
     pub messenger: Arc<Messenger>,
     pub remove_domain: Arc<chat::RemoveExcludeDomain>,
 }
@@ -187,14 +200,17 @@ where
 
     async fn execute(self, input: RemoveExcludeDomainInput<'_>) -> Result<Self::Output, Self::Err> {
         if !input.exclude_domains.0.contains(&input.host.to_owned()) {
-            progress::new(
+            if let Err(err) = progress::new(
                 self.messenger.as_ref(),
                 "Domain not found in exclude list",
                 input.chat_id,
                 input.reply_to_message_id,
                 None,
             )
-            .await?;
+            .await
+            {
+                error!(err = %self.error_formatter.format(&err), "Send error");
+            }
             return Ok(());
         }
 
@@ -223,7 +239,7 @@ where
                 )
             }
             Err(err) => {
-                tracing::error!(err = format_error_report(&err), "Add error");
+                error!(err = %self.error_formatter.format(&err), "Add error");
                 format!(
                     "Sorry, an error to remove domain\n{}",
                     html_expandable_blockquote(html_quote(self.error_formatter.format(&err).as_ref()))
@@ -231,14 +247,17 @@ where
             }
         };
 
-        progress::new(
+        if let Err(err) = progress::new(
             self.messenger.as_ref(),
             &text,
             input.chat_id,
             input.reply_to_message_id,
             Some(TextFormat::Html),
         )
-        .await?;
+        .await
+        {
+            error!(err = %self.error_formatter.format(&err), "Send error");
+        }
         Ok(())
     }
 }
