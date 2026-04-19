@@ -39,4 +39,4 @@ docker buildx build \
     "${CONTEXT_DIR}"
 
 echo "Pushed: ${IMAGE_REPO}:${IMAGE_TAG}"
-echo "Next: helm upgrade bot ./charts/bot -n ${NAMESPACE} --set bot.image.repository=${IMAGE_REPO} --set bot.image.tag=${IMAGE_TAG} --set bot.image.pullPolicy=IfNotPresent"
+echo "Next: helm upgrade bot ./charts/bot -n ${NAMESPACE} --set bot.image.repository=${IMAGE_REPO} --set bot.image.tag=${IMAGE_TAG} --set bot.image.pullPolicy=Always"

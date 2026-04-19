@@ -39,4 +39,4 @@ docker buildx build \
     "${CONTEXT_DIR}"
 
 echo "Pushed: ${IMAGE_REPO}:${IMAGE_TAG}"
-echo "Next: helm upgrade downloader ./charts/downloader -n ${NAMESPACE} --set downloader.image.repository=${IMAGE_REPO} --set downloader.image.tag=${IMAGE_TAG} --set downloader.image.pullPolicy=IfNotPresent"
+echo "Next: helm upgrade downloader ./charts/downloader -n ${NAMESPACE} --set downloader.image.repository=${IMAGE_REPO} --set downloader.image.tag=${IMAGE_TAG} --set downloader.image.pullPolicy=Always"

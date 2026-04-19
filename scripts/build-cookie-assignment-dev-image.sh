@@ -39,4 +39,4 @@ docker buildx build \
     "${CONTEXT_DIR}"
 
 echo "Pushed: ${IMAGE_REPO}:${IMAGE_TAG}"
-echo "Next: helm upgrade cookie-assignment ./charts/cookie-assignment -n ${NAMESPACE} --set cookieAssignment.image.repository=${IMAGE_REPO} --set cookieAssignment.image.tag=${IMAGE_TAG} --set cookieAssignment.image.pullPolicy=IfNotPresent"
+echo "Next: helm upgrade cookie-assignment ./charts/cookie-assignment -n ${NAMESPACE} --set cookieAssignment.image.repository=${IMAGE_REPO} --set cookieAssignment.image.tag=${IMAGE_TAG} --set cookieAssignment.image.pullPolicy=Always"
