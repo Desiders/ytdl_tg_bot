@@ -1,0 +1,259 @@
+[bot]
+token = "..."
+src_url = "https://github.com/.../..."
+
+[logging]
+dirs = "info,hyper=warn,reqwest=warn,tokio_util::codec=warn"
+
+[chat]
+receiver_chat_id = 123
+
+[timeouts]
+send_by_upload = 210
+send_by_id = 360
+
+[blacklisted]
+domains = ["t.me", "2girls1cup.ca"]
+
+[domains_with_reactions]
+domains = [
+    "vk.com", "vkvideo.ru", "ok.ru", "rutube.ru", "max.ru", "m.vkvideo.ru",
+    "youtube.com", "youtu.be", "m.youtube.com", "music.youtube.com", "studio.youtube.com",
+    "rt.pornhub.com", "rt.pornhub.org", "pornhub.com",
+    "vm.tiktok.com", "vt.tiktok.com", "tiktok.com",
+    "x.com", "facebook.com",
+    "share.google", "drive.google.com",
+    "vxinstagram.com",  "fxtwitter.com", "fixupx.com", "fxbsky.app",
+    "coub.com",
+]
+
+[random_cmd]
+domains = [
+    "vk.com", "vkvideo.ru", "ok.ru", "rutube.ru", "max.ru", "m.vkvideo.ru",
+    "youtube.com", "youtu.be", "m.youtube.com", "music.youtube.com", "studio.youtube.com",
+    "vm.tiktok.com", "vt.tiktok.com", "tiktok.com",
+    "vxinstagram.com", "fxtwitter.com", "fixupx.com", "fxbsky.app",
+    "coub.com",
+]
+
+[[replace_domains]]
+from = '^(?:.*\.)?instagram\.(tv|net|com|org)$|^instagr\.am$'
+to = "vxinstagram.com"
+
+[[replace_domains]]
+from = '^(?:.*\.)?twitter\.com$'
+to = "fxtwitter.com"
+
+[[replace_domains]]
+from = '^(?:.*\.)?x\.com$'
+to = "fixupx.com"
+
+[[replace_domains]]
+from = '^(?:.*\.)?bsky\.app$'
+to = "fxbsky.app"
+
+[yt_dlp]
+max_file_size = 5000000
+
+[download]
+capabilities_refresh_interval = 60
+node_token = "secret-token-a"
+
+[download.tls]
+ca_cert_path = "tls/ca.crt"
+cert_path = "tls/bot.crt"
+key_path = "tls/bot.key"
+
+[database]
+user = "..."
+password = "..."
+# You can use "127.0.0.1" if the database is running on the same network.
+# If the database is running in docker, you can use the database container name as the host.
+host = "postgres"
+port = 5432
+database = "api"
+
+[yt_toolkit]
+url = "http://yt-toolkit-api:8080"
+# url = "http://127.0.0.1:8080"
+
+[telegram_bot_api]
+url = "http://telegram-bot-api:8081"
+# url = "https://api.telegram.org"
+api_id = "..."
+api_hash = "..."
+
+[tracking_params]
+params = [
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "utm_id",
+    "gclid",
+    "gclsrc",
+    "dclid",
+    "gbraid",
+    "wbraid",
+    "_ga",
+    "_gl",
+    "_t",
+    "source",
+    "checksum",
+    "timestamp",
+    "gad_source",
+    "gad_campaignid",
+    "fbclid",
+    "fbadid",
+    "fb_action_ids",
+    "fb_action_types",
+    "fb_source",
+    "fb_ref",
+    "fb_comment_id",
+    "action_object_map",
+    "action_type_map",
+    "action_ref_map",
+    "ttclid",
+    "tt_content",
+    "tt_medium",
+    "tt_adid",
+    "tt_adgroupid",
+    "tt_campaignid",
+    "tt_placement",
+    "tt_device",
+    "tt_keyword",
+    "tt_network",
+    "igsh",
+    "igshid",
+    "ig_rid",
+    "epik",
+    "ppn",
+    "ppss",
+    "twclid",
+    "t",
+    "s",
+    "vk_click_id",
+    "click_id",
+    "mt_app_id",
+    "pid",
+    "ok_click_id",
+    "st.cmd",
+    "st.mode",
+    "idfa",
+    "google_aid",
+    "android_id",
+    "windows_aid",
+    "ip",
+    "ua",
+    "mcc",
+    "mnc",
+    "device_manufacturer",
+    "device_model",
+    "os_name",
+    "os_ver",
+    "app_ver",
+    "qclid",
+    "sharedId",
+    "asc_subtag",
+    "asc_campaign",
+    "asc_source",
+    "asc_medium",
+    "asc_content",
+    "asc_term",
+    "asc_cid",
+    "asc_rid",
+    "asc_sid",
+    "ob_click_id",
+    "msclkid",
+    "u",
+    "sc_campaign",
+    "sc_ad",
+    "yclid",
+    "ysclid",
+    "_openstat",
+    "erid",
+    "mt_click_id",
+    "mt_link_id",
+    "mt_campaign",
+    "mt_adset",
+    "mt_creative",
+    "li_fat_id",
+    "trk",
+    "trkCampaign",
+    "trkInfo",
+    "rt_destination",
+    "af_xp",
+    "af_ad",
+    "af_adset",
+    "af_c_id",
+    "af_adset_id",
+    "af_ad_id",
+    "af_channel",
+    "af_siteid",
+    "af_sub1",
+    "af_sub2",
+    "af_sub3",
+    "af_sub4",
+    "af_sub5",
+    "adj_t",
+    "adj_label",
+    "adj_campaign",
+    "adj_creative",
+    "_branch_referrer",
+    "_branch_match_id",
+    "branch_id",
+    "mc_cid",
+    "mc_eid",
+    "_kx",
+    "_ke",
+    "elqTrackId",
+    "elqaid",
+    "elqat",
+    "elqCampaignId",
+    "mkt_tok",
+    "_hsenc",
+    "_hsmi",
+    "__hsfp",
+    "__hssc",
+    "__hstc",
+    "hsCtaTracking",
+    "hsa_acc",
+    "hsa_ad",
+    "hsa_cam",
+    "hsa_grp",
+    "hsa_kw",
+    "hsa_la",
+    "hsa_mt",
+    "hsa_net",
+    "hsa_ol",
+    "hsa_src",
+    "hsa_tgt",
+    "hsa_ver",
+    "sm",
+    "lv",
+    "user",
+    "ch",
+    "im",
+    "so",
+    "nc",
+    "nw",
+    "uid",
+    "UP主UID",
+    "itscg",
+    "itsct",
+    "pt",
+    "ct",
+    "mt",
+    "user_login",
+    "username",
+    "login",
+    "email",
+    "user_email",
+    "email_address",
+    "customer_id",
+    "member_id",
+    "profile_id",
+    "domain_userid",
+    "network_userid",
+]

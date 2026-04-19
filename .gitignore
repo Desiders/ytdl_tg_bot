@@ -4,8 +4,14 @@ target/
 
 yt-dlp-cache/
 
-config.toml
-
-cookies/*.txt
+configs/config.toml
+configs/downloader.toml
+configs/cookie_assignment.toml
 
 __pycache__
+
+*.txt
+
+*.crt
+*.key
+*.srl

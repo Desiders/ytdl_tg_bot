@@ -1,0 +1,49 @@
+FROM alpine:3.22 AS base
+RUN apk add --no-cache \
+        ffmpeg \
+        python3 \
+        py3-pip \
+        py3-virtualenv \
+        deno \
+        bash \
+        curl \
+        ca-certificates \
+    && rm -rf /var/cache/apk/*
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+RUN pip install --no-cache-dir -U pip \
+ && pip install --no-cache-dir --pre "yt-dlp[default,curl-cffi]" \
+ && pip install --no-cache-dir --pre "bgutil-ytdlp-pot-provider"
+
+FROM rust:1.91 AS build
+RUN apt update && apt install -y musl-tools protobuf-compiler upx && rm -rf /var/lib/apt/lists/*
+RUN rustup target add x86_64-unknown-linux-musl
+
+WORKDIR /usr/src/app
+
+COPY downloader/Cargo.toml downloader/Cargo.toml
+COPY proto/Cargo.toml proto/Cargo.toml
+RUN mkdir -p downloader/src && echo "fn main(){}" > downloader/src/main.rs
+RUN mkdir -p proto/src && echo "" > proto/src/lib.rs
+RUN cargo fetch --manifest-path downloader/Cargo.toml
+RUN cargo fetch --manifest-path proto/Cargo.toml
+
+COPY proto proto
+RUN touch proto/src/lib.rs
+
+RUN cargo build --release --target x86_64-unknown-linux-musl --manifest-path proto/Cargo.toml --target-dir target
+
+COPY downloader downloader
+RUN touch downloader/src/main.rs
+
+RUN cargo build --release --target x86_64-unknown-linux-musl --manifest-path downloader/Cargo.toml --target-dir target
+
+RUN upx --best --lzma target/x86_64-unknown-linux-musl/release/downloader
+
+FROM base AS final
+WORKDIR /app
+COPY --from=build /usr/src/app/target/x86_64-unknown-linux-musl/release/downloader /app/downloader
+ENV RUST_BACKTRACE=full
+ENV PATH="/opt/venv/bin:$PATH"
+ENTRYPOINT ["/app/downloader"]

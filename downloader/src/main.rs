@@ -1,0 +1,111 @@
+mod config;
+mod constants;
+mod entities;
+mod grpc;
+mod services;
+mod utils;
+
+use proto::downloader::{
+    downloader_server::DownloaderServer, node_capabilities_server::NodeCapabilitiesServer,
+    node_cookie_manager_server::NodeCookieManagerServer,
+};
+use std::sync::{atomic::AtomicU32, Arc};
+use tokio::sync::Semaphore;
+use tonic::transport::Server;
+use tracing::info;
+use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
+
+use crate::{
+    constants::COOKIE_TMP_DIR,
+    entities::Cookies,
+    grpc::{auth::AuthInterceptor, capabilities::CapabilitiesService, cookie_manager::CookieManagerService, downloader::DownloaderService},
+};
+
+#[tokio::main(flavor = "multi_thread")]
+async fn main() {
+    let config_path = config::get_path();
+    let config = config::parse_from_fs(&*config_path).unwrap();
+
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::builder().parse_lossy(config.logging.dirs.as_ref()))
+        .init();
+
+    info!(
+        config_path = %config_path,
+        address = %config.server.address,
+        max_concurrent = config.server.max_concurrent,
+        log_filter = %config.logging.dirs,
+        "Loaded downloader config"
+    );
+
+    let cookies = Arc::new(Cookies::new(COOKIE_TMP_DIR));
+    cookies.clear_on_startup().unwrap();
+    info!(cookie_dir = COOKIE_TMP_DIR, "Cookie storage prepared");
+
+    let active_downloads = Arc::new(AtomicU32::new(0));
+    let semaphore = Arc::new(Semaphore::new(config.server.max_concurrent as usize));
+    let tls_config = config.load_server_tls_cfg().unwrap();
+    assert!(
+        !config.auth.node_tokens.is_empty(),
+        "`auth.node_tokens` must contain at least one token"
+    );
+
+    let capabilities_service = CapabilitiesService {
+        cookies: cookies.clone(),
+        active_downloads: active_downloads.clone(),
+        max_concurrent: config.server.max_concurrent,
+    };
+    let downloader_service = DownloaderService {
+        yt_dlp_cfg: Arc::new(config.yt_dlp),
+        yt_pot_provider_cfg: Arc::new(config.yt_pot_provider),
+        cookies: cookies.clone(),
+        active_downloads: active_downloads.clone(),
+        semaphore,
+    };
+    let cookie_manager_service = CookieManagerService { cookies };
+
+    let node_auth = AuthInterceptor::new(config.auth.node_tokens.clone());
+    let mut capabilities_tokens = config.auth.node_tokens.clone();
+    capabilities_tokens.push(config.auth.cookie_manager_token.clone());
+    let capabilities_auth = AuthInterceptor::new(capabilities_tokens);
+    let cookie_manager_auth = AuthInterceptor::new(vec![config.auth.cookie_manager_token.clone()]);
+    let addr = config.server.address.parse().unwrap();
+    info!(%addr, "Starting download node");
+
+    let mut server = Server::builder().tls_config(tls_config).unwrap();
+    server
+        .add_service(DownloaderServer::with_interceptor(downloader_service, node_auth))
+        .add_service(NodeCapabilitiesServer::with_interceptor(capabilities_service, capabilities_auth))
+        .add_service(NodeCookieManagerServer::with_interceptor(
+            cookie_manager_service,
+            cookie_manager_auth,
+        ))
+        .serve_with_shutdown(addr, shutdown_signal())
+        .await
+        .unwrap();
+
+    info!("Download node stopped");
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c().await.expect("Failed to install Ctrl+C shutdown handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("Failed to install SIGTERM shutdown handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => info!("Received Ctrl+C, shutting down download node"),
+        () = terminate => info!("Received SIGTERM, shutting down download node"),
+    }
+}

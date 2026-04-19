@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bot
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bot
+  template:
+    metadata:
+      labels:
+        app: bot
+    spec:
+      containers:
+        - name: bot
+          image: "{{ .Values.bot.image.repository }}:{{ .Values.bot.image.tag }}"
+          imagePullPolicy: {{ .Values.bot.image.pullPolicy }}
+          env:
+            - name: CONFIG_PATH
+              value: /app/configs/config.toml
+            - name: DOWNLOADER_SERVICE_DNS
+              value: "downloader.{{ .Release.Namespace }}.svc.cluster.local:50051"
+          volumeMounts:
+            - name: config
+              mountPath: /app/configs
+              readOnly: true
+            - name: tls
+              mountPath: /app/tls/ca.crt
+              subPath: ca.crt
+              readOnly: true
+            - name: tls
+              mountPath: /app/tls/bot.crt
+              subPath: tls.crt
+              readOnly: true
+            - name: tls
+              mountPath: /app/tls/bot.key
+              subPath: tls.key
+              readOnly: true
+      volumes:
+        - name: config
+          secret:
+            secretName: bot-config
+            items:
+              - key: config.toml
+                path: config.toml
+        - name: tls
+          secret:
+            secretName: bot-tls-secret

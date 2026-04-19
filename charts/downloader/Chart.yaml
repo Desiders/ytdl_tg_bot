@@ -1,0 +1,6 @@
+apiVersion: v2
+name: downloader
+description: A downloader node of audio and video
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

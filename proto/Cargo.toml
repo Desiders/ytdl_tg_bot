@@ -1,0 +1,27 @@
+[package]
+name = "proto"
+version = "1.0.0"
+edition = "2021"
+resolver = "2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[profile.k8s-dev]
+inherits = "dev"
+opt-level = 1
+incremental = true
+codegen-units = 256
+debug = 0
+lto = "off"
+
+[dependencies]
+prost = { version = "0.14", default-features = false }
+tonic = { version = "0.14", features = ["router", "codegen", "tls-ring", "tls-webpki-roots"], default-features = false }
+tonic-prost = { version = "0.14", default-features = false }
+
+[build-dependencies]
+protoc-bin-vendored = "3"
+tonic-build = { version = "0.14", default-features = false }
+tonic-prost-build = { version = "0.14", default-features = false }

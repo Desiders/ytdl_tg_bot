@@ -1,0 +1,23 @@
+[server]
+address = "0.0.0.0:50051"
+max_concurrent = 5
+
+[auth]
+node_tokens = ["secret-token-a"]
+cookie_manager_token = "secret-token-b"
+
+[tls]
+ca_cert_path = "tls/ca.crt"
+cert_path = "tls/node.crt"
+key_path = "tls/node.key"
+
+[yt_dlp]
+command = ["python3", "-m", "yt_dlp"]
+max_file_size = 5000000
+
+[yt_pot_provider]
+url = "http://yt-pot-provider-api:4416"
+# url = "http://127.0.0.1:4416"
+
+[logging]
+dirs = "info"

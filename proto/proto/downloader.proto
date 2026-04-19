@@ -1,0 +1,115 @@
+syntax = "proto3";
+package downloader;
+
+message Empty {}
+
+message Range {
+  int32 start = 1;
+  int32 count = 2;
+  int32 step = 3;
+}
+
+message Section {
+  optional int32 start = 1;
+  optional int32 end = 2;
+}
+
+message MediaInfoRequest {
+  string url = 1;
+  string audio_language = 2;
+  Range playlist_range = 3;
+  string media_type = 4;
+}
+
+message MediaFormatEntry {
+  string format_id = 1;
+  string ext = 2;
+  optional int64 width = 3;
+  optional int64 height = 4;
+  optional float aspect_ratio = 5;
+  optional uint64 filesize_approx = 6;
+  string raw_info_json = 7;
+}
+
+message MediaEntry {
+  string id = 1;
+  optional string display_id = 2;
+  string webpage_url = 3;
+  optional string title = 4;
+  optional string uploader = 5;
+  optional float duration = 6;
+  int32 playlist_index = 7;
+  optional string domain = 8;
+  optional string audio_language = 9;
+  repeated MediaFormatEntry formats = 10;
+}
+
+message MediaInfoResponse {
+  repeated MediaEntry entries = 1;
+}
+
+message DownloadRequest {
+  string url = 1;
+  string format_id = 2;
+  string raw_info_json = 3;
+  string media_type = 4;
+  string audio_ext = 5;
+  optional Section section = 6;
+  uint64 max_file_size = 7;
+}
+
+message PushCookieRequest {
+  string cookie_id = 1;
+  string domain = 2;
+  string data = 3;
+}
+
+message RemoveCookieRequest {
+  string cookie_id = 1;
+}
+
+message ListNodeCookiesResponse {
+  repeated string cookie_ids = 1;
+}
+
+message DownloadMeta {
+  string ext = 1;
+  optional int64 width = 2;
+  optional int64 height = 3;
+  optional int64 duration = 4;
+  bool has_thumbnail = 5;
+}
+
+message DownloadChunk {
+  oneof payload {
+    DownloadMeta meta = 1;
+    string progress = 2;
+    bytes data = 3;
+    bytes thumbnail_data = 4;
+  }
+}
+
+message NodeStatus {
+  uint32 active_downloads = 1;
+  uint32 max_concurrent = 2;
+}
+
+message SupportedDomainsResponse {
+  repeated string domains_with_cookies = 1;
+}
+
+service Downloader {
+  rpc GetMediaInfo(MediaInfoRequest) returns (MediaInfoResponse);
+  rpc DownloadMedia(DownloadRequest) returns (stream DownloadChunk);
+}
+
+service NodeCapabilities {
+  rpc GetStatus(Empty) returns (NodeStatus);
+  rpc GetSupportedDomains(Empty) returns (SupportedDomainsResponse);
+}
+
+service NodeCookieManager {
+  rpc PushCookie(PushCookieRequest) returns (Empty);
+  rpc RemoveCookie(RemoveCookieRequest) returns (Empty);
+  rpc ListNodeCookies(Empty) returns (ListNodeCookiesResponse);
+}

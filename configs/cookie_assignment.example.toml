@@ -1,0 +1,13 @@
+[logging]
+dirs = "info"
+
+[sync]
+interval = 60
+
+[download]
+cookie_manager_token = "secret-token-b"
+
+[download.tls]
+ca_cert_path = "tls/ca.crt"
+cert_path = "tls/cookie-assignment.crt"
+key_path = "tls/cookie-assignment.key"
