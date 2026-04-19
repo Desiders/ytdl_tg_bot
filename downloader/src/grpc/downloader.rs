@@ -23,7 +23,7 @@ use tokio::{
 };
 use tokio_stream::{wrappers::UnboundedReceiverStream, Stream};
 use tonic::{Code, Request, Response, Status};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use url::Url;
 
 use crate::{
@@ -232,7 +232,19 @@ async fn stream_download(
     let thumb_file_path = output_dir_path.join("media.jpg");
     let thumb_urls = media.get_thumb_urls(format.aspect_ration_kind());
 
+    debug!(
+        url = %url,
+        thumbnail_candidate_count = thumb_urls.len(),
+        path = %thumb_file_path.display(),
+        "Starting thumbnail download"
+    );
     let thumbnail_downloaded = download_thumbnail(&thumb_urls, &thumb_file_path).await;
+    debug!(
+        url = %url,
+        thumbnail_downloaded,
+        path = %thumb_file_path.display(),
+        "Thumbnail download step finished"
+    );
 
     send_chunk(
         &tx,
@@ -248,7 +260,9 @@ async fn stream_download(
     )?;
 
     if thumbnail_downloaded {
+        debug!(url = %url, path = %thumb_file_path.display(), "Starting thumbnail stream to client");
         stream_thumbnail_file(&thumb_file_path, &tx).await?;
+        debug!(url = %url, path = %thumb_file_path.display(), "Finished thumbnail stream to client");
     }
 
     let (progress_tx, mut progress_rx) = mpsc::unbounded_channel::<String>();
@@ -291,15 +305,38 @@ async fn stream_download(
     drop(progress_tx);
     let _ = progress_forwarder.await;
 
-    info!(url = %url, path = %media_file_path.display(), "Media downloaded, preparing stream");
-
     if thumbnail_downloaded {
+        let embed_started_at = Instant::now();
+        let media_size_before_embed = file_size(&media_file_path).await;
+        let thumbnail_size = file_size(&thumb_file_path).await;
+        debug!(
+            url = %url,
+            media_path = %media_file_path.display(),
+            thumbnail_path = %thumb_file_path.display(),
+            ?media_size_before_embed,
+            ?thumbnail_size,
+            "Starting thumbnail embed"
+        );
         match embed_thumbnail(&media_file_path, &thumb_file_path).await {
             Ok(()) => {
-                info!("Thumbnail embedded");
+                let media_size_after_embed = file_size(&media_file_path).await;
+                debug!(
+                    url = %url,
+                    media_path = %media_file_path.display(),
+                    ?media_size_after_embed,
+                    elapsed_ms = embed_started_at.elapsed().as_millis(),
+                    "Thumbnail embed finished"
+                );
             }
             Err(err) => {
-                warn!(%err, "Thumbnail embed failed");
+                error!(
+                    url = %url,
+                    media_path = %media_file_path.display(),
+                    thumbnail_path = %thumb_file_path.display(),
+                    elapsed_ms = embed_started_at.elapsed().as_millis(),
+                    %err,
+                    "Thumbnail embed failed"
+                );
             }
         }
     }
@@ -317,9 +354,21 @@ async fn stream_download(
         return Err(Status::invalid_argument("File exceeds max file size"));
     }
 
+    debug!(
+        url = %url,
+        path = %media_file_path.display(),
+        file_size = metadata.len(),
+        "Starting media stream to client"
+    );
+    let stream_started_at = Instant::now();
     let total_streamed = stream_media_file(&media_file_path, &tx).await?;
 
-    info!(url = %url, bytes_streamed = total_streamed, "Finished streaming downloaded media");
+    info!(
+        url = %url,
+        bytes_streamed = total_streamed,
+        elapsed_ms = stream_started_at.elapsed().as_millis(),
+        "Finished streaming downloaded media"
+    );
     drop(temp_dir);
     Ok(())
 }
@@ -497,6 +546,10 @@ async fn stream_media_file(media_file_path: &std::path::Path, tx: &UnboundedSend
         )?;
     }
     Ok(total_streamed)
+}
+
+async fn file_size(path: &std::path::Path) -> Option<u64> {
+    tokio::fs::metadata(path).await.ok().map(|metadata| metadata.len())
 }
 
 #[allow(clippy::result_large_err)]
