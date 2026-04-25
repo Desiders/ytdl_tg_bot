@@ -69,7 +69,7 @@ user = "..."
 password = "..."
 # You can use "127.0.0.1" if the database is running on the same network.
 # If the database is running in docker, you can use the database container name as the host.
-host = "postgres"
+host = "postgres-rw"
 port = 5432
 database = "api"
 
@@ -80,8 +80,6 @@ url = "http://yt-toolkit-api:8080"
 [telegram_bot_api]
 url = "http://telegram-bot-api:8081"
 # url = "https://api.telegram.org"
-api_id = "..."
-api_hash = "..."
 
 [tracking_params]
 params = [
