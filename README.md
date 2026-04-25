@@ -249,6 +249,181 @@ kubectl -n "${NAMESPACE}" create -f /tmp/postgres-manual-backup.yaml
 kubectl -n "${NAMESPACE}" get backup postgres-manual-backup -w
 ```
 
+### How Barman backup config is applied
+
+This project does not require you to manually set Barman environment variables inside the PostgreSQL pod.
+
+The bot chart applies backup configuration in three steps:
+
+1. The `s3` Secret provides credentials:
+   - `access-key-id`
+   - `secret-access-key`
+2. `charts/bot/templates/postgres-backup-object-store.yaml` creates a `barmancloud.cnpg.io/v1` `ObjectStore` using:
+   - `s3.endpointURL`
+   - `s3.destinationPath`
+   - credentials from the `s3` Secret
+3. `charts/bot/templates/postgres-cluster.yaml` attaches that object store to the `postgres` cluster through `spec.plugins`, and `charts/bot/templates/postgres-scheduled-backup.yaml` creates the scheduled backup.
+
+Current defaults from `charts/bot/values.yaml`:
+
+- object store name: `postgres-backup-store`
+- destination path: `s3://backups/`
+- endpoint URL: `http://s3:9000`
+- backup schedule: `0 0 3 * * *`
+
+To inspect the applied backup config:
+
+```bash
+kubectl -n "${NAMESPACE}" get objectstores.barmancloud.cnpg.io postgres-backup-store -o yaml
+kubectl -n "${NAMESPACE}" get cluster postgres -o yaml
+kubectl -n "${NAMESPACE}" get scheduledbackup postgres-backup -o yaml
+kubectl -n "${NAMESPACE}" get secret s3 -o yaml
+```
+
+If you change backup credentials or endpoint settings:
+
+1. Update the `s3` Secret.
+2. Update Helm values if `endpointURL`, `destinationPath`, or object-store naming changed.
+3. Run:
+
+```bash
+just helm-upgrade-bot "${NAMESPACE}"
+```
+
+Use shell exports only for manual S3 checks from your machine or a debug container, for example with `mc` or `aws` CLI:
+
+```bash
+export AWS_ACCESS_KEY_ID='<value from s3 secret access-key-id>'
+export AWS_SECRET_ACCESS_KEY='<value from s3 secret secret-access-key>'
+export AWS_ENDPOINT_URL='http://s3:9000'
+```
+
+Those exports are not consumed by the PostgreSQL pod directly in this setup; they are only for your manual tooling.
+
+### How to use the backups
+
+In this setup, backups are used for recovery, not for direct browsing from PostgreSQL.
+
+The normal restore flow is:
+
+1. Keep the original `postgres` cluster untouched.
+2. Create a new cluster, for example `postgres-restore`.
+3. Bootstrap that new cluster from the backup object store.
+4. Connect to the restored cluster and inspect or export data from it.
+
+Important:
+
+- Recovery is not in-place. Do not try to “restore over” the running `postgres` cluster.
+- The backup object store keeps base backups and WAL archives.
+- The restored cluster does not need to archive WALs back to the bucket unless you explicitly configure that.
+
+Example restore manifest for this project:
+
+```bash
+cat > /tmp/postgres-restore.yaml <<'EOF'
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-restore
+spec:
+  instances: 1
+  storage:
+    size: 3Gi
+  superuserSecret:
+    name: db-superuser
+  bootstrap:
+    recovery:
+      source: origin
+  externalClusters:
+    - name: origin
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: postgres-backup-store
+          serverName: postgres
+EOF
+
+kubectl apply -n "${NAMESPACE}" -f /tmp/postgres-restore.yaml
+kubectl get clusters.postgresql.cnpg.io -n "${NAMESPACE}"
+kubectl get pods -n "${NAMESPACE}" -l cnpg.io/cluster=postgres-restore -w
+```
+
+When the restored cluster is ready, connect to it:
+
+```bash
+export RESTORE_POD="$(kubectl get pod -n "${NAMESPACE}" \
+  -l cnpg.io/cluster=postgres-restore,role=primary \
+  -o jsonpath='{.items[0].metadata.name}')"
+
+kubectl exec -it -n "${NAMESPACE}" "${RESTORE_POD}" -- psql -U postgres -d api
+```
+
+Then you can:
+
+- inspect tables
+- run queries
+- export data with `pg_dump`
+- compare restored data with the live cluster
+
+Example `pg_dump` inside the restored pod:
+
+```bash
+kubectl exec -it -n "${NAMESPACE}" "${RESTORE_POD}" -- \
+  pg_dump -U postgres -d api > /tmp/postgres-restore.sql
+```
+
+If you need point-in-time recovery instead of the latest state, add a recovery target:
+
+```yaml
+bootstrap:
+  recovery:
+    source: origin
+    recoveryTarget:
+      targetTime: "2026-04-16T21:55:00Z"
+```
+
+If you no longer need the restored cluster:
+
+```bash
+kubectl delete cluster postgres-restore -n "${NAMESPACE}"
+```
+
+### Restore from an external SQL dump
+
+This is a different flow from Barman recovery.
+
+Use this when you already have a dump file outside CNPG/Barman, for example from `pg_dump`.
+
+Use a temporary cluster if possible. Do not import unknown dumps directly into the live `postgres` cluster.
+
+Plain SQL dump:
+
+```bash
+kubectl exec -i -n "${NAMESPACE}" -c postgres "${RESTORE_POD}" -- \
+  psql -U postgres -d api < /path/to/dump.sql
+```
+
+Gzipped SQL dump:
+
+```bash
+gunzip -c /path/to/dump.sql.gz | \
+kubectl exec -i -n "${NAMESPACE}" -c postgres "${RESTORE_POD}" -- \
+  psql -U postgres -d api
+```
+
+Custom-format dump created with `pg_dump -Fc`:
+
+```bash
+cat /path/to/dump.dump | \
+kubectl exec -i -n "${NAMESPACE}" -c postgres "${RESTORE_POD}" -- \
+  pg_restore -U postgres -d api --clean --if-exists
+```
+
+Notes:
+
+- plain `.sql` dumps are restored with `psql`
+- custom-format dumps are restored with `pg_restore`
+
 ## Operations
 
 Upgrade charts:
