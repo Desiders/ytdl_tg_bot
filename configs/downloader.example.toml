@@ -16,8 +16,8 @@ command = ["python3", "-m", "yt_dlp"]
 max_file_size = 5000000
 
 [yt_pot_provider]
-url = "http://yt-pot-provider-api:4416"
+url = "http://yt-pot-provider:4416"
 # url = "http://127.0.0.1:4416"
 
 [logging]
-dirs = "info"
+dirs = "info,downloader::grpc::capabilities=warn"
