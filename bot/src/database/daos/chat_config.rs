@@ -34,6 +34,7 @@ where
             tg_id,
             cmd_random_enabled,
             link_is_visible,
+            language,
             updated_at,
         }: ChatConfig,
     ) -> Result<ChatConfig, ErrorKind<Infallible>> {
@@ -47,6 +48,7 @@ where
             tg_id: Set(tg_id),
             cmd_random_enabled: Set(cmd_random_enabled),
             link_is_visible: Unchanged(link_is_visible),
+            language: Unchanged(language),
             updated_at: Set(updated_at),
         };
 
@@ -64,6 +66,7 @@ where
             tg_id,
             cmd_random_enabled,
             link_is_visible,
+            language,
             updated_at,
         }: ChatConfigUpdate,
     ) -> Result<ChatConfig, ErrorKind<Infallible>> {
@@ -73,6 +76,7 @@ where
             tg_id: Set(tg_id),
             cmd_random_enabled: cmd_random_enabled.map_or(NotSet, Set),
             link_is_visible: link_is_visible.map_or(NotSet, Set),
+            language: language.map_or(NotSet, Set),
             updated_at: Set(updated_at),
         };
 

@@ -201,6 +201,7 @@ where
                                     interactor.messenger.as_ref(),
                                     input.inline_message_id,
                                     progress_str,
+                                    input.chat_cfg.locale_str(),
                                 )
                                 .await
                                 .is_err()
@@ -209,7 +210,12 @@ where
                                 }
                             }
                             media::DownloadProgressEvent::Finished => {
-                                let _ = progress::is_sending_in_chosen_inline(interactor.messenger.as_ref(), input.inline_message_id).await;
+                                let _ = progress::is_sending_in_chosen_inline(
+                                    interactor.messenger.as_ref(),
+                                    input.inline_message_id,
+                                    input.chat_cfg.locale_str(),
+                                )
+                                .await;
                             }
                         }
                     }
@@ -230,6 +236,7 @@ where
                         input.inline_message_id,
                         &errs,
                         Some(TextFormat::Html),
+                        input.chat_cfg.locale_str(),
                     )
                     .await;
                     return Ok(());
@@ -307,7 +314,7 @@ where
             if let Err(err) = interactor
                 .add_downloaded_media
                 .execute(downloaded_media::AddMediaInput {
-                    file_id: file_id.into(),
+                    file_id,
                     id: media.id.clone(),
                     display_id: media.display_id.clone(),
                     domain: media.webpage_url.host_str().map(ToOwned::to_owned),
@@ -468,6 +475,7 @@ where
                                     interactor.messenger.as_ref(),
                                     input.inline_message_id,
                                     progress_str,
+                                    input.chat_cfg.locale_str(),
                                 )
                                 .await
                                 .is_err()
@@ -476,7 +484,12 @@ where
                                 }
                             }
                             media::DownloadProgressEvent::Finished => {
-                                let _ = progress::is_sending_in_chosen_inline(interactor.messenger.as_ref(), input.inline_message_id).await;
+                                let _ = progress::is_sending_in_chosen_inline(
+                                    interactor.messenger.as_ref(),
+                                    input.inline_message_id,
+                                    input.chat_cfg.locale_str(),
+                                )
+                                .await;
                             }
                         }
                     }
@@ -497,6 +510,7 @@ where
                         input.inline_message_id,
                         &download_errs,
                         Some(TextFormat::Html),
+                        input.chat_cfg.locale_str(),
                     )
                     .await;
                     return Ok(());
@@ -574,7 +588,7 @@ where
             if let Err(err) = interactor
                 .add_downloaded_media
                 .execute(downloaded_media::AddMediaInput {
-                    file_id: file_id.into(),
+                    file_id,
                     id: media.id.clone(),
                     display_id: media.display_id.clone(),
                     domain: media.webpage_url.host_str().map(ToOwned::to_owned),

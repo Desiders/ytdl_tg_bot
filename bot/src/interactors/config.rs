@@ -1,7 +1,9 @@
 use std::{fmt::Write as _, sync::Arc};
+
+use rust_i18n::t;
 use telers::{
     errors::HandlerError,
-    utils::text::{html_bold, html_code, html_expandable_blockquote, html_quote},
+    utils::text::{html_code, html_expandable_blockquote, html_quote},
 };
 use tracing::error;
 
@@ -37,6 +39,7 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: ChangeLinkVisibilityInput<'_>) -> Result<Self::Output, Self::Err> {
+        let locale = input.chat_cfg.locale_str();
         let link_is_visible = !input.chat_cfg.link_is_visible;
         let text = match self
             .update_chat_cfg
@@ -47,15 +50,17 @@ where
             .await
         {
             Ok(chat_cfg) => {
-                format!(
-                    "Link visibility has been changed to {}",
-                    html_bold(if chat_cfg.link_is_visible { "visible" } else { "hidden" }),
-                )
+                if chat_cfg.link_is_visible {
+                    t!("link_visibility.changed_to_visible", locale = locale).into_owned()
+                } else {
+                    t!("link_visibility.changed_to_hidden", locale = locale).into_owned()
+                }
             }
             Err(err) => {
                 error!(err = %self.error_formatter.format(&err), "Update error");
                 format!(
-                    "Sorry, an error to change link visibility\n{}",
+                    "{}\n{}",
+                    t!("link_visibility.error", locale = locale),
                     html_expandable_blockquote(html_quote(self.error_formatter.format(&err).as_ref()))
                 )
             }
@@ -88,6 +93,7 @@ pub struct AddExcludeDomainInput<'a> {
     pub reply_to_message_id: Option<i64>,
     pub host: &'a str,
     pub exclude_domains: &'a ChatConfigExcludeDomains,
+    pub chat_cfg: &'a ChatConfig,
     pub tx_manager: &'a mut TxManager,
 }
 
@@ -99,10 +105,11 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: AddExcludeDomainInput<'_>) -> Result<Self::Output, Self::Err> {
+        let locale = input.chat_cfg.locale_str();
         if input.exclude_domains.0.contains(&input.host.to_owned()) {
             if let Err(err) = progress::new(
                 self.messenger.as_ref(),
-                "Domain already exists in exclude list",
+                &t!("exclude_domain.already_in_list", locale = locale),
                 input.chat_id,
                 input.reply_to_message_id,
                 None,
@@ -116,7 +123,7 @@ where
         if input.exclude_domains.0.len() >= 15 {
             if let Err(err) = progress::new(
                 self.messenger.as_ref(),
-                "Too many domains in exclude list. Limit is 15.",
+                &t!("exclude_domain.limit_reached", locale = locale),
                 input.chat_id,
                 input.reply_to_message_id,
                 None,
@@ -138,25 +145,28 @@ where
             .await
         {
             Ok(()) => {
-                let mut current_domains_text = "Current exclude list:\n".to_owned();
+                let mut current_domains_text = String::new();
+                let _ = writeln!(
+                    current_domains_text,
+                    "{}",
+                    t!("exclude_domain.current_list_header", locale = locale)
+                );
                 for (index, domain) in input.exclude_domains.0.iter().chain(Some(&host)).enumerate() {
                     let _ = writeln!(current_domains_text, "{}. {}", index + 1, html_code(html_quote(domain)));
                 }
 
-                format!(
-                    "Domain {} added to exclude list.\n\
-                    This host will not be downloaded \"silent\" mode.\n\
-                    You can remove it with <code>/rm_exclude_domain</code> command.\n\
-                    \n\
-                    {current_domains_text}\
-                    ",
-                    html_code(html_quote(&host)),
-                )
+                let header = t!(
+                    "exclude_domain.added_template",
+                    locale = locale,
+                    domain = html_code(html_quote(&host))
+                );
+                format!("{header}\n\n{current_domains_text}")
             }
             Err(err) => {
                 error!(err = %self.error_formatter.format(&err), "Add error");
                 format!(
-                    "Sorry, an error to add domain\n{}",
+                    "{}\n{}",
+                    t!("exclude_domain.add_error", locale = locale),
                     html_expandable_blockquote(html_quote(self.error_formatter.format(&err).as_ref()))
                 )
             }
@@ -188,6 +198,7 @@ pub struct RemoveExcludeDomainInput<'a> {
     pub reply_to_message_id: Option<i64>,
     pub host: &'a str,
     pub exclude_domains: &'a ChatConfigExcludeDomains,
+    pub chat_cfg: &'a ChatConfig,
     pub tx_manager: &'a mut TxManager,
 }
 
@@ -199,10 +210,11 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: RemoveExcludeDomainInput<'_>) -> Result<Self::Output, Self::Err> {
+        let locale = input.chat_cfg.locale_str();
         if !input.exclude_domains.0.contains(&input.host.to_owned()) {
             if let Err(err) = progress::new(
                 self.messenger.as_ref(),
-                "Domain not found in exclude list",
+                &t!("exclude_domain.not_in_list", locale = locale),
                 input.chat_id,
                 input.reply_to_message_id,
                 None,
@@ -224,24 +236,28 @@ where
             .await
         {
             Ok(()) => {
-                let mut current_domains_text = "Current exclude list:\n".to_owned();
+                let mut current_domains_text = String::new();
+                let _ = writeln!(
+                    current_domains_text,
+                    "{}",
+                    t!("exclude_domain.current_list_header", locale = locale)
+                );
                 for (index, domain) in input.exclude_domains.0.iter().filter(|&domain| *domain != host).enumerate() {
                     let _ = writeln!(current_domains_text, "{}. {}", index + 1, html_code(html_quote(domain)));
                 }
 
-                format!(
-                    "Domain {} removed from exclude list.\n\
-                    You can add it with <code>/add_exclude_domain</code> command.\n\
-                    \n\
-                    {current_domains_text}\
-                    ",
-                    html_code(html_quote(&host)),
-                )
+                let header = t!(
+                    "exclude_domain.removed_template",
+                    locale = locale,
+                    domain = html_code(html_quote(&host))
+                );
+                format!("{header}\n\n{current_domains_text}")
             }
             Err(err) => {
                 error!(err = %self.error_formatter.format(&err), "Add error");
                 format!(
-                    "Sorry, an error to remove domain\n{}",
+                    "{}\n{}",
+                    t!("exclude_domain.remove_error", locale = locale),
                     html_expandable_blockquote(html_quote(self.error_formatter.format(&err).as_ref()))
                 )
             }

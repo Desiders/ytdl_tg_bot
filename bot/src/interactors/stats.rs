@@ -1,5 +1,6 @@
 use std::{fmt::Write as _, sync::Arc};
 
+use rust_i18n::t;
 use telers::{
     errors::HandlerError,
     utils::text::{html_expandable_blockquote, html_quote},
@@ -8,6 +9,7 @@ use tracing::error;
 
 use crate::{
     database::TxManager,
+    entities::ChatConfig,
     interactors::Interactor,
     services::{
         downloaded_media,
@@ -27,6 +29,7 @@ pub struct Stats<Messenger> {
 pub struct StatsInput<'a> {
     pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
+    pub chat_cfg: Option<&'a ChatConfig>,
     pub tx_manager: &'a mut TxManager,
 }
 
@@ -38,6 +41,7 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: StatsInput<'_>) -> Result<Self::Output, Self::Err> {
+        let locale = input.chat_cfg.map_or("en", ChatConfig::locale_str);
         let media_stats = self
             .get_media_stats
             .execute(downloaded_media::GetStatsInput {
@@ -49,7 +53,8 @@ where
 
         let text = match media_stats {
             Ok((media_stats, chat_stats)) => {
-                let mut nodes_text = "- Nodes:\n".to_owned();
+                let mut nodes_text = String::new();
+                let _ = writeln!(nodes_text, "- {}", t!("stats.nodes_header", locale = locale));
                 for node_stats in nodes_stats {
                     let _ = writeln!(
                         nodes_text,
@@ -60,35 +65,37 @@ where
                     );
                 }
 
-                let mut top_domains_text = "- Most used domains:\n".to_owned();
+                let mut top_domains_text = String::new();
+                let _ = writeln!(top_domains_text, "- {}", t!("stats.top_domains_header", locale = locale));
                 for (index, top_domain) in media_stats.top_domains.iter().enumerate() {
-                    let _ = writeln!(
-                        top_domains_text,
-                        "{}. {} ({} count)",
-                        index + 1,
-                        top_domain.domain,
-                        top_domain.count
-                    );
+                    let count_text = t!("stats.top_domain_count", locale = locale, count = top_domain.count);
+                    let _ = writeln!(top_domains_text, "{}. {} ({count_text})", index + 1, top_domain.domain);
                 }
 
-                format!(
-                    "<b>Stats</b>\n\
-                    - Chats count: {}\n\
-                    - Downloads last 1/7/30/total days: {}/{}/{}/{} count\n\
-                    {nodes_text}\
-                    {top_domains_text}\
-                    ",
-                    chat_stats.count,
-                    media_stats.last_day.count,
-                    media_stats.last_week.count,
-                    media_stats.last_month.count,
-                    media_stats.total.count,
-                )
+                let mut out = String::new();
+                let _ = writeln!(out, "{}", t!("stats.header", locale = locale));
+                let _ = writeln!(out, "- {}", t!("stats.chats_count", locale = locale, count = chat_stats.count));
+                let _ = writeln!(
+                    out,
+                    "- {}",
+                    t!(
+                        "stats.downloads",
+                        locale = locale,
+                        d1 = media_stats.last_day.count,
+                        d7 = media_stats.last_week.count,
+                        d30 = media_stats.last_month.count,
+                        total = media_stats.total.count
+                    )
+                );
+                out.push_str(&nodes_text);
+                out.push_str(&top_domains_text);
+                out
             }
             Err(err) => {
                 error!(err = %self.error_formatter.format(&err), "Get error");
                 format!(
-                    "Sorry, an error to get stats\n{}",
+                    "{}\n{}",
+                    t!("stats.get_error", locale = locale),
                     html_expandable_blockquote(html_quote(self.error_formatter.format(&err).as_ref()))
                 )
             }

@@ -1,3 +1,4 @@
+mod lang;
 mod start;
 mod stats;
 
@@ -10,5 +11,6 @@ pub mod inline_query;
 #[allow(clippy::too_many_arguments, clippy::too_many_lines, clippy::cast_possible_truncation)]
 pub mod video;
 
+pub use lang::lang;
 pub use start::start;
 pub use stats::stats;

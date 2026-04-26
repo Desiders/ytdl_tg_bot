@@ -183,7 +183,7 @@ impl MessengerPort for TelegramMessenger {
             });
         }
 
-        Ok(file_id.into())
+        Ok(file_id)
     }
 
     async fn upload_audio(&self, request: UploadAudioRequest<'_>) -> Result<Box<str>, MessengerError> {
@@ -241,7 +241,7 @@ impl MessengerPort for TelegramMessenger {
             });
         }
 
-        Ok(file_id.into())
+        Ok(file_id)
     }
 
     async fn send_video_by_id(&self, request: SendMediaByIdRequest<'_>) -> Result<(), MessengerError> {
