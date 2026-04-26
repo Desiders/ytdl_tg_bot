@@ -258,7 +258,7 @@ where
                                         progress_str,
                                         downloaded_media_count.load(Ordering::SeqCst),
                                         cached_len + uncached_len,
-                                        input.chat_cfg.locale_str(),
+                                        input.chat_cfg.locale().as_str(),
                                     )
                                     .await
                                     .is_err()
@@ -271,7 +271,7 @@ where
                                         self.messenger.as_ref(),
                                         input.chat_id,
                                         progress_message_id,
-                                        input.chat_cfg.locale_str(),
+                                        input.chat_cfg.locale().as_str(),
                                     )
                                     .await;
                                 }
@@ -305,7 +305,7 @@ where
                     progress_message_id,
                     &errs,
                     media_to_send_count,
-                    input.chat_cfg.locale_str(),
+                    input.chat_cfg.locale().as_str(),
                 )
                 .await;
 

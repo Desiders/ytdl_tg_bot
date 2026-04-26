@@ -43,10 +43,11 @@ use crate::{
 
 type Messenger = TelegramMessenger;
 
+rust_i18n::i18n!("locales", fallback = "en");
+
 #[tokio::main(flavor = "multi_thread")]
 #[allow(clippy::too_many_lines)]
 async fn main() {
-    rust_i18n::i18n!("locales", fallback = "en");
     let config_path = config::get_path();
     let config = config::parse_from_fs(&*config_path).unwrap();
 

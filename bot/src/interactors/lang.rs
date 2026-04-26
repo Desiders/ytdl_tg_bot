@@ -42,11 +42,11 @@ where
         let arg = input.argument.map(str::trim).filter(|s| !s.is_empty());
 
         let target = match arg {
-            None => Some(current.toggle()),
+            None => current.toggle(),
             Some(value) => match Locale::parse(value) {
-                Some(locale) => Some(locale),
+                Some(locale) => locale,
                 None => {
-                    let text = t!("lang.unknown", locale = current.as_str(), lang = value).into_owned();
+                    let text = t!("lang.unknown", locale = current.as_str(), lang = value);
                     if let Err(err) = progress::new(
                         self.messenger.as_ref(),
                         &text,
@@ -63,8 +63,6 @@ where
             },
         };
 
-        let Some(target) = target else { return Ok(()) };
-
         let text = match self
             .update_chat_cfg
             .execute(chat::UpdateChatConfigInput {
@@ -74,10 +72,7 @@ where
             .await
         {
             Ok(_) => {
-                let display_name = match target {
-                    Locale::En => t!("lang.name_en", locale = target.as_str()).into_owned(),
-                    Locale::Ru => t!("lang.name_ru", locale = target.as_str()).into_owned(),
-                };
+                let display_name = t!("lang.name", locale = target.as_str());
                 t!("lang.changed", locale = target.as_str(), lang = display_name).into_owned()
             }
             Err(err) => {

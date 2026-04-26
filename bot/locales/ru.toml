@@ -1,34 +1,44 @@
 _version = 1
 
 [start]
-header_commands = "<b>Команды</b>"
-cmd_vd = "<code>/vd</code> — скачать видео. Эта команда нужна, чтобы видеть прогресс загрузки; иначе скачивание идёт в «тихом» режиме."
-cmd_ad = "<code>/ad</code> — скачать аудио"
-cmd_random = "<code>/rv</code>, <code>/ra</code> — случайное видео или аудио"
-cmd_add_ed = "<code>/add_ed</code> — исключить домен из скачивания"
-cmd_rm_ed = "<code>/rm_ed</code> — вернуть домен в скачивание"
-cmd_change_link_visibility = "<code>/change_link_visibility</code> — переключить видимость ссылки в подписи к медиа"
-cmd_stats = "<code>/stats</code> — статистика использования"
-cmd_lang = "<code>/lang</code> — переключить язык интерфейса"
-header_inline = "<b>Inline-режим</b>"
-inline_url = "<code>@%{username} &lt;ссылка&gt;</code> — скачать по ссылке"
-inline_search = "<code>@%{username} &lt;название&gt;</code> — поиск на YouTube"
-header_arguments = "<b>Аргументы</b>"
-args_for_vd_ad = "Для <code>/vd</code> и <code>/ad</code>:"
-arg_lang = "lang: предпочитаемый язык аудио, пример: <code>/vd [lang=ru]</code>"
-arg_items = "items: скачивание плейлиста, <code>начало:конец:шаг</code> (по умолчанию: 1 для каждого аргумента, максимум 10 медиа за команду), пример: <code>/vd [items=1:3:1]</code>"
-arg_crop = "crop: скачать только указанный временной отрезок, формат <code>start-end</code>, поддерживается <code>hh:mm:ss</code> (по умолчанию: 0 для начала и пусто для конца), пример: <code>/vd [crop=00:01:30-]</code>"
-args_for_random = "Для <code>/rv</code> и <code>/ra</code>:"
-arg_domains = "domains: источники через <code>|</code>, пример: <code>/rv [domains=youtube.com|youtu.be]</code>"
-header_notes = "<b>Примечания</b>"
-note_args = "Аргументы указываются в квадратных скобках через запятую: <code>[arg=value,arg2=value]</code>;"
-note_optional = "Все аргументы опциональны;"
-note_websites = "Поддерживаются тысячи сайтов;"
-note_inline = "Inline-режим поддерживает <code>lang</code>, но не поддерживает <code>items</code>;"
-note_ignore = "Можно добавить <code>yv2t_bot=false</code> к ссылке, чтобы её игнорировать;"
-note_max_size = "Скачиваю медиа в лучшем качестве до %{max_file_size_in_mb}MB;"
-note_open_source = "Бот с открытым исходным кодом: %{source_code}."
 source_code_label = "исходный код"
+body = """
+<b>Команды</b>
+- <code>/vd</code> — скачать видео. Эта команда нужна, чтобы видеть прогресс \
+загрузки; иначе скачивание идёт в «тихом» режиме.
+- <code>/ad</code> — скачать аудио
+- <code>/rv</code>, <code>/ra</code> — случайное видео или аудио
+- <code>/add_ed</code> — исключить домен из скачивания
+- <code>/rm_ed</code> — вернуть домен в скачивание
+- <code>/change_link_visibility</code> — переключить видимость ссылки в подписи к медиа
+- <code>/stats</code> — статистика использования
+- <code>/lang</code> — переключить язык интерфейса
+
+<b>Inline-режим</b>
+- <code>@%{username} &lt;ссылка&gt;</code> — скачать по ссылке
+- <code>@%{username} &lt;название&gt;</code> — поиск на YouTube
+
+<b>Аргументы</b>
+Для <code>/vd</code> и <code>/ad</code>:
+  - lang: предпочитаемый язык аудио, пример: <code>/vd [lang=ru]</code>
+  - items: скачивание плейлиста, <code>начало:конец:шаг</code> \
+(по умолчанию: 1 для каждого аргумента, максимум 10 медиа за команду), \
+пример: <code>/vd [items=1:3:1]</code>
+  - crop: скачать только указанный временной отрезок, формат <code>start-end</code>, \
+поддерживается <code>hh:mm:ss</code> (по умолчанию: 0 для начала и пусто для конца), \
+пример: <code>/vd [crop=00:01:30-]</code>
+Для <code>/rv</code> и <code>/ra</code>:
+  - domains: источники через <code>|</code>, пример: <code>/rv [domains=youtube.com|youtu.be]</code>
+
+<b>Примечания</b>
+- Аргументы указываются в квадратных скобках через запятую: <code>[arg=value,arg2=value]</code>;
+- Все аргументы опциональны;
+- Поддерживаются тысячи сайтов;
+- Inline-режим поддерживает <code>lang</code>, но не поддерживает <code>items</code>;
+- Можно добавить <code>yv2t_bot=false</code> к ссылке, чтобы её игнорировать;
+- Скачиваю медиа в лучшем качестве до %{max_file_size_in_mb}MB;
+- Бот с открытым исходным кодом: %{source_code}.\
+"""
 
 [link_visibility]
 changed_to_visible = "Видимость ссылки изменена на <b>видимая</b>"
@@ -42,16 +52,27 @@ not_in_list = "Домен не найден в списке исключений
 add_error = "Извините, ошибка при добавлении домена"
 remove_error = "Извините, ошибка при удалении домена"
 current_list_header = "Текущий список исключений:"
-added_template = "Домен %{domain} добавлен в список исключений.\nЭтот хост не будет скачиваться в «тихом» режиме.\nУдалить его можно командой <code>/rm_exclude_domain</code>."
-removed_template = "Домен %{domain} удалён из списка исключений.\nДобавить обратно можно командой <code>/add_exclude_domain</code>."
+added_template = """
+Домен %{domain} добавлен в список исключений.
+Этот хост не будет скачиваться в «тихом» режиме.
+Удалить его можно командой <code>/rm_exclude_domain</code>.\
+"""
+removed_template = """
+Домен %{domain} удалён из списка исключений.
+Добавить обратно можно командой <code>/add_exclude_domain</code>.\
+"""
 
 [stats]
-header = "<b>Статистика</b>"
-chats_count = "Количество чатов: %{count}"
-downloads = "Скачано за 1/7/30/всего дней: %{d1}/%{d7}/%{d30}/%{total} шт."
-nodes_header = "Ноды:"
-top_domains_header = "Самые популярные домены:"
-top_domain_count = "%{count} шт."
+body = """
+<b>Статистика</b>
+- Количество чатов: %{chats_count}
+- Скачано за 1/7/30/всего дней: %{d1}/%{d7}/%{d30}/%{total} шт.
+- Ноды:
+%{nodes}- Самые популярные домены:
+%{top_domains}\
+"""
+node_line = "%{name}. (%{active}/%{max})"
+top_domain_line = "%{index}. %{domain} (%{count} шт.)"
 get_error = "Извините, ошибка при получении статистики"
 
 [progress]
@@ -77,10 +98,7 @@ stats = "Статистика"
 lang = "Сменить язык"
 
 [lang]
-current = "Текущий язык: <b>%{lang}</b>"
-usage = "Использование: <code>/lang ru</code> или <code>/lang en</code>. Без аргументов — переключить."
 unknown = "Неизвестный язык: <code>%{lang}</code>. Доступны: <code>en</code>, <code>ru</code>."
 changed = "Язык изменён на <b>%{lang}</b>."
 error = "Извините, ошибка при смене языка"
-name_en = "Английский"
-name_ru = "Русский"
+name = "Русский"

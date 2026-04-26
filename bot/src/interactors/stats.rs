@@ -11,6 +11,7 @@ use crate::{
     database::TxManager,
     entities::ChatConfig,
     interactors::Interactor,
+    locale::Locale,
     services::{
         downloaded_media,
         messenger::{MessengerPort, SendTextRequest, TextFormat},
@@ -41,7 +42,7 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: StatsInput<'_>) -> Result<Self::Output, Self::Err> {
-        let locale = input.chat_cfg.map_or("en", ChatConfig::locale_str);
+        let locale = input.chat_cfg.map_or(Locale::En, ChatConfig::locale).as_str();
         let media_stats = self
             .get_media_stats
             .execute(downloaded_media::GetStatsInput {
@@ -53,43 +54,48 @@ where
 
         let text = match media_stats {
             Ok((media_stats, chat_stats)) => {
-                let mut nodes_text = String::new();
-                let _ = writeln!(nodes_text, "- {}", t!("stats.nodes_header", locale = locale));
+                let mut nodes = String::new();
                 for node_stats in nodes_stats {
                     let _ = writeln!(
-                        nodes_text,
-                        "{}. ({}/{})",
-                        html_quote(node_stats.name),
-                        node_stats.active_downloads,
-                        node_stats.max_concurrent,
+                        nodes,
+                        "{}",
+                        t!(
+                            "stats.node_line",
+                            locale = locale,
+                            name = html_quote(node_stats.name),
+                            active = node_stats.active_downloads,
+                            max = node_stats.max_concurrent,
+                        )
                     );
                 }
 
-                let mut top_domains_text = String::new();
-                let _ = writeln!(top_domains_text, "- {}", t!("stats.top_domains_header", locale = locale));
+                let mut top_domains = String::new();
                 for (index, top_domain) in media_stats.top_domains.iter().enumerate() {
-                    let count_text = t!("stats.top_domain_count", locale = locale, count = top_domain.count);
-                    let _ = writeln!(top_domains_text, "{}. {} ({count_text})", index + 1, top_domain.domain);
+                    let _ = writeln!(
+                        top_domains,
+                        "{}",
+                        t!(
+                            "stats.top_domain_line",
+                            locale = locale,
+                            index = index + 1,
+                            domain = top_domain.domain,
+                            count = top_domain.count,
+                        )
+                    );
                 }
 
-                let mut out = String::new();
-                let _ = writeln!(out, "{}", t!("stats.header", locale = locale));
-                let _ = writeln!(out, "- {}", t!("stats.chats_count", locale = locale, count = chat_stats.count));
-                let _ = writeln!(
-                    out,
-                    "- {}",
-                    t!(
-                        "stats.downloads",
-                        locale = locale,
-                        d1 = media_stats.last_day.count,
-                        d7 = media_stats.last_week.count,
-                        d30 = media_stats.last_month.count,
-                        total = media_stats.total.count
-                    )
-                );
-                out.push_str(&nodes_text);
-                out.push_str(&top_domains_text);
-                out
+                t!(
+                    "stats.body",
+                    locale = locale,
+                    chats_count = chat_stats.count,
+                    d1 = media_stats.last_day.count,
+                    d7 = media_stats.last_week.count,
+                    d30 = media_stats.last_month.count,
+                    total = media_stats.total.count,
+                    nodes = nodes,
+                    top_domains = top_domains,
+                )
+                .into_owned()
             }
             Err(err) => {
                 error!(err = %self.error_formatter.format(&err), "Get error");
