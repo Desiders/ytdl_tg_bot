@@ -15,6 +15,7 @@ mod value_objects;
 
 use froodi::telers::setup_async_default;
 use services::node_router::NodeRouter;
+use std::borrow::Cow;
 
 use telers::{
     client::{
@@ -71,7 +72,7 @@ async fn main() {
 
     let bot = Bot::with_client(
         config.bot.token.clone(),
-        Reqwest::default().with_api_server(std::borrow::Cow::Owned(APIServer::new(
+        Reqwest::default().with_api_server(Cow::Owned(APIServer::new(
             &base_url,
             &files_url,
             true,
