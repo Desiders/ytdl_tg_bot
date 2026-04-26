@@ -39,7 +39,7 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: ChangeLinkVisibilityInput<'_>) -> Result<Self::Output, Self::Err> {
-        let locale = input.chat_cfg.locale_str();
+        let locale = input.chat_cfg.locale().as_str();
         let link_is_visible = !input.chat_cfg.link_is_visible;
         let text = match self
             .update_chat_cfg
@@ -105,7 +105,7 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: AddExcludeDomainInput<'_>) -> Result<Self::Output, Self::Err> {
-        let locale = input.chat_cfg.locale_str();
+        let locale = input.chat_cfg.locale().as_str();
         if input.exclude_domains.0.contains(&input.host.to_owned()) {
             if let Err(err) = progress::new(
                 self.messenger.as_ref(),
@@ -210,7 +210,7 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: RemoveExcludeDomainInput<'_>) -> Result<Self::Output, Self::Err> {
-        let locale = input.chat_cfg.locale_str();
+        let locale = input.chat_cfg.locale().as_str();
         if !input.exclude_domains.0.contains(&input.host.to_owned()) {
             if let Err(err) = progress::new(
                 self.messenger.as_ref(),

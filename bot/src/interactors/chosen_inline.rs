@@ -201,7 +201,7 @@ where
                                     interactor.messenger.as_ref(),
                                     input.inline_message_id,
                                     progress_str,
-                                    input.chat_cfg.locale_str(),
+                                    input.chat_cfg.locale().as_str(),
                                 )
                                 .await
                                 .is_err()
@@ -213,7 +213,7 @@ where
                                 let _ = progress::is_sending_in_chosen_inline(
                                     interactor.messenger.as_ref(),
                                     input.inline_message_id,
-                                    input.chat_cfg.locale_str(),
+                                    input.chat_cfg.locale().as_str(),
                                 )
                                 .await;
                             }
@@ -236,7 +236,7 @@ where
                         input.inline_message_id,
                         &errs,
                         Some(TextFormat::Html),
-                        input.chat_cfg.locale_str(),
+                        input.chat_cfg.locale().as_str(),
                     )
                     .await;
                     return Ok(());
@@ -475,7 +475,7 @@ where
                                     interactor.messenger.as_ref(),
                                     input.inline_message_id,
                                     progress_str,
-                                    input.chat_cfg.locale_str(),
+                                    input.chat_cfg.locale().as_str(),
                                 )
                                 .await
                                 .is_err()
@@ -487,7 +487,7 @@ where
                                 let _ = progress::is_sending_in_chosen_inline(
                                     interactor.messenger.as_ref(),
                                     input.inline_message_id,
-                                    input.chat_cfg.locale_str(),
+                                    input.chat_cfg.locale().as_str(),
                                 )
                                 .await;
                             }
@@ -510,7 +510,7 @@ where
                         input.inline_message_id,
                         &download_errs,
                         Some(TextFormat::Html),
-                        input.chat_cfg.locale_str(),
+                        input.chat_cfg.locale().as_str(),
                     )
                     .await;
                     return Ok(());

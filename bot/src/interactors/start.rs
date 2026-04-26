@@ -1,4 +1,4 @@
-use std::{fmt::Write as _, sync::Arc};
+use std::sync::Arc;
 
 use rust_i18n::t;
 use telers::{
@@ -49,58 +49,14 @@ where
         let source_label = t!("start.source_code_label", locale = locale.as_str()).into_owned();
         let source_code = html_text_link(source_label.as_str(), html_quote(&self.cfg.bot.src_url));
 
-        let mut text = String::new();
-        let _ = writeln!(text, "{}", t!("start.header_commands", locale = locale.as_str()));
-        for key in [
-            "start.cmd_vd",
-            "start.cmd_ad",
-            "start.cmd_random",
-            "start.cmd_add_ed",
-            "start.cmd_rm_ed",
-            "start.cmd_change_link_visibility",
-            "start.cmd_stats",
-            "start.cmd_lang",
-        ] {
-            let _ = writeln!(text, "- {}", t!(key, locale = locale.as_str()));
-        }
-        text.push('\n');
-        let _ = writeln!(text, "{}", t!("start.header_inline", locale = locale.as_str()));
-        for key in ["start.inline_url", "start.inline_search"] {
-            let _ = writeln!(text, "- {}", t!(key, locale = locale.as_str(), username = username.as_str()));
-        }
-        text.push('\n');
-        let _ = writeln!(text, "{}", t!("start.header_arguments", locale = locale.as_str()));
-        let _ = writeln!(text, "{}", t!("start.args_for_vd_ad", locale = locale.as_str()));
-        for key in ["start.arg_lang", "start.arg_items", "start.arg_crop"] {
-            let _ = writeln!(text, "  - {}", t!(key, locale = locale.as_str()));
-        }
-        let _ = writeln!(text, "{}", t!("start.args_for_random", locale = locale.as_str()));
-        let _ = writeln!(text, "  - {}", t!("start.arg_domains", locale = locale.as_str()));
-        text.push('\n');
-        let _ = writeln!(text, "{}", t!("start.header_notes", locale = locale.as_str()));
-        for key in [
-            "start.note_args",
-            "start.note_optional",
-            "start.note_websites",
-            "start.note_inline",
-            "start.note_ignore",
-        ] {
-            let _ = writeln!(text, "- {}", t!(key, locale = locale.as_str()));
-        }
-        let _ = writeln!(
-            text,
-            "- {}",
-            t!(
-                "start.note_max_size",
-                locale = locale.as_str(),
-                max_file_size_in_mb = max_file_size_in_mb
-            )
-        );
-        let _ = writeln!(
-            text,
-            "- {}",
-            t!("start.note_open_source", locale = locale.as_str(), source_code = source_code)
-        );
+        let text = t!(
+            "start.body",
+            locale = locale.as_str(),
+            username = username.as_str(),
+            max_file_size_in_mb = max_file_size_in_mb,
+            source_code = source_code,
+        )
+        .into_owned();
 
         if let Err(err) = self
             .messenger

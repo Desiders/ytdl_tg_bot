@@ -1,34 +1,44 @@
 _version = 1
 
 [start]
-header_commands = "<b>Commands</b>"
-cmd_vd = "<code>/vd</code> — download video. Calling this command is required to display download progress; otherwise, downloading will occur in \"silent\" mode."
-cmd_ad = "<code>/ad</code> — download audio"
-cmd_random = "<code>/rv</code>, <code>/ra</code> — random video or audio"
-cmd_add_ed = "<code>/add_ed</code> — exclude domain from download"
-cmd_rm_ed = "<code>/rm_ed</code> — include domain in download"
-cmd_change_link_visibility = "<code>/change_link_visibility</code> — change link visibility in media caption"
-cmd_stats = "<code>/stats</code> — usage statistics"
-cmd_lang = "<code>/lang</code> — switch interface language"
-header_inline = "<b>Inline Mode</b>"
-inline_url = "<code>@%{username} &lt;url&gt;</code> — download by link"
-inline_search = "<code>@%{username} &lt;title&gt;</code> — search on YouTube"
-header_arguments = "<b>Arguments</b>"
-args_for_vd_ad = "For <code>/vd</code> and <code>/ad</code>:"
-arg_lang = "lang: Preferred audio language, example: <code>/vd [lang=ru]</code>"
-arg_items = "items: Playlist download, <code>start:end:step</code> (default: 1 for each argument, max: 10 media per command), example: <code>/vd [items=1:3:1]</code>"
-arg_crop = "crop: Download only a specific media time range, format <code>start-end</code>, supports <code>hh:mm:ss</code> (default: 0 for start and empty for end), example: <code>/vd [crop=00:01:30-]</code>"
-args_for_random = "For <code>/rv</code> and <code>/ra</code>:"
-arg_domains = "domains: Sources separated by <code>|</code>, example: <code>/rv [domains=youtube.com|youtu.be]</code>"
-header_notes = "<b>Notes</b>"
-note_args = "Arguments are specified in square brackets separated by commas: <code>[arg=value,arg2=value]</code>;"
-note_optional = "All arguments are optional;"
-note_websites = "Thousands of websites are supported;"
-note_inline = "Inline mode supports <code>lang</code>, but doesn't support <code>items</code>;"
-note_ignore = "You can add <code>yv2t_bot=false</code> to a link to ignore it;"
-note_max_size = "I download media in the best quality under %{max_file_size_in_mb}MB;"
-note_open_source = "The bot is open source: %{source_code}."
 source_code_label = "source code"
+body = """
+<b>Commands</b>
+- <code>/vd</code> — download video. Calling this command is required to display \
+download progress; otherwise, downloading will occur in "silent" mode.
+- <code>/ad</code> — download audio
+- <code>/rv</code>, <code>/ra</code> — random video or audio
+- <code>/add_ed</code> — exclude domain from download
+- <code>/rm_ed</code> — include domain in download
+- <code>/change_link_visibility</code> — change link visibility in media caption
+- <code>/stats</code> — usage statistics
+- <code>/lang</code> — switch interface language
+
+<b>Inline Mode</b>
+- <code>@%{username} &lt;url&gt;</code> — download by link
+- <code>@%{username} &lt;title&gt;</code> — search on YouTube
+
+<b>Arguments</b>
+For <code>/vd</code> and <code>/ad</code>:
+  - lang: Preferred audio language, example: <code>/vd [lang=ru]</code>
+  - items: Playlist download, <code>start:end:step</code> \
+(default: 1 for each argument, max: 10 media per command), \
+example: <code>/vd [items=1:3:1]</code>
+  - crop: Download only a specific media time range, format <code>start-end</code>, \
+supports <code>hh:mm:ss</code> (default: 0 for start and empty for end), \
+example: <code>/vd [crop=00:01:30-]</code>
+For <code>/rv</code> and <code>/ra</code>:
+  - domains: Sources separated by <code>|</code>, example: <code>/rv [domains=youtube.com|youtu.be]</code>
+
+<b>Notes</b>
+- Arguments are specified in square brackets separated by commas: <code>[arg=value,arg2=value]</code>;
+- All arguments are optional;
+- Thousands of websites are supported;
+- Inline mode supports <code>lang</code>, but doesn't support <code>items</code>;
+- You can add <code>yv2t_bot=false</code> to a link to ignore it;
+- I download media in the best quality under %{max_file_size_in_mb}MB;
+- The bot is open source: %{source_code}.\
+"""
 
 [link_visibility]
 changed_to_visible = "Link visibility has been changed to <b>visible</b>"
@@ -42,16 +52,27 @@ not_in_list = "Domain not found in exclude list"
 add_error = "Sorry, an error to add domain"
 remove_error = "Sorry, an error to remove domain"
 current_list_header = "Current exclude list:"
-added_template = "Domain %{domain} added to exclude list.\nThis host will not be downloaded \"silent\" mode.\nYou can remove it with <code>/rm_exclude_domain</code> command."
-removed_template = "Domain %{domain} removed from exclude list.\nYou can add it with <code>/add_exclude_domain</code> command."
+added_template = """
+Domain %{domain} added to exclude list.
+This host will not be downloaded "silent" mode.
+You can remove it with <code>/rm_exclude_domain</code> command.\
+"""
+removed_template = """
+Domain %{domain} removed from exclude list.
+You can add it with <code>/add_exclude_domain</code> command.\
+"""
 
 [stats]
-header = "<b>Stats</b>"
-chats_count = "Chats count: %{count}"
-downloads = "Downloads last 1/7/30/total days: %{d1}/%{d7}/%{d30}/%{total} count"
-nodes_header = "Nodes:"
-top_domains_header = "Most used domains:"
-top_domain_count = "%{count} count"
+body = """
+<b>Stats</b>
+- Chats count: %{chats_count}
+- Downloads last 1/7/30/total days: %{d1}/%{d7}/%{d30}/%{total} count
+- Nodes:
+%{nodes}- Most used domains:
+%{top_domains}\
+"""
+node_line = "%{name}. (%{active}/%{max})"
+top_domain_line = "%{index}. %{domain} (%{count} count)"
 get_error = "Sorry, an error to get stats"
 
 [progress]
@@ -77,10 +98,7 @@ stats = "Usage stats"
 lang = "Switch language"
 
 [lang]
-current = "Current language: <b>%{lang}</b>"
-usage = "Usage: <code>/lang ru</code> or <code>/lang en</code>. Without arguments — toggle."
 unknown = "Unknown language: <code>%{lang}</code>. Available: <code>en</code>, <code>ru</code>."
 changed = "Language changed to <b>%{lang}</b>."
 error = "Sorry, an error while changing language"
-name_en = "English"
-name_ru = "Russian"
+name = "English"

@@ -1,6 +1,6 @@
 use crate::{
     database::models::{chat_config_exclude_domains, chat_configs},
-    locale::{Locale, DEFAULT as DEFAULT_LOCALE},
+    locale::Locale,
 };
 
 use time::OffsetDateTime;
@@ -27,14 +27,6 @@ impl ChatConfig {
 
     pub fn locale(&self) -> Locale {
         Locale::from(self.language.as_str())
-    }
-
-    pub fn locale_str(&self) -> &str {
-        if self.language.is_empty() {
-            DEFAULT_LOCALE
-        } else {
-            self.language.as_str()
-        }
     }
 }
 
