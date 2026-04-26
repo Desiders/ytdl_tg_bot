@@ -214,7 +214,7 @@ where
                             };
 
                             downloaded_playlist.push(MediaInPlaylist {
-                                file_id: file_id.clone().into(),
+                                file_id: file_id.clone(),
                                 playlist_index: media.playlist_index,
                                 webpage_url: Some(media.webpage_url.clone()),
                             });
@@ -222,7 +222,7 @@ where
                             if let Err(err) = self
                                 .add_downloaded_media
                                 .execute(downloaded_media::AddMediaInput {
-                                    file_id: file_id.into(),
+                                    file_id,
                                     id: media.id.clone(),
                                     display_id: media.display_id.clone(),
                                     domain: media.webpage_url.host_str().map(ToOwned::to_owned),
@@ -258,6 +258,7 @@ where
                                         progress_str,
                                         downloaded_media_count.load(Ordering::SeqCst),
                                         cached_len + uncached_len,
+                                        input.chat_cfg.locale_str(),
                                     )
                                     .await
                                     .is_err()
@@ -266,7 +267,13 @@ where
                                     }
                                 }
                                 media::DownloadProgressEvent::Finished => {
-                                    let _ = progress::is_sending(self.messenger.as_ref(), input.chat_id, progress_message_id).await;
+                                    let _ = progress::is_sending(
+                                        self.messenger.as_ref(),
+                                        input.chat_id,
+                                        progress_message_id,
+                                        input.chat_cfg.locale_str(),
+                                    )
+                                    .await;
                                 }
                             }
                         }
@@ -298,6 +305,7 @@ where
                     progress_message_id,
                     &errs,
                     media_to_send_count,
+                    input.chat_cfg.locale_str(),
                 )
                 .await;
 
@@ -478,7 +486,7 @@ where
                             };
 
                             downloaded_playlist.push(MediaInPlaylist {
-                                file_id: file_id.clone().into(),
+                                file_id: file_id.clone(),
                                 playlist_index: media.playlist_index,
                                 webpage_url: Some(media.webpage_url.clone()),
                             });
@@ -486,7 +494,7 @@ where
                             if let Err(err) = self
                                 .add_downloaded_media
                                 .execute(downloaded_media::AddMediaInput {
-                                    file_id: file_id.into(),
+                                    file_id,
                                     id: media.id.clone(),
                                     display_id: media.display_id.clone(),
                                     domain: media.webpage_url.host_str().map(ToOwned::to_owned),

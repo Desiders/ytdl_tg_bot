@@ -1,0 +1,103 @@
+use std::sync::Arc;
+
+use rust_i18n::t;
+use telers::errors::HandlerError;
+use tracing::error;
+
+use crate::{
+    database::TxManager,
+    entities::{ChatConfig, ChatConfigUpdate},
+    handlers_utils::progress,
+    interactors::Interactor,
+    locale::Locale,
+    services::{
+        chat,
+        messenger::{MessengerPort, TextFormat},
+    },
+    utils::ErrorFormatter,
+};
+
+pub struct Lang<Messenger> {
+    pub error_formatter: Arc<ErrorFormatter>,
+    pub messenger: Arc<Messenger>,
+    pub update_chat_cfg: Arc<chat::UpdateChatConfig>,
+}
+
+pub struct LangInput<'a> {
+    pub reply_to_message_id: Option<i64>,
+    pub chat_cfg: &'a ChatConfig,
+    pub argument: Option<&'a str>,
+    pub tx_manager: &'a mut TxManager,
+}
+
+impl<Messenger> Interactor<LangInput<'_>> for &Lang<Messenger>
+where
+    Messenger: MessengerPort,
+{
+    type Output = ();
+    type Err = HandlerError;
+
+    async fn execute(self, input: LangInput<'_>) -> Result<Self::Output, Self::Err> {
+        let current = input.chat_cfg.locale();
+        let arg = input.argument.map(str::trim).filter(|s| !s.is_empty());
+
+        let target = match arg {
+            None => Some(current.toggle()),
+            Some(value) => match Locale::parse(value) {
+                Some(locale) => Some(locale),
+                None => {
+                    let text = t!("lang.unknown", locale = current.as_str(), lang = value).into_owned();
+                    if let Err(err) = progress::new(
+                        self.messenger.as_ref(),
+                        &text,
+                        input.chat_cfg.tg_id,
+                        input.reply_to_message_id,
+                        Some(TextFormat::Html),
+                    )
+                    .await
+                    {
+                        error!(err = %self.error_formatter.format(&err), "Send error");
+                    }
+                    return Ok(());
+                }
+            },
+        };
+
+        let Some(target) = target else { return Ok(()) };
+
+        let text = match self
+            .update_chat_cfg
+            .execute(chat::UpdateChatConfigInput {
+                dto: ChatConfigUpdate::new(input.chat_cfg.tg_id).with_language(target.as_str().to_owned()),
+                tx_manager: input.tx_manager,
+            })
+            .await
+        {
+            Ok(_) => {
+                let display_name = match target {
+                    Locale::En => t!("lang.name_en", locale = target.as_str()).into_owned(),
+                    Locale::Ru => t!("lang.name_ru", locale = target.as_str()).into_owned(),
+                };
+                t!("lang.changed", locale = target.as_str(), lang = display_name).into_owned()
+            }
+            Err(err) => {
+                error!(err = %self.error_formatter.format(&err), "Update error");
+                t!("lang.error", locale = current.as_str()).into_owned()
+            }
+        };
+
+        if let Err(err) = progress::new(
+            self.messenger.as_ref(),
+            &text,
+            input.chat_cfg.tg_id,
+            input.reply_to_message_id,
+            Some(TextFormat::Html),
+        )
+        .await
+        {
+            error!(err = %self.error_formatter.format(&err), "Send error");
+        }
+
+        Ok(())
+    }
+}

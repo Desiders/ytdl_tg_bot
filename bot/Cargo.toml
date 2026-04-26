@@ -43,3 +43,4 @@ toml = { version = "1.0.6", features = ["parse", "serde"], default-features = fa
 regex = { version = "1.12", features = ["perf"], default-features = false }
 mutagen-rs = { version = "0.2.5", default-features = false }
 psl = { version = "2.1", default-features = false }
+rust-i18n = { version = "4", default-features = false }
