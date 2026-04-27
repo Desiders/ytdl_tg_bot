@@ -9,6 +9,7 @@ pub struct Model {
     pub cmd_random_enabled: bool,
     pub updated_at: TimeDateTimeWithTimeZone,
     pub link_is_visible: bool,
+    pub language: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

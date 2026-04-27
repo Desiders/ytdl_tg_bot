@@ -34,6 +34,7 @@ where
 #[instrument(skip_all, fields(%message_id = message.message_id(), %host))]
 pub async fn add_exclude_domain<Messenger>(
     message: Message,
+    Extension(chat_cfg): Extension<ChatConfig>,
     Extension(chat_cfg_domains): Extension<ChatConfigExcludeDomains>,
     Extension(host): Extension<Host>,
     Inject(interactor): Inject<config::AddExcludeDomain<Messenger>>,
@@ -49,6 +50,7 @@ where
             reply_to_message_id: message.reply_to_message().as_ref().map(|message| message.message_id()),
             host: &host,
             exclude_domains: &chat_cfg_domains,
+            chat_cfg: &chat_cfg,
             tx_manager: &mut tx_manager,
         })
         .await?;
@@ -58,6 +60,7 @@ where
 #[instrument(skip_all, fields(%message_id = message.message_id(), %host))]
 pub async fn remove_exclude_domain<Messenger>(
     message: Message,
+    Extension(chat_cfg): Extension<ChatConfig>,
     Extension(chat_cfg_domains): Extension<ChatConfigExcludeDomains>,
     Extension(host): Extension<Host>,
     Inject(interactor): Inject<config::RemoveExcludeDomain<Messenger>>,
@@ -73,6 +76,7 @@ where
             reply_to_message_id: message.reply_to_message().as_ref().map(|message| message.message_id()),
             host: &host,
             exclude_domains: &chat_cfg_domains,
+            chat_cfg: &chat_cfg,
             tx_manager: &mut tx_manager,
         })
         .await?;
