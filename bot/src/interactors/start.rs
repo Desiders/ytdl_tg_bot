@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use rust_i18n::t;
 use telers::{
     errors::HandlerError,
     utils::text::{html_quote, html_text_link},
@@ -7,7 +8,9 @@ use telers::{
 
 use crate::{
     config::Config,
+    entities::ChatConfig,
     interactors::Interactor,
+    locale::Locale,
     services::messenger::{MessengerPort, SendTextRequest, TextFormat},
     utils::ErrorFormatter,
 };
@@ -19,19 +22,20 @@ pub struct Start<Messenger> {
     pub messenger: Arc<Messenger>,
 }
 
-pub struct StartInput {
+pub struct StartInput<'a> {
     pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
+    pub chat_cfg: Option<&'a ChatConfig>,
 }
 
-impl<Messenger> Interactor<StartInput> for &Start<Messenger>
+impl<Messenger> Interactor<StartInput<'_>> for &Start<Messenger>
 where
     Messenger: MessengerPort,
 {
     type Output = ();
     type Err = HandlerError;
 
-    async fn execute(self, input: StartInput) -> Result<Self::Output, Self::Err> {
+    async fn execute(self, input: StartInput<'_>) -> Result<Self::Output, Self::Err> {
         let username = match self.messenger.username().await {
             Ok(username) => username,
             Err(err) => {
@@ -39,41 +43,20 @@ where
                 return Ok(());
             }
         };
-        let text = format!(
-            "<b>Commands</b>\n\
-            - <code>/vd</code> — download video. Calling this command is required to display download progress; otherwise, downloading will occur in \"silent\" mode.\n\
-            - <code>/ad</code> — download audio\n\
-            - <code>/rv</code>, <code>/ra</code> — random video or audio\n\
-            - <code>/add_ed</code> — exclude domain from download\n\
-            - <code>/rm_ed</code> — include domain in download\n\
-            - <code>/change_link_visibility</code> — change link visibility in media caption\n\
-            - <code>/stats</code> — usage statistics\n\
-            \n\
-            <b>Inline Mode</b>\n\
-            - <code>@{username} &lt;url&gt;</code> — download by link\n\
-            - <code>@{username} &lt;title&gt;</code> — search on YouTube\n\
-            \n\
-            <b>Arguments</b>\n\
-            For <code>/vd</code> and <code>/ad</code>:\n\
-              - lang: Preferred audio language, example: <code>/vd [lang=ru]</code>\n\
-              - items: Playlist download, <code>start:end:step</code> (default: 1 for each argument, max: 10 media per command), example: <code>/vd [items=1:3:1]</code>\n\
-              - crop: Download only a specific media time range, format <code>start-end</code>, supports <code>hh:mm:ss</code> (default: 0 for start and empty for end), example: <code>/vd [crop=00:01:30-]</code>
-            \n\
-            For <code>/rv</code> and <code>/ra</code>:\n\
-              - domains: Sources separated by <code>|</code>, example: <code>/rv [domains=youtube.com|youtu.be]</code>\n\
-            \n\
-            <b>Notes</b>\n\
-            - Arguments are specified in square brackets separated by commas: <code>[arg=value,arg2=value]</code>;\n\
-            - All arguments are optional;\n\
-            - Thousands of websites are supported;\n\
-            - Inline mode supports <code>lang</code>, but doesn't support <code>items</code>;\n\
-            - You can add <code>yv2t_bot=false</code> to a link to ignore it;\n\
-            - I download media in the best quality under {max_file_size_in_mb}MB;\n\
-            - The bot is open source: {source_code}.\
-            ",
-            max_file_size_in_mb = self.cfg.yt_dlp.max_file_size / 1000 / 1000,
-            source_code = html_text_link("source code", html_quote(&self.cfg.bot.src_url)),
-        );
+
+        let locale = input.chat_cfg.map_or(Locale::En, ChatConfig::locale);
+        let max_file_size_in_mb = self.cfg.yt_dlp.max_file_size / 1000 / 1000;
+        let source_label = t!("start.source_code_label", locale = locale.as_str()).into_owned();
+        let source_code = html_text_link(source_label.as_str(), html_quote(&self.cfg.bot.src_url));
+
+        let text = t!(
+            "start.body",
+            locale = locale.as_str(),
+            username = username.as_str(),
+            max_file_size_in_mb = max_file_size_in_mb,
+            source_code = source_code,
+        )
+        .into_owned();
 
         if let Err(err) = self
             .messenger

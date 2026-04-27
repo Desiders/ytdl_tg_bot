@@ -17,7 +17,7 @@ use crate::{
         YtToolkitConfig,
     },
     database::TxManager,
-    interactors::{audio, chosen_inline, config, inline_query, start, stats, video},
+    interactors::{audio, chosen_inline, config, inline_query, lang, start, stats, video},
     services::{
         chat,
         download::media,
@@ -179,6 +179,17 @@ where
                 Inject(messenger): Inject<Messenger>,
                 Inject(update_chat_cfg): Inject<chat::UpdateChatConfig>| {
                     Ok(config::ChangeLinkVisibility {
+                        error_formatter,
+                        messenger,
+                        update_chat_cfg,
+                    })
+                }
+            ),
+            provide(|
+                Inject(error_formatter): Inject<ErrorFormatter>,
+                Inject(messenger): Inject<Messenger>,
+                Inject(update_chat_cfg): Inject<chat::UpdateChatConfig>| {
+                    Ok(lang::Lang {
                         error_formatter,
                         messenger,
                         update_chat_cfg,

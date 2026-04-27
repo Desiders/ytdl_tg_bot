@@ -13,7 +13,7 @@ pub struct GetStats {
 
 pub struct GetStatsInput {}
 
-impl<'a> Interactor<GetStatsInput> for &'a GetStats {
+impl Interactor<GetStatsInput> for &GetStats {
     type Output = Vec<NodeStats>;
     type Err = ErrorKind<Infallible>;
 

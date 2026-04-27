@@ -1,4 +1,7 @@
-use crate::database::models::{chat_config_exclude_domains, chat_configs};
+use crate::{
+    database::models::{chat_config_exclude_domains, chat_configs},
+    locale::Locale,
+};
 
 use time::OffsetDateTime;
 
@@ -7,17 +10,23 @@ pub struct ChatConfig {
     pub tg_id: i64,
     pub cmd_random_enabled: bool,
     pub link_is_visible: bool,
+    pub language: String,
     pub updated_at: OffsetDateTime,
 }
 
 impl ChatConfig {
-    pub fn new(tg_id: i64, cmd_random_enabled: bool) -> Self {
+    pub fn new(tg_id: i64, cmd_random_enabled: bool, language: String) -> Self {
         Self {
             tg_id,
             cmd_random_enabled,
             link_is_visible: false,
+            language,
             updated_at: OffsetDateTime::now_utc(),
         }
+    }
+
+    pub fn locale(&self) -> Locale {
+        Locale::from(self.language.as_str())
     }
 }
 
@@ -26,6 +35,7 @@ pub struct ChatConfigUpdate {
     pub tg_id: i64,
     pub cmd_random_enabled: Option<bool>,
     pub link_is_visible: Option<bool>,
+    pub language: Option<String>,
     pub updated_at: OffsetDateTime,
 }
 
@@ -35,6 +45,7 @@ impl ChatConfigUpdate {
             tg_id,
             cmd_random_enabled: None,
             link_is_visible: None,
+            language: None,
             updated_at: OffsetDateTime::now_utc(),
         }
     }
@@ -47,6 +58,11 @@ impl ChatConfigUpdate {
 
     pub fn with_link_is_visible(mut self, link_is_visible: bool) -> Self {
         self.link_is_visible = Some(link_is_visible);
+        self
+    }
+
+    pub fn with_language(mut self, language: String) -> Self {
+        self.language = Some(language);
         self
     }
 }
@@ -73,12 +89,14 @@ impl From<chat_configs::Model> for ChatConfig {
             cmd_random_enabled,
             updated_at,
             link_is_visible,
+            language,
         }: chat_configs::Model,
     ) -> Self {
         Self {
             tg_id,
             cmd_random_enabled,
             link_is_visible,
+            language,
             updated_at,
         }
     }

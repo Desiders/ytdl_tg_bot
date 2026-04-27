@@ -7,6 +7,7 @@ mod filters;
 mod handlers;
 mod handlers_utils;
 mod interactors;
+mod locale;
 mod middlewares;
 mod services;
 mod utils;
@@ -15,6 +16,7 @@ mod value_objects;
 use froodi::telers::setup_async_default;
 use services::node_router::NodeRouter;
 use std::borrow::Cow;
+
 use telers::{
     client::{
         telegram::{APIServer, BareFilesPathWrapper},
@@ -34,13 +36,15 @@ use crate::{
         text_contains_host_with_reply, text_contains_url, text_contains_url_with_reply, text_empty, url_is_blacklisted,
         url_is_skippable_by_param,
     },
-    handlers::{audio, chosen_inline, inline_query, start, stats, video},
+    handlers::{audio, chosen_inline, inline_query, lang, start, stats, video},
     middlewares::{CreateChatMiddleware, ReactionMiddleware, RemoveTrackingParamsMiddleware, ReplaceDomainsMiddleware},
     services::messenger::telegram::TelegramMessenger,
     utils::{on_shutdown, on_startup},
 };
 
 type Messenger = TelegramMessenger;
+
+rust_i18n::i18n!("locales", fallback = "en");
 
 #[tokio::main(flavor = "multi_thread")]
 #[allow(clippy::too_many_lines)]
@@ -173,6 +177,7 @@ async fn main() {
             observer
                 .register(Handler::new(start::<Messenger>).filter(Command::many(["start", "help"])))
                 .register(Handler::new(stats::<Messenger>).filter(Command::one("stats")))
+                .register(Handler::new(lang::<Messenger>).filter(Command::many(["lang", "language"])))
         })
         .on_startup(|observer| observer.register(SimpleHandler::new(on_startup, (bot.clone(), node_router.clone(), cfg.clone()))))
         .on_shutdown(|observer| observer.register(SimpleHandler::new(on_shutdown, ())))

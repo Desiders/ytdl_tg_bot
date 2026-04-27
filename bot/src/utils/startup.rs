@@ -1,3 +1,4 @@
+use rust_i18n::t;
 use std::{env, sync::Arc, time::Duration};
 use telers::{
     event::simple::HandlerResult,
@@ -8,18 +9,37 @@ use telers::{
 use tokio::fs;
 use tracing::{debug, info};
 
-use crate::{config::Config, services::node_router::NodeRouter};
+use crate::{config::Config, locale::Locale, services::node_router::NodeRouter};
+
+const COMMAND_KEYS: &[&str] = &[
+    "start",
+    "vd",
+    "ad",
+    "rv",
+    "ra",
+    "add_ed",
+    "rm_ed",
+    "change_link_visibility",
+    "stats",
+    "lang",
+];
+
+fn build_commands(locale: &str) -> Vec<BotCommand> {
+    COMMAND_KEYS
+        .iter()
+        .map(|key| BotCommand::new(*key, t!(format!("bot_commands.{key}"), locale = locale).as_ref()))
+        .collect()
+}
 
 async fn set_my_commands(bot: Bot) -> HandlerResult {
-    let commands = [
-        BotCommand::new("start", "Start the bot"),
-        BotCommand::new("vd", "Download a video"),
-        BotCommand::new("ad", "Download an audio"),
-        BotCommand::new("rv", "Random a video"),
-        BotCommand::new("ra", "Random an audio"),
-    ];
-    bot.send(SetMyCommands::new(commands).scope(BotCommandScopeAllPrivateChats {}))
+    bot.send(SetMyCommands::new(build_commands(Locale::En.as_str())).scope(BotCommandScopeAllPrivateChats {}))
         .await?;
+    bot.send(
+        SetMyCommands::new(build_commands(Locale::Ru.as_str()))
+            .scope(BotCommandScopeAllPrivateChats {})
+            .language_code(Locale::Ru.as_str()),
+    )
+    .await?;
     Ok(())
 }
 
