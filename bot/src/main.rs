@@ -72,12 +72,7 @@ async fn main() {
 
     let bot = Bot::with_client(
         config.bot.token.clone(),
-        Reqwest::default().with_api_server(Cow::Owned(APIServer::new(
-            &base_url,
-            &files_url,
-            true,
-            BareFilesPathWrapper,
-        ))),
+        Reqwest::default().with_api_server(Cow::Owned(APIServer::new(&base_url, &files_url, true, BareFilesPathWrapper))),
     );
 
     let cfg_registry = di_container::cfg_registry(config.clone());
