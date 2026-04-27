@@ -8,6 +8,7 @@ use crate::{
 use froodi::{Inject, InjectTransient};
 use telers::{
     event::{telegram::HandlerResult, EventReturn},
+    filters::CommandObject,
     types::Message,
     Extension,
 };
@@ -16,6 +17,7 @@ use tracing::instrument;
 #[instrument(skip_all)]
 pub async fn lang<Messenger>(
     message: Message,
+    command: CommandObject,
     Extension(chat_cfg): Extension<ChatConfig>,
     Inject(interactor): Inject<lang::Lang<Messenger>>,
     InjectTransient(mut tx_manager): InjectTransient<TxManager>,
@@ -23,21 +25,14 @@ pub async fn lang<Messenger>(
 where
     Messenger: MessengerPort,
 {
-    let argument = extract_argument(message.text());
+    let argument = command.args.iter().map(AsRef::as_ref).collect::<Vec<_>>().join(" ");
     interactor
         .execute(lang::LangInput {
-            reply_to_message_id: message.reply_to_message().as_ref().map(|message| message.message_id()),
+            reply_to_message_id: message.reply_to_message().as_ref().map(|&message| message.message_id()),
             chat_cfg: &chat_cfg,
-            argument: argument.as_deref(),
+            argument: (!argument.is_empty()).then_some(argument.as_str()),
             tx_manager: &mut tx_manager,
         })
         .await?;
     Ok(EventReturn::Finish)
-}
-
-fn extract_argument(text: Option<&str>) -> Option<String> {
-    let raw = text?.trim();
-    let mut parts = raw.splitn(2, char::is_whitespace);
-    let _command = parts.next()?;
-    parts.next().map(|rest| rest.trim().to_owned()).filter(|s| !s.is_empty())
 }
