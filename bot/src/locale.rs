@@ -13,17 +13,17 @@ impl Locale {
         }
     }
 
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_ascii_lowercase().as_str() {
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
             "en" => Some(Self::En),
             "ru" => Some(Self::Ru),
             _ => None,
         }
     }
 
-    pub fn from_telegram_code(code: Option<&str>) -> Self {
+    pub fn from_code(code: Option<&str>) -> Self {
         match code {
-            Some(c) if c.to_ascii_lowercase().starts_with("ru") => Self::Ru,
+            Some(val) if val.to_ascii_lowercase().starts_with("ru") => Self::Ru,
             _ => Self::En,
         }
     }
@@ -37,7 +37,7 @@ impl Locale {
 }
 
 impl From<&str> for Locale {
-    fn from(s: &str) -> Self {
-        Self::parse(s).unwrap_or_default()
+    fn from(raw: &str) -> Self {
+        Self::parse(raw).unwrap_or_default()
     }
 }

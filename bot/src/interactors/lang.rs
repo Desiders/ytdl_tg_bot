@@ -43,10 +43,10 @@ where
 
         let target = match arg {
             None => current.toggle(),
-            Some(value) => match Locale::parse(value) {
+            Some(val) => match Locale::parse(val) {
                 Some(locale) => locale,
                 None => {
-                    let text = t!("lang.unknown", locale = current.as_str(), lang = value);
+                    let text = t!("lang.unknown", locale = current.as_str(), lang = val);
                     if let Err(err) = progress::new(
                         self.messenger.as_ref(),
                         &text,
