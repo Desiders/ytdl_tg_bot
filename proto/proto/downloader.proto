@@ -19,6 +19,7 @@ message MediaInfoRequest {
   string audio_language = 2;
   Range playlist_range = 3;
   string media_type = 4;
+  uint64 max_file_size = 5;
 }
 
 message MediaFormatEntry {

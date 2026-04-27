@@ -66,6 +66,7 @@ impl Downloader for DownloaderService {
         let allow_playlist = !playlist_range.is_single_element();
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
+        let effective_max_file_size = resolve_max_file_size(request.max_file_size, self.yt_dlp_cfg.max_file_size);
 
         info!(
             url = %url,
@@ -73,6 +74,7 @@ impl Downloader for DownloaderService {
             audio_language = %request.audio_language,
             allow_playlist,
             has_cookie = cookie.is_some(),
+            max_file_size = effective_max_file_size,
             "Fetching media info"
         );
 
@@ -102,7 +104,7 @@ impl Downloader for DownloaderService {
             "Fetched media info"
         );
 
-        Ok(Response::new(map_playlist_response(playlist)))
+        Ok(Response::new(map_playlist_response(playlist, effective_max_file_size)?))
     }
 
     async fn download_media(&self, request: Request<DownloadRequest>) -> Result<Response<Self::DownloadMediaStream>, Status> {
@@ -373,11 +375,26 @@ async fn stream_download(
     Ok(())
 }
 
-fn map_playlist_response(playlist: Playlist) -> MediaInfoResponse {
-    let entries = playlist
-        .inner
-        .into_iter()
-        .map(|(media, formats)| MediaEntry {
+fn map_playlist_response(playlist: Playlist, max_file_size: u64) -> Result<MediaInfoResponse, Status> {
+    let mut entries = Vec::with_capacity(playlist.inner.len());
+
+    for (media, mut formats) in playlist.inner {
+        formats.retain(|(format, _)| match format.filesize_approx {
+            Some(size) => size <= max_file_size,
+            None => true,
+        });
+
+        if formats.is_empty() {
+            warn!(
+                media_id = %media.id,
+                url = %media.webpage_url,
+                max_file_size,
+                "No media formats remained after filtering download candidates"
+            );
+            return Err(Status::invalid_argument("No downloadable formats fit max file size"));
+        }
+
+        entries.push(MediaEntry {
             id: media.id,
             display_id: media.display_id,
             webpage_url: media.webpage_url.to_string(),
@@ -399,10 +416,10 @@ fn map_playlist_response(playlist: Playlist) -> MediaInfoResponse {
                     raw_info_json,
                 })
                 .collect(),
-        })
-        .collect();
+        });
+    }
 
-    MediaInfoResponse { entries }
+    Ok(MediaInfoResponse { entries })
 }
 
 #[allow(clippy::result_large_err)]
