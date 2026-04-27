@@ -171,6 +171,7 @@ impl Interactor<GetUncachedMediaByURLInput<'_>> for &GetUncachedVideoByURL {
                 audio_language: audio_language.language.clone().unwrap_or_default(),
                 playlist_range: Some(to_proto_range(playlist_range)),
                 media_type: "video".to_owned(),
+                max_file_size: self.node_router.max_file_size(),
             },
         )
         .await?;
@@ -281,6 +282,7 @@ async fn get_media_by_url(
             audio_language: audio_language.language.clone().unwrap_or_default(),
             playlist_range: Some(to_proto_range(playlist_range)),
             media_type: media_type_str.to_owned(),
+            max_file_size: router.max_file_size(),
         },
     )
     .await
@@ -290,7 +292,7 @@ async fn get_media_by_url(
 
     let mut cached = vec![];
     let mut uncached = vec![];
-    for (mut media, mut formats) in playlist.inner {
+    for (mut media, formats) in playlist.inner {
         media.remove_url_tracking_params(tracking_params_cfg);
         let domain = media.webpage_url.domain();
         if let Some(DownloadedMedia { file_id, .. }) = dao
@@ -311,13 +313,6 @@ async fn get_media_by_url(
             });
             continue;
         }
-        formats.retain(|(format, _)| {
-            if let Some(val) = format.filesize_approx {
-                val <= router.max_file_size()
-            } else {
-                true
-            }
-        });
         uncached.push((media, formats));
     }
 
