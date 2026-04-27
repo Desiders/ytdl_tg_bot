@@ -59,7 +59,7 @@ migration:
   command: up
   image:
     repository: desiders/ytdl_tg_bot.migration
-    tag: "1.6.0"
+    tag: "1.7.0"
     pullPolicy: IfNotPresent
   backoffLimit: 0
   ttlSecondsAfterFinished: 600
