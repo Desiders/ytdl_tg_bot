@@ -73,6 +73,50 @@ where
             .map_err(Into::into)
     }
 
+    pub async fn insert_or_replace(
+        &self,
+        DownloadedMedia {
+            file_id,
+            id,
+            domain,
+            display_id,
+            media_type,
+            created_at,
+            audio_language,
+            crop_start_time,
+            crop_end_time,
+        }: DownloadedMedia,
+    ) -> Result<(), ErrorKind<Infallible>> {
+        use downloaded_media::{
+            ActiveModel,
+            Column::{AudioLanguage, CreatedAt, CropEndTime, CropStartTime, DisplayId, Domain, FileId, Id, MediaType},
+            Entity,
+        };
+
+        let model = ActiveModel {
+            file_id: Set(file_id),
+            id: Set(id),
+            display_id: Set(display_id),
+            domain: Set(domain),
+            media_type: Set(media_type.into()),
+            created_at: Set(created_at),
+            audio_language: Set(audio_language),
+            crop_start_time: Set(crop_start_time),
+            crop_end_time: Set(crop_end_time),
+        };
+
+        Entity::insert(model)
+            .on_conflict(
+                OnConflict::columns([Id, Domain, MediaType, AudioLanguage, CropStartTime, CropEndTime])
+                    .update_columns([FileId, DisplayId, CreatedAt])
+                    .to_owned(),
+            )
+            .exec_without_returning(self.conn)
+            .await
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
     pub async fn get(
         &self,
         search: &str,

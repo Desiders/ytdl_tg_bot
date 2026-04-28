@@ -18,6 +18,7 @@ pub struct AddMediaInput<'a> {
     pub domain: Option<String>,
     pub audio_language: Language,
     pub sections: Option<Sections>,
+    pub overwrite_cache: bool,
     pub tx_manager: &'a mut TxManager,
 }
 
@@ -37,6 +38,7 @@ impl Interactor<AddMediaInput<'_>> for &AddVideo {
             domain,
             audio_language,
             sections,
+            overwrite_cache,
             tx_manager,
         }: AddMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
@@ -45,7 +47,7 @@ impl Interactor<AddMediaInput<'_>> for &AddVideo {
         tx_manager.begin().await?;
 
         let dao = tx_manager.downloaded_media_dao()?;
-        dao.insert_or_ignore(DownloadedMedia {
+        let media = DownloadedMedia {
             file_id,
             id,
             display_id,
@@ -55,8 +57,12 @@ impl Interactor<AddMediaInput<'_>> for &AddVideo {
             audio_language: audio_language.language,
             crop_start_time: sections.as_ref().and_then(|val| val.start),
             crop_end_time: sections.as_ref().and_then(|val| val.end),
-        })
-        .await?;
+        };
+        if overwrite_cache {
+            dao.insert_or_replace(media).await?;
+        } else {
+            dao.insert_or_ignore(media).await?;
+        }
         info!("Downloaded media added");
 
         tx_manager.commit().await?;
@@ -80,6 +86,7 @@ impl Interactor<AddMediaInput<'_>> for &AddAudio {
             domain,
             audio_language,
             sections,
+            overwrite_cache,
             tx_manager,
         }: AddMediaInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
@@ -89,7 +96,7 @@ impl Interactor<AddMediaInput<'_>> for &AddAudio {
 
         let dao = tx_manager.downloaded_media_dao()?;
 
-        dao.insert_or_ignore(DownloadedMedia {
+        let media = DownloadedMedia {
             file_id,
             id,
             display_id,
@@ -99,8 +106,12 @@ impl Interactor<AddMediaInput<'_>> for &AddAudio {
             audio_language: audio_language.language,
             crop_start_time: sections.as_ref().and_then(|val| val.start),
             crop_end_time: sections.as_ref().and_then(|val| val.end),
-        })
-        .await?;
+        };
+        if overwrite_cache {
+            dao.insert_or_replace(media).await?;
+        } else {
+            dao.insert_or_ignore(media).await?;
+        }
         info!("Downloaded media added");
 
         tx_manager.commit().await?;
