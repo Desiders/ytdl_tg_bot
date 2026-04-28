@@ -21,11 +21,14 @@ fmt:
 @docker-push-dev-cookie-assignment:
     ./scripts/build-cookie-assignment-dev-image.sh
 
+@docker-push-dev-migration:
+    ./scripts/build-migration-dev-image.sh
+
 @docker-build-downloader VERSION="latest":
     docker build -f ./deployment/Dockerfile.downloader -t desiders/ytdl_tg_bot.downloader:{{VERSION}} .
 
 @docker-build-migration VERSION="latest":
-    docker build -f ./migration/Dockerfile -t desiders/ytdl_tg_bot.migration:{{VERSION}} ./migration
+    docker build -f ./deployment/Dockerfile.migration -t desiders/ytdl_tg_bot.migration:{{VERSION}} .
 
 docker-push USER VERSION="latest":
     @just docker-build {{VERSION}}
@@ -106,14 +109,36 @@ k8s-update-cookie-assignment-config NAMESPACE:
     kubectl create secret generic cookie-assignment-config --from-file=cookie_assignment.toml=./configs/cookie_assignment.toml --dry-run=client -o yaml | kubectl apply -n {{NAMESPACE}} -f -
     if kubectl get deployment/cookie-assignment -n {{NAMESPACE}} >/dev/null 2>&1; then just k8s-rollout-cookie-assignment {{NAMESPACE}}; fi
 
+k8s-port-forward-db NAMESPACE LOCAL_PORT="5432":
+    kubectl -n {{NAMESPACE}} port-forward svc/postgres-rw {{LOCAL_PORT}}:5432
+
+generate-entities-from-db NAMESPACE LOCAL_PORT="5432" DB_NAME="api" DB_SECRET_NAME="db":
+    DB_USER=$(kubectl -n {{NAMESPACE}} get secret {{DB_SECRET_NAME}} -o jsonpath='{.data.username}' | base64 -d); \
+    DB_PASSWORD=$(kubectl -n {{NAMESPACE}} get secret {{DB_SECRET_NAME}} -o jsonpath='{.data.password}' | base64 -d); \
+    export DATABASE_URL="postgres://$DB_USER:$DB_PASSWORD@127.0.0.1:{{LOCAL_PORT}}/{{DB_NAME}}"; \
+    cd ./migration && \
+    sea-orm-cli generate entity \
+        -o ../bot/src/database/models \
+        --date-time-crate time \
+        --with-prelude none \
+        --banner-version patch \
+        --entity-format dense && \
+        rm -f ../bot/src/database/models/mod.rs
+
 k8s-migration NAMESPACE COMMAND="up":
+    if [ -n "${IMAGE_REPO:-}" ] && [ -z "${IMAGE_TAG:-}" ]; then echo "IMAGE_TAG is required when IMAGE_REPO is set" >&2; exit 1; fi
+    if [ -z "${IMAGE_REPO:-}" ] && [ -n "${IMAGE_TAG:-}" ]; then echo "IMAGE_REPO is required when IMAGE_TAG is set" >&2; exit 1; fi
     run_id=$(date +%s); \
     job_name=bot-migration-$run_id; \
+    if [ -n "${IMAGE_REPO:-}" ]; then echo "Migration image: ${IMAGE_REPO}:${IMAGE_TAG}"; fi; \
     helm template bot ./charts/bot -n {{NAMESPACE}} \
       --show-only templates/migration-job.yaml \
       --set migration.enabled=true \
       --set migration.runId=$run_id \
       --set-string migration.command='{{COMMAND}}' \
+      $(if [ -n "${IMAGE_REPO:-}" ]; then printf '%s' "--set migration.image.repository=${IMAGE_REPO}"; fi) \
+      $(if [ -n "${IMAGE_TAG:-}" ]; then printf '%s' "--set migration.image.tag=${IMAGE_TAG}"; fi) \
+      $(if [ -n "${IMAGE_REPO:-}" ]; then printf '%s' "--set migration.image.pullPolicy=${PULL_POLICY:-Always}"; fi) \
       | kubectl apply -n {{NAMESPACE}} -f -; \
     if ! kubectl wait -n {{NAMESPACE}} --for=condition=complete --timeout=10m job/$job_name; then \
       kubectl logs -n {{NAMESPACE}} job/$job_name --all-containers=true || true; \

@@ -26,7 +26,7 @@ impl MigrationTrait for Migration {
                             .name("idx_chat_config_domains_id_domain")
                             .col(ChatConfigExcludeDomains::TgId)
                             .col(ChatConfigExcludeDomains::Domain)
-                            .unique(),
+                            .primary(),
                     )
                     .to_owned(),
             )
