@@ -375,6 +375,11 @@ pub async fn download_media(
     }
 
     let sections = sections.map(Sections::to_download_sections_string);
+    debug!(
+        has_sections = sections.is_some(),
+        download_sections = sections.as_deref(),
+        "Prepared yt-dlp section selection"
+    );
     if let Some(sections) = sections.as_deref() {
         args.push("--download-sections");
         args.push(sections);
