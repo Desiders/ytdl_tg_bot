@@ -95,6 +95,8 @@ impl Downloader for DownloaderService {
             err => Status::internal(err.to_string()),
         })?;
 
+        reject_active_livestreams(&playlist)?;
+
         let entries_count = playlist.inner.len();
         info!(
             url = %url,
@@ -425,6 +427,14 @@ fn map_playlist_response(playlist: Playlist, max_file_size: u64) -> Result<Media
 }
 
 #[allow(clippy::result_large_err)]
+fn reject_active_livestreams(playlist: &Playlist) -> Result<(), Status> {
+    if playlist.inner.iter().any(|(media, _)| media.is_active_livestream()) {
+        return Err(Status::invalid_argument("Livestream downloads are not supported"));
+    }
+    Ok(())
+}
+
+#[allow(clippy::result_large_err)]
 fn parse_range(range: Option<proto::downloader::Range>) -> Result<Range, Status> {
     let Some(range) = range else {
         return Ok(Range::default());
@@ -637,8 +647,10 @@ fn resolve_download_duration(media_duration: Option<f32>, section: Option<&Secti
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_download_duration;
-    use crate::entities::Sections;
+    use super::{reject_active_livestreams, resolve_download_duration};
+    use crate::entities::{Media, Playlist, Sections};
+    use tonic::Code;
+    use url::Url;
 
     #[test]
     fn uses_original_duration_without_crop() {
@@ -685,5 +697,58 @@ mod tests {
             ),
             Some(75)
         );
+    }
+
+    #[test]
+    fn rejects_active_livestream_playlist() {
+        let playlist = Playlist {
+            inner: vec![(
+                Media {
+                    id: "id".into(),
+                    display_id: None,
+                    webpage_url: Url::parse("https://www.youtube.com/watch?v=test").unwrap(),
+                    title: Some("title".into()),
+                    language: None,
+                    uploader: None,
+                    duration: None,
+                    playlist_index: 1,
+                    thumbnail: None,
+                    thumbnails: vec![],
+                    live_status: Some("is_live".into()),
+                    is_live: true,
+                },
+                vec![],
+            )],
+        };
+
+        let err = reject_active_livestreams(&playlist).unwrap_err();
+
+        assert_eq!(err.code(), Code::InvalidArgument);
+        assert_eq!(err.message(), "Livestream downloads are not supported");
+    }
+
+    #[test]
+    fn allows_non_live_playlist() {
+        let playlist = Playlist {
+            inner: vec![(
+                Media {
+                    id: "id".into(),
+                    display_id: None,
+                    webpage_url: Url::parse("https://www.youtube.com/watch?v=test").unwrap(),
+                    title: Some("title".into()),
+                    language: None,
+                    uploader: None,
+                    duration: Some(120.0),
+                    playlist_index: 1,
+                    thumbnail: None,
+                    thumbnails: vec![],
+                    live_status: Some("was_live".into()),
+                    is_live: false,
+                },
+                vec![],
+            )],
+        };
+
+        assert!(reject_active_livestreams(&playlist).is_ok());
     }
 }
