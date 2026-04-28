@@ -476,15 +476,20 @@ Use this when deploying images built from your local checkout.
 just docker-push-dev-bot
 just docker-push-dev-downloader
 just docker-push-dev-cookie-assignment
+just docker-push-dev-migration
 ```
 
-Each script builds with Docker `buildx`, pushes to the registry, uses remote cache, and defaults to `dev-<git-short-sha>`. The scripts print the next `helm upgrade` command after a successful push.
+Each script builds with Docker `buildx`, pushes to the registry, uses remote cache, and defaults to `dev-<git-short-sha>`.
+
+- Bot, downloader, and cookie-assignment scripts print the next `helm upgrade` command after a successful push.
+- The migration script builds from `deployment/Dockerfile.migration.dev` and prints the next `just k8s-migration` command with `IMAGE_REPO`, `IMAGE_TAG`, and `PULL_POLICY=Always`.
 
 Useful overrides:
 
 - `NAMESPACE`
 - `IMAGE_REPO`
 - `IMAGE_TAG`
+- `MIGRATION_COMMAND`
 - `CACHE_REF`
 - `PLATFORM`
 - `DOCKERFILE`
@@ -500,6 +505,7 @@ export IMAGE_TAG=dev-manual-1
 IMAGE_TAG="${IMAGE_TAG}" just docker-push-dev-bot
 IMAGE_TAG="${IMAGE_TAG}" just docker-push-dev-downloader
 IMAGE_TAG="${IMAGE_TAG}" just docker-push-dev-cookie-assignment
+IMAGE_TAG="${IMAGE_TAG}" just docker-push-dev-migration
 ```
 
 If only one component changed, rebuild and upgrade only that component.
