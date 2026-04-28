@@ -1,4 +1,6 @@
-use sea_orm::{prelude::Expr, sea_query::OnConflict, ActiveValue::Set, ConnectionTrait, EntityTrait, FromQueryResult, QuerySelect as _};
+use sea_orm::{
+    prelude::Expr, sea_query::OnConflict, ActiveValue::Set, ConnectionTrait, EntityTrait, ExprTrait as _, FromQueryResult, QuerySelect as _,
+};
 use std::convert::Infallible;
 
 use crate::{
@@ -29,25 +31,27 @@ where
         Chat {
             tg_id,
             username,
+            chat_type,
             created_at,
             updated_at,
         }: Chat,
     ) -> Result<Chat, ErrorKind<Infallible>> {
         use chats::{
             ActiveModel,
-            Column::{TgId, UpdatedAt, Username},
+            Column::{ChatType, TgId, UpdatedAt, Username},
             Entity,
         };
 
         let model = ActiveModel {
             tg_id: Set(tg_id),
             username: Set(username),
+            chat_type: Set(chat_type.map(Into::into)),
             created_at: Set(created_at),
             updated_at: Set(updated_at),
         };
 
         Entity::insert(model)
-            .on_conflict(OnConflict::column(TgId).update_columns([Username, UpdatedAt]).to_owned())
+            .on_conflict(OnConflict::column(TgId).update_columns([Username, ChatType, UpdatedAt]).to_owned())
             .exec_with_returning(self.conn)
             .await
             .map(Into::into)

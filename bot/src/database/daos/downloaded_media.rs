@@ -1,6 +1,6 @@
 use sea_orm::{
-    prelude::Expr, sea_query::OnConflict, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait as _, FromQueryResult,
-    QueryFilter as _, QueryOrder, QuerySelect,
+    prelude::Expr, sea_query::OnConflict, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait as _, ExprTrait as _,
+    FromQueryResult, QueryFilter as _, QueryOrder, QuerySelect,
 };
 use std::convert::Infallible;
 use time::{Duration, OffsetDateTime};
