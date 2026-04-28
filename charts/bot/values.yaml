@@ -50,7 +50,7 @@ telegramBotApi:
 ytToolkit:
   image:
     repository: ghcr.io/ikiovi/yt-toolkit/info-api
-    tag: "v2.0.0"
+    tag: "v2.1.0"
     pullPolicy: IfNotPresent
 
 migration:
