@@ -66,11 +66,19 @@ removed_template = """
 body = """
 <b>Статистика</b>
 - Количество чатов: %{chats_count}
+- По типам:
+%{chat_types}\
 - Скачано за 1/7/30 дней / всего: %{d1}/%{d7}/%{d30}/%{total}
 - Ноды:
 %{nodes}- Самые популярные домены:
 %{top_domains}\
 """
+chat_type_line = "  - %{chat_type}: %{count}"
+chat_type_private = "Личные"
+chat_type_group = "Группы"
+chat_type_supergroup = "Супергруппы"
+chat_type_channel = "Каналы"
+chat_type_unknown = "Неизвестно"
 node_line = "%{name}. (%{active}/%{max})"
 top_domain_line = "%{index}. %{domain} (%{count} шт.)"
 get_error = "Не удалось получить статистику"

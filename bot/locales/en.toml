@@ -66,11 +66,19 @@ To add it back, use the <code>/add_exclude_domain</code> command.\
 body = """
 <b>Statistics</b>
 - Total chats: %{chats_count}
+- By type:
+%{chat_types}\
 - Downloads over 1/7/30 days / all time: %{d1}/%{d7}/%{d30}/%{total}
 - Nodes:
 %{nodes}- Most popular domains:
 %{top_domains}\
 """
+chat_type_line = "  - %{chat_type}: %{count}"
+chat_type_private = "Private"
+chat_type_group = "Group"
+chat_type_supergroup = "Supergroup"
+chat_type_channel = "Channel"
+chat_type_unknown = "Unknown"
 node_line = "%{name}. (%{active}/%{max})"
 top_domain_line = "%{index}. %{domain} (%{count})"
 get_error = "Failed to fetch statistics"

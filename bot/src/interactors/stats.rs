@@ -18,6 +18,7 @@ use crate::{
         node_router,
     },
     utils::ErrorFormatter,
+    value_objects::ChatType,
 };
 
 pub struct Stats<Messenger> {
@@ -54,6 +55,27 @@ where
 
         let text = match media_stats {
             Ok((media_stats, chat_stats)) => {
+                let mut chat_types = String::new();
+                for chat_type_count in &chat_stats.by_type {
+                    let type_label = match chat_type_count.chat_type {
+                        Some(ChatType::Private) => t!("stats.chat_type_private", locale = locale),
+                        Some(ChatType::Group) => t!("stats.chat_type_group", locale = locale),
+                        Some(ChatType::Supergroup) => t!("stats.chat_type_supergroup", locale = locale),
+                        Some(ChatType::Channel) => t!("stats.chat_type_channel", locale = locale),
+                        None => t!("stats.chat_type_unknown", locale = locale),
+                    };
+                    let _ = writeln!(
+                        chat_types,
+                        "{}",
+                        t!(
+                            "stats.chat_type_line",
+                            locale = locale,
+                            chat_type = type_label,
+                            count = chat_type_count.count,
+                        )
+                    );
+                }
+
                 let mut nodes = String::new();
                 for node_stats in nodes_stats {
                     let _ = writeln!(
@@ -88,6 +110,7 @@ where
                     "stats.body",
                     locale = locale,
                     chats_count = chat_stats.count,
+                    chat_types = chat_types,
                     d1 = media_stats.last_day.count,
                     d7 = media_stats.last_week.count,
                     d30 = media_stats.last_month.count,

@@ -5,7 +5,7 @@ use std::convert::Infallible;
 
 use crate::{
     database::models::chats,
-    entities::{Chat, ChatStats},
+    entities::{Chat, ChatStats, ChatTypeCount},
     errors::ErrorKind,
 };
 
@@ -59,16 +59,40 @@ where
     }
 
     pub async fn get_stats(&self) -> Result<ChatStats, ErrorKind<Infallible>> {
-        use chats::{Column::TgId, Entity};
+        use chats::{
+            Column::{ChatType, TgId},
+            Entity,
+        };
 
         #[derive(Default, Debug, FromQueryResult)]
         pub struct CountResult {
             pub count: i64,
         }
 
+        #[derive(Debug, FromQueryResult)]
+        pub struct ChatTypeCountResult {
+            pub chat_type: Option<crate::database::models::sea_orm_active_enums::ChatType>,
+            pub count: i64,
+        }
+
         let query = Entity::find().select_only().expr_as(Expr::col(TgId).count(), "count");
         let count = query.into_model::<CountResult>().one(self.conn).await?.unwrap_or_default().count;
 
-        Ok(ChatStats { count })
+        let by_type = Entity::find()
+            .select_only()
+            .column(ChatType)
+            .expr_as(Expr::col(TgId).count(), "count")
+            .group_by(ChatType)
+            .into_model::<ChatTypeCountResult>()
+            .all(self.conn)
+            .await?
+            .into_iter()
+            .map(|row| ChatTypeCount {
+                chat_type: row.chat_type.map(Into::into),
+                count: row.count,
+            })
+            .collect();
+
+        Ok(ChatStats { count, by_type })
     }
 }

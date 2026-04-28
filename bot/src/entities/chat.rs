@@ -26,6 +26,13 @@ impl Chat {
 #[derive(Debug)]
 pub struct ChatStats {
     pub count: i64,
+    pub by_type: Vec<ChatTypeCount>,
+}
+
+#[derive(Debug)]
+pub struct ChatTypeCount {
+    pub chat_type: Option<ChatType>,
+    pub count: i64,
 }
 
 impl From<Model> for Chat {
