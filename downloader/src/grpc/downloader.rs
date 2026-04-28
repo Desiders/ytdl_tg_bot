@@ -221,6 +221,8 @@ async fn stream_download(
         media_type = %requested_media_kind,
         has_cookie = cookie.is_some(),
         has_section = section.is_some(),
+        section_start = section.as_ref().and_then(|section| section.start),
+        section_end = section.as_ref().and_then(|section| section.end),
         max_file_size = effective_max_file_size,
         "Starting media download"
     );
