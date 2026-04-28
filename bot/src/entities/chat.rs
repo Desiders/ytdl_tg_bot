@@ -1,4 +1,4 @@
-use crate::database::models::chats::Model;
+use crate::{database::models::chats::Model, value_objects::ChatType};
 
 use time::OffsetDateTime;
 
@@ -6,15 +6,17 @@ use time::OffsetDateTime;
 pub struct Chat {
     pub tg_id: i64,
     pub username: Option<String>,
+    pub chat_type: Option<ChatType>,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }
 
 impl Chat {
-    pub fn new(tg_id: i64, username: Option<String>) -> Self {
+    pub fn new(tg_id: i64, username: Option<String>, chat_type: ChatType) -> Self {
         Self {
             tg_id,
             username,
+            chat_type: Some(chat_type),
             created_at: OffsetDateTime::now_utc(),
             updated_at: OffsetDateTime::now_utc(),
         }
@@ -31,6 +33,7 @@ impl From<Model> for Chat {
         Model {
             tg_id,
             username,
+            chat_type,
             created_at,
             updated_at,
         }: Model,
@@ -38,6 +41,7 @@ impl From<Model> for Chat {
         Self {
             tg_id,
             username,
+            chat_type: chat_type.map(Into::into),
             created_at,
             updated_at,
         }
