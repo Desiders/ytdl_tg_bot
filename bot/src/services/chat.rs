@@ -104,6 +104,30 @@ pub struct UpdateChatConfigInput<'a> {
     pub tx_manager: &'a mut TxManager,
 }
 
+pub struct GetChatConfigInput<'a> {
+    pub tg_id: i64,
+    pub tx_manager: &'a mut TxManager,
+}
+
+pub struct GetChatConfig {}
+
+impl Interactor<GetChatConfigInput<'_>> for &GetChatConfig {
+    type Output = Option<ChatConfig>;
+    type Err = ErrorKind<Infallible>;
+
+    #[instrument(skip_all)]
+    async fn execute(self, GetChatConfigInput { tg_id, tx_manager }: GetChatConfigInput<'_>) -> Result<Self::Output, Self::Err> {
+        tx_manager.begin().await?;
+
+        let dao = tx_manager.chat_config_dao().unwrap();
+        let config = dao.get(tg_id).await?;
+        debug!("Chat config fetched");
+
+        tx_manager.commit().await?;
+        Ok(config)
+    }
+}
+
 pub struct UpdateChatConfig {}
 
 impl Interactor<UpdateChatConfigInput<'_>> for &UpdateChatConfig {

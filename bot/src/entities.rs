@@ -12,7 +12,7 @@ pub mod sections;
 pub mod yt_toolkit;
 
 pub use chat::{Chat, ChatStats, ChatTypeCount};
-pub use chat_config::{ChatConfig, ChatConfigExcludeDomain, ChatConfigExcludeDomains, ChatConfigUpdate};
+pub use chat_config::{ChatConfig, ChatConfigExcludeDomain, ChatConfigExcludeDomains, ChatConfigUpdate, OwnChatConfig};
 pub use domains::Domains;
 pub use downloaded_media::{DownloadedMedia, DownloadedMediaByDomainCount, DownloadedMediaCount, DownloadedMediaStats};
 pub use media::{Media, MediaByteStream, MediaForUpload, MediaFormat, MediaInPlaylist, Playlist, RawMediaWithFormat, ShortMedia};

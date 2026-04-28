@@ -132,6 +132,7 @@ where
             provide(|| Ok(Client::new())),
 
             provide(|| Ok(chat::SaveChat {})),
+            provide(|| Ok(chat::GetChatConfig {})),
             provide(|| Ok(chat::AddExcludeDomain {})),
             provide(|| Ok(chat::RemoveExcludeDomain {})),
             provide(|| Ok(chat::UpdateChatConfig {})),

@@ -1,7 +1,7 @@
 use froodi::async_impl::Container;
 use telers::{
     enums,
-    errors::EventErrorKind,
+    errors::{EventErrorKind, MiddlewareError},
     event::EventReturn,
     middlewares::outer::{Middleware, MiddlewareResponse},
     types::Chat::Private,
@@ -11,7 +11,7 @@ use tracing::{error, instrument};
 
 use crate::{
     database::TxManager,
-    entities::{Chat, ChatConfig},
+    entities::{Chat, ChatConfig, OwnChatConfig},
     interactors::Interactor as _,
     locale::Locale,
     services::chat,
@@ -45,6 +45,7 @@ impl Middleware for CreateChatMiddleware {
         let db_chat_config = ChatConfig::new(chat_id, cmd_random_enabled, locale.as_str().to_owned());
 
         let save_chat = container.get::<chat::SaveChat>().await.unwrap();
+        let get_chat_config = container.get::<chat::GetChatConfig>().await.unwrap();
         let mut tx_manager = container.get_transient::<TxManager>().await.unwrap();
 
         match save_chat
@@ -56,7 +57,24 @@ impl Middleware for CreateChatMiddleware {
             .await
         {
             Ok((_, chat_config, chat_config_exclude_domains)) => {
+                let own_chat_config = match chat_type {
+                    ChatType::Private => Some(chat_config.clone()),
+                    _ => match request.update.from() {
+                        Some(from) => match get_chat_config
+                            .execute(chat::GetChatConfigInput {
+                                tg_id: from.id,
+                                tx_manager: &mut tx_manager,
+                            })
+                            .await
+                        {
+                            Ok(chat_config) => chat_config,
+                            Err(err) => return Err(MiddlewareError::new(err).into()),
+                        },
+                        None => None,
+                    },
+                };
                 request.extensions.insert(chat_config);
+                request.extensions.insert(OwnChatConfig(own_chat_config));
                 request.extensions.insert(chat_config_exclude_domains);
             }
             Err(err) => error!(%err, "Save chat error"),

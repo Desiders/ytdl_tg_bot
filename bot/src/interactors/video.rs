@@ -50,6 +50,7 @@ pub struct DownloadInput<'a> {
     pub params: &'a Params,
     pub url: &'a Url,
     pub chat_cfg: &'a ChatConfig,
+    pub link_is_visible: bool,
     pub tx_manager: &'a mut TxManager,
 }
 
@@ -153,7 +154,7 @@ where
                         reply_to_message_id: Some(input.message_id),
                         id: &file_id,
                         webpage_url: Some(input.url),
-                        link_is_visible: input.chat_cfg.link_is_visible,
+                        link_is_visible: input.link_is_visible,
                     })
                     .await
                 {
@@ -316,7 +317,7 @@ where
                         chat_id: input.chat_id,
                         reply_to_message_id: Some(input.message_id),
                         playlist: downloaded_playlist,
-                        link_is_visible: input.chat_cfg.link_is_visible,
+                        link_is_visible: input.link_is_visible,
                     })
                     .await
                 {
@@ -386,7 +387,7 @@ pub struct DownloadQuietInput<'a> {
     pub chat_id: i64,
     pub params: &'a Params,
     pub url: &'a Url,
-    pub chat_cfg: &'a ChatConfig,
+    pub link_is_visible: bool,
     pub tx_manager: &'a mut TxManager,
 }
 
@@ -447,7 +448,7 @@ where
                         reply_to_message_id: Some(input.message_id),
                         id: &file_id,
                         webpage_url: Some(input.url),
-                        link_is_visible: input.chat_cfg.link_is_visible,
+                        link_is_visible: input.link_is_visible,
                     })
                     .await
                 {
@@ -522,7 +523,7 @@ where
                         chat_id: input.chat_id,
                         reply_to_message_id: Some(input.message_id),
                         playlist: downloaded_playlist,
-                        link_is_visible: input.chat_cfg.link_is_visible,
+                        link_is_visible: input.link_is_visible,
                     })
                     .await
                 {

@@ -1,9 +1,10 @@
 use crate::database::TxManager;
 use crate::entities::{ChatConfig, ChatConfigExcludeDomains};
 use crate::interactors::{config, Interactor as _};
-use crate::services::messenger::MessengerPort;
+use crate::services::messenger::{MessengerPort, SendTextRequest};
 
 use froodi::{Inject, InjectTransient};
+use rust_i18n::t;
 use telers::{
     event::{telegram::HandlerResult, EventReturn},
     types::Message,
@@ -28,6 +29,28 @@ where
             tx_manager: &mut tx_manager,
         })
         .await?;
+    Ok(EventReturn::Finish)
+}
+
+pub async fn change_link_visibility_private_only<Messenger>(
+    message: Message,
+    Extension(chat_cfg): Extension<ChatConfig>,
+    Inject(messenger): Inject<Messenger>,
+) -> HandlerResult
+where
+    Messenger: MessengerPort,
+{
+    let text = t!("link_visibility.private_only", locale = chat_cfg.locale().as_str()).into_owned();
+    let _ = messenger
+        .send_text(SendTextRequest {
+            chat_id: message.chat().id(),
+            text: &text,
+            reply_to_message_id: Some(message.message_id()),
+            format: None,
+            disable_link_preview: true,
+        })
+        .await;
+
     Ok(EventReturn::Finish)
 }
 

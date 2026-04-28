@@ -130,6 +130,13 @@ async fn main() {
                 )
                 .register(
                     Handler::new(handlers::config::change_link_visibility::<Messenger>)
+                        .filter(ChatType::one(Private))
+                        .filter(MessageType::one(Text))
+                        .filter(Command::one("change_link_visibility")),
+                )
+                .register(
+                    Handler::new(handlers::config::change_link_visibility_private_only::<Messenger>)
+                        .filter(ChatType::one(Private).invert())
                         .filter(MessageType::one(Text))
                         .filter(Command::one("change_link_visibility")),
                 )
