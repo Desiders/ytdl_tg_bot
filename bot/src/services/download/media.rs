@@ -37,7 +37,7 @@ pub enum DownloadMediaPlaylistErrorKind {
     #[error("Channel error: {0}")]
     ErrChannel(#[from] mpsc::error::SendError<Vec<DownloadErrorKind>>),
     #[error("Channel error: {0}")]
-    MediaChannel(#[from] mpsc::error::SendError<(MediaForUpload, Media, MediaFormat)>),
+    MediaChannel(#[from] mpsc::error::SendError<(MediaForUpload, Media, MediaFormat, Option<i64>)>),
 }
 
 pub enum DownloadProgressEvent {
@@ -86,7 +86,7 @@ pub struct DownloadMediaPlaylistInput<'a> {
     url: &'a Url,
     playlist: Vec<(Media, Vec<(MediaFormat, RawMediaWithFormat)>)>,
     sections: Option<&'a Sections>,
-    media_sender: mpsc::UnboundedSender<(MediaForUpload, Media, MediaFormat)>,
+    media_sender: mpsc::UnboundedSender<(MediaForUpload, Media, MediaFormat, Option<i64>)>,
     errs_sender: Option<mpsc::UnboundedSender<Vec<DownloadErrorKind>>>,
     progress_sender: Option<mpsc::UnboundedSender<DownloadProgressEvent>>,
 }
@@ -99,7 +99,7 @@ impl<'a> DownloadMediaPlaylistInput<'a> {
         sections: Option<&'a Sections>,
     ) -> (
         Self,
-        mpsc::UnboundedReceiver<(MediaForUpload, Media, MediaFormat)>,
+        mpsc::UnboundedReceiver<(MediaForUpload, Media, MediaFormat, Option<i64>)>,
         mpsc::UnboundedReceiver<Vec<DownloadErrorKind>>,
         mpsc::UnboundedReceiver<DownloadProgressEvent>,
     ) {
@@ -126,7 +126,7 @@ impl<'a> DownloadMediaPlaylistInput<'a> {
         url: &'a Url,
         playlist: Vec<(Media, Vec<(MediaFormat, RawMediaWithFormat)>)>,
         sections: Option<&'a Sections>,
-    ) -> (Self, mpsc::UnboundedReceiver<(MediaForUpload, Media, MediaFormat)>) {
+    ) -> (Self, mpsc::UnboundedReceiver<(MediaForUpload, Media, MediaFormat, Option<i64>)>) {
         let (media_sender, media_receiver) = mpsc::unbounded_channel();
         (
             Self {
@@ -147,7 +147,7 @@ pub struct DownloadVideo {
 }
 
 impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
-    type Output = Option<(MediaForUpload, MediaFormat)>;
+    type Output = Option<(MediaForUpload, MediaFormat, Option<i64>)>;
     type Err = DownloadMediaErrorKind;
 
     #[instrument(skip_all)]
@@ -181,6 +181,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
                     path,
                     thumb_stream,
                     format,
+                    duration,
                     stream,
                 }) => {
                     let media_for_upload = MediaForUpload {
@@ -189,7 +190,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
                         temp_dir,
                         stream,
                     };
-                    return Ok(Some((media_for_upload, format)));
+                    return Ok(Some((media_for_upload, format, duration)));
                 }
                 Err(err) => {
                     err_sender.send(err)?;
@@ -207,7 +208,7 @@ pub struct DownloadAudio {
 }
 
 impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
-    type Output = Option<(MediaForUpload, MediaFormat)>;
+    type Output = Option<(MediaForUpload, MediaFormat, Option<i64>)>;
     type Err = DownloadMediaErrorKind;
 
     #[instrument(skip_all)]
@@ -241,6 +242,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
                     path,
                     thumb_stream,
                     format,
+                    duration,
                     stream,
                 }) => {
                     let media_for_upload = MediaForUpload {
@@ -249,7 +251,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
                         temp_dir,
                         stream,
                     };
-                    return Ok(Some((media_for_upload, format)));
+                    return Ok(Some((media_for_upload, format, duration)));
                 }
                 Err(err) => {
                     err_sender.send(err)?;
@@ -304,6 +306,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
                         path,
                         thumb_stream,
                         format,
+                        duration,
                         stream,
                     }) => {
                         let media_for_upload = MediaForUpload {
@@ -312,7 +315,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
                             temp_dir,
                             stream,
                         };
-                        media_sender.send((media_for_upload, media, format))?;
+                        media_sender.send((media_for_upload, media, format, duration))?;
                         media_is_downloaded = true;
                         break;
                     }
@@ -375,6 +378,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
                         path,
                         thumb_stream,
                         format,
+                        duration,
                         stream,
                     }) => {
                         let media_for_upload = MediaForUpload {
@@ -383,7 +387,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
                             temp_dir,
                             stream,
                         };
-                        media_sender.send((media_for_upload, media, format))?;
+                        media_sender.send((media_for_upload, media, format, duration))?;
                         media_is_downloaded = true;
                         break;
                     }
@@ -408,6 +412,7 @@ struct PreparedDownload {
     path: PathBuf,
     thumb_stream: Option<MediaByteStream>,
     format: MediaFormat,
+    duration: Option<i64>,
     stream: MediaByteStream,
 }
 
@@ -454,6 +459,7 @@ async fn build_downloaded_media(
         path,
         thumb_stream,
         format,
+        duration: meta.duration,
         stream,
     })
 }

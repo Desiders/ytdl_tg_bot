@@ -255,7 +255,7 @@ async fn stream_download(
                 ext: ext.clone(),
                 width: format.width,
                 height: format.height,
-                duration: media.duration.map(duration_seconds_to_i64),
+                duration: resolve_download_duration(media.duration, section.as_ref()),
                 has_thumbnail: thumbnail_downloaded,
             })),
         },
@@ -610,4 +610,78 @@ impl fmt::Display for RequestMedia<'_> {
 #[allow(clippy::cast_possible_truncation)]
 fn duration_seconds_to_i64(duration: f32) -> i64 {
     duration as i64
+}
+
+fn resolve_download_duration(media_duration: Option<f32>, section: Option<&Sections>) -> Option<i64> {
+    match section {
+        None => media_duration.map(duration_seconds_to_i64),
+        Some(Sections {
+            start: Some(start),
+            end: Some(end),
+        }) => Some(i64::from((end - start).max(0))),
+        Some(Sections {
+            start: Some(start),
+            end: None,
+        }) => media_duration
+            .map(duration_seconds_to_i64)
+            .map(|duration| (duration - i64::from(*start)).max(0)),
+        Some(Sections {
+            start: None,
+            end: Some(end),
+        }) => Some(i64::from((*end).max(0))),
+        Some(Sections { start: None, end: None }) => media_duration.map(duration_seconds_to_i64),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_download_duration;
+    use crate::entities::Sections;
+
+    #[test]
+    fn uses_original_duration_without_crop() {
+        assert_eq!(resolve_download_duration(Some(125.9), None), Some(125));
+    }
+
+    #[test]
+    fn uses_explicit_crop_range_duration() {
+        assert_eq!(
+            resolve_download_duration(
+                Some(300.0),
+                Some(&Sections {
+                    start: Some(60),
+                    end: Some(150),
+                }),
+            ),
+            Some(90)
+        );
+    }
+
+    #[test]
+    fn uses_media_duration_for_open_ended_crop() {
+        assert_eq!(
+            resolve_download_duration(
+                Some(300.0),
+                Some(&Sections {
+                    start: Some(180),
+                    end: None,
+                }),
+            ),
+            Some(120)
+        );
+    }
+
+    #[test]
+    fn uses_end_as_duration_for_leading_crop() {
+        assert_eq!(
+            resolve_download_duration(
+                Some(300.0),
+                Some(&Sections {
+                    start: None,
+                    end: Some(75),
+                }),
+            ),
+            Some(75)
+        );
+    }
 }
