@@ -11,7 +11,9 @@ pub fn get_url_from_text(text: &str) -> Option<Url> {
     let words: Vec<&str> = text.split_whitespace().collect();
     for word in words {
         if let Ok(url) = Url::parse(word) {
-            return Some(url);
+            if url.origin().is_tuple() {
+                return Some(url);
+            }
         }
     }
     None
@@ -141,4 +143,23 @@ pub fn url_is_skippable_by_param(request: &mut Request) -> impl Future<Output = 
         }
     }
     async move { Ok(result) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::get_url_from_text;
+
+    #[test]
+    fn skips_non_network_scheme_and_returns_next_url() {
+        let url = get_url_from_text("text: https://example.com/watch?v=1").expect("expected URL");
+
+        assert_eq!(url.as_str(), "https://example.com/watch?v=1");
+    }
+
+    #[test]
+    fn returns_none_when_only_non_network_scheme_exists() {
+        let url = get_url_from_text("text:");
+
+        assert!(url.is_none());
+    }
 }
