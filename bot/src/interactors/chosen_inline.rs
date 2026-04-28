@@ -52,6 +52,7 @@ pub struct DownloadInput<'a> {
     pub params: &'a Params,
     pub url: Option<&'a Url>,
     pub chat_cfg: &'a ChatConfig,
+    pub link_is_visible: bool,
     pub inline_message_id: &'a str,
     pub result_id: &'a str,
     pub tx_manager: &'a mut TxManager,
@@ -137,7 +138,7 @@ where
                     inline_message_id: input.inline_message_id,
                     id: &file_id,
                     webpage_url: Some(&url),
-                    link_is_visible: input.chat_cfg.link_is_visible,
+                    link_is_visible: input.link_is_visible,
                 })
                 .await
             {
@@ -166,7 +167,7 @@ where
                     inline_message_id: input.inline_message_id,
                     id: &file_id,
                     webpage_url: media.webpage_url.as_ref(),
-                    link_is_visible: input.chat_cfg.link_is_visible,
+                    link_is_visible: input.link_is_visible,
                 })
                 .await
             {
@@ -291,7 +292,7 @@ where
                     inline_message_id: input.inline_message_id,
                     id: &file_id,
                     webpage_url: Some(&media.webpage_url),
-                    link_is_visible: input.chat_cfg.link_is_visible,
+                    link_is_visible: input.link_is_visible,
                 })
                 .await
             {
@@ -411,7 +412,7 @@ where
                     inline_message_id: input.inline_message_id,
                     id: &file_id,
                     webpage_url: Some(&url),
-                    link_is_visible: input.chat_cfg.link_is_visible,
+                    link_is_visible: input.link_is_visible,
                 })
                 .await
             {
@@ -440,7 +441,7 @@ where
                     inline_message_id: input.inline_message_id,
                     id: &file_id,
                     webpage_url: media.webpage_url.as_ref(),
-                    link_is_visible: input.chat_cfg.link_is_visible,
+                    link_is_visible: input.link_is_visible,
                 })
                 .await
             {
@@ -565,7 +566,7 @@ where
                     inline_message_id: input.inline_message_id,
                     id: &file_id,
                     webpage_url: Some(&media.webpage_url),
-                    link_is_visible: input.chat_cfg.link_is_visible,
+                    link_is_visible: input.link_is_visible,
                 })
                 .await
             {

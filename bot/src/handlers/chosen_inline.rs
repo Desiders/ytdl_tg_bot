@@ -1,6 +1,6 @@
 use crate::{
     database::TxManager,
-    entities::{ChatConfig, Params},
+    entities::{ChatConfig, OwnChatConfig, Params},
     interactors::{chosen_inline, Interactor as _},
     services::messenger::MessengerPort,
 };
@@ -19,6 +19,7 @@ pub async fn download_video<Messenger>(
     params: Params,
     url_option: Option<Extension<Url>>,
     Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     ChosenInlineResult {
         inline_message_id,
         result_id,
@@ -37,6 +38,7 @@ where
             params: &params,
             url,
             chat_cfg: &chat_cfg,
+            link_is_visible: own_chat_cfg.as_ref().is_some_and(|chat_cfg| chat_cfg.link_is_visible),
             inline_message_id,
             result_id: &result_id,
             tx_manager: &mut tx_manager,
@@ -50,6 +52,7 @@ pub async fn download_audio<Messenger>(
     params: Params,
     url_option: Option<Extension<Url>>,
     Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     ChosenInlineResult {
         inline_message_id,
         result_id,
@@ -68,6 +71,7 @@ where
             params: &params,
             url,
             chat_cfg: &chat_cfg,
+            link_is_visible: own_chat_cfg.as_ref().is_some_and(|chat_cfg| chat_cfg.link_is_visible),
             inline_message_id,
             result_id: &result_id,
             tx_manager: &mut tx_manager,

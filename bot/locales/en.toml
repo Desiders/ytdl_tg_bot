@@ -44,6 +44,7 @@ For <code>/rv</code> and <code>/ra</code>:
 changed_to_visible = "Link in caption is now <b>visible</b>"
 changed_to_hidden = "Link in caption is now <b>hidden</b>"
 error = "Failed to change link visibility"
+private_only = "Use this command in private chat"
 
 [exclude_domain]
 already_in_list = "This domain is already in the exclude list"

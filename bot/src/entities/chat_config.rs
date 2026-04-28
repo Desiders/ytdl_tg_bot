@@ -14,6 +14,9 @@ pub struct ChatConfig {
     pub updated_at: OffsetDateTime,
 }
 
+#[derive(Debug, Clone)]
+pub struct OwnChatConfig(pub Option<ChatConfig>);
+
 impl ChatConfig {
     pub fn new(tg_id: i64, cmd_random_enabled: bool, language: String) -> Self {
         Self {

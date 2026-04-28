@@ -28,6 +28,16 @@ impl<Conn> Dao<'_, Conn>
 where
     Conn: ConnectionTrait,
 {
+    pub async fn get(&self, tg_id: i64) -> Result<Option<ChatConfig>, ErrorKind<Infallible>> {
+        use chat_configs::Entity;
+
+        Entity::find_by_id(tg_id)
+            .one(self.conn)
+            .await
+            .map(|row| row.map(Into::into))
+            .map_err(Into::into)
+    }
+
     pub async fn insert_or_update(
         &self,
         ChatConfig {
