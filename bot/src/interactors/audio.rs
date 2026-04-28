@@ -187,7 +187,7 @@ where
                 let downloaded_media_count = AtomicUsize::new(cached_len);
                 tokio::join!(
                     async {
-                        while let Some((media_for_upload, media, _format)) = media_receiver.recv().await {
+                        while let Some((media_for_upload, media, _format, duration)) = media_receiver.recv().await {
                             let file_id = match self
                                 .upload_media
                                 .execute(send_media::upload::SendAudioInput {
@@ -197,7 +197,7 @@ where
                                     name: media.title.as_deref().unwrap_or(media.id.as_ref()),
                                     title: media.title.as_deref(),
                                     performer: media.uploader.as_deref(),
-                                    duration: media.duration.map(|val| val as i64),
+                                    duration,
                                     with_delete: true,
                                     webpage_url: &media.webpage_url,
                                     link_is_visible: true,

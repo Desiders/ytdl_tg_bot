@@ -228,7 +228,7 @@ where
                 async { interactor.download_media.execute(download_input).await }
             );
 
-            let (media_for_upload, format) = match download_res {
+            let (media_for_upload, format, duration) = match download_res {
                 Ok(Some(val)) => val,
                 Ok(None) => {
                     let _ = progress::is_errors_in_chosen_inline(
@@ -263,7 +263,7 @@ where
                     name: media.title.as_deref().unwrap_or(media.id.as_ref()),
                     width: format.width,
                     height: format.height,
-                    duration: media.duration.map(|val| val as i64),
+                    duration,
                     with_delete: true,
                     webpage_url: &media.webpage_url,
                     link_is_visible: true,
@@ -502,7 +502,7 @@ where
                 async { interactor.download_media.execute(download_input).await }
             );
 
-            let (media_for_upload, _format) = match download_res {
+            let (media_for_upload, _format, duration) = match download_res {
                 Ok(Some(val)) => val,
                 Ok(None) => {
                     let _ = progress::is_errors_in_chosen_inline(
@@ -537,7 +537,7 @@ where
                     name: media.title.as_deref().unwrap_or(media.id.as_ref()),
                     title: media.title.as_deref(),
                     performer: media.uploader.as_deref(),
-                    duration: media.duration.map(|val| val as i64),
+                    duration,
                     with_delete: true,
                     webpage_url: &media.webpage_url,
                     link_is_visible: true,

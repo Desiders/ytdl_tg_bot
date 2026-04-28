@@ -34,11 +34,7 @@ pub enum GetVideoInfoErrorKind {
 #[instrument(skip_all)]
 pub async fn get_video_info(client: &Client, api_url: &str, url: &str) -> Result<Vec<BasicInfo>, GetVideoInfoErrorKind> {
     let id = get_video_id(url)?;
-    let response = client
-        .get(format!("{api_url}/video"))
-        .query(&[("id", &id)])
-        .send()
-        .await?;
+    let response = client.get(format!("{api_url}/video")).query(&[("id", &id)]).send().await?;
     let status = response.status();
     let body = response.text().await?;
     if !status.is_success() {
@@ -88,11 +84,7 @@ pub enum SearchVideoErrorKind {
 
 #[instrument(skip_all)]
 pub async fn search_video(client: &Client, api_url: &str, text: &str) -> Result<Vec<BasicInfo>, SearchVideoErrorKind> {
-    let response = client
-        .get(format!("{api_url}/search"))
-        .query(&[("q", &text)])
-        .send()
-        .await?;
+    let response = client.get(format!("{api_url}/search")).query(&[("q", &text)]).send().await?;
     let status = response.status();
     let body = response.text().await?;
     if !status.is_success() {
