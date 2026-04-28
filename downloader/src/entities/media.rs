@@ -87,9 +87,15 @@ pub struct Media {
     pub playlist_index: i16,
     pub thumbnail: Option<Url>,
     pub thumbnails: Vec<Thumbnail>,
+    pub live_status: Option<Box<str>>,
+    pub is_live: bool,
 }
 
 impl Media {
+    pub fn is_active_livestream(&self) -> bool {
+        self.is_live || matches!(self.live_status.as_deref(), Some("is_live" | "is_upcoming"))
+    }
+
     pub fn get_thumb_urls(&self, aspect_kind: Option<AspectKind>) -> Vec<Url> {
         let mut urls = match self.webpage_url.host_str() {
             Some(host) => {
@@ -162,6 +168,9 @@ pub struct MediaWithFormat {
     pub thumbnail: Option<Url>,
     #[serde(default)]
     pub thumbnails: Vec<Thumbnail>,
+    pub live_status: Option<Box<str>>,
+    #[serde(default)]
+    pub is_live: bool,
 
     pub format_id: String,
     pub format_note: Option<String>,
@@ -235,6 +244,8 @@ impl From<MediaWithFormat> for Media {
             playlist_index,
             thumbnail,
             thumbnails,
+            live_status,
+            is_live,
             ..
         }: MediaWithFormat,
     ) -> Self {
@@ -249,6 +260,8 @@ impl From<MediaWithFormat> for Media {
             playlist_index: playlist_index.unwrap_or(1),
             thumbnail,
             thumbnails,
+            live_status,
+            is_live,
         }
     }
 }
@@ -275,5 +288,48 @@ impl From<MediaWithFormat> for MediaFormat {
             aspect_ratio,
             filesize_approx,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Media;
+    use url::Url;
+
+    fn media(live_status: Option<&str>, is_live: bool) -> Media {
+        Media {
+            id: "id".into(),
+            display_id: None,
+            webpage_url: Url::parse("https://www.youtube.com/watch?v=test").unwrap(),
+            title: None,
+            language: None,
+            uploader: None,
+            duration: None,
+            playlist_index: 1,
+            thumbnail: None,
+            thumbnails: vec![],
+            live_status: live_status.map(Into::into),
+            is_live,
+        }
+    }
+
+    #[test]
+    fn active_livestream_when_is_live_flag_is_true() {
+        assert!(media(None, true).is_active_livestream());
+    }
+
+    #[test]
+    fn active_livestream_when_live_status_is_live() {
+        assert!(media(Some("is_live"), false).is_active_livestream());
+    }
+
+    #[test]
+    fn active_livestream_when_live_status_is_upcoming() {
+        assert!(media(Some("is_upcoming"), false).is_active_livestream());
+    }
+
+    #[test]
+    fn not_active_livestream_when_was_live() {
+        assert!(!media(Some("was_live"), false).is_active_livestream());
     }
 }
