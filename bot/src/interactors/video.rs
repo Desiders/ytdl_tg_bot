@@ -132,6 +132,7 @@ where
             Some(raw_value) => Language::from_str(raw_value).unwrap(),
             None => Language::default(),
         };
+        let overwrite_cache = input.params.get_bool("overwrite");
 
         match self
             .get_media
@@ -142,6 +143,7 @@ where
                 domain: input.url.domain(),
                 audio_language: &audio_language,
                 sections: sections.as_ref(),
+                overwrite_cache,
                 tx_manager: input.tx_manager,
             })
             .await
@@ -229,6 +231,7 @@ where
                                     domain: media.webpage_url.host_str().map(ToOwned::to_owned),
                                     audio_language: audio_language.clone(),
                                     sections: sections.clone(),
+                                    overwrite_cache,
                                     tx_manager: input.tx_manager,
                                 })
                                 .await
@@ -426,6 +429,7 @@ where
             Some(raw_value) => Language::from_str(raw_value).unwrap(),
             None => Language::default(),
         };
+        let overwrite_cache = input.params.get_bool("overwrite");
 
         match self
             .get_media
@@ -436,6 +440,7 @@ where
                 domain: input.url.domain(),
                 audio_language: &audio_language,
                 sections: sections.as_ref(),
+                overwrite_cache,
                 tx_manager: input.tx_manager,
             })
             .await
@@ -501,6 +506,7 @@ where
                                     domain: media.webpage_url.host_str().map(ToOwned::to_owned),
                                     audio_language: audio_language.clone(),
                                     sections: sections.clone(),
+                                    overwrite_cache,
                                     tx_manager: input.tx_manager,
                                 })
                                 .await

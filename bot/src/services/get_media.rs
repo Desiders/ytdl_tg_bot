@@ -48,6 +48,7 @@ pub struct GetMediaByURLInput<'a> {
     pub domain: Option<&'a str>,
     pub audio_language: &'a Language,
     pub sections: Option<&'a Sections>,
+    pub overwrite_cache: bool,
     pub tx_manager: &'a mut TxManager,
 }
 
@@ -85,6 +86,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
             domain,
             audio_language,
             sections,
+            overwrite_cache,
             tx_manager,
         }: GetMediaByURLInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
@@ -97,6 +99,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
             domain,
             audio_language,
             sections,
+            overwrite_cache,
             MediaType::Video,
             "video",
             tx_manager,
@@ -124,6 +127,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
             domain,
             audio_language,
             sections,
+            overwrite_cache,
             tx_manager,
         }: GetMediaByURLInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
@@ -136,6 +140,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
             domain,
             audio_language,
             sections,
+            overwrite_cache,
             MediaType::Audio,
             "audio",
             tx_manager,
@@ -240,6 +245,7 @@ async fn get_media_by_url(
     domain: Option<&str>,
     audio_language: &Language,
     sections: Option<&Sections>,
+    overwrite_cache: bool,
     media_type: MediaType,
     media_type_str: &str,
     tx_manager: &mut TxManager,
@@ -255,7 +261,7 @@ async fn get_media_by_url(
         (val.start, val.end)
     };
 
-    if is_single_media {
+    if is_single_media && !overwrite_cache {
         if let Some(media) = dao
             .get(
                 cache_search,
@@ -295,23 +301,25 @@ async fn get_media_by_url(
     for (mut media, formats) in playlist.inner {
         media.remove_url_tracking_params(tracking_params_cfg);
         let domain = media.webpage_url.domain();
-        if let Some(DownloadedMedia { file_id, .. }) = dao
-            .get(
-                &media.id,
-                domain,
-                audio_language.language.as_deref(),
-                clone_media_type(&media_type),
-                start,
-                end,
-            )
-            .await?
-        {
-            cached.push(MediaInPlaylist {
-                file_id,
-                playlist_index: media.playlist_index,
-                webpage_url: Some(media.webpage_url.clone()),
-            });
-            continue;
+        if !overwrite_cache {
+            if let Some(DownloadedMedia { file_id, .. }) = dao
+                .get(
+                    &media.id,
+                    domain,
+                    audio_language.language.as_deref(),
+                    clone_media_type(&media_type),
+                    start,
+                    end,
+                )
+                .await?
+            {
+                cached.push(MediaInPlaylist {
+                    file_id,
+                    playlist_index: media.playlist_index,
+                    webpage_url: Some(media.webpage_url.clone()),
+                });
+                continue;
+            }
         }
         uncached.push((media, formats));
     }

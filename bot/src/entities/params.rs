@@ -1,4 +1,4 @@
-use std::{collections::HashMap, convert::Infallible, future::Future};
+use std::{collections::HashMap, convert::Infallible, future::Future, str::FromStr as _};
 use telers::{Extractor, Request};
 
 #[derive(Debug, Default, Clone)]
@@ -40,6 +40,10 @@ impl Params {
             .collect();
 
         (!params.is_empty()).then_some(params)
+    }
+
+    pub fn get_bool(&self, key: &str) -> bool {
+        self.0.get(key).is_some_and(|value| bool::from_str(value).unwrap_or(false))
     }
 }
 
@@ -155,5 +159,29 @@ mod tests {
         let params = Params::parse("https://www.youtube.com/playlist?list=... [items=:3:]");
         assert_eq!(params.0.len(), 1);
         assert_eq!(params.0.get("items").map(|v| v.as_ref()), Some(":3:"));
+    }
+
+    #[test]
+    fn test_get_bool_true() {
+        let params = Params::parse("[overwrite=true]");
+        assert!(params.get_bool("overwrite"));
+    }
+
+    #[test]
+    fn test_get_bool_false() {
+        let params = Params::parse("[overwrite=false]");
+        assert!(!params.get_bool("overwrite"));
+    }
+
+    #[test]
+    fn test_get_bool_invalid_defaults_to_true() {
+        let params = Params::parse("[overwrite=force]");
+        assert!(!params.get_bool("overwrite"));
+    }
+
+    #[test]
+    fn test_get_bool_missing_defaults_to_false() {
+        let params = Params::parse("[crop=1:00-2:00]");
+        assert!(!params.get_bool("overwrite"));
     }
 }
