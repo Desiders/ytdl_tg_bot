@@ -1,4 +1,5 @@
 use std::{
+    ffi::OsStr,
     fmt, fs,
     pin::Pin,
     sync::{
@@ -310,6 +311,7 @@ async fn stream_download(
     })?;
     drop(progress_tx);
     let _ = progress_forwarder.await;
+    let media_file_path = resolve_media_file_path(output_dir_path, &media_file_path).await?;
 
     if thumbnail_downloaded {
         let embed_started_at = Instant::now();
@@ -579,6 +581,65 @@ async fn stream_media_file(media_file_path: &std::path::Path, tx: &UnboundedSend
 
 async fn file_size(path: &std::path::Path) -> Option<u64> {
     tokio::fs::metadata(path).await.ok().map(|metadata| metadata.len())
+}
+
+async fn resolve_media_file_path(
+    output_dir_path: &std::path::Path,
+    expected_media_file_path: &std::path::Path,
+) -> Result<std::path::PathBuf, Status> {
+    if tokio::fs::try_exists(expected_media_file_path)
+        .await
+        .map_err(|err| Status::internal(format!("Exists check error: {err}")))?
+    {
+        return Ok(expected_media_file_path.to_path_buf());
+    }
+
+    let mut dir = tokio::fs::read_dir(output_dir_path)
+        .await
+        .map_err(|err| Status::internal(format!("Read dir error: {err}")))?;
+    let mut fallback_path = None;
+    let mut fallback_size = 0_u64;
+
+    while let Some(entry) = dir
+        .next_entry()
+        .await
+        .map_err(|err| Status::internal(format!("Read dir entry error: {err}")))?
+    {
+        let path = entry.path();
+        let Some(file_name) = path.file_name().and_then(OsStr::to_str) else {
+            continue;
+        };
+        if !file_name.starts_with("media.") || matches!(file_name, "media.info.json" | "media.jpg") {
+            continue;
+        }
+
+        let metadata = entry
+            .metadata()
+            .await
+            .map_err(|err| Status::internal(format!("Entry metadata error: {err}")))?;
+        if !metadata.is_file() {
+            continue;
+        }
+
+        let size = metadata.len();
+        if fallback_path.is_none() || size > fallback_size {
+            fallback_size = size;
+            fallback_path = Some(path);
+        }
+    }
+
+    let Some(actual_media_file_path) = fallback_path else {
+        return Err(Status::internal("Metadata error: downloaded media file not found"));
+    };
+
+    warn!(
+        expected_path = %expected_media_file_path.display(),
+        actual_path = %actual_media_file_path.display(),
+        file_size = fallback_size,
+        "Using fallback downloaded media path"
+    );
+
+    Ok(actual_media_file_path)
 }
 
 #[allow(clippy::result_large_err)]
