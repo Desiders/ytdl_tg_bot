@@ -5,6 +5,12 @@ use crate::{authenticated_request, with_node_failover, GetMediaInfoErrorKind, No
 
 const MAX_DECODING_MESSAGE_SIZE: usize = 30 * 1024 * 1024;
 
+/// Fetches media information from a routed downloader node.
+///
+/// # Errors
+///
+/// Returns an error if no node is available, authentication metadata cannot be
+/// built, or the RPC fails.
 pub async fn get_media_info(
     router: &NodeRouter,
     domain: Option<&str>,

@@ -28,10 +28,11 @@ use tracing::{debug, error, info, warn};
 use url::Url;
 
 use crate::{
-    config::{YtDlpConfig, YtPotProviderConfig},
-    entities::{Cookies, Language, Media, MediaFormat, MediaWithFormat, Playlist, Range, Sections},
+    config::{GalleryDlConfig, YtDlpConfig, YtPotProviderConfig},
+    entities::{Cookies, Language, Media, MediaFormat, MediaWithFormat, Playlist, Range, RawPhotoInfo, Sections},
     services::{
         download_and_convert, embed_thumbnail,
+        gallery_dl::{self, GetInfoErrorKind},
         ytdl::{self, FormatStrategy},
     },
 };
@@ -47,6 +48,7 @@ type DownloadStream = Pin<Box<dyn Stream<Item = Result<DownloadChunk, Status>> +
 
 pub struct DownloaderService {
     pub yt_dlp_cfg: Arc<YtDlpConfig>,
+    pub gallery_dl_cfg: Arc<GalleryDlConfig>,
     pub yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
     pub cookies: Arc<Cookies>,
     pub active_downloads: Arc<AtomicU32>,
@@ -63,7 +65,6 @@ impl Downloader for DownloaderService {
         let url = parse_url(&request.url)?;
         let playlist_range = parse_range(request.playlist_range)?;
         let audio_language = parse_language(&request.audio_language);
-        let format_strategy = parse_format_strategy(&request.media_type, &request.audio_language)?;
         let allow_playlist = !playlist_range.is_single_element();
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
@@ -79,24 +80,41 @@ impl Downloader for DownloaderService {
             "Fetching media info"
         );
 
-        let playlist = ytdl::get_media_info(
-            url.as_str(),
-            &format_strategy,
-            &audio_language,
-            self.yt_dlp_cfg.as_ref(),
-            &self.yt_pot_provider_cfg.url,
-            &playlist_range,
-            allow_playlist,
-            GET_INFO_TIMEOUT_SECS,
-            cookie.as_deref(),
-        )
-        .await
-        .map_err(|err| match err {
-            ytdl::GetInfoErrorKind::Retryable(kind) => Status::aborted(kind.to_string()),
-            err => Status::internal(err.to_string()),
-        })?;
+        let playlist = if request.media_type == "photo" {
+            gallery_dl::get_media_info(
+                url.as_str(),
+                self.gallery_dl_cfg.as_ref(),
+                &playlist_range,
+                GET_INFO_TIMEOUT_SECS,
+                cookie.as_deref(),
+            )
+            .await
+            .map_err(|err| match err {
+                GetInfoErrorKind::EmptyEntries => Status::not_found(err.to_string()),
+                err => Status::internal(err.to_string()),
+            })?
+        } else {
+            let format_strategy = parse_format_strategy(&request.media_type, &request.audio_language)?;
+            let playlist = ytdl::get_media_info(
+                url.as_str(),
+                &format_strategy,
+                &audio_language,
+                self.yt_dlp_cfg.as_ref(),
+                &self.yt_pot_provider_cfg.url,
+                &playlist_range,
+                allow_playlist,
+                GET_INFO_TIMEOUT_SECS,
+                cookie.as_deref(),
+            )
+            .await
+            .map_err(|err| match err {
+                ytdl::GetInfoErrorKind::Retryable(kind) => Status::aborted(kind.to_string()),
+                err => Status::internal(err.to_string()),
+            })?;
 
-        reject_active_livestreams(&playlist)?;
+            reject_active_livestreams(&playlist)?;
+            playlist
+        };
 
         let entries_count = playlist.inner.len();
         info!(
@@ -138,6 +156,7 @@ impl Downloader for DownloaderService {
             _permit: permit,
         };
         let yt_dlp_cfg = self.yt_dlp_cfg.clone();
+        let gallery_dl_cfg = self.gallery_dl_cfg.clone();
         let yt_pot_provider_cfg = self.yt_pot_provider_cfg.clone();
         let cookies = self.cookies.clone();
 
@@ -145,7 +164,7 @@ impl Downloader for DownloaderService {
         let error_tx = tx.clone();
         tokio::spawn(async move {
             let started_at = Instant::now();
-            if let Err(status) = stream_download(request, yt_dlp_cfg, yt_pot_provider_cfg, cookies, tx).await {
+            if let Err(status) = stream_download(request, yt_dlp_cfg, gallery_dl_cfg, yt_pot_provider_cfg, cookies, tx).await {
                 if status.code() == Code::Cancelled {
                     info!(
                         url = %request_url,
@@ -196,12 +215,21 @@ impl Drop for DownloadGuard {
 async fn stream_download(
     request: DownloadRequest,
     yt_dlp_cfg: Arc<YtDlpConfig>,
+    gallery_dl_cfg: Arc<GalleryDlConfig>,
     yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
     cookies: Arc<Cookies>,
     tx: UnboundedSender<Result<DownloadChunk, Status>>,
 ) -> Result<(), Status> {
     let url = parse_url(&request.url)?;
     let section = parse_section(request.section);
+    let effective_max_file_size = resolve_max_file_size(request.max_file_size, yt_dlp_cfg.max_file_size);
+    let host = url.host();
+    let cookie = cookies.get_path_by_optional_host(host.as_ref());
+
+    if request.media_type == "photo" {
+        return stream_photo_download(request, url, effective_max_file_size, gallery_dl_cfg, cookie, tx).await;
+    }
+
     let media_with_format: MediaWithFormat =
         serde_json::from_str(&request.raw_info_json).map_err(|err| Status::invalid_argument(format!("Invalid info file error: {err}")))?;
     let media = Media::from(media_with_format.clone());
@@ -214,9 +242,6 @@ async fn stream_download(
             parse_format_strategy(&request.media_type, &request.audio_ext)?,
         )
     };
-    let effective_max_file_size = resolve_max_file_size(request.max_file_size, yt_dlp_cfg.max_file_size);
-    let host = url.host();
-    let cookie = cookies.get_path_by_optional_host(host.as_ref());
 
     info!(
         url = %url,
@@ -381,6 +406,88 @@ async fn stream_download(
     Ok(())
 }
 
+async fn stream_photo_download(
+    request: DownloadRequest,
+    url: Url,
+    effective_max_file_size: u64,
+    gallery_dl_cfg: Arc<GalleryDlConfig>,
+    cookie: Option<std::path::PathBuf>,
+    tx: UnboundedSender<Result<DownloadChunk, Status>>,
+) -> Result<(), Status> {
+    let raw_info: RawPhotoInfo =
+        serde_json::from_str(&request.raw_info_json).map_err(|err| Status::invalid_argument(format!("Invalid info file error: {err}")))?;
+
+    info!(
+        url = %url,
+        format_id = %request.format_id,
+        media_type = "photo",
+        has_cookie = cookie.is_some(),
+        max_file_size = effective_max_file_size,
+        "Starting media download"
+    );
+
+    let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(|err| Status::internal(format!("Temp dir error: {err}")))?;
+    let output_dir_path = temp_dir.path();
+    let media_file_path = output_dir_path.join(format!("media.{}", raw_info.ext));
+
+    send_chunk(
+        &tx,
+        DownloadChunk {
+            payload: Some(Payload::Meta(DownloadMeta {
+                ext: raw_info.ext.clone(),
+                width: raw_info.width,
+                height: raw_info.height,
+                duration: None,
+                has_thumbnail: false,
+            })),
+        },
+    )?;
+
+    gallery_dl::download_media(
+        url.as_str(),
+        &raw_info,
+        effective_max_file_size,
+        output_dir_path,
+        gallery_dl_cfg.as_ref(),
+        DOWNLOAD_TIMEOUT_SECS,
+        cookie.as_deref(),
+    )
+    .await
+    .map_err(|err| Status::internal(err.to_string()))?;
+
+    let media_file_path = resolve_media_file_path(output_dir_path, &media_file_path).await?;
+    let metadata = tokio::fs::metadata(&media_file_path)
+        .await
+        .map_err(|err| Status::internal(format!("Metadata error: {err}")))?;
+    if metadata.len() > effective_max_file_size {
+        warn!(
+            url = %url,
+            file_size = metadata.len(),
+            max_file_size = effective_max_file_size,
+            "Downloaded file exceeds max file size"
+        );
+        return Err(Status::invalid_argument("File exceeds max file size"));
+    }
+
+    debug!(
+        url = %url,
+        path = %media_file_path.display(),
+        file_size = metadata.len(),
+        "Starting media stream to client"
+    );
+    let stream_started_at = Instant::now();
+    let total_streamed = stream_media_file(&media_file_path, &tx).await?;
+
+    info!(
+        url = %url,
+        bytes_streamed = total_streamed,
+        elapsed_ms = stream_started_at.elapsed().as_millis(),
+        "Finished streaming downloaded media"
+    );
+    drop(temp_dir);
+    Ok(())
+}
+
 fn map_playlist_response(playlist: Playlist, max_file_size: u64) -> Result<MediaInfoResponse, Status> {
     let mut entries = Vec::with_capacity(playlist.inner.len());
 
@@ -404,6 +511,7 @@ fn map_playlist_response(playlist: Playlist, max_file_size: u64) -> Result<Media
             id: media.id,
             display_id: media.display_id,
             webpage_url: media.webpage_url.to_string(),
+            direct_url: media.direct_url.map(|url| url.to_string()),
             title: media.title,
             uploader: media.uploader,
             duration: media.duration,
@@ -687,7 +795,7 @@ fn duration_seconds_to_i64(duration: f32) -> i64 {
 
 fn resolve_download_duration(media_duration: Option<f32>, section: Option<&Sections>) -> Option<i64> {
     match section {
-        None => media_duration.map(duration_seconds_to_i64),
+        None | Some(Sections { start: None, end: None }) => media_duration.map(duration_seconds_to_i64),
         Some(Sections {
             start: Some(start),
             end: Some(end),
@@ -702,7 +810,6 @@ fn resolve_download_duration(media_duration: Option<f32>, section: Option<&Secti
             start: None,
             end: Some(end),
         }) => Some(i64::from((*end).max(0))),
-        Some(Sections { start: None, end: None }) => media_duration.map(duration_seconds_to_i64),
     }
 }
 
@@ -768,6 +875,7 @@ mod tests {
                     id: "id".into(),
                     display_id: None,
                     webpage_url: Url::parse("https://www.youtube.com/watch?v=test").unwrap(),
+                    direct_url: None,
                     title: Some("title".into()),
                     language: None,
                     uploader: None,
@@ -796,6 +904,7 @@ mod tests {
                     id: "id".into(),
                     display_id: None,
                     webpage_url: Url::parse("https://www.youtube.com/watch?v=test").unwrap(),
+                    direct_url: None,
                     title: Some("title".into()),
                     language: None,
                     uploader: None,

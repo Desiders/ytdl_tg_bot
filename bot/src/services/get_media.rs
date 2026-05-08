@@ -149,6 +149,47 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
     }
 }
 
+pub struct GetPhotoByURL {
+    pub node_router: Arc<NodeRouter>,
+    pub cfg: Arc<TrackingParamsConfig>,
+}
+
+impl Interactor<GetMediaByURLInput<'_>> for &GetPhotoByURL {
+    type Output = GetMediaByURLKind;
+    type Err = GetMediaByURLErrorKind;
+
+    #[instrument(skip_all)]
+    async fn execute(
+        self,
+        GetMediaByURLInput {
+            url,
+            playlist_range,
+            cache_search,
+            domain,
+            audio_language,
+            sections,
+            overwrite_cache,
+            tx_manager,
+        }: GetMediaByURLInput<'_>,
+    ) -> Result<Self::Output, Self::Err> {
+        get_media_by_url(
+            self.node_router.as_ref(),
+            self.cfg.as_ref(),
+            url,
+            playlist_range,
+            cache_search,
+            domain,
+            audio_language,
+            sections,
+            overwrite_cache,
+            MediaType::Photo,
+            "photo",
+            tx_manager,
+        )
+        .await
+    }
+}
+
 pub struct GetUncachedVideoByURL {
     pub node_router: Arc<NodeRouter>,
     pub cfg: Arc<TrackingParamsConfig>,
@@ -174,7 +215,7 @@ impl Interactor<GetUncachedMediaByURLInput<'_>> for &GetUncachedVideoByURL {
             MediaInfoRequest {
                 url: url.as_str().to_owned(),
                 audio_language: audio_language.language.clone().unwrap_or_default(),
-                playlist_range: Some(to_proto_range(playlist_range)),
+                playlist_range: Some((*playlist_range).into()),
                 media_type: "video".to_owned(),
                 max_file_size: self.node_router.max_file_size(),
             },
@@ -263,14 +304,7 @@ async fn get_media_by_url(
 
     if is_single_media && !overwrite_cache {
         if let Some(media) = dao
-            .get(
-                cache_search,
-                domain,
-                audio_language.language.as_deref(),
-                clone_media_type(&media_type),
-                start,
-                end,
-            )
+            .get(cache_search, domain, audio_language.language.as_deref(), media_type, start, end)
             .await?
         {
             info!("Got cached media");
@@ -286,13 +320,16 @@ async fn get_media_by_url(
         MediaInfoRequest {
             url: url.as_str().to_owned(),
             audio_language: audio_language.language.clone().unwrap_or_default(),
-            playlist_range: Some(to_proto_range(playlist_range)),
+            playlist_range: Some((*playlist_range).into()),
             media_type: media_type_str.to_owned(),
             max_file_size: router.max_file_size(),
         },
     )
     .await
-    .map_err(|err| map_get_media_info_error(GetInfoErrorKind::from(err)))?;
+    .map_err(|err| match GetInfoErrorKind::from(err) {
+        GetInfoErrorKind::Client(ClientGetMediaInfoErrorKind::NodeUnavailable) => GetMediaByURLErrorKind::NodeUnavailable,
+        err => GetMediaByURLErrorKind::GetInfo(err),
+    })?;
     let playlist = playlist_from_response(response)?;
     let playlist_len = playlist.inner.len();
 
@@ -303,14 +340,7 @@ async fn get_media_by_url(
         let domain = media.webpage_url.domain();
         if !overwrite_cache {
             if let Some(DownloadedMedia { file_id, .. }) = dao
-                .get(
-                    &media.id,
-                    domain,
-                    audio_language.language.as_deref(),
-                    clone_media_type(&media_type),
-                    start,
-                    end,
-                )
+                .get(&media.id, domain, audio_language.language.as_deref(), media_type, start, end)
                 .await?
             {
                 cached.push(MediaInPlaylist {
@@ -339,10 +369,12 @@ fn playlist_from_response(response: proto::downloader::MediaInfoResponse) -> Res
         .entries
         .into_iter()
         .map(|entry| {
+            let direct_url = entry.direct_url.as_deref().map(Url::parse).transpose()?;
             let media = Media {
                 id: entry.id,
                 display_id: entry.display_id,
                 webpage_url: Url::parse(&entry.webpage_url)?,
+                direct_url,
                 title: entry.title,
                 language: entry.audio_language,
                 uploader: entry.uploader,
@@ -375,26 +407,4 @@ fn playlist_from_response(response: proto::downloader::MediaInfoResponse) -> Res
         .collect::<Result<_, _>>()?;
 
     Ok(Playlist { inner })
-}
-
-fn map_get_media_info_error(err: GetInfoErrorKind) -> GetMediaByURLErrorKind {
-    match err {
-        GetInfoErrorKind::Client(ClientGetMediaInfoErrorKind::NodeUnavailable) => GetMediaByURLErrorKind::NodeUnavailable,
-        err => GetMediaByURLErrorKind::GetInfo(err),
-    }
-}
-
-fn to_proto_range(range: &Range) -> proto::downloader::Range {
-    proto::downloader::Range {
-        start: i32::from(range.start),
-        count: i32::from(range.count),
-        step: i32::from(range.step),
-    }
-}
-
-fn clone_media_type(media_type: &MediaType) -> MediaType {
-    match media_type {
-        MediaType::Video => MediaType::Video,
-        MediaType::Audio => MediaType::Audio,
-    }
 }

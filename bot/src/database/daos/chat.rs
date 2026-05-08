@@ -31,7 +31,7 @@ where
         Chat {
             tg_id,
             username,
-            chat_type,
+            kind,
             created_at,
             updated_at,
         }: Chat,
@@ -45,7 +45,7 @@ where
         let model = ActiveModel {
             tg_id: Set(tg_id),
             username: Set(username),
-            chat_type: Set(chat_type.map(Into::into)),
+            chat_type: Set(kind.map(Into::into)),
             created_at: Set(created_at),
             updated_at: Set(updated_at),
         };
@@ -88,7 +88,7 @@ where
             .await?
             .into_iter()
             .map(|row| ChatTypeCount {
-                chat_type: row.chat_type.map(Into::into),
+                kind: row.chat_type.map(Into::into),
                 count: row.count,
             })
             .collect();

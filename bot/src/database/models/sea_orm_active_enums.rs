@@ -21,4 +21,6 @@ pub enum MediaType {
     Video,
     #[sea_orm(string_value = "audio")]
     Audio,
+    #[sea_orm(string_value = "photo")]
+    Photo,
 }

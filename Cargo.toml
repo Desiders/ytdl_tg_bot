@@ -2,13 +2,21 @@
 members = [
     "bot",
     "cookie_assignment",
-    "downloader_client",
     "downloader",
-    "proto",
+    "downloader_client",
     "migration",
+    "proto",
 ]
 resolver = "2"
 
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+[profile.k8s-dev]
+inherits = "dev"
+opt-level = 1
+incremental = true
+codegen-units = 256
+debug = 0
+lto = "off"

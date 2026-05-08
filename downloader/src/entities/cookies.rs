@@ -8,7 +8,7 @@ use url::Host;
 
 #[derive(Debug, Clone)]
 pub struct Cookie {
-    pub cookie_id: Box<str>,
+    pub id: Box<str>,
     pub domain: Box<str>,
     pub path: PathBuf,
 }
@@ -44,7 +44,7 @@ impl Cookies {
         fs::write(&path, data)?;
 
         let cookie = Cookie {
-            cookie_id: cookie_id.into(),
+            id: cookie_id.into(),
             domain: normalize_domain(domain).into_boxed_str(),
             path,
         };
@@ -91,7 +91,7 @@ impl Cookies {
         let Some(cookies) = self.cookies.read().ok() else {
             return Vec::new();
         };
-        cookies.values().map(|cookie| cookie.cookie_id.to_string()).collect()
+        cookies.values().map(|cookie| cookie.id.to_string()).collect()
     }
 }
 

@@ -1,4 +1,4 @@
-use sea_orm_migration::{async_trait::async_trait, prelude::*, schema::*};
+use sea_orm_migration::{async_trait::async_trait, prelude::*, schema::integer_null};
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;

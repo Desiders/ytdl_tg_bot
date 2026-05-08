@@ -37,7 +37,7 @@ pub struct Download<Messenger> {
     pub error_formatter: Arc<ErrorFormatter>,
     pub messenger: Arc<Messenger>,
     pub get_media: Arc<get_media::GetAudioByURL>,
-    pub download_playlist: Arc<media::DownloadAudioPlaylist>,
+    pub playlist_downloader: Arc<media::DownloadAudioPlaylist>,
     pub upload_media: Arc<send_media::upload::SendAudio<Messenger>>,
     pub send_media_by_id: Arc<send_media::id::SendAudio<Messenger>>,
     pub send_playlist: Arc<send_media::id::SendAudioPlaylist<Messenger>>,
@@ -283,7 +283,7 @@ where
                         }
                     },
                     async {
-                        if let Err(err) = self.download_playlist.execute(download_input).await {
+                        if let Err(err) = self.playlist_downloader.execute(download_input).await {
                             error!(%err, "Download error");
                             let text = format!(
                                 "Sorry, an error to download playlist\n{}",

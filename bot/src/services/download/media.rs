@@ -264,6 +264,67 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
     }
 }
 
+pub struct DownloadPhoto {
+    pub node_router: Arc<NodeRouter>,
+}
+
+impl Interactor<DownloadMediaInput<'_>> for &DownloadPhoto {
+    type Output = Option<(MediaForUpload, MediaFormat, Option<i64>)>;
+    type Err = DownloadMediaErrorKind;
+
+    #[instrument(skip_all)]
+    async fn execute(
+        self,
+        DownloadMediaInput {
+            url,
+            media,
+            sections,
+            formats,
+            err_sender,
+            progress_sender,
+        }: DownloadMediaInput<'_>,
+    ) -> Result<Self::Output, Self::Err> {
+        let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(Self::Err::TempDir)?;
+
+        for (format, raw) in formats {
+            let request = build_download_request(url, &format, raw, "photo", "", sections, self.node_router.max_file_size());
+
+            match download_with_retry(
+                self.node_router.as_ref(),
+                url.domain(),
+                request,
+                temp_dir.path(),
+                &format,
+                progress_sender.as_ref(),
+            )
+            .await
+            {
+                Ok(PreparedDownload {
+                    path,
+                    thumb_stream,
+                    format,
+                    duration,
+                    stream,
+                }) => {
+                    let media_for_upload = MediaForUpload {
+                        path,
+                        thumb_stream,
+                        temp_dir,
+                        stream,
+                    };
+                    return Ok(Some((media_for_upload, format, duration)));
+                }
+                Err(err) => {
+                    err_sender.send(err)?;
+                }
+            }
+        }
+
+        let _ = media;
+        Ok(None)
+    }
+}
+
 pub struct DownloadVideoPlaylist {
     pub node_router: Arc<NodeRouter>,
 }
@@ -408,6 +469,78 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
     }
 }
 
+pub struct DownloadPhotoPlaylist {
+    pub node_router: Arc<NodeRouter>,
+}
+
+impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadPhotoPlaylist {
+    type Output = ();
+    type Err = DownloadMediaPlaylistErrorKind;
+
+    #[instrument(skip_all)]
+    async fn execute(
+        self,
+        DownloadMediaPlaylistInput {
+            url,
+            playlist,
+            sections,
+            media_sender,
+            errs_sender,
+            progress_sender,
+        }: DownloadMediaPlaylistInput<'_>,
+    ) -> Result<Self::Output, Self::Err> {
+        for (media, formats) in playlist {
+            let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(Self::Err::TempDir)?;
+            let mut errs = vec![];
+            let mut media_is_downloaded = false;
+
+            for (format, raw) in formats {
+                let request = build_download_request(url, &format, raw, "photo", "", sections, self.node_router.max_file_size());
+
+                match download_with_retry(
+                    self.node_router.as_ref(),
+                    url.domain(),
+                    request,
+                    temp_dir.path(),
+                    &format,
+                    progress_sender.as_ref(),
+                )
+                .await
+                {
+                    Ok(PreparedDownload {
+                        path,
+                        thumb_stream,
+                        format,
+                        duration,
+                        stream,
+                    }) => {
+                        let media_for_upload = MediaForUpload {
+                            path,
+                            thumb_stream,
+                            temp_dir,
+                            stream,
+                        };
+                        media_sender.send((media_for_upload, media, format, duration))?;
+                        media_is_downloaded = true;
+                        break;
+                    }
+                    Err(err) => {
+                        errs.push(err);
+                    }
+                }
+            }
+
+            if let Some(ref sender) = errs_sender {
+                if !media_is_downloaded {
+                    sender.send(errs)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
 struct PreparedDownload {
     path: PathBuf,
     thumb_stream: Option<MediaByteStream>,
@@ -425,15 +558,15 @@ async fn download_with_retry(
     progress_sender: Option<&mpsc::UnboundedSender<DownloadProgressEvent>>,
 ) -> Result<PreparedDownload, DownloadErrorKind> {
     let session = download_media(node_router, domain, request).await?;
-    build_downloaded_media(session, output_dir, base_format, progress_sender).await
+    Ok(build_downloaded_media(session, output_dir, base_format, progress_sender))
 }
 
-async fn build_downloaded_media(
+fn build_downloaded_media(
     session: DownloadSession,
     output_dir: &Path,
     base_format: &MediaFormat,
     progress_sender: Option<&mpsc::UnboundedSender<DownloadProgressEvent>>,
-) -> Result<PreparedDownload, DownloadErrorKind> {
+) -> PreparedDownload {
     let meta = session.meta().clone();
     let path = output_dir.join(format!("media.{}", meta.ext));
     let (media_sender, media_receiver) = mpsc::unbounded_channel();
@@ -455,13 +588,13 @@ async fn build_downloaded_media(
         .has_thumbnail
         .then(|| MediaByteStream::new(ChannelByteStream::new(thumb_receiver)));
 
-    Ok(PreparedDownload {
+    PreparedDownload {
         path,
         thumb_stream,
         format,
         duration: meta.duration,
         stream,
-    })
+    }
 }
 
 fn build_download_request(

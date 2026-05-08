@@ -107,6 +107,25 @@ pub struct UploadAudioRequest<'a> {
     pub link_is_visible: bool,
 }
 
+pub struct UploadPhotoRequest<'a> {
+    pub chat_id: i64,
+    pub reply_to_message_id: Option<i64>,
+    pub media_for_upload: MediaForUpload,
+    pub name: &'a str,
+    pub with_delete: bool,
+    pub webpage_url: &'a Url,
+    pub link_is_visible: bool,
+}
+
+pub struct UploadPhotoUrlRequest<'a> {
+    pub chat_id: i64,
+    pub reply_to_message_id: Option<i64>,
+    pub photo_url: &'a Url,
+    pub with_delete: bool,
+    pub webpage_url: &'a Url,
+    pub link_is_visible: bool,
+}
+
 pub struct SendMediaByIdRequest<'a> {
     pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
@@ -151,15 +170,25 @@ pub trait MessengerPort: Send + Sync {
 
     fn upload_audio(&self, request: UploadAudioRequest<'_>) -> impl Future<Output = Result<Box<str>, MessengerError>> + Send;
 
+    fn upload_photo(&self, request: UploadPhotoRequest<'_>) -> impl Future<Output = Result<Box<str>, MessengerError>> + Send;
+
+    fn upload_photo_url(&self, request: UploadPhotoUrlRequest<'_>) -> impl Future<Output = Result<Box<str>, MessengerError>> + Send;
+
     fn send_video_by_id(&self, request: SendMediaByIdRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
 
     fn send_audio_by_id(&self, request: SendMediaByIdRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
+
+    fn send_photo_by_id(&self, request: SendMediaByIdRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
 
     fn edit_video_by_id(&self, request: EditMediaByIdRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
 
     fn edit_audio_by_id(&self, request: EditMediaByIdRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
 
+    fn edit_photo_by_id(&self, request: EditMediaByIdRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
+
     fn send_video_group(&self, request: SendMediaGroupRequest) -> impl Future<Output = Result<(), MessengerError>> + Send;
 
     fn send_audio_group(&self, request: SendMediaGroupRequest) -> impl Future<Output = Result<(), MessengerError>> + Send;
+
+    fn send_photo_group(&self, request: SendMediaGroupRequest) -> impl Future<Output = Result<(), MessengerError>> + Send;
 }

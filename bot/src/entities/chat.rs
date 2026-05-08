@@ -6,7 +6,7 @@ use time::OffsetDateTime;
 pub struct Chat {
     pub tg_id: i64,
     pub username: Option<String>,
-    pub chat_type: Option<ChatType>,
+    pub kind: Option<ChatType>,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }
@@ -16,7 +16,7 @@ impl Chat {
         Self {
             tg_id,
             username,
-            chat_type: Some(chat_type),
+            kind: Some(chat_type),
             created_at: OffsetDateTime::now_utc(),
             updated_at: OffsetDateTime::now_utc(),
         }
@@ -31,7 +31,7 @@ pub struct ChatStats {
 
 #[derive(Debug)]
 pub struct ChatTypeCount {
-    pub chat_type: Option<ChatType>,
+    pub kind: Option<ChatType>,
     pub count: i64,
 }
 
@@ -48,7 +48,7 @@ impl From<Model> for Chat {
         Self {
             tg_id,
             username,
-            chat_type: chat_type.map(Into::into),
+            kind: chat_type.map(Into::into),
             created_at,
             updated_at,
         }

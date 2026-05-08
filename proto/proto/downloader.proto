@@ -43,6 +43,7 @@ message MediaEntry {
   optional string domain = 8;
   optional string audio_language = 9;
   repeated MediaFormatEntry formats = 10;
+  optional string direct_url = 11;
 }
 
 message MediaInfoResponse {

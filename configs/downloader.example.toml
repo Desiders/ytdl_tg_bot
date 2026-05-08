@@ -15,6 +15,9 @@ key_path = "tls/node.key"
 command = ["python3", "-m", "yt_dlp"]
 max_file_size = 5000000
 
+[gallery_dl]
+command = ["python3", "-m", "gallery_dl"]
+
 [yt_pot_provider]
 url = "http://yt-pot-provider:4416"
 # url = "http://127.0.0.1:4416"

@@ -24,8 +24,8 @@ use crate::{
 pub struct Stats<Messenger> {
     pub error_formatter: Arc<ErrorFormatter>,
     pub messenger: Arc<Messenger>,
-    pub get_media_stats: Arc<downloaded_media::GetStats>,
-    pub get_node_stats: Arc<node_router::GetStats>,
+    pub media_stats: Arc<downloaded_media::GetStats>,
+    pub node_stats: Arc<node_router::GetStats>,
 }
 
 pub struct StatsInput<'a> {
@@ -45,19 +45,19 @@ where
     async fn execute(self, input: StatsInput<'_>) -> Result<Self::Output, Self::Err> {
         let locale = input.chat_cfg.map_or(Locale::En, ChatConfig::locale).as_str();
         let media_stats = self
-            .get_media_stats
+            .media_stats
             .execute(downloaded_media::GetStatsInput {
                 top_domains_limit: 5,
                 tx_manager: input.tx_manager,
             })
             .await;
-        let nodes_stats = self.get_node_stats.execute(node_router::GetStatsInput {}).await.unwrap_or_default();
+        let nodes_stats = self.node_stats.execute(node_router::GetStatsInput {}).await.unwrap_or_default();
 
         let text = match media_stats {
             Ok((media_stats, chat_stats)) => {
                 let mut chat_types = String::new();
                 for chat_type_count in &chat_stats.by_type {
-                    let type_label = match chat_type_count.chat_type {
+                    let type_label = match chat_type_count.kind {
                         Some(ChatType::Private) => t!("stats.chat_type_private", locale = locale),
                         Some(ChatType::Group) => t!("stats.chat_type_group", locale = locale),
                         Some(ChatType::Supergroup) => t!("stats.chat_type_supergroup", locale = locale),

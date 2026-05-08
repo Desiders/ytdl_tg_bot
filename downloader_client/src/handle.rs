@@ -85,12 +85,22 @@ impl NodeHandle {
         self.available.store(false, Relaxed);
     }
 
+    /// Fetches domains for which the node currently has assigned cookies.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if auth metadata cannot be built or the RPC fails.
     pub async fn fetch_supported_domains(&self) -> Result<Vec<String>, NodeHandleError> {
         let mut client = NodeCapabilitiesClient::new(self.channel.clone());
         let response = client.get_supported_domains(authenticated_request(Empty {}, &self.token)?).await?;
         Ok(response.into_inner().domains_with_cookies)
     }
 
+    /// Fetches the node active-download and capacity counters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if auth metadata cannot be built or the RPC fails.
     pub async fn fetch_status(&self) -> Result<(u32, u32), NodeHandleError> {
         let mut client = NodeCapabilitiesClient::new(self.channel.clone());
         let response = client.get_status(authenticated_request(Empty {}, &self.token)?).await?;

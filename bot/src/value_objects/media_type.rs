@@ -1,9 +1,10 @@
 use crate::database::models::sea_orm_active_enums::MediaType as Model;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum MediaType {
     Video,
     Audio,
+    Photo,
 }
 
 impl From<Model> for MediaType {
@@ -11,6 +12,7 @@ impl From<Model> for MediaType {
         match value {
             Model::Video => MediaType::Video,
             Model::Audio => MediaType::Audio,
+            Model::Photo => MediaType::Photo,
         }
     }
 }
@@ -20,6 +22,7 @@ impl From<MediaType> for Model {
         match value {
             MediaType::Video => Model::Video,
             MediaType::Audio => Model::Audio,
+            MediaType::Photo => Model::Photo,
         }
     }
 }

@@ -55,7 +55,6 @@ impl Hash for MediaFormat {
 }
 
 impl fmt::Display for MediaFormat {
-    #[allow(clippy::cast_precision_loss)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} [{}]", self.format_id, self.ext)?;
         if let Some(note) = &self.format_note {
@@ -64,8 +63,10 @@ impl fmt::Display for MediaFormat {
         if let (Some(w), Some(h)) = (self.width, self.height) {
             write!(f, " {w}x{h}")?;
         }
-        let size_mb = self.filesize_approx.unwrap_or(0) as f32 / (1024.0 * 1024.0);
-        write!(f, " (~{size_mb:.2} MB)")?;
+        let size_bytes = self.filesize_approx.unwrap_or(0);
+        let whole_mb = size_bytes / (1024 * 1024);
+        let fractional_mb = (size_bytes % (1024 * 1024)) * 100 / (1024 * 1024);
+        write!(f, " (~{whole_mb}.{fractional_mb:02} MB)")?;
         Ok(())
     }
 }
@@ -94,6 +95,7 @@ pub struct Media {
     pub id: String,
     pub display_id: Option<String>,
     pub webpage_url: Url,
+    pub direct_url: Option<Url>,
     pub title: Option<String>,
     pub language: Option<String>,
     pub uploader: Option<String>,
@@ -327,6 +329,7 @@ impl From<MediaWithFormat> for Media {
             id,
             display_id,
             webpage_url,
+            direct_url: None,
             title,
             language,
             uploader,

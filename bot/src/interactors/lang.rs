@@ -43,24 +43,14 @@ where
 
         let target = match arg {
             None => current.toggle(),
-            Some(val) => match Locale::parse(val) {
-                Some(locale) => locale,
-                None => {
-                    let text = t!("lang.unknown", locale = current.as_str(), lang = val);
-                    if let Err(err) = progress::new(
-                        self.messenger.as_ref(),
-                        &text,
-                        input.chat_cfg.tg_id,
-                        input.reply_to_message_id,
-                        Some(TextFormat::Html),
-                    )
-                    .await
-                    {
-                        error!(err = %self.error_formatter.format(&err), "Send error");
-                    }
+            Some(val) => {
+                if let Some(locale) = Locale::parse(val) {
+                    locale
+                } else {
+                    self.send_unknown_locale(input, current, val).await?;
                     return Ok(());
                 }
-            },
+            }
         };
 
         let text = match self
@@ -93,6 +83,27 @@ where
             error!(err = %self.error_formatter.format(&err), "Send error");
         }
 
+        Ok(())
+    }
+}
+
+impl<Messenger> Lang<Messenger>
+where
+    Messenger: MessengerPort,
+{
+    async fn send_unknown_locale(&self, input: LangInput<'_>, current: Locale, val: &str) -> Result<(), HandlerError> {
+        let text = t!("lang.unknown", locale = current.as_str(), lang = val);
+        if let Err(err) = progress::new(
+            self.messenger.as_ref(),
+            &text,
+            input.chat_cfg.tg_id,
+            input.reply_to_message_id,
+            Some(TextFormat::Html),
+        )
+        .await
+        {
+            error!(err = %self.error_formatter.format(&err), "Send error");
+        }
         Ok(())
     }
 }

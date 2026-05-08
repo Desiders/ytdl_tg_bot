@@ -29,6 +29,7 @@ pub struct NodeRouter {
 }
 
 impl NodeRouter {
+    #[must_use]
     pub fn new(config: &DownloaderClusterConfig, max_file_size: u64, service_target: Arc<DownloaderServiceTarget>) -> Self {
         let client = NodeClient::load(&config.tls, service_target.host.as_ref());
 
@@ -60,12 +61,11 @@ impl NodeRouter {
             .and_then(|value| self.domain_cookie_map.read().ok().and_then(|map| map.get(value).cloned()))
             .unwrap_or_default();
 
-        if let Some(index) = self.select_best_index(&nodes, domain_candidates, excluded) {
+        if let Some(index) = Self::select_best_index(&nodes, domain_candidates, excluded) {
             return nodes.get(index).cloned();
         }
 
-        self.select_best_index(&nodes, (0..nodes.len()).collect(), excluded)
-            .and_then(|index| nodes.get(index).cloned())
+        Self::select_best_index(&nodes, (0..nodes.len()).collect(), excluded).and_then(|index| nodes.get(index).cloned())
     }
 
     pub async fn refresh_status(&self) {
@@ -199,16 +199,11 @@ impl NodeRouter {
         }
     }
 
-    fn select_best_index(&self, nodes: &[Arc<NodeHandle>], indices: Vec<usize>, excluded: &HashSet<String>) -> Option<usize> {
-        select_best_index(self.select_candidates(nodes, indices, excluded))
+    fn select_best_index(nodes: &[Arc<NodeHandle>], indices: Vec<usize>, excluded: &HashSet<String>) -> Option<usize> {
+        select_best_index(Self::select_candidates(nodes, indices, excluded))
     }
 
-    fn select_candidates<'a>(
-        &self,
-        nodes: &'a [Arc<NodeHandle>],
-        indices: Vec<usize>,
-        excluded: &HashSet<String>,
-    ) -> Vec<NodeSnapshot<'a>> {
+    fn select_candidates<'a>(nodes: &'a [Arc<NodeHandle>], indices: Vec<usize>, excluded: &HashSet<String>) -> Vec<NodeSnapshot<'a>> {
         indices
             .into_iter()
             .filter_map(|index| nodes.get(index).map(|node| (index, node)))

@@ -21,6 +21,12 @@ impl DownloadSession {
         &self.meta
     }
 
+    /// Reads the next event from the downloader stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the stream RPC fails or the downloader sends an
+    /// invalid chunk sequence.
     pub async fn next_event(&mut self) -> Result<Option<DownloadEvent>, DownloadErrorKind> {
         let Some(chunk) = self.stream.message().await.map_err(DownloadErrorKind::from)? else {
             return Ok(None);
@@ -35,6 +41,12 @@ impl DownloadSession {
     }
 }
 
+/// Starts media download on a routed downloader node.
+///
+/// # Errors
+///
+/// Returns an error if no node is available, authentication metadata cannot be
+/// built, the RPC fails, or the stream starts with an invalid chunk.
 pub async fn download_media(
     router: &NodeRouter,
     domain: Option<&str>,

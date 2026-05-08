@@ -19,6 +19,12 @@ pub enum NodeFailoverError<E> {
     Operation(E),
 }
 
+/// Executes an operation against downloader nodes with router-based failover.
+///
+/// # Errors
+///
+/// Returns [`NodeFailoverError`] if no suitable node is available, all retryable
+/// attempts fail, or the operation returns a fatal error.
 pub async fn with_node_failover<T, E, F, Fut, C>(
     router: &NodeRouter,
     domain: Option<&str>,

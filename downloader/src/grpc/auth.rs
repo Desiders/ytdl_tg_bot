@@ -22,8 +22,7 @@ impl Interceptor for AuthInterceptor {
     fn call(&mut self, request: Request<()>) -> Result<Request<()>, Status> {
         let remote_addr = request
             .remote_addr()
-            .map(|addr| addr.to_string())
-            .unwrap_or_else(|| String::from("unknown"));
+            .map_or_else(|| String::from("unknown"), |addr| addr.to_string());
         let user_agent = request
             .metadata()
             .get("user-agent")
