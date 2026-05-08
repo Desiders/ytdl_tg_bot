@@ -242,7 +242,7 @@ pub async fn get_media_info(
     args.push("--extractor-args");
     args.push(&extractor_arg);
     args.push("--extractor-args");
-    args.push("youtube:player_client=default,mweb,web_music,web_creator;player_skip=configs,initial_data;use_ad_playback_context=true");
+    args.push(&yt_dlp_cfg.extractor_args);
 
     let cookie_path = cookie_path.map(|val| val.to_string_lossy());
     if let Some(cookie_path) = cookie_path.as_deref() {
@@ -363,7 +363,7 @@ pub async fn download_media(
     args.push("--extractor-args");
     args.push(&extractor_arg);
     args.push("--extractor-args");
-    args.push("youtube:player_client=default,mweb,web_music,web_creator;player_skip=configs,initial_data;use_ad_playback_context=true");
+    args.push(&yt_dlp_cfg.extractor_args);
 
     let cookie_path = cookie_path.map(|val| val.to_string_lossy());
     if let Some(cookie_path) = cookie_path.as_deref() {

@@ -36,6 +36,8 @@ pub struct YtDlpConfig {
     #[serde(default)]
     pub command: Vec<Box<str>>,
     pub max_file_size: u64,
+    #[serde(default = "default_extractor_args")]
+    pub extractor_args: Box<str>,
 }
 
 impl YtDlpConfig {
@@ -46,6 +48,10 @@ impl YtDlpConfig {
         }
         ("python3", vec!["-m", "yt_dlp"])
     }
+}
+
+fn default_extractor_args() -> Box<str> {
+    "youtube:player_client=default,mweb;player_skip=configs,initial_data;use_ad_playback_context=true".into()
 }
 
 #[derive(Default, Deserialize, Clone, Debug)]
@@ -159,6 +165,7 @@ mod tests {
         let config = YtDlpConfig {
             command: vec!["python3".into(), "-m".into(), "yt_dlp".into()],
             max_file_size: 1,
+            extractor_args: super::default_extractor_args(),
         };
 
         let (program, args) = config.command_parts();
@@ -171,6 +178,7 @@ mod tests {
         let config = YtDlpConfig {
             command: vec![],
             max_file_size: 1,
+            extractor_args: super::default_extractor_args(),
         };
 
         let (program, args) = config.command_parts();

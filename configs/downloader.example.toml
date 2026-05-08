@@ -14,6 +14,7 @@ key_path = "tls/node.key"
 [yt_dlp]
 command = ["python3", "-m", "yt_dlp"]
 max_file_size = 5000000
+extractor_args = "youtube:player_client=default,mweb;player_skip=configs,initial_data;use_ad_playback_context=true"
 
 [gallery_dl]
 command = ["python3", "-m", "gallery_dl"]
