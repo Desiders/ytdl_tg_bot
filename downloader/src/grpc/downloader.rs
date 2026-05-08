@@ -278,6 +278,25 @@ async fn stream_download(
         "Thumbnail download step finished"
     );
 
+    let (progress_tx, mut progress_rx) = mpsc::unbounded_channel::<String>();
+    ytdl::download_media(
+        strategy,
+        &request.format_id,
+        section.as_ref(),
+        effective_max_file_size,
+        output_dir_path,
+        &info_file_path,
+        yt_dlp_cfg.as_ref(),
+        &yt_pot_provider_cfg.url,
+        DOWNLOAD_TIMEOUT_SECS,
+        cookie.as_deref(),
+        Some(&progress_tx),
+    )
+    .await
+    .map_err(download_error_status)?;
+    drop(progress_tx);
+    let media_file_path = resolve_media_file_path(output_dir_path, &media_file_path).await?;
+
     send_chunk(
         &tx,
         DownloadChunk {
@@ -297,46 +316,14 @@ async fn stream_download(
         debug!(url = %url, path = %thumb_file_path.display(), "Finished thumbnail stream to client");
     }
 
-    let (progress_tx, mut progress_rx) = mpsc::unbounded_channel::<String>();
-    let progress_forwarder = {
-        let tx = tx.clone();
-        tokio::spawn(async move {
-            while let Some(progress) = progress_rx.recv().await {
-                if send_chunk(
-                    &tx,
-                    DownloadChunk {
-                        payload: Some(Payload::Progress(progress)),
-                    },
-                )
-                .is_err()
-                {
-                    break;
-                }
-            }
-        })
-    };
-
-    ytdl::download_media(
-        strategy,
-        &request.format_id,
-        section.as_ref(),
-        effective_max_file_size,
-        output_dir_path,
-        &info_file_path,
-        yt_dlp_cfg.as_ref(),
-        &yt_pot_provider_cfg.url,
-        DOWNLOAD_TIMEOUT_SECS,
-        cookie.as_deref(),
-        Some(&progress_tx),
-    )
-    .await
-    .map_err(|err| match err {
-        ytdl::DownloadErrorKind::Retryable(kind) => Status::aborted(kind.to_string()),
-        err => Status::internal(err.to_string()),
-    })?;
-    drop(progress_tx);
-    let _ = progress_forwarder.await;
-    let media_file_path = resolve_media_file_path(output_dir_path, &media_file_path).await?;
+    while let Ok(progress) = progress_rx.try_recv() {
+        send_chunk(
+            &tx,
+            DownloadChunk {
+                payload: Some(Payload::Progress(progress)),
+            },
+        )?;
+    }
 
     if thumbnail_downloaded {
         let embed_started_at = Instant::now();
@@ -568,6 +555,13 @@ fn parse_section(section: Option<Section>) -> Option<Sections> {
         start: section.start,
         end: section.end,
     })
+}
+
+fn download_error_status(err: ytdl::DownloadErrorKind) -> Status {
+    match err {
+        ytdl::DownloadErrorKind::Retryable(kind) => Status::aborted(kind.to_string()),
+        err => Status::internal(err.to_string()),
+    }
 }
 
 fn parse_language(audio_language: &str) -> Language {
