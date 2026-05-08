@@ -36,7 +36,7 @@ use crate::{
         text_contains_host_with_reply, text_contains_url, text_contains_url_with_reply, text_empty, url_is_blacklisted,
         url_is_skippable_by_param,
     },
-    handlers::{audio, chosen_inline, inline_query, lang, start, stats, video},
+    handlers::{audio, chosen_inline, inline_query, lang, photo, start, stats, video},
     middlewares::{CreateChatMiddleware, ReactionMiddleware, RemoveTrackingParamsMiddleware, ReplaceDomainsMiddleware},
     services::messenger::telegram::TelegramMessenger,
     utils::{on_shutdown, on_startup},
@@ -102,6 +102,12 @@ async fn main() {
                     Handler::new(audio::download::<Messenger>)
                         .filter(MessageType::one(Text))
                         .filter(Command::many(["ad", "audio", "audio_download"]))
+                        .filter(text_contains_url_with_reply),
+                )
+                .register(
+                    Handler::new(photo::download::<Messenger>)
+                        .filter(MessageType::one(Text))
+                        .filter(Command::many(["pd", "photo", "photo_download"]))
                         .filter(text_contains_url_with_reply),
                 )
                 .register(

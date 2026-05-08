@@ -20,7 +20,7 @@ impl Interactor<GetStatsInput> for &GetStats {
     #[instrument(skip_all)]
     async fn execute(self, GetStatsInput {}: GetStatsInput) -> Result<Self::Output, Self::Err> {
         let nodes = self.node_router.nodes();
-        let mut nodes_stats = Vec::with_capacity(nodes.len());
+        let mut stats = Vec::with_capacity(nodes.len());
         for node in nodes {
             let node_stats = NodeStats {
                 name: node.name.clone(),
@@ -29,8 +29,8 @@ impl Interactor<GetStatsInput> for &GetStats {
             };
             info!(?node_stats, "Got nodes stats");
 
-            nodes_stats.push(node_stats);
+            stats.push(node_stats);
         }
-        Ok(nodes_stats)
+        Ok(stats)
     }
 }

@@ -1,7 +1,7 @@
 use sea_orm_migration::{
     async_trait::async_trait,
     prelude::{extension::postgres::Type, *},
-    schema::*,
+    schema::enumeration_null,
     sea_orm::{EnumIter, Iterable as _},
 };
 

@@ -23,9 +23,12 @@ pub struct AuthConfig {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct TlsConfig {
-    pub ca_cert_path: Box<str>,
-    pub cert_path: Box<str>,
-    pub key_path: Box<str>,
+    #[serde(rename = "ca_cert_path")]
+    pub ca_cert: Box<str>,
+    #[serde(rename = "cert_path")]
+    pub cert: Box<str>,
+    #[serde(rename = "key_path")]
+    pub key: Box<str>,
 }
 
 #[derive(Default, Deserialize, Clone, Debug)]
@@ -45,6 +48,22 @@ impl YtDlpConfig {
     }
 }
 
+#[derive(Default, Deserialize, Clone, Debug)]
+pub struct GalleryDlConfig {
+    #[serde(default)]
+    pub command: Vec<Box<str>>,
+}
+
+impl GalleryDlConfig {
+    #[must_use]
+    pub fn command_parts(&self) -> (&str, Vec<&str>) {
+        if let Some((program, args)) = self.command.split_first() {
+            return (program.as_ref(), args.iter().map(AsRef::as_ref).collect());
+        }
+        ("python3", vec!["-m", "gallery_dl"])
+    }
+}
+
 #[derive(Deserialize, Clone, Debug)]
 pub struct YtPotProviderConfig {
     pub url: Box<str>,
@@ -61,6 +80,7 @@ pub struct Config {
     pub auth: AuthConfig,
     pub tls: TlsConfig,
     pub yt_dlp: YtDlpConfig,
+    pub gallery_dl: GalleryDlConfig,
     pub yt_pot_provider: YtPotProviderConfig,
     pub logging: LoggingConfig,
 }
@@ -68,26 +88,26 @@ pub struct Config {
 #[derive(Error, Debug)]
 pub enum TlsLoadError {
     #[error("Failed to read downloader CA certificate {path}: {source}")]
-    ReadCa { path: Box<str>, source: io::Error },
+    Ca { path: Box<str>, source: io::Error },
     #[error("Failed to read node certificate {path}: {source}")]
-    ReadCert { path: Box<str>, source: io::Error },
+    Cert { path: Box<str>, source: io::Error },
     #[error("Failed to read node key {path}: {source}")]
-    ReadKey { path: Box<str>, source: io::Error },
+    Key { path: Box<str>, source: io::Error },
 }
 
 impl Config {
     pub fn load_server_tls_cfg(&self) -> Result<ServerTlsConfig, TlsLoadError> {
         let config = &self.tls;
-        let ca_cert_pem = fs::read(&*config.ca_cert_path).map_err(|source| TlsLoadError::ReadCa {
-            path: config.ca_cert_path.clone(),
+        let ca_cert_pem = fs::read(&*config.ca_cert).map_err(|source| TlsLoadError::Ca {
+            path: config.ca_cert.clone(),
             source,
         })?;
-        let cert_pem = fs::read(&*config.cert_path).map_err(|source| TlsLoadError::ReadCert {
-            path: config.cert_path.clone(),
+        let cert_pem = fs::read(&*config.cert).map_err(|source| TlsLoadError::Cert {
+            path: config.cert.clone(),
             source,
         })?;
-        let key_pem = fs::read(&*config.key_path).map_err(|source| TlsLoadError::ReadKey {
-            path: config.key_path.clone(),
+        let key_pem = fs::read(&*config.key).map_err(|source| TlsLoadError::Key {
+            path: config.key.clone(),
             source,
         })?;
 
@@ -119,7 +139,11 @@ pub fn get_path() -> Box<str> {
     path.into_boxed_str()
 }
 
-#[allow(clippy::missing_errors_doc)]
+/// Loads downloader configuration from a TOML file.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read or the TOML cannot be parsed.
 pub fn parse_from_fs(path: impl AsRef<Path>) -> Result<Config, ParseError> {
     let raw = fs::read_to_string(path)?;
     let cfg = toml::from_str(&raw)?;
@@ -128,7 +152,7 @@ pub fn parse_from_fs(path: impl AsRef<Path>) -> Result<Config, ParseError> {
 
 #[cfg(test)]
 mod tests {
-    use super::YtDlpConfig;
+    use super::{GalleryDlConfig, YtDlpConfig};
 
     #[test]
     fn command_parts_use_explicit_command_when_present() {
@@ -152,5 +176,25 @@ mod tests {
         let (program, args) = config.command_parts();
         assert_eq!(program, "python3");
         assert_eq!(args, vec!["-m", "yt_dlp"]);
+    }
+
+    #[test]
+    fn gallery_command_parts_use_explicit_command_when_present() {
+        let config = GalleryDlConfig {
+            command: vec!["python3".into(), "-m".into(), "gallery_dl".into()],
+        };
+
+        let (program, args) = config.command_parts();
+        assert_eq!(program, "python3");
+        assert_eq!(args, vec!["-m", "gallery_dl"]);
+    }
+
+    #[test]
+    fn gallery_command_parts_default_to_python_module_launcher() {
+        let config = GalleryDlConfig { command: vec![] };
+
+        let (program, args) = config.command_parts();
+        assert_eq!(program, "python3");
+        assert_eq!(args, vec!["-m", "gallery_dl"]);
     }
 }

@@ -26,6 +26,11 @@ impl AssignmentNodeClient {
         }
     }
 
+    /// Builds a cookie-assignment RPC handle for one downloader node address.
+    ///
+    /// # Errors
+    ///
+    /// Returns a transport error if the gRPC channel cannot be built.
     pub fn build_handle(&self, address: SocketAddr) -> Result<AssignmentNodeHandle, tonic::transport::Error> {
         let address = format!("https://{address}");
         let channel = self.client.build_channel(&address)?;
@@ -46,6 +51,11 @@ pub struct AssignmentNodeHandle {
 }
 
 impl AssignmentNodeHandle {
+    /// Checks that the worker is reachable through the capabilities service.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if auth metadata cannot be built or the RPC fails.
     pub async fn fetch_status(&self) -> Result<(), AssignmentNodeHandleError> {
         let mut client = NodeCapabilitiesClient::new(self.channel.clone());
         client
@@ -54,6 +64,11 @@ impl AssignmentNodeHandle {
         Ok(())
     }
 
+    /// Lists cookie identifiers currently stored on the worker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if auth metadata cannot be built or the RPC fails.
     pub async fn list_node_cookies(&self) -> Result<Vec<String>, AssignmentNodeHandleError> {
         let mut client = NodeCookieManagerClient::new(self.channel.clone());
         let response = client
@@ -62,6 +77,11 @@ impl AssignmentNodeHandle {
         Ok(response.into_inner().cookie_ids)
     }
 
+    /// Pushes cookie data to the worker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if auth metadata cannot be built or the RPC fails.
     pub async fn push_cookie(&self, cookie_id: &str, domain: &str, data: &str) -> Result<(), AssignmentNodeHandleError> {
         let mut client = NodeCookieManagerClient::new(self.channel.clone());
         client
@@ -77,6 +97,11 @@ impl AssignmentNodeHandle {
         Ok(())
     }
 
+    /// Removes a cookie from the worker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if auth metadata cannot be built or the RPC fails.
     pub async fn remove_cookie(&self, cookie_id: &str) -> Result<(), AssignmentNodeHandleError> {
         let mut client = NodeCookieManagerClient::new(self.channel.clone());
         client

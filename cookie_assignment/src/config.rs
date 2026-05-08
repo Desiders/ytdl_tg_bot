@@ -15,9 +15,12 @@ pub struct LoggingConfig {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct DownloadTlsConfig {
-    pub ca_cert_path: Box<str>,
-    pub cert_path: Box<str>,
-    pub key_path: Box<str>,
+    #[serde(rename = "ca_cert_path")]
+    pub ca_cert: Box<str>,
+    #[serde(rename = "cert_path")]
+    pub cert: Box<str>,
+    #[serde(rename = "key_path")]
+    pub key: Box<str>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -29,9 +32,9 @@ pub struct DownloadConfig {
 impl From<DownloadTlsConfig> for downloader_client::DownloaderTlsConfig {
     fn from(value: DownloadTlsConfig) -> Self {
         Self {
-            ca_cert_path: value.ca_cert_path,
-            cert_path: value.cert_path,
-            key_path: value.key_path,
+            ca_cert: value.ca_cert,
+            cert: value.cert,
+            key: value.key,
         }
     }
 }
@@ -69,7 +72,11 @@ pub fn get_path() -> Box<str> {
     path.into_boxed_str()
 }
 
-#[allow(clippy::missing_errors_doc)]
+/// Loads cookie-assignment configuration from a TOML file.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read or the TOML cannot be parsed.
 pub fn parse_from_fs(path: impl AsRef<Path>) -> Result<Config, ParseError> {
     let raw = fs::read_to_string(path)?;
     let cfg = toml::from_str(&raw)?;

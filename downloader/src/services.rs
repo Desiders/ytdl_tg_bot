@@ -1,4 +1,5 @@
 pub mod ffmpeg;
+pub mod gallery_dl;
 pub mod mutagen;
 pub mod ytdl;
 

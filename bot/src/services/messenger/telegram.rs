@@ -20,7 +20,7 @@ use telers::{
     methods::{self, AnswerInlineQuery, DeleteMessage, EditMessageText, GetMe, SendMediaGroup, SendMessage, TelegramMethod},
     types::{
         ChatIdKind, InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResult, InlineQueryResultArticle, InputFile, InputMedia,
-        InputMediaAudio, InputMediaVideo, InputTextMessageContent, LinkPreviewOptions, Message, ReplyParameters,
+        InputMediaAudio, InputMediaPhoto, InputMediaVideo, InputTextMessageContent, LinkPreviewOptions, Message, ReplyParameters,
     },
     Bot,
 };
@@ -29,7 +29,7 @@ use tracing::{error, warn};
 use super::{
     AnswerInlineErrorRequest, AnswerInlineQueryRequest, DeleteMessageRequest, EditMediaByIdRequest, EditTarget, EditTextRequest,
     InlineQueryArticle, MessengerError, SendMediaByIdRequest, SendMediaGroupRequest, SendTextRequest, SentMessage, TextFormat,
-    UploadAudioRequest, UploadVideoRequest,
+    UploadAudioRequest, UploadPhotoRequest, UploadPhotoUrlRequest, UploadVideoRequest,
 };
 
 pub struct TelegramMessenger {
@@ -244,6 +244,93 @@ impl MessengerPort for TelegramMessenger {
         Ok(file_id)
     }
 
+    async fn upload_photo(&self, request: UploadPhotoRequest<'_>) -> Result<Box<str>, MessengerError> {
+        let UploadPhotoRequest {
+            chat_id,
+            reply_to_message_id,
+            media_for_upload: MediaForUpload {
+                path, temp_dir, stream, ..
+            },
+            name,
+            with_delete,
+            webpage_url,
+            link_is_visible,
+        } = request;
+        let send_name = sanitize_send_filename(path.as_ref(), name);
+        let photo = InputFile::stream_with_name(stream.into_inner(), &send_name);
+        let method = methods::SendPhoto::new(chat_id, photo)
+            .disable_notification(true)
+            .caption_option(if link_is_visible { media_link(Some(webpage_url)) } else { None })
+            .parse_mode(ParseMode::HTML)
+            .reply_parameters_option(reply_to_message_id.map(|val| ReplyParameters::new(val).allow_sending_without_reply(true)));
+
+        let message = once(&self.bot, method, Some(self.timeouts_cfg.send_by_upload)).await?;
+        drop(temp_dir);
+        let message_id = message.message_id();
+        let file_id = message
+            .photo()
+            .and_then(|photos| photos.last())
+            .map(|photo| photo.file_id.clone())
+            .or(message.document().map(|document| document.file_id.clone()))
+            .expect("Photo upload returns photo or document");
+        drop(message);
+
+        if with_delete {
+            tokio::spawn({
+                let bot = self.bot.clone();
+                let error_formatter = self.error_formatter.clone();
+                async move {
+                    if let Err(err) = bot.send(methods::DeleteMessage::new(chat_id, message_id)).await {
+                        let err = MessengerError::from(err);
+                        error!(err = %error_formatter.format(&err), "Delete message error");
+                    }
+                }
+            });
+        }
+
+        Ok(file_id)
+    }
+
+    async fn upload_photo_url(&self, request: UploadPhotoUrlRequest<'_>) -> Result<Box<str>, MessengerError> {
+        let UploadPhotoUrlRequest {
+            chat_id,
+            reply_to_message_id,
+            photo_url,
+            with_delete,
+            webpage_url,
+            link_is_visible,
+        } = request;
+        let method = methods::SendPhoto::new(chat_id, InputFile::url(photo_url.as_str()))
+            .disable_notification(true)
+            .caption_option(if link_is_visible { media_link(Some(webpage_url)) } else { None })
+            .parse_mode(ParseMode::HTML)
+            .reply_parameters_option(reply_to_message_id.map(|val| ReplyParameters::new(val).allow_sending_without_reply(true)));
+
+        let message = once(&self.bot, method, Some(self.timeouts_cfg.send_by_upload)).await?;
+        let message_id = message.message_id();
+        let file_id = message
+            .photo()
+            .and_then(|photos| photos.last())
+            .map(|photo| photo.file_id.clone())
+            .expect("Photo URL upload returns photo");
+        drop(message);
+
+        if with_delete {
+            tokio::spawn({
+                let bot = self.bot.clone();
+                let error_formatter = self.error_formatter.clone();
+                async move {
+                    if let Err(err) = bot.send(methods::DeleteMessage::new(chat_id, message_id)).await {
+                        let err = MessengerError::from(err);
+                        error!(err = %error_formatter.format(&err), "Delete message error");
+                    }
+                }
+            });
+        }
+
+        Ok(file_id)
+    }
+
     async fn send_video_by_id(&self, request: SendMediaByIdRequest<'_>) -> Result<(), MessengerError> {
         with_retries(
             &self.bot,
@@ -272,6 +359,29 @@ impl MessengerPort for TelegramMessenger {
         with_retries(
             &self.bot,
             methods::SendAudio::new(request.chat_id, InputFile::id(request.remote_id))
+                .reply_parameters_option(
+                    request
+                        .reply_to_message_id
+                        .map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)),
+                )
+                .caption_option(if request.link_is_visible {
+                    media_link(request.webpage_url)
+                } else {
+                    None
+                })
+                .disable_notification(true)
+                .parse_mode(ParseMode::HTML),
+            2,
+            Some(self.timeouts_cfg.send_by_id),
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn send_photo_by_id(&self, request: SendMediaByIdRequest<'_>) -> Result<(), MessengerError> {
+        with_retries(
+            &self.bot,
+            methods::SendPhoto::new(request.chat_id, InputFile::id(request.remote_id))
                 .reply_parameters_option(
                     request
                         .reply_to_message_id
@@ -334,6 +444,27 @@ impl MessengerPort for TelegramMessenger {
         Ok(())
     }
 
+    async fn edit_photo_by_id(&self, request: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
+        with_retries(
+            &self.bot,
+            methods::EditMessageMedia::new(
+                InputMediaPhoto::new(InputFile::id(request.remote_id))
+                    .caption_option(if request.link_is_visible {
+                        media_link(request.webpage_url)
+                    } else {
+                        None
+                    })
+                    .parse_mode(ParseMode::HTML),
+            )
+            .inline_message_id(request.inline_message_id)
+            .reply_markup(InlineKeyboardMarkup::new([[]])),
+            2,
+            Some(self.timeouts_cfg.send_by_id),
+        )
+        .await?;
+        Ok(())
+    }
+
     async fn send_video_group(&self, request: SendMediaGroupRequest) -> Result<(), MessengerError> {
         media_groups(
             &self.bot,
@@ -367,6 +498,30 @@ impl MessengerPort for TelegramMessenger {
                 .into_iter()
                 .map(|item| {
                     InputMediaAudio::new(InputFile::id(item.remote_id))
+                        .caption_option(if request.link_is_visible {
+                            media_link(item.webpage_url.as_ref())
+                        } else {
+                            None
+                        })
+                        .parse_mode(ParseMode::HTML)
+                })
+                .collect(),
+            request.reply_to_message_id,
+            Some(self.timeouts_cfg.send_by_id),
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn send_photo_group(&self, request: SendMediaGroupRequest) -> Result<(), MessengerError> {
+        media_groups(
+            &self.bot,
+            request.chat_id,
+            request
+                .items
+                .into_iter()
+                .map(|item| {
+                    InputMediaPhoto::new(InputFile::id(item.remote_id))
                         .caption_option(if request.link_is_visible {
                             media_link(item.webpage_url.as_ref())
                         } else {

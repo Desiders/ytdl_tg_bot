@@ -58,6 +58,7 @@ async fn main() {
     };
     let downloader_service = DownloaderService {
         yt_dlp_cfg: Arc::new(config.yt_dlp),
+        gallery_dl_cfg: Arc::new(config.gallery_dl),
         yt_pot_provider_cfg: Arc::new(config.yt_pot_provider),
         cookies: cookies.clone(),
         active_downloads: active_downloads.clone(),

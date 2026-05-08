@@ -17,7 +17,7 @@ use crate::{
         YtToolkitConfig,
     },
     database::TxManager,
-    interactors::{audio, chosen_inline, config, inline_query, lang, start, stats, video},
+    interactors::{audio, chosen_inline, config, inline_query, lang, photo, start, stats, video},
     services::{
         chat,
         download::media,
@@ -138,18 +138,24 @@ where
             provide(|| Ok(chat::UpdateChatConfig {})),
             provide(|| Ok(downloaded_media::AddVideo {})),
             provide(|| Ok(downloaded_media::AddAudio {})),
+            provide(|| Ok(downloaded_media::AddPhoto {})),
             provide(|| Ok(downloaded_media::GetStats {})),
 
             provide(|Inject(cfg): Inject<RandomCmdConfig>| Ok(downloaded_media::GetRandomVideo { cfg })),
             provide(|Inject(cfg): Inject<RandomCmdConfig>| Ok(downloaded_media::GetRandomAudio { cfg })),
             provide(|Inject(messenger): Inject<Messenger>| Ok(send_media::upload::SendVideo { messenger })),
             provide(|Inject(messenger): Inject<Messenger>| Ok(send_media::upload::SendAudio { messenger })),
+            provide(|Inject(messenger): Inject<Messenger>| Ok(send_media::upload::SendPhoto { messenger })),
+            provide(|Inject(messenger): Inject<Messenger>| Ok(send_media::upload::SendPhotoUrl { messenger })),
             provide(|Inject(messenger): Inject<Messenger>| Ok(send_media::id::EditVideo { messenger })),
             provide(|Inject(messenger): Inject<Messenger>| Ok(send_media::id::EditAudio { messenger })),
             provide(|Inject(messenger): Inject<Messenger>| Ok(send_media::id::SendVideo { messenger })),
             provide(|Inject(messenger): Inject<Messenger>| Ok(send_media::id::SendAudio { messenger })),
+            provide(|Inject(messenger): Inject<Messenger>| Ok(send_media::id::SendPhoto { messenger })),
+            provide(|Inject(messenger): Inject<Messenger>| Ok(send_media::id::EditPhoto { messenger })),
             provide(|Inject(messenger): Inject<Messenger>| Ok(send_media::id::SendVideoPlaylist { messenger })),
             provide(|Inject(messenger): Inject<Messenger>| Ok(send_media::id::SendAudioPlaylist { messenger })),
+            provide(|Inject(messenger): Inject<Messenger>| Ok(send_media::id::SendPhotoPlaylist { messenger })),
 
             provide(|
                 Inject(cfg): Inject<Config>,
@@ -170,8 +176,8 @@ where
                     Ok(stats::Stats {
                         error_formatter,
                         messenger,
-                        get_media_stats,
-                        get_node_stats,
+                        media_stats: get_media_stats,
+                        node_stats: get_node_stats,
                     })
                 }
             ),
@@ -241,10 +247,16 @@ where
                 Inject(node_router): Inject<NodeRouter>,
                 Inject(cfg): Inject<TrackingParamsConfig>| Ok(get_media::GetAudioByURL { node_router, cfg })
             ),
+            provide(|
+                Inject(node_router): Inject<NodeRouter>,
+                Inject(cfg): Inject<TrackingParamsConfig>| Ok(get_media::GetPhotoByURL { node_router, cfg })
+            ),
             provide(|Inject(node_router): Inject<NodeRouter>| Ok(media::DownloadVideo { node_router })),
             provide(|Inject(node_router): Inject<NodeRouter>| Ok(media::DownloadAudio { node_router })),
+            provide(|Inject(node_router): Inject<NodeRouter>| Ok(media::DownloadPhoto { node_router })),
             provide(|Inject(node_router): Inject<NodeRouter>|  Ok(media::DownloadVideoPlaylist { node_router })),
             provide(|Inject(node_router): Inject<NodeRouter>|  Ok(media::DownloadAudioPlaylist { node_router })),
+            provide(|Inject(node_router): Inject<NodeRouter>|  Ok(media::DownloadPhotoPlaylist { node_router })),
 
             provide(|
                 Inject(error_formatter): Inject<ErrorFormatter>,
@@ -285,7 +297,7 @@ where
                         error_formatter,
                         messenger,
                         get_media,
-                        download_playlist,
+                        playlist_downloader: download_playlist,
                         upload_media,
                         send_media_by_id,
                         send_playlist,
@@ -306,7 +318,7 @@ where
                         cfg,
                         error_formatter,
                         get_media,
-                        download_playlist,
+                        playlist_downloader: download_playlist,
                         upload_media,
                         send_media_by_id,
                         send_playlist,
@@ -340,7 +352,7 @@ where
                         error_formatter,
                         messenger,
                         get_media,
-                        download_playlist,
+                        playlist_downloader: download_playlist,
                         upload_media,
                         send_media_by_id,
                         send_playlist,
@@ -356,6 +368,27 @@ where
                         error_formatter,
                         get_media,
                         send_playlist,
+                    })
+                }
+            ),
+            provide(|
+                Inject(cfg): Inject<Config>,
+                Inject(error_formatter): Inject<ErrorFormatter>,
+                Inject(messenger): Inject<Messenger>,
+                Inject(get_media): Inject<get_media::GetPhotoByURL>,
+                Inject(upload_media): Inject<send_media::upload::SendPhotoUrl<Messenger>>,
+                Inject(send_media_by_id): Inject<send_media::id::SendPhoto<Messenger>>,
+                Inject(send_playlist): Inject<send_media::id::SendPhotoPlaylist<Messenger>>,
+                Inject(add_downloaded_media): Inject<downloaded_media::AddPhoto>| {
+                    Ok(photo::Download {
+                        cfg,
+                        error_formatter,
+                        messenger,
+                        get_media,
+                        upload_media,
+                        send_media_by_id,
+                        send_playlist,
+                        add_downloaded_media,
                     })
                 }
             ),

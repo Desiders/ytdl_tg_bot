@@ -33,7 +33,7 @@ impl CookieAssignmentService {
     }
 
     pub async fn sync_cycle(&mut self) {
-        let Some(cookies) = self.load_source_cookies() else {
+        let Some(cookies) = Self::load_source_cookies() else {
             return;
         };
         let workers = self.load_workers().await;
@@ -120,7 +120,7 @@ impl CookieAssignmentService {
         self.assignments.retain(|cookie_id, worker_id| {
             worker_cookie_ids
                 .get(worker_id)
-                .map_or(true, |cookie_ids| cookie_ids.contains(cookie_id))
+                .is_none_or(|cookie_ids| cookie_ids.contains(cookie_id))
         });
 
         let assigned_cookie_ids = self.assignments.keys().cloned().collect::<HashSet<_>>();
@@ -157,7 +157,7 @@ impl CookieAssignmentService {
         available_workers: &HashMap<String, AssignmentNodeHandle>,
         worker_cookie_ids: &HashMap<String, HashSet<String>>,
     ) {
-        let cookie_domains = self.cookie_domains(cookies);
+        let cookie_domains = Self::cookie_domains(cookies);
         let assigned_cookies = self.assignments.keys().cloned().collect::<HashSet<_>>();
         let mut worker_assignments = self.build_worker_assignments(&cookie_domains);
 
@@ -184,7 +184,7 @@ impl CookieAssignmentService {
                 continue;
             };
 
-            let Some(data) = self.read_cookie_data(cookie, &mut read_failed_count) else {
+            let Some(data) = Self::read_cookie_data(cookie, &mut read_failed_count) else {
                 continue;
             };
 
@@ -268,7 +268,7 @@ impl CookieAssignmentService {
         }
     }
 
-    fn load_source_cookies(&self) -> Option<Vec<CookieRecord>> {
+    fn load_source_cookies() -> Option<Vec<CookieRecord>> {
         match load_cookies_from_directory(Path::new(COOKIE_DIR)) {
             Ok(cookies) => Some(cookies),
             Err(err) => {
@@ -278,7 +278,7 @@ impl CookieAssignmentService {
         }
     }
 
-    fn cookie_domains<'a>(&self, cookies: &'a [CookieRecord]) -> HashMap<&'a str, &'a str> {
+    fn cookie_domains(cookies: &[CookieRecord]) -> HashMap<&str, &str> {
         cookies
             .iter()
             .map(|cookie| (cookie.cookie_id.as_str(), cookie.domain.as_str()))
@@ -297,6 +297,7 @@ impl CookieAssignmentService {
         worker_assignments
     }
 
+    #[allow(clippy::unused_self)]
     fn select_worker_for_cookie<'a>(
         &self,
         workers: &[&'a AssignmentNodeHandle],
@@ -307,11 +308,10 @@ impl CookieAssignmentService {
             .iter()
             .copied()
             .filter(|worker| !worker_assignments.has_domain(worker.address.as_ref(), domain))
-            .min_by(|left, right| self.compare_workers(worker_assignments, left, right))
+            .min_by(|left, right| Self::compare_workers(worker_assignments, left, right))
     }
 
     fn compare_workers(
-        &self,
         worker_assignments: &WorkerAssignments<'_>,
         left: &AssignmentNodeHandle,
         right: &AssignmentNodeHandle,
@@ -327,7 +327,7 @@ impl CookieAssignmentService {
             .then_with(|| left.address.cmp(&right.address))
     }
 
-    fn read_cookie_data(&self, cookie: &CookieRecord, read_failed_count: &mut usize) -> Option<String> {
+    fn read_cookie_data(cookie: &CookieRecord, read_failed_count: &mut usize) -> Option<String> {
         match fs::read_to_string(&cookie.path) {
             Ok(data) => Some(data),
             Err(err) => {

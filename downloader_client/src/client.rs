@@ -4,9 +4,9 @@ use url::Url;
 
 #[derive(Clone, Debug)]
 pub struct DownloaderTlsConfig {
-    pub ca_cert_path: Box<str>,
-    pub cert_path: Box<str>,
-    pub key_path: Box<str>,
+    pub ca_cert: Box<str>,
+    pub cert: Box<str>,
+    pub key: Box<str>,
 }
 
 #[derive(Clone, Debug)]
@@ -16,6 +16,13 @@ pub struct DownloaderServiceTarget {
 }
 
 impl DownloaderServiceTarget {
+    /// Builds a downloader service target from `DOWNLOADER_SERVICE_DNS`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `DOWNLOADER_SERVICE_DNS` is missing or is not a host:port
+    /// authority.
+    #[must_use]
     pub fn from_env() -> Self {
         let raw = env::var("DOWNLOADER_SERVICE_DNS").expect("Missing required env var `DOWNLOADER_SERVICE_DNS`");
         let (host, port) = parse_host(&raw);
@@ -26,10 +33,16 @@ impl DownloaderServiceTarget {
         }
     }
 
+    #[must_use]
     pub fn authority(&self) -> String {
         format!("{}:{}", self.host, self.port)
     }
 
+    /// Resolves the headless downloader service DNS into active node socket addresses.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error if DNS resolution fails.
     pub async fn resolve_nodes(&self) -> io::Result<Vec<SocketAddr>> {
         Ok(tokio::net::lookup_host(self.authority())
             .await?
@@ -49,10 +62,9 @@ pub(crate) struct NodeClient {
 
 impl NodeClient {
     pub(crate) fn load(cfg: &DownloaderTlsConfig, server_name: &str) -> Self {
-        let ca_cert_pem =
-            fs::read(&*cfg.ca_cert_path).unwrap_or_else(|_| panic!("Failed to read downloader CA certificate {}", cfg.ca_cert_path));
-        let cert_pem = fs::read(&*cfg.cert_path).unwrap_or_else(|_| panic!("Failed to read client certificate {}", cfg.cert_path));
-        let key_pem = fs::read(&*cfg.key_path).unwrap_or_else(|_| panic!("Failed to read client key {}", cfg.key_path));
+        let ca_cert_pem = fs::read(&*cfg.ca_cert).unwrap_or_else(|_| panic!("Failed to read downloader CA certificate {}", cfg.ca_cert));
+        let cert_pem = fs::read(&*cfg.cert).unwrap_or_else(|_| panic!("Failed to read client certificate {}", cfg.cert));
+        let key_pem = fs::read(&*cfg.key).unwrap_or_else(|_| panic!("Failed to read client key {}", cfg.key));
 
         Self {
             ca_cert_pem: ca_cert_pem.into(),

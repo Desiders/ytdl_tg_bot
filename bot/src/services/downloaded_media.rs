@@ -119,6 +119,54 @@ impl Interactor<AddMediaInput<'_>> for &AddAudio {
     }
 }
 
+pub struct AddPhoto {}
+
+impl Interactor<AddMediaInput<'_>> for &AddPhoto {
+    type Output = ();
+    type Err = ErrorKind<Infallible>;
+
+    #[instrument(skip_all, fields(%id, ?display_id, ?domain))]
+    async fn execute(
+        self,
+        AddMediaInput {
+            file_id,
+            id,
+            display_id,
+            domain,
+            audio_language,
+            sections,
+            overwrite_cache,
+            tx_manager,
+        }: AddMediaInput<'_>,
+    ) -> Result<Self::Output, Self::Err> {
+        let normalized_domain = domain.map(|domain| domain.trim_start_matches("www.").to_owned());
+
+        tx_manager.begin().await?;
+
+        let dao = tx_manager.downloaded_media_dao()?;
+        let media = DownloadedMedia {
+            file_id,
+            id,
+            display_id,
+            domain: normalized_domain,
+            media_type: MediaType::Photo,
+            created_at: OffsetDateTime::now_utc(),
+            audio_language: audio_language.language,
+            crop_start_time: sections.as_ref().and_then(|val| val.start),
+            crop_end_time: sections.as_ref().and_then(|val| val.end),
+        };
+        if overwrite_cache {
+            dao.insert_or_replace(media).await?;
+        } else {
+            dao.insert_or_ignore(media).await?;
+        }
+        info!("Downloaded media added");
+
+        tx_manager.commit().await?;
+        Ok(())
+    }
+}
+
 pub struct GetRandomMediaInput<'a> {
     pub limit: u64,
     pub domains: Option<&'a Domains>,

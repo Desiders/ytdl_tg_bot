@@ -59,6 +59,10 @@ pub struct SendAudio<Messenger> {
     pub messenger: Arc<Messenger>,
 }
 
+pub struct SendPhoto<Messenger> {
+    pub messenger: Arc<Messenger>,
+}
+
 impl<Messenger> Interactor<SendMediaInput<'_>> for &SendAudio<Messenger>
 where
     Messenger: MessengerPort,
@@ -69,6 +73,26 @@ where
     async fn execute(self, input: SendMediaInput<'_>) -> Result<Self::Output, Self::Err> {
         self.messenger
             .send_audio_by_id(SendMediaByIdRequest {
+                chat_id: input.chat_id,
+                reply_to_message_id: input.reply_to_message_id,
+                remote_id: input.id,
+                webpage_url: input.webpage_url,
+                link_is_visible: input.link_is_visible,
+            })
+            .await
+    }
+}
+
+impl<Messenger> Interactor<SendMediaInput<'_>> for &SendPhoto<Messenger>
+where
+    Messenger: MessengerPort,
+{
+    type Output = ();
+    type Err = MessengerError;
+
+    async fn execute(self, input: SendMediaInput<'_>) -> Result<Self::Output, Self::Err> {
+        self.messenger
+            .send_photo_by_id(SendMediaByIdRequest {
                 chat_id: input.chat_id,
                 reply_to_message_id: input.reply_to_message_id,
                 remote_id: input.id,
@@ -106,6 +130,10 @@ pub struct EditAudio<Messenger> {
     pub messenger: Arc<Messenger>,
 }
 
+pub struct EditPhoto<Messenger> {
+    pub messenger: Arc<Messenger>,
+}
+
 impl<Messenger> Interactor<EditMediaInput<'_>> for &EditAudio<Messenger>
 where
     Messenger: MessengerPort,
@@ -116,6 +144,25 @@ where
     async fn execute(self, input: EditMediaInput<'_>) -> Result<Self::Output, Self::Err> {
         self.messenger
             .edit_audio_by_id(EditMediaByIdRequest {
+                inline_message_id: input.inline_message_id,
+                remote_id: input.id,
+                webpage_url: input.webpage_url,
+                link_is_visible: input.link_is_visible,
+            })
+            .await
+    }
+}
+
+impl<Messenger> Interactor<EditMediaInput<'_>> for &EditPhoto<Messenger>
+where
+    Messenger: MessengerPort,
+{
+    type Output = ();
+    type Err = MessengerError;
+
+    async fn execute(self, input: EditMediaInput<'_>) -> Result<Self::Output, Self::Err> {
+        self.messenger
+            .edit_photo_by_id(EditMediaByIdRequest {
                 inline_message_id: input.inline_message_id,
                 remote_id: input.id,
                 webpage_url: input.webpage_url,
@@ -159,6 +206,10 @@ pub struct SendAudioPlaylist<Messenger> {
     pub messenger: Arc<Messenger>,
 }
 
+pub struct SendPhotoPlaylist<Messenger> {
+    pub messenger: Arc<Messenger>,
+}
+
 impl<Messenger> Interactor<SendPlaylistInput> for &SendAudioPlaylist<Messenger>
 where
     Messenger: MessengerPort,
@@ -169,6 +220,32 @@ where
     async fn execute(self, input: SendPlaylistInput) -> Result<Self::Output, Self::Err> {
         self.messenger
             .send_audio_group(SendMediaGroupRequest {
+                chat_id: input.chat_id,
+                reply_to_message_id: input.reply_to_message_id,
+                items: input
+                    .playlist
+                    .into_iter()
+                    .map(|item| MediaGroupItem {
+                        remote_id: item.file_id.into(),
+                        webpage_url: item.webpage_url,
+                    })
+                    .collect(),
+                link_is_visible: input.link_is_visible,
+            })
+            .await
+    }
+}
+
+impl<Messenger> Interactor<SendPlaylistInput> for &SendPhotoPlaylist<Messenger>
+where
+    Messenger: MessengerPort,
+{
+    type Output = ();
+    type Err = MessengerError;
+
+    async fn execute(self, input: SendPlaylistInput) -> Result<Self::Output, Self::Err> {
+        self.messenger
+            .send_photo_group(SendMediaGroupRequest {
                 chat_id: input.chat_id,
                 reply_to_message_id: input.reply_to_message_id,
                 items: input

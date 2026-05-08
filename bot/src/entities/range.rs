@@ -17,7 +17,7 @@ pub enum ParseRangeError {
     ZeroStep,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Range {
     pub start: i16,
     pub count: i16,
@@ -32,16 +32,16 @@ impl Range {
         }
     }
 
-    pub const fn get_element_count(&self) -> i16 {
+    pub const fn get_element_count(self) -> i16 {
         ((self.count - self.start) / self.step).abs() + 1
     }
 
-    pub const fn is_single_element(&self) -> bool {
+    pub const fn is_single_element(self) -> bool {
         self.get_element_count() == 1
     }
 
     #[allow(dead_code)]
-    pub fn to_range_string(&self) -> String {
+    pub fn to_range_string(self) -> String {
         format!("{}:{}:{}", self.start, self.count, self.step)
     }
 }
@@ -52,6 +52,16 @@ impl Default for Range {
             start: DEFAULT_START,
             count: DEFAULT_COUNT,
             step: DEFAULT_STEP,
+        }
+    }
+}
+
+impl From<Range> for proto::downloader::Range {
+    fn from(range: Range) -> Self {
+        proto::downloader::Range {
+            start: i32::from(range.start),
+            count: i32::from(range.count),
+            step: i32::from(range.step),
         }
     }
 }
