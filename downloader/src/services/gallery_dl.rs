@@ -18,8 +18,8 @@ use url::Url;
 pub enum ParseJsonErrorKind {
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("URL error: {0}")]
-    Url(#[from] url::ParseError),
+    #[error("Gallery-dl JSON root must be an array of events")]
+    UnexpectedRoot,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -41,15 +41,10 @@ pub enum DownloadErrorKind {
 }
 
 fn parse_gallery_dl_json(input: &[u8]) -> Result<Vec<GalleryDlEntry>, ParseJsonErrorKind> {
-    let root: Value = serde_json::from_slice(input)?;
-    match root {
-        Value::Array(events) => parse_gallery_dl_events(events),
-        Value::Object(_) => entries_from_metadata(&root),
-        _ => Ok(vec![]),
-    }
-}
+    let Value::Array(events) = serde_json::from_slice(input)? else {
+        return Err(ParseJsonErrorKind::UnexpectedRoot);
+    };
 
-fn parse_gallery_dl_events(events: Vec<Value>) -> Result<Vec<GalleryDlEntry>, ParseJsonErrorKind> {
     let mut results = Vec::with_capacity(1);
     let mut current_metadata = None;
 
@@ -62,12 +57,16 @@ fn parse_gallery_dl_events(events: Vec<Value>) -> Result<Vec<GalleryDlEntry>, Pa
                 current_metadata = event.get(1).cloned();
             }
             Some(3) => {
-                let Some(file_url) = event.get(1).and_then(Value::as_str) else {
+                let Some(raw_url) = event.get(1).and_then(Value::as_str) else {
+                    continue;
+                };
+                let Ok(file_url) = Url::parse(raw_url) else {
+                    trace!(raw_url, "Skipping file event with unparseable URL");
                     continue;
                 };
                 let metadata = event.get(2).cloned().unwrap_or_default();
                 results.push(GalleryDlEntry {
-                    file_url: Url::parse(file_url)?,
+                    file_url,
                     metadata: merge_metadata(current_metadata.as_ref(), metadata),
                 });
             }
@@ -75,77 +74,7 @@ fn parse_gallery_dl_events(events: Vec<Value>) -> Result<Vec<GalleryDlEntry>, Pa
         }
     }
 
-    if results.is_empty() {
-        if let Some(metadata) = current_metadata {
-            results = entries_from_metadata(&metadata)?;
-        }
-    }
-
     Ok(results)
-}
-
-fn entries_from_metadata(metadata: &Value) -> Result<Vec<GalleryDlEntry>, ParseJsonErrorKind> {
-    let mut results = Vec::with_capacity(1);
-
-    if let Some(file_url) = direct_url_from_metadata(metadata)? {
-        results.push(GalleryDlEntry {
-            file_url,
-            metadata: Some(metadata.clone()),
-        });
-    }
-
-    let Some(object) = metadata.as_object() else {
-        return Ok(results);
-    };
-
-    for key in ["files", "images", "media", "attachments", "photos"] {
-        match object.get(key) {
-            Some(Value::Array(items)) => {
-                for item in items {
-                    if let Some(file_url) = direct_url_from_metadata(item)? {
-                        results.push(GalleryDlEntry {
-                            file_url,
-                            metadata: merge_metadata(Some(metadata), item.clone()),
-                        });
-                    }
-                }
-            }
-            Some(item @ Value::Object(_)) => {
-                if let Some(file_url) = direct_url_from_metadata(item)? {
-                    results.push(GalleryDlEntry {
-                        file_url,
-                        metadata: merge_metadata(Some(metadata), item.clone()),
-                    });
-                }
-            }
-            _ => {}
-        }
-    }
-
-    Ok(results)
-}
-
-fn direct_url_from_metadata(metadata: &Value) -> Result<Option<Url>, ParseJsonErrorKind> {
-    let Some(object) = metadata.as_object() else {
-        return Ok(None);
-    };
-
-    for key in [
-        "url",
-        "file_url",
-        "direct_url",
-        "image",
-        "image_url",
-        "media_url",
-        "original",
-        "src",
-    ] {
-        if let Some(raw) = object.get(key).and_then(Value::as_str) {
-            return Ok(Some(Url::parse(raw)?));
-        }
-    }
-
-    Ok(None)
 }
 
 fn merge_metadata(base: Option<&Value>, item: Value) -> Option<Value> {
@@ -162,8 +91,8 @@ fn merge_metadata(base: Option<&Value>, item: Value) -> Option<Value> {
     }
 }
 
-fn build_range_string(range: &Range) -> String {
-    range.to_range_string()
+fn is_selected_by_range(index: i16, range: &Range) -> bool {
+    index >= range.start && index <= range.count && (index - range.start) % range.step.abs() == 0
 }
 
 #[instrument(skip_all)]
@@ -174,12 +103,24 @@ pub async fn get_media_info(
     timeout: u64,
     cookie_path: Option<&Path>,
 ) -> Result<Playlist, GetInfoErrorKind> {
-    let range = build_range_string(playlist_range);
     let request_url = Url::parse(search).map_err(io::Error::other)?;
-    let mut entries = get_playlist_entries(search, &request_url, gallery_dl_cfg, &range, timeout, cookie_path, false).await?;
-    if entries.is_empty() {
-        debug!(url = %search, "Gallery-dl dump-json did not produce photo entries; retrying with resolve-json");
-        entries = get_playlist_entries(search, &request_url, gallery_dl_cfg, &range, timeout, cookie_path, true).await?;
+
+    let mut entries = vec![];
+    for resolve_urls in [false, true] {
+        entries = get_playlist_entries(
+            search,
+            &request_url,
+            gallery_dl_cfg,
+            playlist_range,
+            timeout,
+            cookie_path,
+            resolve_urls,
+        )
+        .await?;
+        if !entries.is_empty() {
+            break;
+        }
+        debug!(url = %search, resolve_urls, "Gallery-dl produced no photo entries");
     }
 
     if entries.is_empty() {
@@ -194,19 +135,32 @@ async fn get_playlist_entries(
     search: &str,
     request_url: &Url,
     gallery_dl_cfg: &GalleryDlConfig,
-    range: &str,
+    playlist_range: &Range,
     timeout: u64,
     cookie_path: Option<&Path>,
     resolve_urls: bool,
 ) -> Result<Vec<(crate::entities::MediaWithFormat, String)>, GetInfoErrorKind> {
-    let Some(stdout) = run_gallery_dl_json(search, gallery_dl_cfg, range, timeout, cookie_path, resolve_urls).await? else {
+    let Some(stdout) = run_gallery_dl_json(search, gallery_dl_cfg, timeout, cookie_path, resolve_urls).await? else {
         return Ok(vec![]);
     };
 
     parse_gallery_dl_json(&stdout)?
         .into_iter()
+        .filter_map(|entry| match entry.into_raw_photo_info(request_url) {
+            Ok(raw) => Some(raw),
+            Err(reason) => {
+                debug!(%reason, "Dropping gallery-dl entry");
+                None
+            }
+        })
         .enumerate()
-        .filter_map(|(index, entry)| entry.into_raw_photo_info(request_url, i16::try_from(index + 1).unwrap_or(i16::MAX)))
+        .filter_map(|(idx, raw)| {
+            let photo_index = i16::try_from(idx + 1).ok()?;
+            is_selected_by_range(photo_index, playlist_range).then_some(RawPhotoInfo {
+                playlist_index: photo_index,
+                ..raw
+            })
+        })
         .map(RawPhotoInfo::into_playlist_entry)
         .collect::<Result<Vec<_>, _>>()
         .map_err(Into::into)
@@ -215,21 +169,12 @@ async fn get_playlist_entries(
 async fn run_gallery_dl_json(
     search: &str,
     gallery_dl_cfg: &GalleryDlConfig,
-    range: &str,
     timeout: u64,
     cookie_path: Option<&Path>,
     resolve_urls: bool,
 ) -> Result<Option<Vec<u8>>, GetInfoErrorKind> {
     let json_flag = if resolve_urls { "--resolve-json" } else { "--dump-json" };
-    let mut args = vec![
-        json_flag,
-        "--simulate",
-        "--no-input",
-        "--config-ignore",
-        "--no-colors",
-        "--range",
-        range,
-    ];
+    let mut args = vec![json_flag, "--simulate", "--no-input", "--config-ignore", "--no-colors"];
 
     let cookie_path = cookie_path.map(|path| path.to_string_lossy());
     if let Some(cookie_path) = cookie_path.as_deref() {
@@ -265,12 +210,6 @@ async fn run_gallery_dl_json(
                 warn!("{stderr}");
             }
             if stdout.iter().all(u8::is_ascii_whitespace) {
-                warn!(
-                    original_url = %search,
-                    stderr = %stderr.trim(),
-                    resolve_urls,
-                    "Gallery-dl returned empty JSON output"
-                );
                 return Ok(None);
             }
 
@@ -396,34 +335,81 @@ mod tests {
     }
 
     #[test]
-    fn parses_metadata_only_event_array_when_it_contains_direct_url() {
+    fn ignores_metadata_only_event_array() {
         let input = br#"[
             [2, {"id": 42, "title": "Post", "url": "https://cdn.example/a.jpg"}]
         ]"#;
 
         let entries = parse_gallery_dl_json(input).unwrap();
 
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].file_url.as_str(), "https://cdn.example/a.jpg");
-        assert_eq!(
-            entries[0].metadata.as_ref().and_then(|metadata| metadata.get("title")),
-            Some(&Value::String("Post".to_owned()))
-        );
+        assert!(entries.is_empty());
     }
 
     #[test]
-    fn parses_root_metadata_object_when_it_contains_media_items() {
+    fn rejects_root_metadata_object() {
         let input = br#"{
             "id": 42,
             "title": "Post",
-            "media": [{"url": "https://cdn.example/a.jpg"}, {"url": "https://cdn.example/b.jpg"}]
+            "media": [{"url": "https://cdn.example/a.jpg"}]
         }"#;
 
-        let entries = parse_gallery_dl_json(input).unwrap();
+        let err = parse_gallery_dl_json(input).unwrap_err();
 
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].file_url.as_str(), "https://cdn.example/a.jpg");
-        assert_eq!(entries[1].file_url.as_str(), "https://cdn.example/b.jpg");
+        assert!(matches!(err, super::ParseJsonErrorKind::UnexpectedRoot));
+    }
+
+    #[test]
+    fn drops_video_file_events() {
+        let input = br#"[
+            [3, "https://cdn.example/video.mp4", {"extension": "mp4"}],
+            [3, "https://cdn.example/song.mp3", {"extension": "mp3"}]
+        ]"#;
+        let request_url = Url::parse("https://www.tiktok.com/@user/photo/post").unwrap();
+
+        let photos: Vec<_> = parse_gallery_dl_json(input)
+            .unwrap()
+            .into_iter()
+            .filter_map(|entry| entry.into_raw_photo_info(&request_url).ok())
+            .collect();
+
+        assert!(photos.is_empty());
+    }
+
+    #[test]
+    fn defaults_to_jpg_when_extension_is_missing() {
+        let input = br#"[
+            [3, "https://cdn.example/photo/abc123", {"id": "abc"}]
+        ]"#;
+        let request_url = Url::parse("https://example.com/post/1").unwrap();
+
+        let raw = parse_gallery_dl_json(input)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap()
+            .into_raw_photo_info(&request_url)
+            .unwrap();
+
+        assert_eq!(raw.ext, "jpg");
+    }
+
+    #[test]
+    fn accepts_modern_image_formats() {
+        for ext in ["heic", "avif", "gif", "webp", "jxl"] {
+            let raw_url = format!("https://cdn.example/photo.{ext}");
+            let input = format!(r#"[[3, "{raw_url}", {{"extension": "{ext}"}}]]"#);
+            let request_url = Url::parse("https://example.com/post/1").unwrap();
+
+            let raw = parse_gallery_dl_json(input.as_bytes())
+                .unwrap()
+                .into_iter()
+                .next()
+                .unwrap()
+                .into_raw_photo_info(&request_url)
+                .unwrap();
+
+            assert_eq!(raw.ext, ext);
+        }
     }
 
     #[test]
@@ -443,7 +429,7 @@ mod tests {
         let request_url = Url::parse("https://vk.com/wall90880680_218483").unwrap();
 
         let entries = parse_gallery_dl_json(input).unwrap();
-        let raw = entries.into_iter().next().unwrap().into_raw_photo_info(&request_url, 1).unwrap();
+        let raw = entries.into_iter().next().unwrap().into_raw_photo_info(&request_url).unwrap();
 
         assert_eq!(raw.id, "457284331");
         assert_eq!(raw.display_id.as_deref(), Some("image"));
