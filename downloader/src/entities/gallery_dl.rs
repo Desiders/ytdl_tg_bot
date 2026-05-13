@@ -62,69 +62,43 @@ pub struct GalleryDlEntry {
 
 impl GalleryDlEntry {
     pub fn extract_id(&self) -> Option<String> {
-        if let Some(meta) = &self.metadata {
-            if let Some(id) = meta.get("id").and_then(Value::as_str) {
-                return Some(id.to_owned());
-            }
-            if let Some(id) = meta.get("id").and_then(Value::as_u64) {
-                return Some(id.to_string());
-            }
-            if let Some(id) = meta.get("tweet_id").and_then(Value::as_str) {
-                return Some(id.to_owned());
-            }
-            if let Some(id) = meta.get("tweet_id").and_then(Value::as_u64) {
-                return Some(id.to_string());
-            }
-            if let Some(id) = meta.get("post_id").and_then(Value::as_str) {
-                return Some(id.to_owned());
-            }
-            if let Some(id) = meta.get("post_id").and_then(Value::as_u64) {
-                return Some(id.to_string());
-            }
-        }
-        None
+        self.extract_string(&["id", "tweet_id", "post_id"])
+            .or_else(|| self.extract_u64(&["id", "tweet_id", "post_id"]).map(|v| v.to_string()))
     }
 
     pub fn extract_author(&self) -> Option<String> {
-        if let Some(meta) = &self.metadata {
-            if let Some(author) = meta.get("author").and_then(Value::as_str) {
-                return Some(author.to_owned());
-            }
-            if let Some(user) = meta.get("user") {
-                if let Some(name) = user.get("name").and_then(Value::as_str) {
-                    return Some(name.to_owned());
-                }
-                if let Some(nick) = user.get("nick").and_then(Value::as_str) {
-                    return Some(nick.to_owned());
-                }
-            }
-            if let Some(uploader) = meta.get("uploader").and_then(Value::as_str) {
-                return Some(uploader.to_owned());
-            }
+        if let Some(author) = self.extract_string(&["author", "uploader"]) {
+            return Some(author);
         }
-        None
+        let user = self.metadata.as_ref()?.get("user")?;
+        user.get("name")
+            .or_else(|| user.get("nick"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
     }
 
     pub fn extract_dimensions(&self) -> Option<(u32, u32)> {
-        if let Some(meta) = &self.metadata {
-            let width = meta.get("width").or_else(|| meta.get("image_width")).and_then(Value::as_u64);
-            let height = meta.get("height").or_else(|| meta.get("image_height")).and_then(Value::as_u64);
-
-            if let (Some(w), Some(h)) = (width, height) {
-                return Some((u32::try_from(w).ok()?, u32::try_from(h).ok()?));
-            }
-        }
-        None
+        let width = self.extract_u64(&["width", "image_width", "imageWidth"])?;
+        let height = self.extract_u64(&["height", "image_height", "imageHeight"])?;
+        Some((u32::try_from(width).ok()?, u32::try_from(height).ok()?))
     }
 
-    pub fn into_raw_photo_info(self, request_url: &Url, playlist_index: i16) -> Option<RawPhotoInfo> {
+    pub fn into_raw_photo_info(self, request_url: &Url) -> Result<RawPhotoInfo, DroppedNonPhotoEntry> {
         let direct_url = self.file_url.clone();
-        let ext = self.extract_extension().or_else(|| {
-            Path::new(direct_url.path())
-                .extension()
-                .and_then(OsStr::to_str)
-                .map(ToOwned::to_owned)
-        })?;
+        let ext = self
+            .extract_extension()
+            .or_else(|| {
+                Path::new(direct_url.path())
+                    .extension()
+                    .and_then(OsStr::to_str)
+                    .map(ToOwned::to_owned)
+            })
+            .map(|ext| ext.to_ascii_lowercase())
+            .unwrap_or_else(|| "jpg".to_owned());
+        if !is_photo_extension(&ext) {
+            return Err(DroppedNonPhotoEntry { url: direct_url, ext });
+        }
+
         let display_id = self.extract_display_id();
         let id = self
             .extract_id()
@@ -134,7 +108,7 @@ impl GalleryDlEntry {
             .extract_dimensions()
             .map_or((None, None), |(width, height)| (Some(i64::from(width)), Some(i64::from(height))));
 
-        Some(RawPhotoInfo {
+        Ok(RawPhotoInfo {
             id,
             display_id,
             webpage_url: self.extract_webpage_url().unwrap_or_else(|| request_url.clone()),
@@ -145,28 +119,20 @@ impl GalleryDlEntry {
             width,
             height,
             filesize_approx: self.extract_filesize(),
-            playlist_index,
+            playlist_index: 0,
         })
     }
 
     fn extract_string(&self, keys: &[&str]) -> Option<String> {
         let meta = self.metadata.as_ref()?;
-        for key in keys {
-            if let Some(value) = meta.get(*key).and_then(Value::as_str) {
-                return Some(value.to_owned());
-            }
-        }
-        None
+        keys.iter()
+            .find_map(|key| meta.get(*key).and_then(Value::as_str))
+            .map(ToOwned::to_owned)
     }
 
     fn extract_u64(&self, keys: &[&str]) -> Option<u64> {
         let meta = self.metadata.as_ref()?;
-        for key in keys {
-            if let Some(value) = meta.get(*key).and_then(Value::as_u64) {
-                return Some(value);
-            }
-        }
-        None
+        keys.iter().find_map(|key| meta.get(*key).and_then(Value::as_u64))
     }
 
     fn extract_display_id(&self) -> Option<String> {
@@ -187,11 +153,22 @@ impl GalleryDlEntry {
 
     fn extract_webpage_url(&self) -> Option<Url> {
         let meta = self.metadata.as_ref()?;
-        for key in ["webpage_url", "page_url", "source_url", "post_url"] {
-            if let Some(url) = meta.get(key).and_then(Value::as_str).and_then(|raw| Url::parse(raw).ok()) {
-                return Some(url);
-            }
-        }
-        None
+        ["webpage_url", "page_url", "source_url", "post_url"]
+            .iter()
+            .find_map(|key| meta.get(*key).and_then(Value::as_str).and_then(|raw| Url::parse(raw).ok()))
     }
+}
+
+fn is_photo_extension(ext: &str) -> bool {
+    matches!(
+        ext,
+        "jpg" | "jpeg" | "jfif" | "png" | "webp" | "gif" | "heic" | "heif" | "avif" | "bmp" | "tiff" | "tif" | "jxl" | "svg"
+    )
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("Non-photo extension `{ext}`: {url}")]
+pub struct DroppedNonPhotoEntry {
+    pub url: Url,
+    pub ext: String,
 }
