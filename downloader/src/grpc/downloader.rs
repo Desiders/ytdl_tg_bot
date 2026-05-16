@@ -279,7 +279,7 @@ async fn stream_download(
     );
 
     let (progress_tx, mut progress_rx) = mpsc::unbounded_channel::<String>();
-    ytdl::download_media(
+    let mut download_future = Box::pin(ytdl::download_media(
         strategy,
         &request.format_id,
         section.as_ref(),
@@ -291,11 +291,20 @@ async fn stream_download(
         DOWNLOAD_TIMEOUT_SECS,
         cookie.as_deref(),
         Some(&progress_tx),
-    )
-    .await
-    .map_err(download_error_status)?;
-    drop(progress_tx);
-    let media_file_path = resolve_media_file_path(output_dir_path, &media_file_path).await?;
+    ));
+
+    // Race the download against its first progress line. If yt-dlp fails before producing any progress
+    // (auth/geo/format errors), `download_future` resolves first with an Err — we propagate it without
+    // sending Meta so `with_node_failover` on the client can retry on another node. Once a progress line
+    // arrives, the download has started successfully: send Meta so the bot can leave the "Preparing"
+    // state, then stream the remaining progress in real time.
+    let initial_progress = tokio::select! {
+        progress = progress_rx.recv() => progress,
+        res = &mut download_future => {
+            res.map_err(download_error_status)?;
+            None
+        }
+    };
 
     send_chunk(
         &tx,
@@ -316,14 +325,38 @@ async fn stream_download(
         debug!(url = %url, path = %thumb_file_path.display(), "Finished thumbnail stream to client");
     }
 
-    while let Ok(progress) = progress_rx.try_recv() {
-        send_chunk(
-            &tx,
-            DownloadChunk {
-                payload: Some(Payload::Progress(progress)),
-            },
-        )?;
+    match initial_progress {
+        Some(progress) => {
+            send_chunk(
+                &tx,
+                DownloadChunk {
+                    payload: Some(Payload::Progress(progress)),
+                },
+            )?;
+
+            let progress_forwarder = spawn_progress_forwarder(progress_rx, tx.clone());
+            // Race the download against client disconnection. If the client drops the stream,
+            // dropping `download_future` here kills yt-dlp via `kill_on_drop` instead of letting
+            // it run to completion and waste CPU/disk/bandwidth.
+            tokio::select! {
+                res = download_future => {
+                    res.map_err(download_error_status)?;
+                }
+                () = tx.closed() => {
+                    return Err(Status::cancelled("Client disconnected"));
+                }
+            }
+            drop(progress_tx);
+            let _ = progress_forwarder.await;
+        }
+        None => {
+            // Download already completed inside the select!; drop the boxed future
+            // to release the borrow on `progress_tx` / `temp_dir`.
+            drop(download_future);
+        }
     }
+
+    let media_file_path = resolve_media_file_path(output_dir_path, &media_file_path).await?;
 
     if thumbnail_downloaded {
         let embed_started_at = Instant::now();
@@ -536,18 +569,25 @@ fn parse_range(range: Option<proto::downloader::Range>) -> Result<Range, Status>
     let Some(range) = range else {
         return Ok(Range::default());
     };
-    let step = i16::try_from(range.step).map_err(|_| Status::invalid_argument("Invalid playlist_range.step"))?;
-    if step == 0 {
-        return Err(Status::invalid_argument("Invalid playlist_range.step"));
+    let start = positive_i16(range.start, "playlist_range.start")?;
+    let count = positive_i16(range.count, "playlist_range.count")?;
+    let step = positive_i16(range.step, "playlist_range.step")?;
+    if start > count {
+        return Err(Status::invalid_argument("playlist_range.start must be <= playlist_range.count"));
     }
 
-    let mut range = Range {
-        start: i16::try_from(range.start).map_err(|_| Status::invalid_argument("Invalid playlist_range.start"))?,
-        count: i16::try_from(range.count).map_err(|_| Status::invalid_argument("Invalid playlist_range.count"))?,
-        step,
-    };
+    let mut range = Range { start, count, step };
     range.normalize();
     Ok(range)
+}
+
+#[allow(clippy::result_large_err)]
+fn positive_i16(value: i32, field: &str) -> Result<i16, Status> {
+    let value = i16::try_from(value).map_err(|_| Status::invalid_argument(format!("Invalid {field}")))?;
+    if value <= 0 {
+        return Err(Status::invalid_argument(format!("{field} must be positive")));
+    }
+    Ok(value)
 }
 
 fn parse_section(section: Option<Section>) -> Option<Sections> {
@@ -562,6 +602,26 @@ fn download_error_status(err: ytdl::DownloadErrorKind) -> Status {
         ytdl::DownloadErrorKind::Retryable(kind) => Status::aborted(kind.to_string()),
         err => Status::internal(err.to_string()),
     }
+}
+
+fn spawn_progress_forwarder(
+    mut progress_rx: mpsc::UnboundedReceiver<String>,
+    tx: UnboundedSender<Result<DownloadChunk, Status>>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        while let Some(progress) = progress_rx.recv().await {
+            if send_chunk(
+                &tx,
+                DownloadChunk {
+                    payload: Some(Payload::Progress(progress)),
+                },
+            )
+            .is_err()
+            {
+                break;
+            }
+        }
+    })
 }
 
 fn parse_language(audio_language: &str) -> Language {
@@ -809,10 +869,52 @@ fn resolve_download_duration(media_duration: Option<f32>, section: Option<&Secti
 
 #[cfg(test)]
 mod tests {
-    use super::{reject_active_livestreams, resolve_download_duration};
+    use super::{parse_range, reject_active_livestreams, resolve_download_duration};
     use crate::entities::{Media, Playlist, Sections};
     use tonic::Code;
     use url::Url;
+
+    #[test]
+    fn parse_range_rejects_non_positive_values() {
+        for (start, count, step) in [(0, 5, 1), (-1, 5, 1), (1, 0, 1), (1, -5, 1), (1, 5, 0), (1, 5, -1)] {
+            let err = parse_range(Some(proto::downloader::Range { start, count, step })).unwrap_err();
+            assert_eq!(
+                err.code(),
+                Code::InvalidArgument,
+                "expected InvalidArgument for ({start}, {count}, {step})"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_range_rejects_inverted_start_count() {
+        let err = parse_range(Some(proto::downloader::Range {
+            start: 5,
+            count: 1,
+            step: 1,
+        }))
+        .unwrap_err();
+        assert_eq!(err.code(), Code::InvalidArgument);
+    }
+
+    #[test]
+    fn parse_range_accepts_valid_input() {
+        let range = parse_range(Some(proto::downloader::Range {
+            start: 1,
+            count: 5,
+            step: 2,
+        }))
+        .unwrap();
+        assert_eq!(range.start, 1);
+        assert_eq!(range.count, 5);
+        assert_eq!(range.step, 2);
+    }
+
+    #[test]
+    fn parse_range_defaults_when_absent() {
+        let range = parse_range(None).unwrap();
+        assert_eq!(range, crate::entities::Range::default());
+    }
 
     #[test]
     fn uses_original_duration_without_crop() {
