@@ -167,7 +167,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
         for (format, raw) in formats {
             let request = build_download_request(url, &format, raw, "video", "", sections, self.node_router.max_file_size());
 
-            match download_with_retry(
+            match prepare_download(
                 self.node_router.as_ref(),
                 url.domain(),
                 request,
@@ -228,7 +228,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
         for (format, raw) in formats {
             let request = build_download_request(url, &format, raw, "audio", "m4a", sections, self.node_router.max_file_size());
 
-            match download_with_retry(
+            match prepare_download(
                 self.node_router.as_ref(),
                 url.domain(),
                 request,
@@ -289,7 +289,7 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadPhoto {
         for (format, raw) in formats {
             let request = build_download_request(url, &format, raw, "photo", "", sections, self.node_router.max_file_size());
 
-            match download_with_retry(
+            match prepare_download(
                 self.node_router.as_ref(),
                 url.domain(),
                 request,
@@ -353,7 +353,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
             for (format, raw) in formats {
                 let request = build_download_request(url, &format, raw, "video", "", sections, self.node_router.max_file_size());
 
-                match download_with_retry(
+                match prepare_download(
                     self.node_router.as_ref(),
                     url.domain(),
                     request,
@@ -425,7 +425,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
             for (format, raw) in formats {
                 let request = build_download_request(url, &format, raw, "audio", "m4a", sections, self.node_router.max_file_size());
 
-                match download_with_retry(
+                match prepare_download(
                     self.node_router.as_ref(),
                     url.domain(),
                     request,
@@ -497,7 +497,7 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadPhotoPlaylist {
             for (format, raw) in formats {
                 let request = build_download_request(url, &format, raw, "photo", "", sections, self.node_router.max_file_size());
 
-                match download_with_retry(
+                match prepare_download(
                     self.node_router.as_ref(),
                     url.domain(),
                     request,
@@ -549,7 +549,7 @@ struct PreparedDownload {
     stream: MediaByteStream,
 }
 
-async fn download_with_retry(
+async fn prepare_download(
     node_router: &NodeRouter,
     domain: Option<&str>,
     request: DownloadRequest,
