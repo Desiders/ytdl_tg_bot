@@ -1,6 +1,7 @@
 use crate::{
     config::GalleryDlConfig,
     entities::{GalleryDlEntry, Playlist, Range, RawPhotoInfo},
+    utils::process_exit_error,
 };
 
 use serde_json::{Map, Value};
@@ -200,10 +201,7 @@ async fn run_gallery_dl_json(
             let stderr = String::from_utf8_lossy(&stderr);
             if !status.success() {
                 error!("{stderr}");
-                return match status.code() {
-                    Some(code) => Err(io::Error::other(format!("Gallery-dl exited with code {code} and message: {stderr}")).into()),
-                    None => Err(io::Error::other(format!("Gallery-dl exited with and message: {stderr}")).into()),
-                };
+                return Err(process_exit_error("Gallery-dl", status, &stderr).into());
             }
 
             if !stderr.trim().is_empty() {
@@ -283,10 +281,7 @@ pub async fn download_media(
                 Ok(())
             } else {
                 error!("{stderr}");
-                match status.code() {
-                    Some(code) => Err(io::Error::other(format!("Gallery-dl exited with code {code} and message: {stderr}")).into()),
-                    None => Err(io::Error::other(format!("Gallery-dl exited with and message: {stderr}")).into()),
-                }
+                Err(process_exit_error("Gallery-dl", status, &stderr).into())
             }
         }
         Ok(Err(err)) => Err(err.into()),

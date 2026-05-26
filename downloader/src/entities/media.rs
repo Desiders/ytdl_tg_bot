@@ -21,7 +21,7 @@ pub struct MediaFormat {
 
 impl MediaFormat {
     #[inline]
-    pub fn aspect_ration_kind(&self) -> Option<AspectKind> {
+    pub fn aspect_ratio_kind(&self) -> Option<AspectKind> {
         self.aspect_ratio.map(AspectKind::new)
     }
 }

@@ -70,7 +70,7 @@ impl MessengerPort for TelegramMessenger {
                     .reply_parameters_option(
                         request
                             .reply_to_message_id
-                            .map(|message_id| ReplyParameters::new(message_id).allow_sending_without_reply(true)),
+                            .map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)),
                     ),
             )
             .await?;
@@ -159,7 +159,7 @@ impl MessengerPort for TelegramMessenger {
             .thumbnail_option(thumbnail)
             .caption_option(if link_is_visible { media_link(Some(webpage_url)) } else { None })
             .parse_mode(ParseMode::HTML)
-            .reply_parameters_option(reply_to_message_id.map(|val| ReplyParameters::new(val).allow_sending_without_reply(true)));
+            .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)));
 
         let message = once(&self.bot, method, Some(self.timeouts_cfg.send_by_upload)).await?;
         drop(temp_dir);
@@ -171,16 +171,7 @@ impl MessengerPort for TelegramMessenger {
         drop(message);
 
         if with_delete {
-            tokio::spawn({
-                let bot = self.bot.clone();
-                let error_formatter = self.error_formatter.clone();
-                async move {
-                    if let Err(err) = bot.send(methods::DeleteMessage::new(chat_id, message_id)).await {
-                        let err = MessengerError::from(err);
-                        error!(err = %error_formatter.format(&err), "Delete message error");
-                    }
-                }
-            });
+            self.spawn_delete_message(chat_id, message_id);
         }
 
         Ok(file_id)
@@ -216,7 +207,7 @@ impl MessengerPort for TelegramMessenger {
             .thumbnail_option(thumbnail)
             .caption_option(if link_is_visible { media_link(Some(webpage_url)) } else { None })
             .parse_mode(ParseMode::HTML)
-            .reply_parameters_option(reply_to_message_id.map(|val| ReplyParameters::new(val).allow_sending_without_reply(true)));
+            .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)));
 
         let message = once(&self.bot, method, Some(self.timeouts_cfg.send_by_upload)).await?;
         drop(temp_dir);
@@ -229,16 +220,7 @@ impl MessengerPort for TelegramMessenger {
         drop(message);
 
         if with_delete {
-            tokio::spawn({
-                let bot = self.bot.clone();
-                let error_formatter = self.error_formatter.clone();
-                async move {
-                    if let Err(err) = bot.send(methods::DeleteMessage::new(chat_id, message_id)).await {
-                        let err = MessengerError::from(err);
-                        error!(err = %error_formatter.format(&err), "Delete message error");
-                    }
-                }
-            });
+            self.spawn_delete_message(chat_id, message_id);
         }
 
         Ok(file_id)
@@ -262,7 +244,7 @@ impl MessengerPort for TelegramMessenger {
             .disable_notification(true)
             .caption_option(if link_is_visible { media_link(Some(webpage_url)) } else { None })
             .parse_mode(ParseMode::HTML)
-            .reply_parameters_option(reply_to_message_id.map(|val| ReplyParameters::new(val).allow_sending_without_reply(true)));
+            .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)));
 
         let message = once(&self.bot, method, Some(self.timeouts_cfg.send_by_upload)).await?;
         drop(temp_dir);
@@ -276,16 +258,7 @@ impl MessengerPort for TelegramMessenger {
         drop(message);
 
         if with_delete {
-            tokio::spawn({
-                let bot = self.bot.clone();
-                let error_formatter = self.error_formatter.clone();
-                async move {
-                    if let Err(err) = bot.send(methods::DeleteMessage::new(chat_id, message_id)).await {
-                        let err = MessengerError::from(err);
-                        error!(err = %error_formatter.format(&err), "Delete message error");
-                    }
-                }
-            });
+            self.spawn_delete_message(chat_id, message_id);
         }
 
         Ok(file_id)
@@ -304,7 +277,7 @@ impl MessengerPort for TelegramMessenger {
             .disable_notification(true)
             .caption_option(if link_is_visible { media_link(Some(webpage_url)) } else { None })
             .parse_mode(ParseMode::HTML)
-            .reply_parameters_option(reply_to_message_id.map(|val| ReplyParameters::new(val).allow_sending_without_reply(true)));
+            .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)));
 
         let message = once(&self.bot, method, Some(self.timeouts_cfg.send_by_upload)).await?;
         let message_id = message.message_id();
@@ -316,16 +289,7 @@ impl MessengerPort for TelegramMessenger {
         drop(message);
 
         if with_delete {
-            tokio::spawn({
-                let bot = self.bot.clone();
-                let error_formatter = self.error_formatter.clone();
-                async move {
-                    if let Err(err) = bot.send(methods::DeleteMessage::new(chat_id, message_id)).await {
-                        let err = MessengerError::from(err);
-                        error!(err = %error_formatter.format(&err), "Delete message error");
-                    }
-                }
-            });
+            self.spawn_delete_message(chat_id, message_id);
         }
 
         Ok(file_id)
@@ -538,6 +502,22 @@ impl MessengerPort for TelegramMessenger {
     }
 }
 
+impl TelegramMessenger {
+    /// Best-effort fire-and-forget delete that logs failures via `error_formatter`.
+    /// Used after every "send + auto-delete" upload (the receiver chat is just a
+    /// staging area whose messages get deleted once we have the file_id).
+    fn spawn_delete_message(&self, chat_id: i64, message_id: i64) {
+        let bot = self.bot.clone();
+        let error_formatter = self.error_formatter.clone();
+        tokio::spawn(async move {
+            if let Err(err) = bot.send(methods::DeleteMessage::new(chat_id, message_id)).await {
+                let err = MessengerError::from(err);
+                error!(err = %error_formatter.format(&err), "Delete message error");
+            }
+        });
+    }
+}
+
 impl From<TextFormat> for ParseMode {
     fn from(value: TextFormat) -> Self {
         match value {
@@ -614,6 +594,8 @@ where
     .await
 }
 
+/// Telegram media groups are limited to 10 items; this splits a longer list
+/// into 10-sized batches and tolerates per-batch failures.
 async fn media_groups(
     bot: &Bot,
     chat_id: impl Into<ChatIdKind>,
@@ -621,6 +603,8 @@ async fn media_groups(
     reply_to_message_id: Option<i64>,
     request_timeout: Option<f32>,
 ) -> Result<Box<[Message]>, SessionErrorKind> {
+    const MAX_MEDIA_GROUP: usize = 10;
+
     let chat_id = chat_id.into();
     let input_media_len = input_media_list.len();
 
@@ -628,59 +612,52 @@ async fn media_groups(
         return Ok(Box::new([]));
     }
 
-    let cap = if input_media_len > 10 { 10 } else { input_media_len };
-
     let mut messages = Vec::with_capacity(input_media_len);
-    let mut cur_media_group = Vec::with_capacity(cap);
-    let mut cur_media_group_len = 0;
+    let mut cur_media_group = Vec::with_capacity(input_media_len.min(MAX_MEDIA_GROUP));
 
     for input_media in input_media_list {
         cur_media_group.push(input_media.into());
-        cur_media_group_len += 1;
 
-        if cur_media_group_len == 10 {
-            let media_group = mem::take(&mut cur_media_group);
-            let media_group_len = media_group.len();
-
-            match with_retries(
+        if cur_media_group.len() == MAX_MEDIA_GROUP {
+            send_media_group(
                 bot,
-                SendMediaGroup::new(chat_id.clone(), media_group)
-                    .disable_notification(true)
-                    .reply_parameters_option(
-                        reply_to_message_id
-                            .map(|reply_to_message_id| ReplyParameters::new(reply_to_message_id).allow_sending_without_reply(true)),
-                    ),
-                3,
+                &chat_id,
+                mem::take(&mut cur_media_group),
+                reply_to_message_id,
                 request_timeout,
+                &mut messages,
             )
-            .await
-            {
-                Ok(new_messages) => messages.extend(new_messages),
-                Err(_) => {
-                    warn!("Skip {media_group_len} media count to send");
-                }
-            }
-
-            cur_media_group_len = 0;
+            .await;
         }
     }
 
-    if cur_media_group_len != 0 {
-        messages.extend(
-            with_retries(
-                bot,
-                SendMediaGroup::new(chat_id.clone(), cur_media_group)
-                    .disable_notification(true)
-                    .reply_parameters_option(
-                        reply_to_message_id
-                            .map(|reply_to_message_id| ReplyParameters::new(reply_to_message_id).allow_sending_without_reply(true)),
-                    ),
-                3,
-                request_timeout,
-            )
-            .await?,
-        );
+    if !cur_media_group.is_empty() {
+        send_media_group(bot, &chat_id, cur_media_group, reply_to_message_id, request_timeout, &mut messages).await;
     }
 
     Ok(messages.into())
+}
+
+async fn send_media_group(
+    bot: &Bot,
+    chat_id: &ChatIdKind,
+    media_group: Vec<InputMedia>,
+    reply_to_message_id: Option<i64>,
+    request_timeout: Option<f32>,
+    messages: &mut Vec<Message>,
+) {
+    let media_group_len = media_group.len();
+    let res = with_retries(
+        bot,
+        SendMediaGroup::new(chat_id.clone(), media_group)
+            .disable_notification(true)
+            .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true))),
+        3,
+        request_timeout,
+    )
+    .await;
+    match res {
+        Ok(new_messages) => messages.extend(new_messages),
+        Err(_) => warn!("Skip {media_group_len} media count to send"),
+    }
 }
