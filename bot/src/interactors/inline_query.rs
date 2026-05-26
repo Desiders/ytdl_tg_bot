@@ -6,12 +6,11 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::{
-    entities::{language::Language, Range, ShortMedia},
+    entities::ShortMedia,
     handlers_utils::progress,
     interactors::Interactor,
     services::{
         get_media,
-        get_media::GetUncachedMediaByURLInput,
         messenger::{AnswerInlineQueryRequest, InlineQueryArticle, MessengerPort, TextFormat},
         yt_toolkit::GetVideoInfoErrorKind,
     },
@@ -24,7 +23,6 @@ pub struct SelectByUrl<Messenger> {
     pub error_formatter: Arc<ErrorFormatter>,
     pub messenger: Arc<Messenger>,
     pub get_basic_info_media: Arc<get_media::GetShortMediaByURL>,
-    pub get_media: Arc<get_media::GetUncachedVideoByURL>,
 }
 
 pub struct SelectByUrlInput<'a> {
@@ -56,27 +54,15 @@ where
                     error!(err = %self.error_formatter.format(&err), "Get YT Toolkit media error");
                 }
 
-                match self
-                    .get_media
-                    .execute(GetUncachedMediaByURLInput {
-                        url: input.url,
-                        playlist_range: &Range::default(),
-                        audio_language: &Language::default(),
-                    })
-                    .await
-                {
-                    Ok(playlist) => playlist.inner.into_iter().map(|(val, _)| val.into()).collect(),
-                    Err(err) => {
-                        error!(err = %self.error_formatter.format(&err), "Get info error");
-                        if let Err(err) =
-                            progress::is_error_in_inline_query(self.messenger.as_ref(), input.query_id, "Sorry, an error to get media")
-                                .await
-                        {
-                            error!(err = %self.error_formatter.format(&err), "Answer inline query error");
-                        }
-                        return Ok(());
-                    }
-                }
+                // No fast preview source — offer a download entry without a thumbnail or media
+                // name (the loop renders a missing title as "No name") rather than falling back
+                // to yt-dlp, which is far too slow for inline. The download itself uses the URL
+                // forwarded via the chosen-inline `Extension`.
+                vec![ShortMedia {
+                    id: String::new(),
+                    title: None,
+                    thumbnail: None,
+                }]
             }
         };
 

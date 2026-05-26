@@ -237,10 +237,6 @@ where
             provide(|Inject(node_router): Inject<NodeRouter>| Ok(node_router::GetStats { node_router })),
             provide(|
                 Inject(node_router): Inject<NodeRouter>,
-                Inject(cfg): Inject<TrackingParamsConfig>| Ok(get_media::GetUncachedVideoByURL { node_router, cfg })
-            ),
-            provide(|
-                Inject(node_router): Inject<NodeRouter>,
                 Inject(cfg): Inject<TrackingParamsConfig>| Ok(get_media::GetVideoByURL { node_router, cfg })
             ),
             provide(|
@@ -261,13 +257,11 @@ where
             provide(|
                 Inject(error_formatter): Inject<ErrorFormatter>,
                 Inject(messenger): Inject<Messenger>,
-                Inject(get_basic_info_media): Inject<get_media::GetShortMediaByURL>,
-                Inject(get_media): Inject<get_media::GetUncachedVideoByURL>| {
+                Inject(get_basic_info_media): Inject<get_media::GetShortMediaByURL>| {
                     Ok(inline_query::SelectByUrl {
                         error_formatter,
                         messenger,
                         get_basic_info_media,
-                        get_media,
                     })
                 }
             ),
