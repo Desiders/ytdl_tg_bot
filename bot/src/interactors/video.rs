@@ -347,7 +347,7 @@ where
                 let _ = progress::is_error_in_progress(
                     self.messenger.as_ref(),
                     input.chat_id,
-                    input.message_id,
+                    progress_message_id,
                     "Playlist is empty",
                     Some(TextFormat::Html),
                 )

@@ -221,7 +221,6 @@ pub async fn is_errors_in_chosen_inline(
         "{}",
         t!("progress.download_retries", locale = locale, count = format_errs.len())
     );
-    errs_text.push_str(&html_expandable_blockquote(&errs_text));
 
     let text = format!(
         "{}\n\n{}",
