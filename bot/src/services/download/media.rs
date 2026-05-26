@@ -623,7 +623,16 @@ async fn prepare_download(
     base_format: &MediaFormat,
     progress_sender: Option<&mpsc::UnboundedSender<DownloadProgressEvent>>,
 ) -> Result<PreparedDownload, DownloadErrorKind> {
-    let session = download_media(node_router, domain, request).await?;
+    // The node streams progress while downloading and only sends `Meta` once the download
+    // succeeds, so this resolves only after a usable file exists. Forward the pre-`Meta`
+    // progress to the UI; a download failure returns here as an error instead of breaking
+    // the upload that would otherwise have already started.
+    let on_progress = |progress: String| {
+        if let Some(sender) = progress_sender {
+            let _ = sender.send(DownloadProgressEvent::Progress(progress));
+        }
+    };
+    let session = download_media(node_router, domain, request, on_progress).await?;
     Ok(build_downloaded_media(session, output_dir, base_format, progress_sender))
 }
 

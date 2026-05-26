@@ -43,15 +43,23 @@ impl DownloadSession {
 
 /// Starts media download on a routed downloader node.
 ///
+/// The node streams `Progress` chunks while the download runs and only sends `Meta`
+/// once the download has succeeded and its output file is validated. This function
+/// forwards those pre-`Meta` progress updates through `on_progress` and returns the
+/// session at `Meta` — so a download failure surfaces here as an error (and can fail
+/// over / be retried with another format) instead of corrupting an already-started upload.
+///
 /// # Errors
 ///
 /// Returns an error if no node is available, authentication metadata cannot be
-/// built, the RPC fails, or the stream starts with an invalid chunk.
+/// built, the RPC fails, or the stream sends an invalid chunk sequence.
 pub async fn download_media(
     router: &NodeRouter,
     domain: Option<&str>,
     request: DownloadRequest,
+    on_progress: impl Fn(String) + Sync,
 ) -> Result<DownloadSession, DownloadErrorKind> {
+    let on_progress = &on_progress;
     with_node_failover(
         router,
         domain,
@@ -62,16 +70,18 @@ pub async fn download_media(
                 let response = client.download_media(authenticated_request(request, &node.token)?).await?;
                 let mut stream = response.into_inner();
 
-                let first = stream
-                    .message()
-                    .await
-                    .map_err(DownloadErrorKind::from)?
-                    .ok_or(DownloadErrorKind::InvalidStream)?;
-                let Payload::Meta(meta) = first.payload.ok_or(DownloadErrorKind::InvalidStream)? else {
-                    return Err(DownloadErrorKind::InvalidStream);
-                };
-
-                Ok::<_, DownloadErrorKind>(DownloadSession { meta, stream })
+                loop {
+                    let chunk = stream
+                        .message()
+                        .await
+                        .map_err(DownloadErrorKind::from)?
+                        .ok_or(DownloadErrorKind::InvalidStream)?;
+                    match chunk.payload.ok_or(DownloadErrorKind::InvalidStream)? {
+                        Payload::Progress(progress) => on_progress(progress),
+                        Payload::Meta(meta) => return Ok::<_, DownloadErrorKind>(DownloadSession { meta, stream }),
+                        Payload::Data(_) | Payload::ThumbnailData(_) => return Err(DownloadErrorKind::InvalidStream),
+                    }
+                }
             }
         },
         classify_download_error,
