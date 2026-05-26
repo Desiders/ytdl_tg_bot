@@ -97,6 +97,25 @@ error_downloading_some = "🧨 Не удалось скачать некотор
 download_retries = "Попыток загрузки: %{count}"
 media_download_retries = "%{n} файл(ов) (попыток загрузки: %{count}):"
 
+[download]
+preparing = "🔍 Подготовка к скачиванию..."
+playlist_empty = "Плейлист пуст"
+no_media_found = "Медиа не найдено"
+error_parse_range = "Не удалось разобрать диапазон"
+error_parse_sections = "Не удалось разобрать обрезку"
+error_get_info = "Не удалось получить информацию"
+error_get_media = "Не удалось получить медиа"
+error_send_media = "Не удалось отправить медиа"
+error_send_playlist = "Не удалось отправить плейлист"
+error_download_playlist = "Не удалось скачать плейлист"
+error_edit_message = "Не удалось изменить сообщение"
+
+[inline]
+no_name = "Без названия"
+download_video = "Нажмите, чтобы скачать видео"
+download_audio = "Нажмите, чтобы скачать аудио"
+error_search_media = "Не удалось найти медиа"
+
 [bot_commands]
 start = "Показать справку"
 vd = "Скачать видео"

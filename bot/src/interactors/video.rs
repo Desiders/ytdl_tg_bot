@@ -6,6 +6,7 @@ use std::{
     },
 };
 
+use rust_i18n::t;
 use telers::{
     errors::HandlerError,
     utils::text::{html_expandable_blockquote, html_quote},
@@ -64,10 +65,11 @@ where
     #[instrument(skip_all, fields(message_id = input.message_id, url = input.url.as_str(), ?input.params))]
     async fn execute(self, input: DownloadInput<'_>) -> Result<Self::Output, Self::Err> {
         debug!("Got url");
+        let locale = input.chat_cfg.locale();
 
         let progress_message = match progress::new(
             self.messenger.as_ref(),
-            "🔍 Preparing download...",
+            t!("download.preparing", locale = locale.as_str()).as_ref(),
             input.chat_id,
             Some(input.message_id),
             None,
@@ -88,7 +90,8 @@ where
                 Err(err) => {
                     error!(%err, "Parse range error");
                     let text = format!(
-                        "Sorry, an error to parse range\n{}",
+                        "{}\n{}",
+                        t!("download.error_parse_range", locale = locale.as_str()),
                         html_expandable_blockquote(html_quote(self.error_formatter.format(&err).as_ref()))
                     );
                     let _ = progress::is_error_in_progress(
@@ -111,7 +114,8 @@ where
                 Err(err) => {
                     error!(%err, "Parse sections error");
                     let text = format!(
-                        "Sorry, an error to parse sections\n{}",
+                        "{}\n{}",
+                        t!("download.error_parse_sections", locale = locale.as_str()),
                         html_expandable_blockquote(html_quote(self.error_formatter.format(&err).as_ref()))
                     );
                     let _ = progress::is_error_in_progress(
@@ -163,7 +167,8 @@ where
                     let err = self.error_formatter.format(&err);
                     error!(%err, "Send error");
                     let text = format!(
-                        "Sorry, an error to send media\n{}",
+                        "{}\n{}",
+                        t!("download.error_send_media", locale = locale.as_str()),
                         html_expandable_blockquote(html_quote(err.as_ref()))
                     );
                     let _ = progress::is_error_in_progress(
@@ -286,7 +291,8 @@ where
                         if let Err(err) = self.playlist_downloader.execute(download_input).await {
                             error!(%err, "Download error");
                             let text = format!(
-                                "Sorry, an error to download playlist\n{}",
+                                "{}\n{}",
+                                t!("download.error_download_playlist", locale = locale.as_str()),
                                 html_expandable_blockquote(html_quote(self.error_formatter.format(&err).as_ref()))
                             );
                             let _ = progress::is_error_in_progress(
@@ -327,7 +333,8 @@ where
                     let err = self.error_formatter.format(&err);
                     error!(%err, "Send error");
                     let text = format!(
-                        "Sorry, an error to send playlist\n{}",
+                        "{}\n{}",
+                        t!("download.error_send_playlist", locale = locale.as_str()),
                         html_expandable_blockquote(html_quote(err.as_ref()))
                     );
                     let _ = progress::is_error_in_progress(
@@ -348,7 +355,7 @@ where
                     self.messenger.as_ref(),
                     input.chat_id,
                     progress_message_id,
-                    "Playlist is empty",
+                    &t!("download.playlist_empty", locale = locale.as_str()),
                     Some(TextFormat::Html),
                 )
                 .await;
@@ -356,7 +363,8 @@ where
             Err(err) => {
                 error!(err = %self.error_formatter.format(&err), "Get error");
                 let text = format!(
-                    "Sorry, an error to get info\n{}",
+                    "{}\n{}",
+                    t!("download.error_get_info", locale = locale.as_str()),
                     html_expandable_blockquote(html_quote(self.error_formatter.format(&err).as_ref()))
                 );
                 let _ = progress::is_error_in_progress(

@@ -1,3 +1,4 @@
+use rust_i18n::t;
 use std::sync::Arc;
 use telers::{
     errors::HandlerError,
@@ -55,10 +56,11 @@ where
     #[instrument(skip_all, fields(message_id = input.message_id, url = input.url.as_str(), ?input.params))]
     async fn execute(self, input: DownloadInput<'_>) -> Result<Self::Output, Self::Err> {
         debug!("Got url");
+        let locale = input.chat_cfg.locale();
 
         let progress_message = match progress::new(
             self.messenger.as_ref(),
-            "🔍 Preparing download...",
+            t!("download.preparing", locale = locale.as_str()).as_ref(),
             input.chat_id,
             Some(input.message_id),
             None,
@@ -79,7 +81,8 @@ where
                 Err(err) => {
                     error!(%err, "Parse range error");
                     let text = format!(
-                        "Sorry, an error to parse range\n{}",
+                        "{}\n{}",
+                        t!("download.error_parse_range", locale = locale.as_str()),
                         html_expandable_blockquote(html_quote(self.error_formatter.format(&err).as_ref()))
                     );
                     let _ = progress::is_error_in_progress(
@@ -126,7 +129,8 @@ where
                     let err = self.error_formatter.format(&err);
                     error!(%err, "Send error");
                     let text = format!(
-                        "Sorry, an error to send media\n{}",
+                        "{}\n{}",
+                        t!("download.error_send_media", locale = locale.as_str()),
                         html_expandable_blockquote(html_quote(err.as_ref()))
                     );
                     let _ = progress::is_error_in_progress(
@@ -230,7 +234,8 @@ where
                     let err = self.error_formatter.format(&err);
                     error!(%err, "Send playlist error");
                     let text = format!(
-                        "Sorry, an error to send media\n{}",
+                        "{}\n{}",
+                        t!("download.error_send_playlist", locale = locale.as_str()),
                         html_expandable_blockquote(html_quote(err.as_ref()))
                     );
                     let _ = progress::is_error_in_progress(
@@ -250,14 +255,21 @@ where
             }
             Ok(Empty) => {
                 warn!("No media");
-                let _ = progress::is_error_in_progress(self.messenger.as_ref(), input.chat_id, progress_message_id, "No media found", None)
-                    .await;
+                let _ = progress::is_error_in_progress(
+                    self.messenger.as_ref(),
+                    input.chat_id,
+                    progress_message_id,
+                    &t!("download.no_media_found", locale = locale.as_str()),
+                    None,
+                )
+                .await;
             }
             Err(err) => {
                 let err = self.error_formatter.format(&err);
                 error!(%err, "Get media error");
                 let text = format!(
-                    "Sorry, an error to get media\n{}",
+                    "{}\n{}",
+                    t!("download.error_get_media", locale = locale.as_str()),
                     html_expandable_blockquote(html_quote(err.as_ref()))
                 );
                 let _ = progress::is_error_in_progress(
