@@ -52,12 +52,6 @@ pub struct GetMediaByURLInput<'a> {
     pub tx_manager: &'a mut TxManager,
 }
 
-pub struct GetUncachedMediaByURLInput<'a> {
-    pub url: &'a Url,
-    pub playlist_range: &'a Range,
-    pub audio_language: &'a Language,
-}
-
 pub enum GetMediaByURLKind {
     SingleCached(String),
     Playlist {
@@ -187,48 +181,6 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetPhotoByURL {
             tx_manager,
         )
         .await
-    }
-}
-
-pub struct GetUncachedVideoByURL {
-    pub node_router: Arc<NodeRouter>,
-    pub cfg: Arc<TrackingParamsConfig>,
-}
-
-impl Interactor<GetUncachedMediaByURLInput<'_>> for &GetUncachedVideoByURL {
-    type Output = Playlist;
-    type Err = GetInfoErrorKind;
-
-    async fn execute(
-        self,
-        GetUncachedMediaByURLInput {
-            url,
-            playlist_range,
-            audio_language,
-        }: GetUncachedMediaByURLInput<'_>,
-    ) -> Result<Self::Output, Self::Err> {
-        debug!("Getting media");
-
-        let response = get_media_info(
-            self.node_router.as_ref(),
-            url.domain(),
-            MediaInfoRequest {
-                url: url.as_str().to_owned(),
-                audio_language: audio_language.language.clone().unwrap_or_default(),
-                playlist_range: Some((*playlist_range).into()),
-                media_type: "video".to_owned(),
-                max_file_size: self.node_router.max_file_size(),
-            },
-        )
-        .await?;
-        let mut playlist = playlist_from_response(response)?;
-
-        for (media, _) in &mut playlist.inner {
-            media.remove_url_tracking_params(self.cfg.as_ref());
-        }
-
-        info!(playlist_len = playlist.inner.len(), "Got media");
-        Ok(playlist)
     }
 }
 
