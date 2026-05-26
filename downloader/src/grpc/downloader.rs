@@ -286,24 +286,40 @@ async fn stream_download(
         Some(&progress_tx),
     ));
 
-    // Race the download against its first progress line. If yt-dlp fails before producing any progress
-    // (auth/geo/format errors), `download_future` resolves first with an Err — we propagate it without
-    // sending Meta so `with_node_failover` on the client can retry on another node. Once a progress line
-    // arrives, the download has started successfully: send Meta so the bot can leave the "Preparing"
-    // state, then stream the remaining progress in real time.
-    let initial_progress = tokio::select! {
-        progress = progress_rx.recv() => progress,
-        res = &mut download_future => {
-            res.map_err(download_error_status)?;
-            None
+    // Stream progress in real time while the download runs, but hold back `Meta` until the
+    // download has succeeded and the output file is validated. The bot starts its Telegram
+    // upload the moment it sees `Meta`, so emitting it early (e.g. on the first progress line)
+    // would turn a later download failure into a corrupt, half-streamed upload instead of a
+    // clean error the bot can retry with another format. Racing `tx.closed()` lets a client
+    // disconnect kill yt-dlp via `kill_on_drop` rather than wasting CPU/disk/bandwidth.
+    loop {
+        tokio::select! {
+            Some(progress) = progress_rx.recv() => {
+                send_chunk(&tx, DownloadChunk { payload: Some(Payload::Progress(progress)) })?;
+            }
+            res = &mut download_future => {
+                res.map_err(download_error_status)?;
+                break;
+            }
+            () = tx.closed() => {
+                return Err(Status::cancelled("Client disconnected"));
+            }
         }
-    };
+    }
+    drop(download_future);
+    drop(progress_tx);
+
+    let media_file_path = resolve_media_file_path(output_dir_path, &media_file_path).await?;
+    if thumbnail_downloaded {
+        try_embed_thumbnail(&url, &media_file_path, &thumb_file_path).await;
+    }
+    let file_size = validate_download_file(&url, &media_file_path, effective_max_file_size).await?;
 
     send_chunk(
         &tx,
         DownloadChunk {
             payload: Some(Payload::Meta(DownloadMeta {
-                ext: ext.clone(),
+                ext,
                 width: format.width,
                 height: format.height,
                 duration: resolve_download_duration(media.duration, section.as_ref()),
@@ -318,44 +334,7 @@ async fn stream_download(
         debug!(url = %url, path = %thumb_file_path.display(), "Finished thumbnail stream to client");
     }
 
-    match initial_progress {
-        Some(progress) => {
-            send_chunk(
-                &tx,
-                DownloadChunk {
-                    payload: Some(Payload::Progress(progress)),
-                },
-            )?;
-
-            let progress_forwarder = spawn_progress_forwarder(progress_rx, tx.clone());
-            // Race the download against client disconnection. If the client drops the stream,
-            // dropping `download_future` here kills yt-dlp via `kill_on_drop` instead of letting
-            // it run to completion and waste CPU/disk/bandwidth.
-            tokio::select! {
-                res = download_future => {
-                    res.map_err(download_error_status)?;
-                }
-                () = tx.closed() => {
-                    return Err(Status::cancelled("Client disconnected"));
-                }
-            }
-            drop(progress_tx);
-            let _ = progress_forwarder.await;
-        }
-        None => {
-            // Download already completed inside the select!; drop the boxed future
-            // to release the borrow on `progress_tx` / `temp_dir`.
-            drop(download_future);
-        }
-    }
-
-    let media_file_path = resolve_media_file_path(output_dir_path, &media_file_path).await?;
-
-    if thumbnail_downloaded {
-        try_embed_thumbnail(&url, &media_file_path, &thumb_file_path).await;
-    }
-
-    finalize_and_stream(&url, &media_file_path, effective_max_file_size, &tx).await?;
+    stream_media_to_client(&url, &media_file_path, file_size, &tx).await?;
     drop(temp_dir);
     Ok(())
 }
@@ -384,19 +363,6 @@ async fn stream_photo_download(
     let output_dir_path = temp_dir.path();
     let media_file_path = output_dir_path.join(format!("media.{}", raw_info.ext));
 
-    send_chunk(
-        &tx,
-        DownloadChunk {
-            payload: Some(Payload::Meta(DownloadMeta {
-                ext: raw_info.ext.clone(),
-                width: raw_info.width,
-                height: raw_info.height,
-                duration: None,
-                has_thumbnail: false,
-            })),
-        },
-    )?;
-
     gallery_dl::download_media(
         url.as_str(),
         &raw_info,
@@ -410,7 +376,24 @@ async fn stream_photo_download(
     .map_err(|err| Status::internal(err.to_string()))?;
 
     let media_file_path = resolve_media_file_path(output_dir_path, &media_file_path).await?;
-    finalize_and_stream(&url, &media_file_path, effective_max_file_size, &tx).await?;
+    let file_size = validate_download_file(&url, &media_file_path, effective_max_file_size).await?;
+
+    // Like the video path, `Meta` is sent only after the download succeeds and the file is
+    // validated, so the bot never starts an upload it would have to abort.
+    send_chunk(
+        &tx,
+        DownloadChunk {
+            payload: Some(Payload::Meta(DownloadMeta {
+                ext: raw_info.ext,
+                width: raw_info.width,
+                height: raw_info.height,
+                duration: None,
+                has_thumbnail: false,
+            })),
+        },
+    )?;
+
+    stream_media_to_client(&url, &media_file_path, file_size, &tx).await?;
     drop(temp_dir);
     Ok(())
 }
@@ -453,33 +436,38 @@ async fn try_embed_thumbnail(url: &Url, media_file_path: &std::path::Path, thumb
     }
 }
 
-/// Validate the downloaded file fits the size budget and stream it to the
-/// gRPC client. Shared tail of both `stream_download` and `stream_photo_download`.
-async fn finalize_and_stream(
-    url: &Url,
-    media_file_path: &std::path::Path,
-    effective_max_file_size: u64,
-    tx: &UnboundedSender<Result<DownloadChunk, Status>>,
-) -> Result<(), Status> {
+/// Validate the downloaded file before its `Meta` is sent: it must be non-empty
+/// (yt-dlp/gallery-dl can exit 0 yet leave an empty file) and fit the size budget.
+/// Returns the validated size on success.
+async fn validate_download_file(url: &Url, media_file_path: &std::path::Path, effective_max_file_size: u64) -> Result<u64, Status> {
     let metadata = tokio::fs::metadata(media_file_path)
         .await
         .map_err(|err| Status::internal(format!("Metadata error: {err}")))?;
-    if metadata.len() > effective_max_file_size {
+    let file_size = metadata.len();
+    if file_size == 0 {
+        warn!(url = %url, path = %media_file_path.display(), "Downloaded file is empty");
+        return Err(Status::internal("Downloaded file is empty"));
+    }
+    if file_size > effective_max_file_size {
         warn!(
             url = %url,
-            file_size = metadata.len(),
+            file_size,
             max_file_size = effective_max_file_size,
             "Downloaded file exceeds max file size"
         );
         return Err(Status::invalid_argument("File exceeds max file size"));
     }
+    Ok(file_size)
+}
 
-    debug!(
-        url = %url,
-        path = %media_file_path.display(),
-        file_size = metadata.len(),
-        "Starting media stream to client"
-    );
+/// Stream a validated media file to the gRPC client as `Data` chunks.
+async fn stream_media_to_client(
+    url: &Url,
+    media_file_path: &std::path::Path,
+    file_size: u64,
+    tx: &UnboundedSender<Result<DownloadChunk, Status>>,
+) -> Result<(), Status> {
+    debug!(url = %url, path = %media_file_path.display(), file_size, "Starting media stream to client");
     let stream_started_at = Instant::now();
     let total_streamed = stream_media_file(media_file_path, tx).await?;
 
@@ -586,26 +574,6 @@ fn download_error_status(err: ytdl::DownloadErrorKind) -> Status {
         ytdl::DownloadErrorKind::Retryable(kind) => Status::aborted(kind.to_string()),
         err => Status::internal(err.to_string()),
     }
-}
-
-fn spawn_progress_forwarder(
-    mut progress_rx: mpsc::UnboundedReceiver<String>,
-    tx: UnboundedSender<Result<DownloadChunk, Status>>,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        while let Some(progress) = progress_rx.recv().await {
-            if send_chunk(
-                &tx,
-                DownloadChunk {
-                    payload: Some(Payload::Progress(progress)),
-                },
-            )
-            .is_err()
-            {
-                break;
-            }
-        }
-    })
 }
 
 fn parse_language(audio_language: &str) -> Language {
