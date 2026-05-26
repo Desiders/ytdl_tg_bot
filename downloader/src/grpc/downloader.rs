@@ -1,6 +1,6 @@
 use std::{
     ffi::OsStr,
-    fmt, fs,
+    fs,
     pin::Pin,
     sync::{
         atomic::{AtomicU32, Ordering},
@@ -211,7 +211,6 @@ impl Drop for DownloadGuard {
     }
 }
 
-#[allow(clippy::too_many_lines)]
 async fn stream_download(
     request: DownloadRequest,
     yt_dlp_cfg: Arc<YtDlpConfig>,
@@ -234,19 +233,13 @@ async fn stream_download(
         serde_json::from_str(&request.raw_info_json).map_err(|err| Status::invalid_argument(format!("Invalid info file error: {err}")))?;
     let media = Media::from(media_with_format.clone());
     let format = MediaFormat::from(media_with_format);
-    let (requested_media_kind, ext, strategy) = {
-        let requested_media = parse_request_media(&request.media_type, &request.audio_ext)?;
-        (
-            requested_media.to_string(),
-            requested_media.output_ext(&format).to_owned(),
-            parse_format_strategy(&request.media_type, &request.audio_ext)?,
-        )
-    };
+    let strategy = parse_format_strategy(&request.media_type, &request.audio_ext)?;
+    let ext = strategy.output_ext(format.ext.as_str()).to_owned();
 
     info!(
         url = %url,
         format_id = %request.format_id,
-        media_type = %requested_media_kind,
+        media_type = ?strategy,
         has_cookie = cookie.is_some(),
         has_section = section.is_some(),
         section_start = section.as_ref().and_then(|section| section.start),
@@ -262,7 +255,7 @@ async fn stream_download(
 
     let media_file_path = output_dir_path.join(format!("media.{ext}"));
     let thumb_file_path = output_dir_path.join("media.jpg");
-    let thumb_urls = media.get_thumb_urls(format.aspect_ration_kind());
+    let thumb_urls = media.get_thumb_urls(format.aspect_ratio_kind());
 
     debug!(
         url = %url,
@@ -359,69 +352,10 @@ async fn stream_download(
     let media_file_path = resolve_media_file_path(output_dir_path, &media_file_path).await?;
 
     if thumbnail_downloaded {
-        let embed_started_at = Instant::now();
-        let media_size_before_embed = file_size(&media_file_path).await;
-        let thumbnail_size = file_size(&thumb_file_path).await;
-        debug!(
-            url = %url,
-            media_path = %media_file_path.display(),
-            thumbnail_path = %thumb_file_path.display(),
-            ?media_size_before_embed,
-            ?thumbnail_size,
-            "Starting thumbnail embed"
-        );
-        match embed_thumbnail(&media_file_path, &thumb_file_path).await {
-            Ok(()) => {
-                let media_size_after_embed = file_size(&media_file_path).await;
-                debug!(
-                    url = %url,
-                    media_path = %media_file_path.display(),
-                    ?media_size_after_embed,
-                    elapsed_ms = embed_started_at.elapsed().as_millis(),
-                    "Thumbnail embed finished"
-                );
-            }
-            Err(err) => {
-                error!(
-                    url = %url,
-                    media_path = %media_file_path.display(),
-                    thumbnail_path = %thumb_file_path.display(),
-                    elapsed_ms = embed_started_at.elapsed().as_millis(),
-                    %err,
-                    "Thumbnail embed failed"
-                );
-            }
-        }
+        try_embed_thumbnail(&url, &media_file_path, &thumb_file_path).await;
     }
 
-    let metadata = tokio::fs::metadata(&media_file_path)
-        .await
-        .map_err(|err| Status::internal(format!("Metadata error: {err}")))?;
-    if metadata.len() > effective_max_file_size {
-        warn!(
-            url = %url,
-            file_size = metadata.len(),
-            max_file_size = effective_max_file_size,
-            "Downloaded file exceeds max file size"
-        );
-        return Err(Status::invalid_argument("File exceeds max file size"));
-    }
-
-    debug!(
-        url = %url,
-        path = %media_file_path.display(),
-        file_size = metadata.len(),
-        "Starting media stream to client"
-    );
-    let stream_started_at = Instant::now();
-    let total_streamed = stream_media_file(&media_file_path, &tx).await?;
-
-    info!(
-        url = %url,
-        bytes_streamed = total_streamed,
-        elapsed_ms = stream_started_at.elapsed().as_millis(),
-        "Finished streaming downloaded media"
-    );
+    finalize_and_stream(&url, &media_file_path, effective_max_file_size, &tx).await?;
     drop(temp_dir);
     Ok(())
 }
@@ -476,7 +410,58 @@ async fn stream_photo_download(
     .map_err(|err| Status::internal(err.to_string()))?;
 
     let media_file_path = resolve_media_file_path(output_dir_path, &media_file_path).await?;
-    let metadata = tokio::fs::metadata(&media_file_path)
+    finalize_and_stream(&url, &media_file_path, effective_max_file_size, &tx).await?;
+    drop(temp_dir);
+    Ok(())
+}
+
+/// Embed `thumb_file_path` into `media_file_path`. Best-effort — failures are
+/// logged but not surfaced to the caller (the media file is still usable).
+async fn try_embed_thumbnail(url: &Url, media_file_path: &std::path::Path, thumb_file_path: &std::path::Path) {
+    let embed_started_at = Instant::now();
+    let media_size_before_embed = file_size(media_file_path).await;
+    let thumbnail_size = file_size(thumb_file_path).await;
+    debug!(
+        url = %url,
+        media_path = %media_file_path.display(),
+        thumbnail_path = %thumb_file_path.display(),
+        ?media_size_before_embed,
+        ?thumbnail_size,
+        "Starting thumbnail embed"
+    );
+    match embed_thumbnail(media_file_path, thumb_file_path).await {
+        Ok(()) => {
+            let media_size_after_embed = file_size(media_file_path).await;
+            debug!(
+                url = %url,
+                media_path = %media_file_path.display(),
+                ?media_size_after_embed,
+                elapsed_ms = embed_started_at.elapsed().as_millis(),
+                "Thumbnail embed finished"
+            );
+        }
+        Err(err) => {
+            error!(
+                url = %url,
+                media_path = %media_file_path.display(),
+                thumbnail_path = %thumb_file_path.display(),
+                elapsed_ms = embed_started_at.elapsed().as_millis(),
+                %err,
+                "Thumbnail embed failed"
+            );
+        }
+    }
+}
+
+/// Validate the downloaded file fits the size budget and stream it to the
+/// gRPC client. Shared tail of both `stream_download` and `stream_photo_download`.
+async fn finalize_and_stream(
+    url: &Url,
+    media_file_path: &std::path::Path,
+    effective_max_file_size: u64,
+    tx: &UnboundedSender<Result<DownloadChunk, Status>>,
+) -> Result<(), Status> {
+    let metadata = tokio::fs::metadata(media_file_path)
         .await
         .map_err(|err| Status::internal(format!("Metadata error: {err}")))?;
     if metadata.len() > effective_max_file_size {
@@ -496,7 +481,7 @@ async fn stream_photo_download(
         "Starting media stream to client"
     );
     let stream_started_at = Instant::now();
-    let total_streamed = stream_media_file(&media_file_path, &tx).await?;
+    let total_streamed = stream_media_file(media_file_path, tx).await?;
 
     info!(
         url = %url,
@@ -504,7 +489,6 @@ async fn stream_photo_download(
         elapsed_ms = stream_started_at.elapsed().as_millis(),
         "Finished streaming downloaded media"
     );
-    drop(temp_dir);
     Ok(())
 }
 
@@ -642,17 +626,6 @@ fn parse_format_strategy(media_type: &str, audio_ext: &str) -> Result<FormatStra
             audio_ext: if audio_ext.is_empty() { AUDIO_EXT } else { audio_ext }.to_owned(),
         }),
         _ => Err(Status::invalid_argument("Invalid media_type")),
-    }
-}
-
-#[allow(clippy::result_large_err)]
-fn parse_request_media<'a>(media_type: &'a str, audio_ext: &'a str) -> Result<RequestMedia<'a>, Status> {
-    match media_type {
-        "video" => Ok(RequestMedia::Video),
-        "audio" => Ok(RequestMedia::Audio {
-            audio_ext: if audio_ext.is_empty() { AUDIO_EXT } else { audio_ext },
-        }),
-        _ => Err(Status::invalid_argument("Invalid media type")),
     }
 }
 
@@ -814,42 +787,11 @@ fn send_status(tx: &UnboundedSender<Result<DownloadChunk, Status>>, status: Stat
     tx.send(Err(status)).map_err(|_| Status::cancelled("Client disconnected"))
 }
 
-#[derive(Debug)]
-enum RequestMedia<'a> {
-    Video,
-    Audio { audio_ext: &'a str },
-}
-
-impl RequestMedia<'_> {
-    fn output_ext<'a>(&'a self, format: &'a MediaFormat) -> &'a str {
-        match self {
-            Self::Video => format.ext.as_str(),
-            Self::Audio { audio_ext } => audio_ext,
-        }
-    }
-}
-
-impl fmt::Display for RequestMedia<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Video => "video",
-                Self::Audio { .. } => "audio",
-            }
-        )
-    }
-}
-
 #[allow(clippy::cast_possible_truncation)]
-fn duration_seconds_to_i64(duration: f32) -> i64 {
-    duration as i64
-}
-
 fn resolve_download_duration(media_duration: Option<f32>, section: Option<&Sections>) -> Option<i64> {
+    let media_duration_secs = || media_duration.map(|duration| duration as i64);
     match section {
-        None | Some(Sections { start: None, end: None }) => media_duration.map(duration_seconds_to_i64),
+        None | Some(Sections { start: None, end: None }) => media_duration_secs(),
         Some(Sections {
             start: Some(start),
             end: Some(end),
@@ -857,9 +799,7 @@ fn resolve_download_duration(media_duration: Option<f32>, section: Option<&Secti
         Some(Sections {
             start: Some(start),
             end: None,
-        }) => media_duration
-            .map(duration_seconds_to_i64)
-            .map(|duration| (duration - i64::from(*start)).max(0)),
+        }) => media_duration_secs().map(|duration| (duration - i64::from(*start)).max(0)),
         Some(Sections {
             start: None,
             end: Some(end),

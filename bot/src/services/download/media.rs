@@ -165,7 +165,18 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
         let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(Self::Err::TempDir)?;
 
         for (format, raw) in formats {
-            let request = build_download_request(url, &format, raw, "video", "", sections, self.node_router.max_file_size());
+            let request = DownloadRequest {
+                url: url.as_str().to_owned(),
+                format_id: format.format_id.clone(),
+                raw_info_json: raw,
+                media_type: "video".to_owned(),
+                audio_ext: String::new(),
+                section: sections.map(|sections| Section {
+                    start: sections.start,
+                    end: sections.end,
+                }),
+                max_file_size: self.node_router.max_file_size(),
+            };
 
             match prepare_download(
                 self.node_router.as_ref(),
@@ -226,7 +237,18 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
         let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(Self::Err::TempDir)?;
 
         for (format, raw) in formats {
-            let request = build_download_request(url, &format, raw, "audio", "m4a", sections, self.node_router.max_file_size());
+            let request = DownloadRequest {
+                url: url.as_str().to_owned(),
+                format_id: format.format_id.clone(),
+                raw_info_json: raw,
+                media_type: "audio".to_owned(),
+                audio_ext: "m4a".to_owned(),
+                section: sections.map(|sections| Section {
+                    start: sections.start,
+                    end: sections.end,
+                }),
+                max_file_size: self.node_router.max_file_size(),
+            };
 
             match prepare_download(
                 self.node_router.as_ref(),
@@ -287,7 +309,18 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadPhoto {
         let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(Self::Err::TempDir)?;
 
         for (format, raw) in formats {
-            let request = build_download_request(url, &format, raw, "photo", "", sections, self.node_router.max_file_size());
+            let request = DownloadRequest {
+                url: url.as_str().to_owned(),
+                format_id: format.format_id.clone(),
+                raw_info_json: raw,
+                media_type: "photo".to_owned(),
+                audio_ext: String::new(),
+                section: sections.map(|sections| Section {
+                    start: sections.start,
+                    end: sections.end,
+                }),
+                max_file_size: self.node_router.max_file_size(),
+            };
 
             match prepare_download(
                 self.node_router.as_ref(),
@@ -351,7 +384,18 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
             let mut media_is_downloaded = false;
 
             for (format, raw) in formats {
-                let request = build_download_request(url, &format, raw, "video", "", sections, self.node_router.max_file_size());
+                let request = DownloadRequest {
+                    url: url.as_str().to_owned(),
+                    format_id: format.format_id.clone(),
+                    raw_info_json: raw,
+                    media_type: "video".to_owned(),
+                    audio_ext: String::new(),
+                    section: sections.map(|sections| Section {
+                        start: sections.start,
+                        end: sections.end,
+                    }),
+                    max_file_size: self.node_router.max_file_size(),
+                };
 
                 match prepare_download(
                     self.node_router.as_ref(),
@@ -423,7 +467,18 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
             let mut media_is_downloaded = false;
 
             for (format, raw) in formats {
-                let request = build_download_request(url, &format, raw, "audio", "m4a", sections, self.node_router.max_file_size());
+                let request = DownloadRequest {
+                    url: url.as_str().to_owned(),
+                    format_id: format.format_id.clone(),
+                    raw_info_json: raw,
+                    media_type: "audio".to_owned(),
+                    audio_ext: "m4a".to_owned(),
+                    section: sections.map(|sections| Section {
+                        start: sections.start,
+                        end: sections.end,
+                    }),
+                    max_file_size: self.node_router.max_file_size(),
+                };
 
                 match prepare_download(
                     self.node_router.as_ref(),
@@ -495,7 +550,18 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadPhotoPlaylist {
             let mut media_is_downloaded = false;
 
             for (format, raw) in formats {
-                let request = build_download_request(url, &format, raw, "photo", "", sections, self.node_router.max_file_size());
+                let request = DownloadRequest {
+                    url: url.as_str().to_owned(),
+                    format_id: format.format_id.clone(),
+                    raw_info_json: raw,
+                    media_type: "photo".to_owned(),
+                    audio_ext: String::new(),
+                    section: sections.map(|sections| Section {
+                        start: sections.start,
+                        end: sections.end,
+                    }),
+                    max_file_size: self.node_router.max_file_size(),
+                };
 
                 match prepare_download(
                     self.node_router.as_ref(),
@@ -594,29 +660,6 @@ fn build_downloaded_media(
         format,
         duration: meta.duration,
         stream,
-    }
-}
-
-fn build_download_request(
-    url: &Url,
-    format: &MediaFormat,
-    raw_info_json: String,
-    media_type: &str,
-    audio_ext: &str,
-    sections: Option<&Sections>,
-    max_file_size: u64,
-) -> DownloadRequest {
-    DownloadRequest {
-        url: url.as_str().to_owned(),
-        format_id: format.format_id.clone(),
-        raw_info_json,
-        media_type: media_type.to_owned(),
-        audio_ext: audio_ext.to_owned(),
-        section: sections.map(|sections| Section {
-            start: sections.start,
-            end: sections.end,
-        }),
-        max_file_size,
     }
 }
 

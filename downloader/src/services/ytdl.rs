@@ -1,6 +1,7 @@
 use crate::{
     config::YtDlpConfig,
     entities::{language::Language, Playlist, Range, Sections},
+    utils::process_exit_error,
 };
 
 use serde::de::DeserializeOwned;
@@ -32,6 +33,15 @@ impl FormatStrategy {
         match self {
             Self::VideoAndAudio => &["b", "bv*+ba", "w"],
             Self::AudioOnly { .. } => &["ba", "wa", "ba*"],
+        }
+    }
+
+    /// Output file extension: for video this is the chosen container, for
+    /// audio this is the requested audio codec extension (e.g. `m4a`).
+    pub fn output_ext<'a>(&'a self, format_ext: &'a str) -> &'a str {
+        match self {
+            Self::VideoAndAudio => format_ext,
+            Self::AudioOnly { audio_ext } => audio_ext,
         }
     }
 }
@@ -282,10 +292,7 @@ pub async fn get_media_info(
                 if let Some(kind) = classify_retryable_error(&stderr) {
                     return Err(GetInfoErrorKind::Retryable(kind));
                 }
-                match status.code() {
-                    Some(code) => Err(io::Error::other(format!("Ytdlp exited with code {code} and message: {stderr}")).into()),
-                    None => Err(io::Error::other(format!("Ytdlp exited with and message: {stderr}")).into()),
-                }
+                Err(process_exit_error("Ytdlp", status, &stderr).into())
             }
         }
         Ok(Err(err)) => Err(err.into()),
@@ -431,10 +438,7 @@ pub async fn download_media(
                         if let Some(kind) = classify_retryable_error(&stderr) {
                             return Err(DownloadErrorKind::Retryable(kind));
                         }
-                        match status.code() {
-                            Some(code) => Err(io::Error::other(format!("Ytdlp exited with code {code} and message: {stderr}")).into()),
-                            None => Err(io::Error::other(format!("Ytdlp exited with and message: {stderr}")).into()),
-                        }
+                        Err(process_exit_error("Ytdlp", status, &stderr).into())
                     }
                 }
                 Ok(Err(err)) => Err(err.into()),
