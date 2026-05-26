@@ -1,5 +1,6 @@
 use std::{str::FromStr as _, sync::Arc};
 
+use rust_i18n::t;
 use telers::{
     errors::HandlerError,
     utils::text::{html_expandable_blockquote, html_quote},
@@ -90,6 +91,7 @@ where
 {
     let url = resolve_url(input.url, input.result_id);
     debug!("Got url");
+    let locale = input.chat_cfg.locale();
 
     let playlist_range = Range::default();
     let sections = match input.params.0.get("crop") {
@@ -98,7 +100,8 @@ where
             Err(err) => {
                 error!(%err, "Parse sections error");
                 let text = format!(
-                    "Sorry, an error to parse sections\n{}",
+                    "{}\n{}",
+                    t!("download.error_parse_sections", locale = locale.as_str()),
                     html_expandable_blockquote(html_quote(interactor.error_formatter.format(&err).as_ref()))
                 );
                 let _ = progress::is_error_in_chosen_inline(
@@ -147,7 +150,8 @@ where
                 let err = interactor.error_formatter.format(&err);
                 error!(%err, "Edit error");
                 let text = format!(
-                    "Sorry, an error to edit the message\n{}",
+                    "{}\n{}",
+                    t!("download.error_edit_message", locale = locale.as_str()),
                     html_expandable_blockquote(html_quote(err.as_ref()))
                 );
                 let _ = progress::is_error_in_chosen_inline(
@@ -176,7 +180,8 @@ where
                 let err = interactor.error_formatter.format(&err);
                 error!(%err, "Edit error");
                 let text = format!(
-                    "Sorry, an error to edit the message\n{}",
+                    "{}\n{}",
+                    t!("download.error_edit_message", locale = locale.as_str()),
                     html_expandable_blockquote(html_quote(err.as_ref()))
                 );
                 let _ = progress::is_error_in_chosen_inline(
@@ -301,7 +306,8 @@ where
                 let err = interactor.error_formatter.format(&err);
                 error!(%err, "Edit error");
                 let text = format!(
-                    "Sorry, an error to edit the message\n{}",
+                    "{}\n{}",
+                    t!("download.error_edit_message", locale = locale.as_str()),
                     html_expandable_blockquote(html_quote(err.as_ref()))
                 );
                 let _ = progress::is_error_in_chosen_inline(
@@ -336,7 +342,7 @@ where
             let _ = progress::is_error_in_chosen_inline(
                 interactor.messenger.as_ref(),
                 input.inline_message_id,
-                "Playlist is empty",
+                t!("download.playlist_empty", locale = locale.as_str()).as_ref(),
                 Some(TextFormat::Html),
             )
             .await;
@@ -344,7 +350,8 @@ where
         Err(err) => {
             error!(err = %interactor.error_formatter.format(&err), "Get error");
             let text = format!(
-                "Sorry, an error to get info\n{}",
+                "{}\n{}",
+                t!("download.error_get_info", locale = locale.as_str()),
                 html_expandable_blockquote(html_quote(interactor.error_formatter.format(&err).as_ref()))
             );
             let _ = progress::is_error_in_chosen_inline(
@@ -367,6 +374,7 @@ where
 {
     let url = resolve_url(input.url, input.result_id);
     debug!("Got url");
+    let locale = input.chat_cfg.locale();
 
     let playlist_range = Range::default();
     let sections = match input.params.0.get("crop") {
@@ -375,7 +383,8 @@ where
             Err(err) => {
                 error!(%err, "Parse sections error");
                 let text = format!(
-                    "Sorry, an error to parse sections\n{}",
+                    "{}\n{}",
+                    t!("download.error_parse_sections", locale = locale.as_str()),
                     html_expandable_blockquote(html_quote(interactor.error_formatter.format(&err).as_ref()))
                 );
                 let _ = progress::is_error_in_chosen_inline(
@@ -424,7 +433,8 @@ where
                 let err = interactor.error_formatter.format(&err);
                 error!(%err, "Edit error");
                 let text = format!(
-                    "Sorry, an error to edit the message\n{}",
+                    "{}\n{}",
+                    t!("download.error_edit_message", locale = locale.as_str()),
                     html_expandable_blockquote(html_quote(err.as_ref()))
                 );
                 let _ = progress::is_error_in_chosen_inline(
@@ -453,7 +463,8 @@ where
                 let err = interactor.error_formatter.format(&err);
                 error!(%err, "Edit error");
                 let text = format!(
-                    "Sorry, an error to edit the message\n{}",
+                    "{}\n{}",
+                    t!("download.error_edit_message", locale = locale.as_str()),
                     html_expandable_blockquote(html_quote(err.as_ref()))
                 );
                 let _ = progress::is_error_in_chosen_inline(
@@ -578,7 +589,8 @@ where
                 let err = interactor.error_formatter.format(&err);
                 error!(%err, "Edit error");
                 let text = format!(
-                    "Sorry, an error to edit the message\n{}",
+                    "{}\n{}",
+                    t!("download.error_edit_message", locale = locale.as_str()),
                     html_expandable_blockquote(html_quote(err.as_ref()))
                 );
                 let _ = progress::is_error_in_chosen_inline(
@@ -613,7 +625,7 @@ where
             let _ = progress::is_error_in_chosen_inline(
                 interactor.messenger.as_ref(),
                 input.inline_message_id,
-                "Playlist is empty",
+                t!("download.playlist_empty", locale = locale.as_str()).as_ref(),
                 Some(TextFormat::Html),
             )
             .await;
@@ -621,7 +633,8 @@ where
         Err(err) => {
             error!(err = %interactor.error_formatter.format(&err), "Get error");
             let text = format!(
-                "Sorry, an error to get info\n{}",
+                "{}\n{}",
+                t!("download.error_get_info", locale = locale.as_str()),
                 html_expandable_blockquote(html_quote(interactor.error_formatter.format(&err).as_ref()))
             );
             let _ = progress::is_error_in_chosen_inline(

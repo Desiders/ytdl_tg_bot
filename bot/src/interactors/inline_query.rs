@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use rust_i18n::t;
 use telers::errors::HandlerError;
 use tracing::{debug, error, instrument, warn};
 use url::Url;
@@ -28,6 +29,7 @@ pub struct SelectByUrl<Messenger> {
 pub struct SelectByUrlInput<'a> {
     pub query_id: &'a str,
     pub url: &'a Url,
+    pub locale: &'a str,
 }
 
 impl<Messenger> Interactor<SelectByUrlInput<'_>> for &SelectByUrl<Messenger>
@@ -68,34 +70,41 @@ where
 
         if media_many.is_empty() {
             warn!("Empty playlist");
-            if let Err(err) = progress::is_error_in_inline_query(self.messenger.as_ref(), input.query_id, "Playlist is empty").await {
+            if let Err(err) = progress::is_error_in_inline_query(
+                self.messenger.as_ref(),
+                input.query_id,
+                t!("download.playlist_empty", locale = input.locale).as_ref(),
+            )
+            .await
+            {
                 error!(err = %self.error_formatter.format(&err), "Answer inline query error");
             }
             return Ok(());
         }
 
         let mut results = Vec::with_capacity(media_many.len() * 2);
+        let no_name = t!("inline.no_name", locale = input.locale);
         for media in media_many {
-            let title = media.title.as_deref().unwrap_or("No name");
+            let title = media.title.as_deref().unwrap_or(no_name.as_ref());
             let thumbnail = media.thumbnail.map(|val| val.to_string());
             let result_id = Uuid::new_v4();
 
             results.push(InlineQueryArticle {
                 id: format!("video_{result_id}"),
                 title: title.to_owned(),
-                content_text: "🔍 Preparing download...".to_owned(),
+                content_text: t!("download.preparing", locale = input.locale).into_owned(),
                 content_format: Some(TextFormat::Html),
                 thumbnail_url: thumbnail.clone(),
-                description: Some("Click to download video".to_owned()),
+                description: Some(t!("inline.download_video", locale = input.locale).into_owned()),
                 callback_data: Some("video_download".to_owned()),
             });
             results.push(InlineQueryArticle {
                 id: format!("audio_{result_id}"),
                 title: "↑".to_owned(),
-                content_text: "🔍 Preparing download...".to_owned(),
+                content_text: t!("download.preparing", locale = input.locale).into_owned(),
                 content_format: Some(TextFormat::Html),
                 thumbnail_url: thumbnail,
-                description: Some("Click to download audio".to_owned()),
+                description: Some(t!("inline.download_audio", locale = input.locale).into_owned()),
                 callback_data: Some("audio_download".to_owned()),
             });
         }
@@ -126,6 +135,7 @@ pub struct SelectByText<Messenger> {
 pub struct SelectByTextInput<'a> {
     pub query_id: &'a str,
     pub text: &'a str,
+    pub locale: &'a str,
 }
 
 impl<Messenger> Interactor<SelectByTextInput<'_>> for &SelectByText<Messenger>
@@ -153,8 +163,12 @@ where
                 .collect(),
             Err(err) => {
                 error!(err = %self.error_formatter.format(&err), "Search media error");
-                if let Err(err) =
-                    progress::is_error_in_inline_query(self.messenger.as_ref(), input.query_id, "Sorry, an error to search media").await
+                if let Err(err) = progress::is_error_in_inline_query(
+                    self.messenger.as_ref(),
+                    input.query_id,
+                    t!("download.error_search_media", locale = input.locale).as_ref(),
+                )
+                .await
                 {
                     error!(err = %self.error_formatter.format(&err), "Answer inline query error");
                 }
@@ -164,34 +178,41 @@ where
 
         if media_many.is_empty() {
             warn!("Empty playlist");
-            if let Err(err) = progress::is_error_in_inline_query(self.messenger.as_ref(), input.query_id, "Playlist is empty").await {
+            if let Err(err) = progress::is_error_in_inline_query(
+                self.messenger.as_ref(),
+                input.query_id,
+                t!("download.playlist_empty", locale = input.locale).as_ref(),
+            )
+            .await
+            {
                 error!(err = %self.error_formatter.format(&err), "Answer inline query error");
             }
             return Ok(());
         }
 
         let mut results = Vec::with_capacity(media_many.len() * 2);
+        let no_name = t!("inline.no_name", locale = input.locale);
         for media in media_many {
-            let title = media.title.as_deref().unwrap_or("No name");
+            let title = media.title.as_deref().unwrap_or(no_name.as_ref());
             let thumbnail = media.thumbnail.map(|val| val.to_string());
             let id = &media.id;
 
             results.push(InlineQueryArticle {
                 id: format!("video_{id}"),
                 title: title.to_owned(),
-                content_text: "🔍 Preparing download...".to_owned(),
+                content_text: t!("download.preparing", locale = input.locale).into_owned(),
                 content_format: Some(TextFormat::Html),
                 thumbnail_url: thumbnail.clone(),
-                description: Some("Click to download video".to_owned()),
+                description: Some(t!("inline.download_video", locale = input.locale).into_owned()),
                 callback_data: Some("video_download".to_owned()),
             });
             results.push(InlineQueryArticle {
                 id: format!("audio_{id}"),
                 title: "↑".to_owned(),
-                content_text: "🔍 Preparing download...".to_owned(),
+                content_text: t!("download.preparing", locale = input.locale).into_owned(),
                 content_format: Some(TextFormat::Html),
                 thumbnail_url: thumbnail,
-                description: Some("Click to download audio".to_owned()),
+                description: Some(t!("inline.download_audio", locale = input.locale).into_owned()),
                 callback_data: Some("audio_download".to_owned()),
             });
         }

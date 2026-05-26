@@ -97,6 +97,25 @@ error_downloading_some = "🧨 Some files failed to download :("
 download_retries = "Download retries: %{count}"
 media_download_retries = "%{n} file(s) (retries: %{count}):"
 
+[download]
+preparing = "🔍 Preparing download..."
+playlist_empty = "Playlist is empty"
+no_media_found = "No media found"
+error_parse_range = "Sorry, an error to parse range"
+error_parse_sections = "Sorry, an error to parse sections"
+error_get_info = "Sorry, an error to get info"
+error_get_media = "Sorry, an error to get media"
+error_send_media = "Sorry, an error to send media"
+error_send_playlist = "Sorry, an error to send playlist"
+error_download_playlist = "Sorry, an error to download playlist"
+error_edit_message = "Sorry, an error to edit the message"
+
+[inline]
+no_name = "No name"
+download_video = "Click to download video"
+download_audio = "Click to download audio"
+error_search_media = "Sorry, an error to search media"
+
 [bot_commands]
 start = "Show help"
 vd = "Download video"
