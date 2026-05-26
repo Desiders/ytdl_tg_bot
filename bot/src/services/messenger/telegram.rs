@@ -614,12 +614,13 @@ async fn media_groups(
 
     let mut messages = Vec::with_capacity(input_media_len);
     let mut cur_media_group = Vec::with_capacity(input_media_len.min(MAX_MEDIA_GROUP));
+    let mut last_error = None;
 
     for input_media in input_media_list {
         cur_media_group.push(input_media.into());
 
         if cur_media_group.len() == MAX_MEDIA_GROUP {
-            send_media_group(
+            if let Err(err) = send_media_group(
                 bot,
                 &chat_id,
                 mem::take(&mut cur_media_group),
@@ -627,12 +628,25 @@ async fn media_groups(
                 request_timeout,
                 &mut messages,
             )
-            .await;
+            .await
+            {
+                last_error = Some(err);
+            }
         }
     }
 
     if !cur_media_group.is_empty() {
-        send_media_group(bot, &chat_id, cur_media_group, reply_to_message_id, request_timeout, &mut messages).await;
+        if let Err(err) = send_media_group(bot, &chat_id, cur_media_group, reply_to_message_id, request_timeout, &mut messages).await {
+            last_error = Some(err);
+        }
+    }
+
+    // Tolerate partial failures (some batches sent), but if nothing went through, surface the
+    // error so the caller reports it instead of silently deleting the progress message.
+    if messages.is_empty() {
+        if let Some(err) = last_error {
+            return Err(err);
+        }
     }
 
     Ok(messages.into())
@@ -645,7 +659,7 @@ async fn send_media_group(
     reply_to_message_id: Option<i64>,
     request_timeout: Option<f32>,
     messages: &mut Vec<Message>,
-) {
+) -> Result<(), SessionErrorKind> {
     let media_group_len = media_group.len();
     let res = with_retries(
         bot,
@@ -657,7 +671,13 @@ async fn send_media_group(
     )
     .await;
     match res {
-        Ok(new_messages) => messages.extend(new_messages),
-        Err(_) => warn!("Skip {media_group_len} media count to send"),
+        Ok(new_messages) => {
+            messages.extend(new_messages);
+            Ok(())
+        }
+        Err(err) => {
+            warn!("Skip {media_group_len} media count to send");
+            Err(err)
+        }
     }
 }

@@ -241,7 +241,10 @@ where
                         Some(TextFormat::Html),
                     )
                     .await;
-                } else {
+                } else if errs.is_empty() {
+                    // Keep the progress message when there were per-photo errors: sending an empty
+                    // playlist "succeeds" as a no-op, and deleting here would wipe the error we just
+                    // showed via `is_errors_if_exist`.
                     let _ = progress::delete(self.messenger.as_ref(), input.chat_id, progress_message_id).await;
                 }
             }
