@@ -1,4 +1,4 @@
-use std::{collections::HashMap, convert::Infallible, future::Future, str::FromStr as _};
+use std::{collections::HashMap, convert::Infallible, future::Future, ops::Range, str::FromStr as _};
 use telers::{Extractor, Request};
 
 #[derive(Debug, Default, Clone)]
@@ -6,28 +6,35 @@ pub struct Params(pub HashMap<String, String>);
 
 impl Params {
     fn parse(text: &str) -> Self {
+        Self::parse_with_span(text).map(|(params, _)| params).unwrap_or_default()
+    }
+
+    /// Finds the first `[...]` block whose content parses as params, returning the parsed params and
+    /// the byte range of the block (so callers can strip it from the text).
+    fn parse_with_span(text: &str) -> Option<(Self, Range<usize>)> {
         let mut search_start = 0;
         loop {
-            let bracket_pos = match text[search_start..].find('[') {
-                Some(pos) => search_start + pos,
-                None => return Self::default(),
-            };
-
+            let bracket_pos = search_start + text[search_start..].find('[')?;
             let start = bracket_pos + 1;
+            let end = start + text[start..].find(']')?;
 
-            let end = match text[start..].find(']') {
-                Some(pos) => start + pos,
-                None => return Self::default(),
-            };
-
-            let content = &text[start..end];
-
-            if let Some(params) = Self::try_parse_content(content) {
-                return Params(params);
+            if let Some(params) = Self::try_parse_content(&text[start..end]) {
+                return Some((Params(params), bracket_pos..end + 1));
             }
 
             search_start = bracket_pos + 1;
         }
+    }
+
+    /// Returns `text` with the params block (the one [`parse`](Self::parse) reads) removed and
+    /// surrounding whitespace collapsed — i.e. the clean text the user meant to send, e.g. for a
+    /// search query. Brackets that aren't valid params are left untouched.
+    pub fn strip_from(text: &str) -> String {
+        let cleaned = match Self::parse_with_span(text) {
+            Some((_, span)) => format!("{}{}", &text[..span.start], &text[span.end..]),
+            None => text.to_owned(),
+        };
+        cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
     }
 
     fn try_parse_content(content: &str) -> Option<HashMap<String, String>> {
@@ -183,5 +190,35 @@ mod tests {
     fn test_get_bool_missing_defaults_to_false() {
         let params = Params::parse("[crop=1:00-2:00]");
         assert!(!params.get_bool("overwrite"));
+    }
+
+    #[test]
+    fn strip_from_removes_trailing_params() {
+        assert_eq!(Params::strip_from("test [lang=ru]"), "test");
+    }
+
+    #[test]
+    fn strip_from_removes_leading_params() {
+        assert_eq!(Params::strip_from("[lang=ru] test"), "test");
+    }
+
+    #[test]
+    fn strip_from_removes_params_in_the_middle() {
+        assert_eq!(Params::strip_from("the dark [lang=ru] knight"), "the dark knight");
+    }
+
+    #[test]
+    fn strip_from_keeps_text_without_params() {
+        assert_eq!(Params::strip_from("the dark knight"), "the dark knight");
+    }
+
+    #[test]
+    fn strip_from_keeps_invalid_brackets() {
+        assert_eq!(Params::strip_from("[not params] movie"), "[not params] movie");
+    }
+
+    #[test]
+    fn strip_from_removes_only_the_first_valid_block() {
+        assert_eq!(Params::strip_from("a [x=1] b [y=2]"), "a b [y=2]");
     }
 }

@@ -427,6 +427,25 @@ where
                     })
                 }
             ),
+            provide(|
+                Inject(cfg): Inject<Config>,
+                Inject(error_formatter): Inject<ErrorFormatter>,
+                Inject(messenger): Inject<Messenger>,
+                Inject(get_media): Inject<get_media::GetPhotoByURL>,
+                Inject(upload_media): Inject<send_media::upload::SendPhotoUrl<Messenger>>,
+                Inject(edit_media_by_id): Inject<send_media::id::EditPhoto<Messenger>>,
+                Inject(add_downloaded_media): Inject<downloaded_media::AddPhoto>| {
+                    Ok(chosen_inline::DownloadPhoto {
+                        cfg,
+                        error_formatter,
+                        messenger,
+                        get_media,
+                        upload_media,
+                        edit_media_by_id,
+                        add_downloaded_media,
+                    })
+                }
+            ),
         ],
         extend(cfg_registry, tg_messenger_registry, node_router_registry),
     }
