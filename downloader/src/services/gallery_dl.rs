@@ -179,8 +179,7 @@ async fn get_playlist_entries(
     cookie_path: Option<&Path>,
     resolve_urls: bool,
 ) -> Result<Vec<(crate::entities::MediaWithFormat, String)>, GetInfoErrorKind> {
-    let GalleryDlOutput { stdout, logged_error } =
-        run_gallery_dl_json(search, gallery_dl_cfg, timeout, cookie_path, resolve_urls).await?;
+    let GalleryDlOutput { stdout, logged_error } = run_gallery_dl_json(search, gallery_dl_cfg, timeout, cookie_path, resolve_urls).await?;
     let Some(stdout) = stdout else {
         // No output at all: surface a logged error if gallery-dl reported one.
         return logged_error.map_or(Ok(vec![]), |message| Err(GetInfoErrorKind::Extraction(message)));
