@@ -33,6 +33,10 @@ pub enum GetInfoErrorKind {
     Json(#[from] serde_json::Error),
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
+    /// An error gallery-dl logged to stderr while still exiting successfully (e.g. "Requested post
+    /// not available"). Carries the logged message.
+    #[error("{0}")]
+    Extraction(String),
     #[error("Gallery-dl output did not contain downloadable photos")]
     EmptyEntries,
 }
@@ -43,6 +47,14 @@ pub enum DownloadErrorKind {
     Io(#[from] io::Error),
 }
 
+/// Parses gallery-dl's `--dump-json` / `--resolve-json` output: a `DataJob` array of message
+/// tuples whose first element is the identifier. In gallery-dl 1.32 a `DataJob` only emits:
+/// - `[2, metadata]` — Directory: post-level metadata for the files that follow.
+/// - `[3, url, metadata]` — Url: a downloadable file and its metadata.
+/// - `[6, url, metadata]` — Queue: an external URL for another extractor; the `--resolve-json` pass
+///   follows these and re-emits Url/Directory messages, so we don't act on them here.
+/// - `[-1, {error, message}]` — a `DataJob` error record (written when extraction raises), not a
+///   real message type; we surface its message.
 fn parse_gallery_dl_json(input: &[u8]) -> Result<Vec<GalleryDlEntry>, ParseJsonErrorKind> {
     let Value::Array(events) = serde_json::from_slice(input)? else {
         return Err(ParseJsonErrorKind::UnexpectedRoot);
@@ -72,6 +84,13 @@ fn parse_gallery_dl_json(input: &[u8]) -> Result<Vec<GalleryDlEntry>, ParseJsonE
                     file_url,
                     metadata: merge_metadata(current_metadata.as_ref(), metadata),
                 });
+            }
+            // Queue (6): an external URL for another extractor. The `--dump-json` pass emits these
+            // unresolved; the `--resolve-json` pass follows them, so we only note it here.
+            Some(6) => {
+                if let Some(queued) = event.get(1).and_then(Value::as_str) {
+                    trace!(url = queued, "Gallery-dl queued URL (resolved by the --resolve-json pass)");
+                }
             }
             // gallery-dl reports extraction failures as a negative-type event carrying the error,
             // e.g. `[-1, {"error": "AbortExtraction", "message": "HTTP redirect to login page (…)"}]`.
@@ -160,11 +179,14 @@ async fn get_playlist_entries(
     cookie_path: Option<&Path>,
     resolve_urls: bool,
 ) -> Result<Vec<(crate::entities::MediaWithFormat, String)>, GetInfoErrorKind> {
-    let Some(stdout) = run_gallery_dl_json(search, gallery_dl_cfg, timeout, cookie_path, resolve_urls).await? else {
-        return Ok(vec![]);
+    let GalleryDlOutput { stdout, logged_error } =
+        run_gallery_dl_json(search, gallery_dl_cfg, timeout, cookie_path, resolve_urls).await?;
+    let Some(stdout) = stdout else {
+        // No output at all: surface a logged error if gallery-dl reported one.
+        return logged_error.map_or(Ok(vec![]), |message| Err(GetInfoErrorKind::Extraction(message)));
     };
 
-    parse_gallery_dl_json(&stdout)?
+    let entries = parse_gallery_dl_json(&stdout)?
         .into_iter()
         .filter_map(|entry| match entry.into_raw_photo_info(request_url) {
             Ok(raw) => Some(raw),
@@ -183,7 +205,33 @@ async fn get_playlist_entries(
         })
         .map(RawPhotoInfo::into_playlist_entry)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(Into::into)
+        .map_err(GetInfoErrorKind::from)?;
+
+    // gallery-dl can log an extraction error yet exit 0 with no usable photos; prefer that message
+    // over a generic "no photos" when we found nothing.
+    if entries.is_empty() {
+        if let Some(message) = logged_error {
+            return Err(GetInfoErrorKind::Extraction(message));
+        }
+    }
+
+    Ok(entries)
+}
+
+/// Output of a gallery-dl run: the raw JSON (`None` when empty) plus any error gallery-dl logged to
+/// stderr while still exiting `0` (so the caller can surface it instead of a generic "no photos").
+struct GalleryDlOutput {
+    stdout: Option<Vec<u8>>,
+    logged_error: Option<String>,
+}
+
+/// Extracts a gallery-dl `[category][error] <message>` line from stderr, returning the message.
+/// gallery-dl logs extraction failures this way even when it exits `0` with empty output.
+fn extract_logged_error(stderr: &str) -> Option<String> {
+    stderr.lines().rev().find_map(|line| {
+        let message = line.split_once("[error]")?.1.trim();
+        (!message.is_empty()).then(|| message.to_owned())
+    })
 }
 
 async fn run_gallery_dl_json(
@@ -192,7 +240,7 @@ async fn run_gallery_dl_json(
     timeout: u64,
     cookie_path: Option<&Path>,
     resolve_urls: bool,
-) -> Result<Option<Vec<u8>>, GetInfoErrorKind> {
+) -> Result<GalleryDlOutput, GetInfoErrorKind> {
     let json_flag = if resolve_urls { "--resolve-json" } else { "--dump-json" };
     let mut args = vec![json_flag, "--simulate", "--no-input", "--config-ignore", "--no-colors"];
 
@@ -226,11 +274,12 @@ async fn run_gallery_dl_json(
             if !stderr.trim().is_empty() {
                 warn!("{stderr}");
             }
-            if stdout.iter().all(u8::is_ascii_whitespace) {
-                return Ok(None);
-            }
+            let stdout = (!stdout.iter().all(u8::is_ascii_whitespace)).then_some(stdout);
 
-            Ok(Some(stdout))
+            Ok(GalleryDlOutput {
+                stdout,
+                logged_error: extract_logged_error(&stderr),
+            })
         }
         Ok(Err(err)) => Err(err.into()),
         Err(_) => Err(io::Error::new(io::ErrorKind::TimedOut, "Gallery-dl timed out").into()),
@@ -362,6 +411,33 @@ mod tests {
             }
             other => panic!("expected Extraction error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn ignores_queue_message_without_files() {
+        let input = br#"[
+            [6, "https://www.tiktok.com/@user/video/123", {"category": "tiktok", "subcategory": "vmpost"}]
+        ]"#;
+
+        let entries = parse_gallery_dl_json(input).unwrap();
+
+        assert!(entries.is_empty(), "queue messages should yield no direct entries");
+    }
+
+    #[test]
+    fn extracts_logged_error_from_stderr() {
+        let stderr = "[tiktok][error] https://www.tiktok.com/@u/video/1: Requested post not available";
+
+        assert_eq!(
+            super::extract_logged_error(stderr).as_deref(),
+            Some("https://www.tiktok.com/@u/video/1: Requested post not available")
+        );
+    }
+
+    #[test]
+    fn ignores_non_error_stderr_lines() {
+        assert!(super::extract_logged_error("[tiktok][warning] rate limited").is_none());
+        assert!(super::extract_logged_error("").is_none());
     }
 
     #[test]
