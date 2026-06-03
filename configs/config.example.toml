@@ -36,22 +36,6 @@ domains = [
     "coub.com",
 ]
 
-[[replace_domains]]
-from = '^(?:.*\.)?instagram\.(tv|net|com|org)$|^instagr\.am$'
-to = "vxinstagram.com"
-
-[[replace_domains]]
-from = '^(?:.*\.)?twitter\.com$'
-to = "fxtwitter.com"
-
-[[replace_domains]]
-from = '^(?:.*\.)?x\.com$'
-to = "fixupx.com"
-
-[[replace_domains]]
-from = '^(?:.*\.)?bsky\.app$'
-to = "fxbsky.app"
-
 [yt_dlp]
 max_file_size = 5000000
 

@@ -19,6 +19,7 @@ use crate::{
     constants::COOKIE_TMP_DIR,
     entities::Cookies,
     grpc::{auth::AuthInterceptor, capabilities::CapabilitiesService, cookie_manager::CookieManagerService, downloader::DownloaderService},
+    services::DomainReplacer,
 };
 
 #[tokio::main(flavor = "multi_thread")]
@@ -60,6 +61,7 @@ async fn main() {
         yt_dlp_cfg: Arc::new(config.yt_dlp),
         gallery_dl_cfg: Arc::new(config.gallery_dl),
         yt_pot_provider_cfg: Arc::new(config.yt_pot_provider),
+        domain_replacer: Arc::new(DomainReplacer::new(&config.replace_domains)),
         cookies: cookies.clone(),
         active_downloads: active_downloads.clone(),
         semaphore,

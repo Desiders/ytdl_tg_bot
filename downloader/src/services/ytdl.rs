@@ -13,6 +13,7 @@ use std::{
     time::Duration,
 };
 use tokio::{io::AsyncBufReadExt as _, sync::mpsc};
+use tonic::Status;
 use tracing::{debug, error, instrument, trace, warn};
 
 #[derive(Debug, Clone)]
@@ -62,6 +63,15 @@ pub enum GetInfoErrorKind {
     Retryable(RetryableYtdlpError),
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
+}
+
+impl From<GetInfoErrorKind> for Status {
+    fn from(err: GetInfoErrorKind) -> Self {
+        match err {
+            GetInfoErrorKind::Retryable(kind) => Status::aborted(kind.to_string()),
+            err => Status::internal(err.to_string()),
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

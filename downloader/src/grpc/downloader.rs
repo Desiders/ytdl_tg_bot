@@ -31,6 +31,7 @@ use crate::{
     config::{GalleryDlConfig, YtDlpConfig, YtPotProviderConfig},
     entities::{Cookies, Language, Media, MediaFormat, MediaWithFormat, Playlist, Range, RawPhotoInfo, Sections},
     services::{
+        domain_replacer::{DomainReplacer, MediaKind},
         download_and_convert, embed_thumbnail,
         gallery_dl::{self, GetInfoErrorKind},
         ytdl::{self, FormatStrategy},
@@ -50,6 +51,7 @@ pub struct DownloaderService {
     pub yt_dlp_cfg: Arc<YtDlpConfig>,
     pub gallery_dl_cfg: Arc<GalleryDlConfig>,
     pub yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
+    pub domain_replacer: Arc<DomainReplacer>,
     pub cookies: Arc<Cookies>,
     pub active_downloads: Arc<AtomicU32>,
     pub semaphore: Arc<Semaphore>,
@@ -68,25 +70,44 @@ impl Downloader for DownloaderService {
         let allow_playlist = !playlist_range.is_single_element();
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
+        let has_cookie = cookie.is_some();
         let effective_max_file_size = resolve_max_file_size(request.max_file_size, self.yt_dlp_cfg.max_file_size);
+
+        let kind = match request.media_type.as_str() {
+            "audio" => MediaKind::Audio,
+            "photo" => MediaKind::Photo,
+            _ => MediaKind::Video,
+        };
+        // Deterministic cookie-aware domain replacement, identical for every media type and
+        // reproduced at download time: with a cookie use the original URL (and its cookie); without
+        // one use the proxy (a cookie-free frontend) when a rule is configured. Keeping it
+        // deterministic — no failure-fallback — lets the separate download request resolve the same
+        // host, which gallery-dl's `direct_url` filter relies on.
+        let source_url = if has_cookie {
+            url.clone()
+        } else {
+            self.domain_replacer.replace_url(&url, kind).unwrap_or_else(|| url.clone())
+        };
+        let source_cookie = if source_url.as_str() == url.as_str() { cookie } else { None };
 
         info!(
             url = %url,
+            source_url = %source_url,
             media_type = %request.media_type,
             audio_language = %request.audio_language,
             allow_playlist,
-            has_cookie = cookie.is_some(),
+            has_cookie,
             max_file_size = effective_max_file_size,
             "Fetching media info"
         );
 
         let playlist = if request.media_type == "photo" {
             gallery_dl::get_media_info(
-                url.as_str(),
+                source_url.as_str(),
                 self.gallery_dl_cfg.as_ref(),
                 &playlist_range,
                 GET_INFO_TIMEOUT_SECS,
-                cookie.as_deref(),
+                source_cookie.as_deref(),
             )
             .await
             .map_err(|err| match err {
@@ -96,7 +117,7 @@ impl Downloader for DownloaderService {
         } else {
             let format_strategy = parse_format_strategy(&request.media_type, &request.audio_language)?;
             let playlist = ytdl::get_media_info(
-                url.as_str(),
+                source_url.as_str(),
                 &format_strategy,
                 &audio_language,
                 self.yt_dlp_cfg.as_ref(),
@@ -104,13 +125,9 @@ impl Downloader for DownloaderService {
                 &playlist_range,
                 allow_playlist,
                 GET_INFO_TIMEOUT_SECS,
-                cookie.as_deref(),
+                source_cookie.as_deref(),
             )
-            .await
-            .map_err(|err| match err {
-                ytdl::GetInfoErrorKind::Retryable(kind) => Status::aborted(kind.to_string()),
-                err => Status::internal(err.to_string()),
-            })?;
+            .await?;
 
             reject_active_livestreams(&playlist)?;
             playlist
@@ -158,13 +175,24 @@ impl Downloader for DownloaderService {
         let yt_dlp_cfg = self.yt_dlp_cfg.clone();
         let gallery_dl_cfg = self.gallery_dl_cfg.clone();
         let yt_pot_provider_cfg = self.yt_pot_provider_cfg.clone();
+        let domain_replacer = self.domain_replacer.clone();
         let cookies = self.cookies.clone();
 
         let (tx, rx) = mpsc::unbounded_channel();
         let error_tx = tx.clone();
         tokio::spawn(async move {
             let started_at = Instant::now();
-            if let Err(status) = stream_download(request, yt_dlp_cfg, gallery_dl_cfg, yt_pot_provider_cfg, cookies, tx).await {
+            if let Err(status) = stream_download(
+                request,
+                yt_dlp_cfg,
+                gallery_dl_cfg,
+                yt_pot_provider_cfg,
+                domain_replacer,
+                cookies,
+                tx,
+            )
+            .await
+            {
                 if status.code() == Code::Cancelled {
                     info!(
                         url = %request_url,
@@ -216,6 +244,7 @@ async fn stream_download(
     yt_dlp_cfg: Arc<YtDlpConfig>,
     gallery_dl_cfg: Arc<GalleryDlConfig>,
     yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
+    domain_replacer: Arc<DomainReplacer>,
     cookies: Arc<Cookies>,
     tx: UnboundedSender<Result<DownloadChunk, Status>>,
 ) -> Result<(), Status> {
@@ -226,7 +255,16 @@ async fn stream_download(
     let cookie = cookies.get_path_by_optional_host(host.as_ref());
 
     if request.media_type == "photo" {
-        return stream_photo_download(request, url, effective_max_file_size, gallery_dl_cfg, cookie, tx).await;
+        // Mirror the deterministic switching from get-info so the download fetches from the same
+        // host the `direct_url` filter was built against.
+        let photo_url = if cookie.is_some() {
+            url.clone()
+        } else {
+            domain_replacer.replace_url(&url, MediaKind::Photo).unwrap_or_else(|| url.clone())
+        };
+        // The original URL uses its cookie; the proxy is a cookie-free frontend.
+        let photo_cookie = if photo_url.as_str() == url.as_str() { cookie } else { None };
+        return stream_photo_download(request, photo_url, effective_max_file_size, gallery_dl_cfg, photo_cookie, tx).await;
     }
 
     let media_with_format: MediaWithFormat =

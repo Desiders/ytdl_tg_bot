@@ -19,6 +19,42 @@ extractor_args = "youtube:player_client=default,mweb;player_skip=configs,initial
 [gallery_dl]
 command = ["python3", "-m", "gallery_dl"]
 
+[[replace_domains.video]]
+from = '^(?:.*\.)?instagram\.(tv|net|com|org)$|^instagr\.am$'
+to = "vxinstagram.com"
+
+[[replace_domains.video]]
+from = '^(?:.*\.)?twitter\.com$'
+to = "fxtwitter.com"
+
+[[replace_domains.video]]
+from = '^(?:.*\.)?x\.com$'
+to = "fixupx.com"
+
+[[replace_domains.video]]
+from = '^(?:.*\.)?bsky\.app$'
+to = "fxbsky.app"
+
+[[replace_domains.audio]]
+from = '^(?:.*\.)?instagram\.(tv|net|com|org)$|^instagr\.am$'
+to = "vxinstagram.com"
+
+[[replace_domains.audio]]
+from = '^(?:.*\.)?twitter\.com$'
+to = "fxtwitter.com"
+
+[[replace_domains.audio]]
+from = '^(?:.*\.)?x\.com$'
+to = "fixupx.com"
+
+[[replace_domains.audio]]
+from = '^(?:.*\.)?bsky\.app$'
+to = "fxbsky.app"
+
+# [[replace_domains.photo]]
+# from = '...'
+# to = '...'
+
 [yt_pot_provider]
 url = "http://yt-pot-provider:4416"
 # url = "http://127.0.0.1:4416"
