@@ -114,6 +114,7 @@ error_edit_message = "Не удалось изменить сообщение"
 no_name = "Без названия"
 download_video = "Нажмите, чтобы скачать видео"
 download_audio = "Нажмите, чтобы скачать аудио"
+download_photo = "Нажмите, чтобы скачать фото"
 error_search_media = "Не удалось найти медиа"
 
 [bot_commands]

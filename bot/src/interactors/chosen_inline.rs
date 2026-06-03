@@ -49,6 +49,16 @@ pub struct DownloadAudio<Messenger> {
     pub add_downloaded_media: Arc<downloaded_media::AddAudio>,
 }
 
+pub struct DownloadPhoto<Messenger> {
+    pub cfg: Arc<Config>,
+    pub error_formatter: Arc<ErrorFormatter>,
+    pub messenger: Arc<Messenger>,
+    pub get_media: Arc<get_media::GetPhotoByURL>,
+    pub upload_media: Arc<send_media::upload::SendPhotoUrl<Messenger>>,
+    pub edit_media_by_id: Arc<send_media::id::EditPhoto<Messenger>>,
+    pub add_downloaded_media: Arc<downloaded_media::AddPhoto>,
+}
+
 pub struct DownloadInput<'a> {
     pub params: &'a Params,
     pub url: Option<&'a Url>,
@@ -82,6 +92,19 @@ where
     #[instrument(skip_all, fields(inline_message_id = input.inline_message_id, ?input.params))]
     async fn execute(self, input: DownloadInput<'_>) -> Result<Self::Output, Self::Err> {
         execute_audio(self, input).await
+    }
+}
+
+impl<Messenger> Interactor<DownloadInput<'_>> for &DownloadPhoto<Messenger>
+where
+    Messenger: MessengerPort,
+{
+    type Output = ();
+    type Err = HandlerError;
+
+    #[instrument(skip_all, fields(inline_message_id = input.inline_message_id, ?input.params))]
+    async fn execute(self, input: DownloadInput<'_>) -> Result<Self::Output, Self::Err> {
+        execute_photo(self, input).await
     }
 }
 
@@ -636,6 +659,203 @@ where
                 "{}\n{}",
                 t!("download.error_get_info", locale = locale.as_str()),
                 html_expandable_blockquote(html_quote(interactor.error_formatter.format(&err).as_ref()))
+            );
+            let _ = progress::is_error_in_chosen_inline(
+                interactor.messenger.as_ref(),
+                input.inline_message_id,
+                &text,
+                Some(TextFormat::Html),
+            )
+            .await;
+        }
+        _ => unreachable!("Incorrect branch"),
+    }
+
+    Ok(())
+}
+
+async fn execute_photo<Messenger>(interactor: &DownloadPhoto<Messenger>, input: DownloadInput<'_>) -> Result<(), HandlerError>
+where
+    Messenger: MessengerPort,
+{
+    let url = resolve_url(input.url, input.result_id);
+    debug!("Got url");
+    let locale = input.chat_cfg.locale();
+
+    let playlist_range = Range::default();
+    let overwrite_cache = input.params.get_bool("overwrite");
+
+    match interactor
+        .get_media
+        .execute(get_media::GetMediaByURLInput {
+            url: &url,
+            playlist_range: &playlist_range,
+            cache_search: url.as_str(),
+            domain: url.domain(),
+            audio_language: &Language::default(),
+            sections: None,
+            overwrite_cache,
+            tx_manager: input.tx_manager,
+        })
+        .await
+    {
+        Ok(SingleCached(file_id)) => {
+            if let Err(err) = interactor
+                .edit_media_by_id
+                .execute(send_media::id::EditMediaInput {
+                    inline_message_id: input.inline_message_id,
+                    id: &file_id,
+                    webpage_url: Some(&url),
+                    link_is_visible: input.link_is_visible,
+                })
+                .await
+            {
+                let err = interactor.error_formatter.format(&err);
+                error!(%err, "Edit error");
+                let text = format!(
+                    "{}\n{}",
+                    t!("download.error_edit_message", locale = locale.as_str()),
+                    html_expandable_blockquote(html_quote(err.as_ref()))
+                );
+                let _ = progress::is_error_in_chosen_inline(
+                    interactor.messenger.as_ref(),
+                    input.inline_message_id,
+                    &text,
+                    Some(TextFormat::Html),
+                )
+                .await;
+            }
+        }
+        Ok(Playlist { mut cached, .. }) if !cached.is_empty() => {
+            let media = cached.remove(0);
+            if let Err(err) = interactor
+                .edit_media_by_id
+                .execute(send_media::id::EditMediaInput {
+                    inline_message_id: input.inline_message_id,
+                    id: &media.file_id,
+                    webpage_url: media.webpage_url.as_ref(),
+                    link_is_visible: input.link_is_visible,
+                })
+                .await
+            {
+                let err = interactor.error_formatter.format(&err);
+                error!(%err, "Edit error");
+                let text = format!(
+                    "{}\n{}",
+                    t!("download.error_edit_message", locale = locale.as_str()),
+                    html_expandable_blockquote(html_quote(err.as_ref()))
+                );
+                let _ = progress::is_error_in_chosen_inline(
+                    interactor.messenger.as_ref(),
+                    input.inline_message_id,
+                    &text,
+                    Some(TextFormat::Html),
+                )
+                .await;
+            }
+        }
+        Ok(Playlist { mut uncached, .. }) if !uncached.is_empty() => {
+            let (media, _formats) = uncached.remove(0);
+            let Some(photo_url) = media.direct_url.as_ref() else {
+                error!("Photo URL is missing in downloader response");
+                let _ = progress::is_error_in_chosen_inline(
+                    interactor.messenger.as_ref(),
+                    input.inline_message_id,
+                    &html_quote("Photo URL is missing in downloader response"),
+                    Some(TextFormat::Html),
+                )
+                .await;
+                return Ok(());
+            };
+
+            let file_id = match interactor
+                .upload_media
+                .execute(send_media::upload::SendPhotoUrlInput {
+                    chat_id: interactor.cfg.chat.receiver_chat_id,
+                    reply_to_message_id: None,
+                    photo_url,
+                    with_delete: true,
+                    webpage_url: &media.webpage_url,
+                    link_is_visible: true,
+                })
+                .await
+            {
+                Ok(val) => val,
+                Err(err) => {
+                    let err = interactor.error_formatter.format(&err);
+                    error!(%err, "Send error");
+                    let _ = progress::is_error_in_chosen_inline(
+                        interactor.messenger.as_ref(),
+                        input.inline_message_id,
+                        &html_quote(err.as_ref()),
+                        Some(TextFormat::Html),
+                    )
+                    .await;
+                    return Ok(());
+                }
+            };
+
+            if let Err(err) = interactor
+                .edit_media_by_id
+                .execute(send_media::id::EditMediaInput {
+                    inline_message_id: input.inline_message_id,
+                    id: &file_id,
+                    webpage_url: Some(&media.webpage_url),
+                    link_is_visible: input.link_is_visible,
+                })
+                .await
+            {
+                let err = interactor.error_formatter.format(&err);
+                error!(%err, "Edit error");
+                let text = format!(
+                    "{}\n{}",
+                    t!("download.error_edit_message", locale = locale.as_str()),
+                    html_expandable_blockquote(html_quote(err.as_ref()))
+                );
+                let _ = progress::is_error_in_chosen_inline(
+                    interactor.messenger.as_ref(),
+                    input.inline_message_id,
+                    &text,
+                    Some(TextFormat::Html),
+                )
+                .await;
+                return Ok(());
+            }
+
+            if let Err(err) = interactor
+                .add_downloaded_media
+                .execute(downloaded_media::AddMediaInput {
+                    file_id,
+                    id: media.id.clone(),
+                    display_id: media.display_id.clone(),
+                    domain: media.webpage_url.host_str().map(ToOwned::to_owned),
+                    audio_language: Language::default(),
+                    sections: None,
+                    overwrite_cache,
+                    tx_manager: input.tx_manager,
+                })
+                .await
+            {
+                error!(%err, "Add error");
+            }
+        }
+        Ok(Empty) => {
+            warn!("No media");
+            let _ = progress::is_error_in_chosen_inline(
+                interactor.messenger.as_ref(),
+                input.inline_message_id,
+                t!("download.no_media_found", locale = locale.as_str()).as_ref(),
+                None,
+            )
+            .await;
+        }
+        Err(err) => {
+            let formatted = interactor.error_formatter.format(&err);
+            error!(err = %formatted, "Get error");
+            let text = format!(
+                "{}\n{}",
+                t!("download.error_get_media", locale = locale.as_str()),
+                html_expandable_blockquote(html_quote(formatted.as_ref()))
             );
             let _ = progress::is_error_in_chosen_inline(
                 interactor.messenger.as_ref(),

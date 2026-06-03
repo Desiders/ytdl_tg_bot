@@ -114,6 +114,7 @@ error_edit_message = "Sorry, an error to edit the message"
 no_name = "No name"
 download_video = "Click to download video"
 download_audio = "Click to download audio"
+download_photo = "Click to download photo"
 error_search_media = "Sorry, an error to search media"
 
 [bot_commands]

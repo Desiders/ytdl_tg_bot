@@ -7,7 +7,7 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::{
-    entities::ShortMedia,
+    entities::{Params, ShortMedia},
     handlers_utils::progress,
     interactors::Interactor,
     services::{
@@ -82,7 +82,7 @@ where
             return Ok(());
         }
 
-        let mut results = Vec::with_capacity(media_many.len() * 2);
+        let mut results = Vec::with_capacity(media_many.len() * 3);
         let no_name = t!("inline.no_name", locale = input.locale);
         for media in media_many {
             let title = media.title.as_deref().unwrap_or(no_name.as_ref());
@@ -103,9 +103,18 @@ where
                 title: "↑".to_owned(),
                 content_text: t!("download.preparing", locale = input.locale).into_owned(),
                 content_format: Some(TextFormat::Html),
-                thumbnail_url: thumbnail,
+                thumbnail_url: thumbnail.clone(),
                 description: Some(t!("inline.download_audio", locale = input.locale).into_owned()),
                 callback_data: Some("audio_download".to_owned()),
+            });
+            results.push(InlineQueryArticle {
+                id: format!("photo_{result_id}"),
+                title: "↑".to_owned(),
+                content_text: t!("download.preparing", locale = input.locale).into_owned(),
+                content_format: Some(TextFormat::Html),
+                thumbnail_url: thumbnail,
+                description: Some(t!("inline.download_photo", locale = input.locale).into_owned()),
+                callback_data: Some("photo_download".to_owned()),
             });
         }
 
@@ -149,9 +158,12 @@ where
     async fn execute(self, input: SelectByTextInput<'_>) -> Result<Self::Output, Self::Err> {
         debug!("Got text");
 
+        // Drop the bot's `[...]` args (e.g. `[lang=ru]`) so the search request stays clean; the args
+        // are re-parsed from the chosen-inline query when the user picks a result to download.
+        let search = Params::strip_from(input.text);
         let media_many: Vec<ShortMedia> = match self
             .get_basic_info_media
-            .execute(get_media::SearchMediaInfoInput { text: input.text })
+            .execute(get_media::SearchMediaInfoInput { text: &search })
             .await
         {
             Ok(val) => val
