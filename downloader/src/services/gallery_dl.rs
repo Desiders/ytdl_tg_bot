@@ -21,6 +21,8 @@ pub enum ParseJsonErrorKind {
     Json(#[from] serde_json::Error),
     #[error("Gallery-dl JSON root must be an array of events")]
     UnexpectedRoot,
+    #[error("{0}")]
+    Extraction(String),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -53,7 +55,7 @@ fn parse_gallery_dl_json(input: &[u8]) -> Result<Vec<GalleryDlEntry>, ParseJsonE
         let Some(event) = event.as_array() else {
             continue;
         };
-        match event.first().and_then(Value::as_u64) {
+        match event.first().and_then(Value::as_i64) {
             Some(2) => {
                 current_metadata = event.get(1).cloned();
             }
@@ -70,6 +72,23 @@ fn parse_gallery_dl_json(input: &[u8]) -> Result<Vec<GalleryDlEntry>, ParseJsonE
                     file_url,
                     metadata: merge_metadata(current_metadata.as_ref(), metadata),
                 });
+            }
+            // gallery-dl reports extraction failures as a negative-type event carrying the error,
+            // e.g. `[-1, {"error": "AbortExtraction", "message": "HTTP redirect to login page (…)"}]`.
+            // Only surface it when nothing was parsed, so a late error can't discard already-found
+            // files.
+            Some(type_id) if type_id < 0 && results.is_empty() => {
+                let message = event
+                    .get(1)
+                    .and_then(|details| {
+                        details
+                            .get("message")
+                            .and_then(Value::as_str)
+                            .or_else(|| details.get("error").and_then(Value::as_str))
+                    })
+                    .unwrap_or("Gallery-dl aborted extraction")
+                    .to_owned();
+                return Err(ParseJsonErrorKind::Extraction(message));
             }
             _ => {}
         }
@@ -327,6 +346,22 @@ mod tests {
             entries[1].metadata.as_ref().and_then(|metadata| metadata.get("title")),
             Some(&Value::String("Post".to_owned()))
         );
+    }
+
+    #[test]
+    fn surfaces_extraction_error_event() {
+        let input = br#"[
+            [-1, {"error": "AbortExtraction", "message": "HTTP redirect to login page (https://www.instagram.com/accounts/login/)"}]
+        ]"#;
+
+        let err = parse_gallery_dl_json(input).unwrap_err();
+
+        match err {
+            super::ParseJsonErrorKind::Extraction(message) => {
+                assert!(message.contains("login page"), "unexpected message: {message}");
+            }
+            other => panic!("expected Extraction error, got {other:?}"),
+        }
     }
 
     #[test]
