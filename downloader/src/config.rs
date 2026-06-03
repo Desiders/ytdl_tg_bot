@@ -76,6 +76,22 @@ pub struct YtPotProviderConfig {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+pub struct ReplaceRule {
+    pub from: Box<str>,
+    pub to: Box<str>,
+}
+
+#[derive(Default, Deserialize, Clone, Debug)]
+pub struct ReplaceDomainsConfig {
+    #[serde(default)]
+    pub video: Vec<ReplaceRule>,
+    #[serde(default)]
+    pub audio: Vec<ReplaceRule>,
+    #[serde(default)]
+    pub photo: Vec<ReplaceRule>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct LoggingConfig {
     pub dirs: Box<str>,
 }
@@ -89,6 +105,8 @@ pub struct Config {
     pub gallery_dl: GalleryDlConfig,
     pub yt_pot_provider: YtPotProviderConfig,
     pub logging: LoggingConfig,
+    #[serde(default)]
+    pub replace_domains: ReplaceDomainsConfig,
 }
 
 #[derive(Error, Debug)]
@@ -204,5 +222,35 @@ mod tests {
         let (program, args) = config.command_parts();
         assert_eq!(program, "python3");
         assert_eq!(args, vec!["-m", "gallery_dl"]);
+    }
+
+    #[test]
+    fn replace_domains_config_parses_per_media_type() {
+        let raw = r#"
+            [[video]]
+            from = 'a'
+            to = 'b'
+
+            [[audio]]
+            from = 'c'
+            to = 'd'
+        "#;
+
+        let config: super::ReplaceDomainsConfig = toml::from_str(raw).unwrap();
+
+        assert_eq!(config.video.len(), 1);
+        assert_eq!(&*config.video[0].from, "a");
+        assert_eq!(&*config.video[0].to, "b");
+        assert_eq!(config.audio.len(), 1);
+        assert!(config.photo.is_empty());
+    }
+
+    #[test]
+    fn replace_domains_config_defaults_to_empty() {
+        let config: super::ReplaceDomainsConfig = toml::from_str("").unwrap();
+
+        assert!(config.video.is_empty());
+        assert!(config.audio.is_empty());
+        assert!(config.photo.is_empty());
     }
 }

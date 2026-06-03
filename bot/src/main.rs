@@ -37,7 +37,7 @@ use crate::{
         url_is_skippable_by_param,
     },
     handlers::{audio, chosen_inline, inline_query, lang, photo, start, stats, video},
-    middlewares::{CreateChatMiddleware, ReactionMiddleware, RemoveTrackingParamsMiddleware, ReplaceDomainsMiddleware},
+    middlewares::{CreateChatMiddleware, ReactionMiddleware, RemoveTrackingParamsMiddleware},
     services::messenger::telegram::TelegramMessenger,
     utils::{on_shutdown, on_startup},
 };
@@ -90,7 +90,6 @@ async fn main() {
         .on_message(|observer| {
             observer
                 .register_inner_middleware(RemoveTrackingParamsMiddleware)
-                .register_inner_middleware(ReplaceDomainsMiddleware)
                 .register_inner_middleware(ReactionMiddleware)
                 .register(
                     Handler::new(video::download::<Messenger>)
@@ -171,7 +170,6 @@ async fn main() {
         .on_chosen_inline_result(|observer| {
             observer
                 .register_inner_middleware(RemoveTrackingParamsMiddleware)
-                .register_inner_middleware(ReplaceDomainsMiddleware)
                 .register(
                     Handler::new(chosen_inline::download_video::<Messenger>)
                         .filter(is_video_inline_result)

@@ -45,7 +45,6 @@ pub(super) fn cfg_registry(cfg: Config) -> Registry {
             provide(instance(cfg.telegram_bot_api)),
             provide(instance(cfg.domains_with_reactions)),
             provide(instance(cfg.random_cmd)),
-            provide(instance(cfg.replace_domains)),
             provide(instance(cfg.tracking_params)),
         ]
     }

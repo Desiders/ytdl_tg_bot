@@ -103,12 +103,6 @@ pub struct TelegramBotApiConfig {
 }
 
 #[derive(Deserialize, Clone, Debug)]
-pub struct ReplaceDomainsConfig {
-    pub from: Box<str>,
-    pub to: Box<str>,
-}
-
-#[derive(Deserialize, Clone, Debug)]
 pub struct DownloaderTlsConfig {
     #[serde(rename = "ca_cert_path")]
     pub ca_cert: Box<str>,
@@ -144,8 +138,6 @@ pub struct Config {
     pub domains_with_reactions: DomainsWithReactionsConfig,
     #[serde(default)]
     pub random_cmd: RandomCmdConfig,
-    #[serde(default)]
-    pub replace_domains: Vec<ReplaceDomainsConfig>,
     #[serde(default)]
     pub tracking_params: TrackingParamsConfig,
 }

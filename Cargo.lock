@@ -1028,6 +1028,7 @@ dependencies = [
  "mutagen-rs",
  "nix 0.31.2",
  "proto",
+ "regex",
  "serde",
  "serde_json",
  "tempfile",
