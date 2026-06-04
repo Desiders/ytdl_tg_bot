@@ -1,123 +1,34 @@
+use async_trait::async_trait;
 use sea_orm::{
-    prelude::Expr, sea_query::OnConflict, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait as _, ExprTrait as _,
-    FromQueryResult, QueryFilter as _, QueryOrder, QuerySelect,
+    prelude::Expr, ColumnTrait as _, ConnectionTrait, EntityTrait as _, ExprTrait as _, FromQueryResult, QueryFilter as _, QueryOrder as _,
+    QuerySelect as _,
 };
 use std::convert::Infallible;
 use time::{Duration, OffsetDateTime};
 
 use crate::{
-    database::models::{downloaded_media, sea_orm_active_enums},
+    database::{
+        interfaces::downloaded_media::DownloadedMediaReader,
+        models::{downloaded_media, sea_orm_active_enums},
+    },
     entities::{DownloadedMedia, DownloadedMediaByDomainCount, DownloadedMediaCount, DownloadedMediaStats},
     errors::ErrorKind,
     value_objects::MediaType,
 };
 
-pub struct Dao<'a, Conn> {
+pub struct SeaOrmDownloadedMediaReader<'a, Conn> {
     conn: &'a Conn,
 }
 
-impl<'a, Conn> Dao<'a, Conn> {
-    pub const fn new(conn: &'a Conn) -> Self
-    where
-        Conn: ConnectionTrait,
-    {
+impl<'a, Conn> SeaOrmDownloadedMediaReader<'a, Conn> {
+    pub const fn new(conn: &'a Conn) -> Self {
         Self { conn }
     }
 }
 
-impl<Conn> Dao<'_, Conn>
-where
-    Conn: ConnectionTrait,
-{
-    pub async fn insert_or_ignore(
-        &self,
-        DownloadedMedia {
-            file_id,
-            id,
-            domain,
-            display_id,
-            media_type,
-            created_at,
-            audio_language,
-            crop_start_time,
-            crop_end_time,
-        }: DownloadedMedia,
-    ) -> Result<(), ErrorKind<Infallible>> {
-        use downloaded_media::{
-            ActiveModel,
-            Column::{AudioLanguage, CropEndTime, CropStartTime, Domain, Id, MediaType},
-            Entity,
-        };
-
-        let model = ActiveModel {
-            file_id: Set(file_id),
-            id: Set(id),
-            display_id: Set(display_id),
-            domain: Set(domain),
-            media_type: Set(media_type.into()),
-            created_at: Set(created_at),
-            audio_language: Set(audio_language),
-            crop_start_time: Set(crop_start_time),
-            crop_end_time: Set(crop_end_time),
-        };
-
-        Entity::insert(model)
-            .on_conflict(
-                OnConflict::columns([Id, Domain, MediaType, AudioLanguage, CropStartTime, CropEndTime])
-                    .do_nothing()
-                    .to_owned(),
-            )
-            .exec_without_returning(self.conn)
-            .await
-            .map(|_| ())
-            .map_err(Into::into)
-    }
-
-    pub async fn insert_or_replace(
-        &self,
-        DownloadedMedia {
-            file_id,
-            id,
-            domain,
-            display_id,
-            media_type,
-            created_at,
-            audio_language,
-            crop_start_time,
-            crop_end_time,
-        }: DownloadedMedia,
-    ) -> Result<(), ErrorKind<Infallible>> {
-        use downloaded_media::{
-            ActiveModel,
-            Column::{AudioLanguage, CreatedAt, CropEndTime, CropStartTime, DisplayId, Domain, FileId, Id, MediaType},
-            Entity,
-        };
-
-        let model = ActiveModel {
-            file_id: Set(file_id),
-            id: Set(id),
-            display_id: Set(display_id),
-            domain: Set(domain),
-            media_type: Set(media_type.into()),
-            created_at: Set(created_at),
-            audio_language: Set(audio_language),
-            crop_start_time: Set(crop_start_time),
-            crop_end_time: Set(crop_end_time),
-        };
-
-        Entity::insert(model)
-            .on_conflict(
-                OnConflict::columns([Id, Domain, MediaType, AudioLanguage, CropStartTime, CropEndTime])
-                    .update_columns([FileId, DisplayId, CreatedAt])
-                    .to_owned(),
-            )
-            .exec_without_returning(self.conn)
-            .await
-            .map(|_| ())
-            .map_err(Into::into)
-    }
-
-    pub async fn get(
+#[async_trait]
+impl<Conn: ConnectionTrait> DownloadedMediaReader for SeaOrmDownloadedMediaReader<'_, Conn> {
+    async fn get(
         &self,
         search: &str,
         domain: Option<&str>,
@@ -165,7 +76,7 @@ where
         Ok(query.one(self.conn).await?.map(Into::into))
     }
 
-    pub async fn get_random(
+    async fn get_random(
         &self,
         limit: u64,
         media_type: MediaType,
@@ -188,21 +99,21 @@ where
             .collect())
     }
 
-    pub async fn get_stats(&self, top_domains_limit: u64) -> Result<DownloadedMediaStats, ErrorKind<Infallible>> {
+    async fn get_stats(&self, top_domains_limit: u64) -> Result<DownloadedMediaStats, ErrorKind<Infallible>> {
         use downloaded_media::{
             Column::{CreatedAt, Domain, FileId},
             Entity,
         };
 
         #[derive(Default, Debug, FromQueryResult)]
-        pub struct CountResult {
-            pub count: i64,
+        struct CountResult {
+            count: i64,
         }
 
         #[derive(Debug, FromQueryResult)]
-        pub struct DomainCountResult {
-            pub domain: String,
-            pub count: i64,
+        struct DomainCountResult {
+            domain: String,
+            count: i64,
         }
 
         async fn count_by_period<Conn>(conn: &Conn, since: Option<OffsetDateTime>) -> Result<DownloadedMediaCount, ErrorKind<Infallible>>

@@ -93,8 +93,7 @@ impl GalleryDlEntry {
                     .and_then(OsStr::to_str)
                     .map(ToOwned::to_owned)
             })
-            .map(|ext| ext.to_ascii_lowercase())
-            .unwrap_or_else(|| "jpg".to_owned());
+            .map_or_else(|| "jpg".to_owned(), |ext| ext.to_ascii_lowercase());
         if !is_photo_extension(&ext) {
             return Err(DroppedNonPhotoEntry { url: direct_url, ext });
         }

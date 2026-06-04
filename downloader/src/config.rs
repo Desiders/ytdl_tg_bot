@@ -226,7 +226,7 @@ mod tests {
 
     #[test]
     fn replace_domains_config_parses_per_media_type() {
-        let raw = r#"
+        let raw = r"
             [[video]]
             from = 'a'
             to = 'b'
@@ -234,7 +234,7 @@ mod tests {
             [[audio]]
             from = 'c'
             to = 'd'
-        "#;
+        ";
 
         let config: super::ReplaceDomainsConfig = toml::from_str(raw).unwrap();
 

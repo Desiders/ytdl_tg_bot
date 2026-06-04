@@ -8,7 +8,6 @@ use telers::{
 use tracing::error;
 
 use crate::{
-    database::TxManager,
     entities::ChatConfig,
     interactors::Interactor,
     locale::Locale,
@@ -22,17 +21,33 @@ use crate::{
 };
 
 pub struct Stats<Messenger> {
-    pub error_formatter: Arc<ErrorFormatter>,
-    pub messenger: Arc<Messenger>,
-    pub media_stats: Arc<downloaded_media::GetStats>,
-    pub node_stats: Arc<node_router::GetStats>,
+    error_formatter: Arc<ErrorFormatter>,
+    messenger: Arc<Messenger>,
+    media_stats: Arc<downloaded_media::GetStats>,
+    node_stats: Arc<node_router::GetStats>,
+}
+
+impl<Messenger> Stats<Messenger> {
+    #[must_use]
+    pub const fn new(
+        error_formatter: Arc<ErrorFormatter>,
+        messenger: Arc<Messenger>,
+        media_stats: Arc<downloaded_media::GetStats>,
+        node_stats: Arc<node_router::GetStats>,
+    ) -> Self {
+        Self {
+            error_formatter,
+            messenger,
+            media_stats,
+            node_stats,
+        }
+    }
 }
 
 pub struct StatsInput<'a> {
     pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
     pub chat_cfg: Option<&'a ChatConfig>,
-    pub tx_manager: &'a mut TxManager,
 }
 
 impl<Messenger> Interactor<StatsInput<'_>> for &Stats<Messenger>
@@ -46,10 +61,7 @@ where
         let locale = input.chat_cfg.map_or(Locale::En, ChatConfig::locale).as_str();
         let media_stats = self
             .media_stats
-            .execute(downloaded_media::GetStatsInput {
-                top_domains_limit: 5,
-                tx_manager: input.tx_manager,
-            })
+            .execute(downloaded_media::GetStatsInput { top_domains_limit: 5 })
             .await;
         let nodes_stats = self.node_stats.execute(node_router::GetStatsInput {}).await.unwrap_or_default();
 

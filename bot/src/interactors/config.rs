@@ -8,7 +8,6 @@ use telers::{
 use tracing::error;
 
 use crate::{
-    database::TxManager,
     entities::{ChatConfig, ChatConfigExcludeDomain, ChatConfigExcludeDomains, ChatConfigUpdate},
     handlers_utils::progress,
     interactors::Interactor,
@@ -20,15 +19,29 @@ use crate::{
 };
 
 pub struct ChangeLinkVisibility<Messenger> {
-    pub error_formatter: Arc<ErrorFormatter>,
-    pub messenger: Arc<Messenger>,
-    pub update_chat_cfg: Arc<chat::UpdateChatConfig>,
+    error_formatter: Arc<ErrorFormatter>,
+    messenger: Arc<Messenger>,
+    update_chat_cfg: Arc<chat::UpdateChatConfig>,
+}
+
+impl<Messenger> ChangeLinkVisibility<Messenger> {
+    #[must_use]
+    pub const fn new(
+        error_formatter: Arc<ErrorFormatter>,
+        messenger: Arc<Messenger>,
+        update_chat_cfg: Arc<chat::UpdateChatConfig>,
+    ) -> Self {
+        Self {
+            error_formatter,
+            messenger,
+            update_chat_cfg,
+        }
+    }
 }
 
 pub struct ChangeLinkVisibilityInput<'a> {
     pub reply_to_message_id: Option<i64>,
     pub chat_cfg: &'a ChatConfig,
-    pub tx_manager: &'a mut TxManager,
 }
 
 impl<Messenger> Interactor<ChangeLinkVisibilityInput<'_>> for &ChangeLinkVisibility<Messenger>
@@ -45,7 +58,6 @@ where
             .update_chat_cfg
             .execute(chat::UpdateChatConfigInput {
                 dto: ChatConfigUpdate::new(input.chat_cfg.tg_id).with_link_is_visible(link_is_visible),
-                tx_manager: input.tx_manager,
             })
             .await
         {
@@ -83,9 +95,20 @@ where
 }
 
 pub struct AddExcludeDomain<Messenger> {
-    pub error_formatter: Arc<ErrorFormatter>,
-    pub messenger: Arc<Messenger>,
-    pub add_domain: Arc<chat::AddExcludeDomain>,
+    error_formatter: Arc<ErrorFormatter>,
+    messenger: Arc<Messenger>,
+    add_domain: Arc<chat::AddExcludeDomain>,
+}
+
+impl<Messenger> AddExcludeDomain<Messenger> {
+    #[must_use]
+    pub const fn new(error_formatter: Arc<ErrorFormatter>, messenger: Arc<Messenger>, add_domain: Arc<chat::AddExcludeDomain>) -> Self {
+        Self {
+            error_formatter,
+            messenger,
+            add_domain,
+        }
+    }
 }
 
 pub struct AddExcludeDomainInput<'a> {
@@ -94,7 +117,6 @@ pub struct AddExcludeDomainInput<'a> {
     pub host: &'a str,
     pub exclude_domains: &'a ChatConfigExcludeDomains,
     pub chat_cfg: &'a ChatConfig,
-    pub tx_manager: &'a mut TxManager,
 }
 
 impl<Messenger> Interactor<AddExcludeDomainInput<'_>> for &AddExcludeDomain<Messenger>
@@ -140,7 +162,6 @@ where
             .add_domain
             .execute(chat::ExcludeDomainInput {
                 dto: ChatConfigExcludeDomain::new(input.chat_id, host.clone()),
-                tx_manager: input.tx_manager,
             })
             .await
         {
@@ -188,9 +209,24 @@ where
 }
 
 pub struct RemoveExcludeDomain<Messenger> {
-    pub error_formatter: Arc<ErrorFormatter>,
-    pub messenger: Arc<Messenger>,
-    pub remove_domain: Arc<chat::RemoveExcludeDomain>,
+    error_formatter: Arc<ErrorFormatter>,
+    messenger: Arc<Messenger>,
+    remove_domain: Arc<chat::RemoveExcludeDomain>,
+}
+
+impl<Messenger> RemoveExcludeDomain<Messenger> {
+    #[must_use]
+    pub const fn new(
+        error_formatter: Arc<ErrorFormatter>,
+        messenger: Arc<Messenger>,
+        remove_domain: Arc<chat::RemoveExcludeDomain>,
+    ) -> Self {
+        Self {
+            error_formatter,
+            messenger,
+            remove_domain,
+        }
+    }
 }
 
 pub struct RemoveExcludeDomainInput<'a> {
@@ -199,7 +235,6 @@ pub struct RemoveExcludeDomainInput<'a> {
     pub host: &'a str,
     pub exclude_domains: &'a ChatConfigExcludeDomains,
     pub chat_cfg: &'a ChatConfig,
-    pub tx_manager: &'a mut TxManager,
 }
 
 impl<Messenger> Interactor<RemoveExcludeDomainInput<'_>> for &RemoveExcludeDomain<Messenger>
@@ -231,7 +266,6 @@ where
             .remove_domain
             .execute(chat::ExcludeDomainInput {
                 dto: ChatConfigExcludeDomain::new(input.chat_id, host.clone()),
-                tx_manager: input.tx_manager,
             })
             .await
         {

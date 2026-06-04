@@ -1,44 +1,33 @@
+use async_trait::async_trait;
 use sea_orm::{
     sea_query::OnConflict,
     ActiveValue::{NotSet, Set, Unchanged},
-    ColumnTrait as _, ConnectionTrait, EntityTrait, QueryFilter as _,
+    ColumnTrait as _, ConnectionTrait, EntityTrait as _, QueryFilter as _,
 };
 use std::convert::Infallible;
 
 use crate::{
-    database::models::{chat_config_exclude_domains, chat_configs},
-    entities::{ChatConfig, ChatConfigExcludeDomain, ChatConfigExcludeDomains, ChatConfigUpdate},
+    database::{
+        interfaces::chat_config::ChatConfigRepo,
+        models::{chat_config_exclude_domains, chat_configs},
+    },
+    entities::{ChatConfig, ChatConfigExcludeDomain, ChatConfigUpdate},
     errors::ErrorKind,
 };
 
-pub struct Dao<'a, Conn> {
+pub struct SeaOrmChatConfigRepo<'a, Conn> {
     conn: &'a Conn,
 }
 
-impl<'a, Conn> Dao<'a, Conn> {
-    pub const fn new(conn: &'a Conn) -> Self
-    where
-        Conn: ConnectionTrait,
-    {
+impl<'a, Conn> SeaOrmChatConfigRepo<'a, Conn> {
+    pub const fn new(conn: &'a Conn) -> Self {
         Self { conn }
     }
 }
 
-impl<Conn> Dao<'_, Conn>
-where
-    Conn: ConnectionTrait,
-{
-    pub async fn get(&self, tg_id: i64) -> Result<Option<ChatConfig>, ErrorKind<Infallible>> {
-        use chat_configs::Entity;
-
-        Entity::find_by_id(tg_id)
-            .one(self.conn)
-            .await
-            .map(|row| row.map(Into::into))
-            .map_err(Into::into)
-    }
-
-    pub async fn insert_or_update(
+#[async_trait]
+impl<Conn: ConnectionTrait> ChatConfigRepo for SeaOrmChatConfigRepo<'_, Conn> {
+    async fn insert_or_update(
         &self,
         ChatConfig {
             tg_id,
@@ -70,7 +59,7 @@ where
             .map_err(Into::into)
     }
 
-    pub async fn update(
+    async fn update(
         &self,
         ChatConfigUpdate {
             tg_id,
@@ -93,18 +82,7 @@ where
         Entity::update(model).exec(self.conn).await.map(Into::into).map_err(Into::into)
     }
 
-    pub async fn get_exclude_domains(&self, tg_id: i64) -> Result<ChatConfigExcludeDomains, ErrorKind<Infallible>> {
-        use chat_config_exclude_domains::{Column::TgId, Entity};
-
-        Entity::find()
-            .filter(TgId.eq(tg_id))
-            .all(self.conn)
-            .await
-            .map(|rows| ChatConfigExcludeDomains(rows.into_iter().map(|row| row.domain).collect()))
-            .map_err(Into::into)
-    }
-
-    pub async fn insert_exclude_domain_or_update(
+    async fn insert_exclude_domain_or_update(
         &self,
         ChatConfigExcludeDomain { tg_id, domain }: ChatConfigExcludeDomain,
     ) -> Result<ChatConfigExcludeDomain, ErrorKind<Infallible>> {
@@ -127,7 +105,7 @@ where
             .map_err(Into::into)
     }
 
-    pub async fn delete_exclude_domain(
+    async fn delete_exclude_domain(
         &self,
         ChatConfigExcludeDomain { tg_id, domain }: ChatConfigExcludeDomain,
     ) -> Result<bool, ErrorKind<Infallible>> {

@@ -8,7 +8,14 @@ use tracing::{info, instrument};
 use crate::{entities::NodeStats, errors::ErrorKind, interactors::Interactor};
 
 pub struct GetStats {
-    pub node_router: Arc<NodeRouter>,
+    node_router: Arc<NodeRouter>,
+}
+
+impl GetStats {
+    #[must_use]
+    pub const fn new(node_router: Arc<NodeRouter>) -> Self {
+        Self { node_router }
+    }
 }
 
 pub struct GetStatsInput {}

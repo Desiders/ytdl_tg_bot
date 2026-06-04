@@ -5,7 +5,6 @@ use telers::errors::HandlerError;
 use tracing::error;
 
 use crate::{
-    database::TxManager,
     entities::{ChatConfig, ChatConfigUpdate},
     handlers_utils::progress,
     interactors::Interactor,
@@ -18,16 +17,30 @@ use crate::{
 };
 
 pub struct Lang<Messenger> {
-    pub error_formatter: Arc<ErrorFormatter>,
-    pub messenger: Arc<Messenger>,
-    pub update_chat_cfg: Arc<chat::UpdateChatConfig>,
+    error_formatter: Arc<ErrorFormatter>,
+    messenger: Arc<Messenger>,
+    update_chat_cfg: Arc<chat::UpdateChatConfig>,
+}
+
+impl<Messenger> Lang<Messenger> {
+    #[must_use]
+    pub const fn new(
+        error_formatter: Arc<ErrorFormatter>,
+        messenger: Arc<Messenger>,
+        update_chat_cfg: Arc<chat::UpdateChatConfig>,
+    ) -> Self {
+        Self {
+            error_formatter,
+            messenger,
+            update_chat_cfg,
+        }
+    }
 }
 
 pub struct LangInput<'a> {
     pub reply_to_message_id: Option<i64>,
     pub chat_cfg: &'a ChatConfig,
     pub argument: Option<&'a str>,
-    pub tx_manager: &'a mut TxManager,
 }
 
 impl<Messenger> Interactor<LangInput<'_>> for &Lang<Messenger>
@@ -57,7 +70,6 @@ where
             .update_chat_cfg
             .execute(chat::UpdateChatConfigInput {
                 dto: ChatConfigUpdate::new(input.chat_cfg.tg_id).with_language(target.as_str().to_owned()),
-                tx_manager: input.tx_manager,
             })
             .await
         {

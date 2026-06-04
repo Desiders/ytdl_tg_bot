@@ -10,7 +10,6 @@ use telers::{
 use tracing::{error, instrument};
 
 use crate::{
-    database::TxManager,
     entities::{Chat, ChatConfig, OwnChatConfig},
     interactors::Interactor as _,
     locale::Locale,
@@ -46,13 +45,11 @@ impl Middleware for CreateChatMiddleware {
 
         let save_chat = container.get::<chat::SaveChat>().await.unwrap();
         let get_chat_config = container.get::<chat::GetChatConfig>().await.unwrap();
-        let mut tx_manager = container.get_transient::<TxManager>().await.unwrap();
 
         match save_chat
             .execute(chat::SaveChatInput {
                 chat: db_chat,
                 chat_config: db_chat_config,
-                tx_manager: &mut tx_manager,
             })
             .await
         {
@@ -60,13 +57,7 @@ impl Middleware for CreateChatMiddleware {
                 let own_chat_config = match chat_type {
                     ChatType::Private => Some(chat_config.clone()),
                     _ => match request.update.from() {
-                        Some(from) => match get_chat_config
-                            .execute(chat::GetChatConfigInput {
-                                tg_id: from.id,
-                                tx_manager: &mut tx_manager,
-                            })
-                            .await
-                        {
+                        Some(from) => match get_chat_config.execute(chat::GetChatConfigInput { tg_id: from.id }).await {
                             Ok(chat_config) => chat_config,
                             Err(err) => return Err(MiddlewareError::new(err).into()),
                         },

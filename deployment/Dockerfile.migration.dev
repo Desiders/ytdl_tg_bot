@@ -4,7 +4,7 @@ RUN apt update && apt install -y --no-install-recommends \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-FROM rust:1.91-bookworm AS build
+FROM rust:1.94-bookworm AS build
 
 WORKDIR /usr/src/app
 

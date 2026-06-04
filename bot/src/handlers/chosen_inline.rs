@@ -1,11 +1,10 @@
 use crate::{
-    database::TxManager,
     entities::{ChatConfig, OwnChatConfig, Params},
     interactors::{chosen_inline, Interactor as _},
     services::messenger::MessengerPort,
 };
 
-use froodi::{Inject, InjectTransient};
+use froodi::Inject;
 use telers::{
     event::{telegram::HandlerResult, EventReturn},
     types::ChosenInlineResult,
@@ -26,7 +25,6 @@ pub async fn download_video<Messenger>(
         ..
     }: ChosenInlineResult,
     Inject(interactor): Inject<chosen_inline::DownloadVideo<Messenger>>,
-    InjectTransient(mut tx_manager): InjectTransient<TxManager>,
 ) -> HandlerResult
 where
     Messenger: MessengerPort,
@@ -41,7 +39,6 @@ where
             link_is_visible: own_chat_cfg.as_ref().is_some_and(|chat_cfg| chat_cfg.link_is_visible),
             inline_message_id,
             result_id: &result_id,
-            tx_manager: &mut tx_manager,
         })
         .await?;
     Ok(EventReturn::Finish)
@@ -59,7 +56,6 @@ pub async fn download_audio<Messenger>(
         ..
     }: ChosenInlineResult,
     Inject(interactor): Inject<chosen_inline::DownloadAudio<Messenger>>,
-    InjectTransient(mut tx_manager): InjectTransient<TxManager>,
 ) -> HandlerResult
 where
     Messenger: MessengerPort,
@@ -74,7 +70,6 @@ where
             link_is_visible: own_chat_cfg.as_ref().is_some_and(|chat_cfg| chat_cfg.link_is_visible),
             inline_message_id,
             result_id: &result_id,
-            tx_manager: &mut tx_manager,
         })
         .await?;
     Ok(EventReturn::Finish)
@@ -92,7 +87,6 @@ pub async fn download_photo<Messenger>(
         ..
     }: ChosenInlineResult,
     Inject(interactor): Inject<chosen_inline::DownloadPhoto<Messenger>>,
-    InjectTransient(mut tx_manager): InjectTransient<TxManager>,
 ) -> HandlerResult
 where
     Messenger: MessengerPort,
@@ -107,7 +101,6 @@ where
             link_is_visible: own_chat_cfg.as_ref().is_some_and(|chat_cfg| chat_cfg.link_is_visible),
             inline_message_id,
             result_id: &result_id,
-            tx_manager: &mut tx_manager,
         })
         .await?;
     Ok(EventReturn::Finish)

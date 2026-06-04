@@ -505,7 +505,7 @@ impl MessengerPort for TelegramMessenger {
 impl TelegramMessenger {
     /// Best-effort fire-and-forget delete that logs failures via `error_formatter`.
     /// Used after every "send + auto-delete" upload (the receiver chat is just a
-    /// staging area whose messages get deleted once we have the file_id).
+    /// staging area whose messages get deleted once we have the `file_id`).
     fn spawn_delete_message(&self, chat_id: i64, message_id: i64) {
         let bot = self.bot.clone();
         let error_formatter = self.error_formatter.clone();

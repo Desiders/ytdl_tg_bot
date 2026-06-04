@@ -11,7 +11,7 @@ use std::{convert::Infallible, sync::Arc};
 use time::OffsetDateTime;
 use tracing::{info, instrument};
 
-pub struct AddMediaInput<'a> {
+pub struct AddMediaInput {
     pub file_id: String,
     pub id: String,
     pub display_id: Option<String>,
@@ -19,12 +19,20 @@ pub struct AddMediaInput<'a> {
     pub audio_language: Language,
     pub sections: Option<Sections>,
     pub overwrite_cache: bool,
-    pub tx_manager: &'a mut TxManager,
 }
 
-pub struct AddVideo {}
+pub struct AddVideo {
+    tx_manager: Arc<Box<dyn TxManager>>,
+}
 
-impl Interactor<AddMediaInput<'_>> for &AddVideo {
+impl AddVideo {
+    #[must_use]
+    pub const fn new(tx_manager: Arc<Box<dyn TxManager>>) -> Self {
+        Self { tx_manager }
+    }
+}
+
+impl Interactor<AddMediaInput> for &AddVideo {
     type Output = ();
     type Err = ErrorKind<Infallible>;
 
@@ -39,14 +47,9 @@ impl Interactor<AddMediaInput<'_>> for &AddVideo {
             audio_language,
             sections,
             overwrite_cache,
-            tx_manager,
-        }: AddMediaInput<'_>,
+        }: AddMediaInput,
     ) -> Result<Self::Output, Self::Err> {
         let normalized_domain = domain.map(|domain| domain.trim_start_matches("www.").to_owned());
-
-        tx_manager.begin().await?;
-
-        let dao = tx_manager.downloaded_media_dao()?;
         let media = DownloadedMedia {
             file_id,
             id,
@@ -58,21 +61,22 @@ impl Interactor<AddMediaInput<'_>> for &AddVideo {
             crop_start_time: sections.as_ref().and_then(|val| val.start),
             crop_end_time: sections.as_ref().and_then(|val| val.end),
         };
-        if overwrite_cache {
-            dao.insert_or_replace(media).await?;
-        } else {
-            dao.insert_or_ignore(media).await?;
-        }
-        info!("Downloaded media added");
-
-        tx_manager.commit().await?;
-        Ok(())
+        add_media(&**self.tx_manager, media, overwrite_cache).await
     }
 }
 
-pub struct AddAudio {}
+pub struct AddAudio {
+    tx_manager: Arc<Box<dyn TxManager>>,
+}
 
-impl Interactor<AddMediaInput<'_>> for &AddAudio {
+impl AddAudio {
+    #[must_use]
+    pub const fn new(tx_manager: Arc<Box<dyn TxManager>>) -> Self {
+        Self { tx_manager }
+    }
+}
+
+impl Interactor<AddMediaInput> for &AddAudio {
     type Output = ();
     type Err = ErrorKind<Infallible>;
 
@@ -87,15 +91,9 @@ impl Interactor<AddMediaInput<'_>> for &AddAudio {
             audio_language,
             sections,
             overwrite_cache,
-            tx_manager,
-        }: AddMediaInput<'_>,
+        }: AddMediaInput,
     ) -> Result<Self::Output, Self::Err> {
         let normalized_domain = domain.map(|domain| domain.trim_start_matches("www.").to_owned());
-
-        tx_manager.begin().await?;
-
-        let dao = tx_manager.downloaded_media_dao()?;
-
         let media = DownloadedMedia {
             file_id,
             id,
@@ -107,21 +105,22 @@ impl Interactor<AddMediaInput<'_>> for &AddAudio {
             crop_start_time: sections.as_ref().and_then(|val| val.start),
             crop_end_time: sections.as_ref().and_then(|val| val.end),
         };
-        if overwrite_cache {
-            dao.insert_or_replace(media).await?;
-        } else {
-            dao.insert_or_ignore(media).await?;
-        }
-        info!("Downloaded media added");
-
-        tx_manager.commit().await?;
-        Ok(())
+        add_media(&**self.tx_manager, media, overwrite_cache).await
     }
 }
 
-pub struct AddPhoto {}
+pub struct AddPhoto {
+    tx_manager: Arc<Box<dyn TxManager>>,
+}
 
-impl Interactor<AddMediaInput<'_>> for &AddPhoto {
+impl AddPhoto {
+    #[must_use]
+    pub const fn new(tx_manager: Arc<Box<dyn TxManager>>) -> Self {
+        Self { tx_manager }
+    }
+}
+
+impl Interactor<AddMediaInput> for &AddPhoto {
     type Output = ();
     type Err = ErrorKind<Infallible>;
 
@@ -136,14 +135,9 @@ impl Interactor<AddMediaInput<'_>> for &AddPhoto {
             audio_language,
             sections,
             overwrite_cache,
-            tx_manager,
-        }: AddMediaInput<'_>,
+        }: AddMediaInput,
     ) -> Result<Self::Output, Self::Err> {
         let normalized_domain = domain.map(|domain| domain.trim_start_matches("www.").to_owned());
-
-        tx_manager.begin().await?;
-
-        let dao = tx_manager.downloaded_media_dao()?;
         let media = DownloadedMedia {
             file_id,
             id,
@@ -155,26 +149,45 @@ impl Interactor<AddMediaInput<'_>> for &AddPhoto {
             crop_start_time: sections.as_ref().and_then(|val| val.start),
             crop_end_time: sections.as_ref().and_then(|val| val.end),
         };
-        if overwrite_cache {
-            dao.insert_or_replace(media).await?;
-        } else {
-            dao.insert_or_ignore(media).await?;
-        }
-        info!("Downloaded media added");
-
-        tx_manager.commit().await?;
-        Ok(())
+        add_media(&**self.tx_manager, media, overwrite_cache).await
     }
+}
+
+async fn add_media(tx_manager: &dyn TxManager, media: DownloadedMedia, overwrite_cache: bool) -> Result<(), ErrorKind<Infallible>> {
+    let tx = tx_manager.begin().await?;
+    let outcome = {
+        let repo = tx.downloaded_media_repo();
+        if overwrite_cache {
+            repo.insert_or_replace(media).await
+        } else {
+            repo.insert_or_ignore(media).await
+        }
+    };
+    if let Err(err) = outcome {
+        let _ = tx.rollback().await;
+        return Err(err);
+    }
+    info!("Downloaded media added");
+
+    tx.commit().await?;
+    Ok(())
 }
 
 pub struct GetRandomMediaInput<'a> {
     pub limit: u64,
     pub domains: Option<&'a Domains>,
-    pub tx_manager: &'a mut TxManager,
 }
 
 pub struct GetRandomVideo {
-    pub cfg: Arc<RandomCmdConfig>,
+    cfg: Arc<RandomCmdConfig>,
+    tx_manager: Arc<Box<dyn TxManager>>,
+}
+
+impl GetRandomVideo {
+    #[must_use]
+    pub const fn new(cfg: Arc<RandomCmdConfig>, tx_manager: Arc<Box<dyn TxManager>>) -> Self {
+        Self { cfg, tx_manager }
+    }
 }
 
 impl Interactor<GetRandomMediaInput<'_>> for &GetRandomVideo {
@@ -182,19 +195,10 @@ impl Interactor<GetRandomMediaInput<'_>> for &GetRandomVideo {
     type Err = ErrorKind<Infallible>;
 
     #[instrument(skip_all, fields(%limit, ?domains))]
-    async fn execute(
-        self,
-        GetRandomMediaInput {
-            limit,
-            domains,
-            tx_manager,
-        }: GetRandomMediaInput<'_>,
-    ) -> Result<Self::Output, Self::Err> {
-        tx_manager.begin().await?;
-
-        let dao = tx_manager.downloaded_media_dao()?;
-
-        let media = dao
+    async fn execute(self, GetRandomMediaInput { limit, domains }: GetRandomMediaInput<'_>) -> Result<Self::Output, Self::Err> {
+        let media = self
+            .tx_manager
+            .downloaded_media_reader()
             .get_random(
                 limit,
                 MediaType::Video,
@@ -208,7 +212,15 @@ impl Interactor<GetRandomMediaInput<'_>> for &GetRandomVideo {
 }
 
 pub struct GetRandomAudio {
-    pub cfg: Arc<RandomCmdConfig>,
+    cfg: Arc<RandomCmdConfig>,
+    tx_manager: Arc<Box<dyn TxManager>>,
+}
+
+impl GetRandomAudio {
+    #[must_use]
+    pub const fn new(cfg: Arc<RandomCmdConfig>, tx_manager: Arc<Box<dyn TxManager>>) -> Self {
+        Self { cfg, tx_manager }
+    }
 }
 
 impl Interactor<GetRandomMediaInput<'_>> for &GetRandomAudio {
@@ -216,19 +228,10 @@ impl Interactor<GetRandomMediaInput<'_>> for &GetRandomAudio {
     type Err = ErrorKind<Infallible>;
 
     #[instrument(skip_all, fields(%limit, ?domains))]
-    async fn execute(
-        self,
-        GetRandomMediaInput {
-            limit,
-            domains,
-            tx_manager,
-        }: GetRandomMediaInput<'_>,
-    ) -> Result<Self::Output, Self::Err> {
-        tx_manager.begin().await?;
-
-        let dao = tx_manager.downloaded_media_dao()?;
-
-        let media = dao
+    async fn execute(self, GetRandomMediaInput { limit, domains }: GetRandomMediaInput<'_>) -> Result<Self::Output, Self::Err> {
+        let media = self
+            .tx_manager
+            .downloaded_media_reader()
             .get_random(
                 limit,
                 MediaType::Audio,
@@ -241,36 +244,33 @@ impl Interactor<GetRandomMediaInput<'_>> for &GetRandomAudio {
     }
 }
 
-pub struct GetStats {}
-
-pub struct GetStatsInput<'a> {
-    pub top_domains_limit: u64,
-    pub tx_manager: &'a mut TxManager,
+pub struct GetStats {
+    tx_manager: Arc<Box<dyn TxManager>>,
 }
 
-impl Interactor<GetStatsInput<'_>> for &GetStats {
+impl GetStats {
+    #[must_use]
+    pub const fn new(tx_manager: Arc<Box<dyn TxManager>>) -> Self {
+        Self { tx_manager }
+    }
+}
+
+pub struct GetStatsInput {
+    pub top_domains_limit: u64,
+}
+
+impl Interactor<GetStatsInput> for &GetStats {
     type Output = (DownloadedMediaStats, ChatStats);
     type Err = ErrorKind<Infallible>;
 
     #[instrument(skip_all)]
-    async fn execute(
-        self,
-        GetStatsInput {
-            top_domains_limit,
-            tx_manager,
-        }: GetStatsInput<'_>,
-    ) -> Result<Self::Output, Self::Err> {
-        tx_manager.begin().await?;
-
-        let dao = tx_manager.downloaded_media_dao()?;
-        let media_stats = dao.get_stats(top_domains_limit).await?;
+    async fn execute(self, GetStatsInput { top_domains_limit }: GetStatsInput) -> Result<Self::Output, Self::Err> {
+        let media_stats = self.tx_manager.downloaded_media_reader().get_stats(top_domains_limit).await?;
         info!(?media_stats, "Got media stats");
 
-        let dao = tx_manager.chat_dao()?;
-        let chat_stats = dao.get_stats().await?;
+        let chat_stats = self.tx_manager.chat_reader().get_stats().await?;
         info!(?chat_stats, "Got chat stats");
 
-        tx_manager.commit().await?;
         Ok((media_stats, chat_stats))
     }
 }

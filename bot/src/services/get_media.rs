@@ -49,7 +49,6 @@ pub struct GetMediaByURLInput<'a> {
     pub audio_language: &'a Language,
     pub sections: Option<&'a Sections>,
     pub overwrite_cache: bool,
-    pub tx_manager: &'a mut TxManager,
 }
 
 pub enum GetMediaByURLKind {
@@ -62,8 +61,20 @@ pub enum GetMediaByURLKind {
 }
 
 pub struct GetVideoByURL {
-    pub node_router: Arc<NodeRouter>,
-    pub cfg: Arc<TrackingParamsConfig>,
+    node_router: Arc<NodeRouter>,
+    cfg: Arc<TrackingParamsConfig>,
+    tx_manager: Arc<Box<dyn TxManager>>,
+}
+
+impl GetVideoByURL {
+    #[must_use]
+    pub const fn new(node_router: Arc<NodeRouter>, cfg: Arc<TrackingParamsConfig>, tx_manager: Arc<Box<dyn TxManager>>) -> Self {
+        Self {
+            node_router,
+            cfg,
+            tx_manager,
+        }
+    }
 }
 
 impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
@@ -81,7 +92,6 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
             audio_language,
             sections,
             overwrite_cache,
-            tx_manager,
         }: GetMediaByURLInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         get_media_by_url(
@@ -96,15 +106,27 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
             overwrite_cache,
             MediaType::Video,
             "video",
-            tx_manager,
+            &**self.tx_manager,
         )
         .await
     }
 }
 
 pub struct GetAudioByURL {
-    pub node_router: Arc<NodeRouter>,
-    pub cfg: Arc<TrackingParamsConfig>,
+    node_router: Arc<NodeRouter>,
+    cfg: Arc<TrackingParamsConfig>,
+    tx_manager: Arc<Box<dyn TxManager>>,
+}
+
+impl GetAudioByURL {
+    #[must_use]
+    pub const fn new(node_router: Arc<NodeRouter>, cfg: Arc<TrackingParamsConfig>, tx_manager: Arc<Box<dyn TxManager>>) -> Self {
+        Self {
+            node_router,
+            cfg,
+            tx_manager,
+        }
+    }
 }
 
 impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
@@ -122,7 +144,6 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
             audio_language,
             sections,
             overwrite_cache,
-            tx_manager,
         }: GetMediaByURLInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         get_media_by_url(
@@ -137,15 +158,27 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
             overwrite_cache,
             MediaType::Audio,
             "audio",
-            tx_manager,
+            &**self.tx_manager,
         )
         .await
     }
 }
 
 pub struct GetPhotoByURL {
-    pub node_router: Arc<NodeRouter>,
-    pub cfg: Arc<TrackingParamsConfig>,
+    node_router: Arc<NodeRouter>,
+    cfg: Arc<TrackingParamsConfig>,
+    tx_manager: Arc<Box<dyn TxManager>>,
+}
+
+impl GetPhotoByURL {
+    #[must_use]
+    pub const fn new(node_router: Arc<NodeRouter>, cfg: Arc<TrackingParamsConfig>, tx_manager: Arc<Box<dyn TxManager>>) -> Self {
+        Self {
+            node_router,
+            cfg,
+            tx_manager,
+        }
+    }
 }
 
 impl Interactor<GetMediaByURLInput<'_>> for &GetPhotoByURL {
@@ -163,7 +196,6 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetPhotoByURL {
             audio_language,
             sections,
             overwrite_cache,
-            tx_manager,
         }: GetMediaByURLInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         get_media_by_url(
@@ -178,15 +210,22 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetPhotoByURL {
             overwrite_cache,
             MediaType::Photo,
             "photo",
-            tx_manager,
+            &**self.tx_manager,
         )
         .await
     }
 }
 
 pub struct GetShortMediaByURL {
-    pub client: Arc<Client>,
-    pub cfg: Arc<YtToolkitConfig>,
+    client: Arc<Client>,
+    cfg: Arc<YtToolkitConfig>,
+}
+
+impl GetShortMediaByURL {
+    #[must_use]
+    pub const fn new(client: Arc<Client>, cfg: Arc<YtToolkitConfig>) -> Self {
+        Self { client, cfg }
+    }
 }
 
 pub struct GetShortMediaByURLInput<'a> {
@@ -207,8 +246,15 @@ impl Interactor<GetShortMediaByURLInput<'_>> for &GetShortMediaByURL {
 }
 
 pub struct SearchMediaInfo {
-    pub client: Arc<Client>,
-    pub cfg: Arc<YtToolkitConfig>,
+    client: Arc<Client>,
+    cfg: Arc<YtToolkitConfig>,
+}
+
+impl SearchMediaInfo {
+    #[must_use]
+    pub const fn new(client: Arc<Client>, cfg: Arc<YtToolkitConfig>) -> Self {
+        Self { client, cfg }
+    }
 }
 
 pub struct SearchMediaInfoInput<'a> {
@@ -241,11 +287,9 @@ async fn get_media_by_url(
     overwrite_cache: bool,
     media_type: MediaType,
     media_type_str: &str,
-    tx_manager: &mut TxManager,
+    tx_manager: &dyn TxManager,
 ) -> Result<GetMediaByURLKind, GetMediaByURLErrorKind> {
-    tx_manager.begin().await.map_err(ErrorKind::from)?;
-
-    let dao = tx_manager.downloaded_media_dao().unwrap();
+    let reader = tx_manager.downloaded_media_reader();
     let is_single_media = playlist_range.is_single_element();
     let (start, end) = if let Some(sections) = sections {
         (sections.start, sections.end)
@@ -255,7 +299,7 @@ async fn get_media_by_url(
     };
 
     if is_single_media && !overwrite_cache {
-        if let Some(media) = dao
+        if let Some(media) = reader
             .get(cache_search, domain, audio_language.language.as_deref(), media_type, start, end)
             .await?
         {
@@ -291,7 +335,7 @@ async fn get_media_by_url(
         media.remove_url_tracking_params(tracking_params_cfg);
         let domain = media.webpage_url.domain();
         if !overwrite_cache {
-            if let Some(DownloadedMedia { file_id, .. }) = dao
+            if let Some(DownloadedMedia { file_id, .. }) = reader
                 .get(&media.id, domain, audio_language.language.as_deref(), media_type, start, end)
                 .await?
             {
