@@ -16,7 +16,6 @@ use url::Url;
 
 use crate::{
     config::Config,
-    database::TxManager,
     entities::{language::Language, ChatConfig, Domains, MediaInPlaylist, Params, Range, Sections},
     handlers_utils::progress,
     interactors::Interactor,
@@ -34,15 +33,43 @@ use crate::{
 };
 
 pub struct Download<Messenger> {
-    pub cfg: Arc<Config>,
-    pub error_formatter: Arc<ErrorFormatter>,
-    pub messenger: Arc<Messenger>,
-    pub get_media: Arc<get_media::GetVideoByURL>,
-    pub playlist_downloader: Arc<media::DownloadVideoPlaylist>,
-    pub upload_media: Arc<send_media::upload::SendVideo<Messenger>>,
-    pub send_media_by_id: Arc<send_media::id::SendVideo<Messenger>>,
-    pub send_playlist: Arc<send_media::id::SendVideoPlaylist<Messenger>>,
-    pub add_downloaded_media: Arc<downloaded_media::AddVideo>,
+    cfg: Arc<Config>,
+    error_formatter: Arc<ErrorFormatter>,
+    messenger: Arc<Messenger>,
+    get_media: Arc<get_media::GetVideoByURL>,
+    playlist_downloader: Arc<media::DownloadVideoPlaylist>,
+    upload_media: Arc<send_media::upload::SendVideo<Messenger>>,
+    send_media_by_id: Arc<send_media::id::SendVideo<Messenger>>,
+    send_playlist: Arc<send_media::id::SendVideoPlaylist<Messenger>>,
+    add_downloaded_media: Arc<downloaded_media::AddVideo>,
+}
+
+impl<Messenger> Download<Messenger> {
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub const fn new(
+        cfg: Arc<Config>,
+        error_formatter: Arc<ErrorFormatter>,
+        messenger: Arc<Messenger>,
+        get_media: Arc<get_media::GetVideoByURL>,
+        playlist_downloader: Arc<media::DownloadVideoPlaylist>,
+        upload_media: Arc<send_media::upload::SendVideo<Messenger>>,
+        send_media_by_id: Arc<send_media::id::SendVideo<Messenger>>,
+        send_playlist: Arc<send_media::id::SendVideoPlaylist<Messenger>>,
+        add_downloaded_media: Arc<downloaded_media::AddVideo>,
+    ) -> Self {
+        Self {
+            cfg,
+            error_formatter,
+            messenger,
+            get_media,
+            playlist_downloader,
+            upload_media,
+            send_media_by_id,
+            send_playlist,
+            add_downloaded_media,
+        }
+    }
 }
 
 pub struct DownloadInput<'a> {
@@ -52,7 +79,6 @@ pub struct DownloadInput<'a> {
     pub url: &'a Url,
     pub chat_cfg: &'a ChatConfig,
     pub link_is_visible: bool,
-    pub tx_manager: &'a mut TxManager,
 }
 
 impl<Messenger> Interactor<DownloadInput<'_>> for &Download<Messenger>
@@ -148,7 +174,6 @@ where
                 audio_language: &audio_language,
                 sections: sections.as_ref(),
                 overwrite_cache,
-                tx_manager: input.tx_manager,
             })
             .await
         {
@@ -237,7 +262,6 @@ where
                                     audio_language: audio_language.clone(),
                                     sections: sections.clone(),
                                     overwrite_cache,
-                                    tx_manager: input.tx_manager,
                                 })
                                 .await
                             {
@@ -383,14 +407,40 @@ where
 }
 
 pub struct DownloadQuiet<Messenger> {
-    pub cfg: Arc<Config>,
-    pub error_formatter: Arc<ErrorFormatter>,
-    pub get_media: Arc<get_media::GetVideoByURL>,
-    pub playlist_downloader: Arc<media::DownloadVideoPlaylist>,
-    pub upload_media: Arc<send_media::upload::SendVideo<Messenger>>,
-    pub send_media_by_id: Arc<send_media::id::SendVideo<Messenger>>,
-    pub send_playlist: Arc<send_media::id::SendVideoPlaylist<Messenger>>,
-    pub add_downloaded_media: Arc<downloaded_media::AddVideo>,
+    cfg: Arc<Config>,
+    error_formatter: Arc<ErrorFormatter>,
+    get_media: Arc<get_media::GetVideoByURL>,
+    playlist_downloader: Arc<media::DownloadVideoPlaylist>,
+    upload_media: Arc<send_media::upload::SendVideo<Messenger>>,
+    send_media_by_id: Arc<send_media::id::SendVideo<Messenger>>,
+    send_playlist: Arc<send_media::id::SendVideoPlaylist<Messenger>>,
+    add_downloaded_media: Arc<downloaded_media::AddVideo>,
+}
+
+impl<Messenger> DownloadQuiet<Messenger> {
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub const fn new(
+        cfg: Arc<Config>,
+        error_formatter: Arc<ErrorFormatter>,
+        get_media: Arc<get_media::GetVideoByURL>,
+        playlist_downloader: Arc<media::DownloadVideoPlaylist>,
+        upload_media: Arc<send_media::upload::SendVideo<Messenger>>,
+        send_media_by_id: Arc<send_media::id::SendVideo<Messenger>>,
+        send_playlist: Arc<send_media::id::SendVideoPlaylist<Messenger>>,
+        add_downloaded_media: Arc<downloaded_media::AddVideo>,
+    ) -> Self {
+        Self {
+            cfg,
+            error_formatter,
+            get_media,
+            playlist_downloader,
+            upload_media,
+            send_media_by_id,
+            send_playlist,
+            add_downloaded_media,
+        }
+    }
 }
 
 pub struct DownloadQuietInput<'a> {
@@ -399,7 +449,6 @@ pub struct DownloadQuietInput<'a> {
     pub params: &'a Params,
     pub url: &'a Url,
     pub link_is_visible: bool,
-    pub tx_manager: &'a mut TxManager,
 }
 
 impl<Messenger> Interactor<DownloadQuietInput<'_>> for &DownloadQuiet<Messenger>
@@ -449,7 +498,6 @@ where
                 audio_language: &audio_language,
                 sections: sections.as_ref(),
                 overwrite_cache,
-                tx_manager: input.tx_manager,
             })
             .await
         {
@@ -515,7 +563,6 @@ where
                                     audio_language: audio_language.clone(),
                                     sections: sections.clone(),
                                     overwrite_cache,
-                                    tx_manager: input.tx_manager,
                                 })
                                 .await
                             {
@@ -557,16 +604,30 @@ where
 }
 
 pub struct Random<Messenger> {
-    pub error_formatter: Arc<ErrorFormatter>,
-    pub get_media: Arc<downloaded_media::GetRandomVideo>,
-    pub send_playlist: Arc<send_media::id::SendVideoPlaylist<Messenger>>,
+    error_formatter: Arc<ErrorFormatter>,
+    get_media: Arc<downloaded_media::GetRandomVideo>,
+    send_playlist: Arc<send_media::id::SendVideoPlaylist<Messenger>>,
+}
+
+impl<Messenger> Random<Messenger> {
+    #[must_use]
+    pub const fn new(
+        error_formatter: Arc<ErrorFormatter>,
+        get_media: Arc<downloaded_media::GetRandomVideo>,
+        send_playlist: Arc<send_media::id::SendVideoPlaylist<Messenger>>,
+    ) -> Self {
+        Self {
+            error_formatter,
+            get_media,
+            send_playlist,
+        }
+    }
 }
 
 pub struct RandomInput<'a> {
     pub message_id: i64,
     pub chat_id: i64,
     pub params: &'a Params,
-    pub tx_manager: &'a mut TxManager,
 }
 
 impl<Messenger> Interactor<RandomInput<'_>> for &Random<Messenger>
@@ -585,7 +646,6 @@ where
             .execute(downloaded_media::GetRandomMediaInput {
                 limit: 1,
                 domains: domains.as_ref(),
-                tx_manager: input.tx_manager,
             })
             .await
         {

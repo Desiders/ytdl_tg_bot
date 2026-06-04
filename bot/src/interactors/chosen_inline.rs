@@ -10,7 +10,6 @@ use url::Url;
 
 use crate::{
     config::Config,
-    database::TxManager,
     entities::{language::Language, ChatConfig, Params, Range, Sections},
     handlers_utils::progress,
     interactors::Interactor,
@@ -28,35 +27,110 @@ use crate::{
 };
 
 pub struct DownloadVideo<Messenger> {
-    pub cfg: Arc<Config>,
-    pub error_formatter: Arc<ErrorFormatter>,
-    pub messenger: Arc<Messenger>,
-    pub get_media: Arc<get_media::GetVideoByURL>,
-    pub download_media: Arc<media::DownloadVideo>,
-    pub upload_media: Arc<send_media::upload::SendVideo<Messenger>>,
-    pub edit_media_by_id: Arc<send_media::id::EditVideo<Messenger>>,
-    pub add_downloaded_media: Arc<downloaded_media::AddVideo>,
+    cfg: Arc<Config>,
+    error_formatter: Arc<ErrorFormatter>,
+    messenger: Arc<Messenger>,
+    get_media: Arc<get_media::GetVideoByURL>,
+    download_media: Arc<media::DownloadVideo>,
+    upload_media: Arc<send_media::upload::SendVideo<Messenger>>,
+    edit_media_by_id: Arc<send_media::id::EditVideo<Messenger>>,
+    add_downloaded_media: Arc<downloaded_media::AddVideo>,
+}
+
+impl<Messenger> DownloadVideo<Messenger> {
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub const fn new(
+        cfg: Arc<Config>,
+        error_formatter: Arc<ErrorFormatter>,
+        messenger: Arc<Messenger>,
+        get_media: Arc<get_media::GetVideoByURL>,
+        download_media: Arc<media::DownloadVideo>,
+        upload_media: Arc<send_media::upload::SendVideo<Messenger>>,
+        edit_media_by_id: Arc<send_media::id::EditVideo<Messenger>>,
+        add_downloaded_media: Arc<downloaded_media::AddVideo>,
+    ) -> Self {
+        Self {
+            cfg,
+            error_formatter,
+            messenger,
+            get_media,
+            download_media,
+            upload_media,
+            edit_media_by_id,
+            add_downloaded_media,
+        }
+    }
 }
 
 pub struct DownloadAudio<Messenger> {
-    pub cfg: Arc<Config>,
-    pub error_formatter: Arc<ErrorFormatter>,
-    pub messenger: Arc<Messenger>,
-    pub get_media: Arc<get_media::GetAudioByURL>,
-    pub download_media: Arc<media::DownloadAudio>,
-    pub upload_media: Arc<send_media::upload::SendAudio<Messenger>>,
-    pub edit_media_by_id: Arc<send_media::id::EditAudio<Messenger>>,
-    pub add_downloaded_media: Arc<downloaded_media::AddAudio>,
+    cfg: Arc<Config>,
+    error_formatter: Arc<ErrorFormatter>,
+    messenger: Arc<Messenger>,
+    get_media: Arc<get_media::GetAudioByURL>,
+    download_media: Arc<media::DownloadAudio>,
+    upload_media: Arc<send_media::upload::SendAudio<Messenger>>,
+    edit_media_by_id: Arc<send_media::id::EditAudio<Messenger>>,
+    add_downloaded_media: Arc<downloaded_media::AddAudio>,
+}
+
+impl<Messenger> DownloadAudio<Messenger> {
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub const fn new(
+        cfg: Arc<Config>,
+        error_formatter: Arc<ErrorFormatter>,
+        messenger: Arc<Messenger>,
+        get_media: Arc<get_media::GetAudioByURL>,
+        download_media: Arc<media::DownloadAudio>,
+        upload_media: Arc<send_media::upload::SendAudio<Messenger>>,
+        edit_media_by_id: Arc<send_media::id::EditAudio<Messenger>>,
+        add_downloaded_media: Arc<downloaded_media::AddAudio>,
+    ) -> Self {
+        Self {
+            cfg,
+            error_formatter,
+            messenger,
+            get_media,
+            download_media,
+            upload_media,
+            edit_media_by_id,
+            add_downloaded_media,
+        }
+    }
 }
 
 pub struct DownloadPhoto<Messenger> {
-    pub cfg: Arc<Config>,
-    pub error_formatter: Arc<ErrorFormatter>,
-    pub messenger: Arc<Messenger>,
-    pub get_media: Arc<get_media::GetPhotoByURL>,
-    pub upload_media: Arc<send_media::upload::SendPhotoUrl<Messenger>>,
-    pub edit_media_by_id: Arc<send_media::id::EditPhoto<Messenger>>,
-    pub add_downloaded_media: Arc<downloaded_media::AddPhoto>,
+    cfg: Arc<Config>,
+    error_formatter: Arc<ErrorFormatter>,
+    messenger: Arc<Messenger>,
+    get_media: Arc<get_media::GetPhotoByURL>,
+    upload_media: Arc<send_media::upload::SendPhotoUrl<Messenger>>,
+    edit_media_by_id: Arc<send_media::id::EditPhoto<Messenger>>,
+    add_downloaded_media: Arc<downloaded_media::AddPhoto>,
+}
+
+impl<Messenger> DownloadPhoto<Messenger> {
+    #[must_use]
+    pub const fn new(
+        cfg: Arc<Config>,
+        error_formatter: Arc<ErrorFormatter>,
+        messenger: Arc<Messenger>,
+        get_media: Arc<get_media::GetPhotoByURL>,
+        upload_media: Arc<send_media::upload::SendPhotoUrl<Messenger>>,
+        edit_media_by_id: Arc<send_media::id::EditPhoto<Messenger>>,
+        add_downloaded_media: Arc<downloaded_media::AddPhoto>,
+    ) -> Self {
+        Self {
+            cfg,
+            error_formatter,
+            messenger,
+            get_media,
+            upload_media,
+            edit_media_by_id,
+            add_downloaded_media,
+        }
+    }
 }
 
 pub struct DownloadInput<'a> {
@@ -66,7 +140,6 @@ pub struct DownloadInput<'a> {
     pub link_is_visible: bool,
     pub inline_message_id: &'a str,
     pub result_id: &'a str,
-    pub tx_manager: &'a mut TxManager,
 }
 
 impl<Messenger> Interactor<DownloadInput<'_>> for &DownloadVideo<Messenger>
@@ -155,7 +228,6 @@ where
             audio_language: &audio_language,
             sections: sections.as_ref(),
             overwrite_cache,
-            tx_manager: input.tx_manager,
         })
         .await
     {
@@ -353,7 +425,6 @@ where
                     audio_language: audio_language.clone(),
                     sections: sections.clone(),
                     overwrite_cache,
-                    tx_manager: input.tx_manager,
                 })
                 .await
             {
@@ -438,7 +509,6 @@ where
             audio_language: &audio_language,
             sections: sections.as_ref(),
             overwrite_cache,
-            tx_manager: input.tx_manager,
         })
         .await
     {
@@ -636,7 +706,6 @@ where
                     audio_language: audio_language.clone(),
                     sections: sections.clone(),
                     overwrite_cache,
-                    tx_manager: input.tx_manager,
                 })
                 .await
             {
@@ -695,7 +764,6 @@ where
             audio_language: &Language::default(),
             sections: None,
             overwrite_cache,
-            tx_manager: input.tx_manager,
         })
         .await
     {
@@ -832,7 +900,6 @@ where
                     audio_language: Language::default(),
                     sections: None,
                     overwrite_cache,
-                    tx_manager: input.tx_manager,
                 })
                 .await
             {

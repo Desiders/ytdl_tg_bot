@@ -71,23 +71,23 @@ mod tests {
     fn test_simple_params() {
         let params = Params::parse("[key=value]");
         assert_eq!(params.0.len(), 1);
-        assert_eq!(params.0.get("key").map(|v| v.as_ref()), Some("value"));
+        assert_eq!(params.0.get("key").map(AsRef::as_ref), Some("value"));
     }
 
     #[test]
     fn test_multiple_params() {
         let params = Params::parse("[key1=value1, key2=value2]");
         assert_eq!(params.0.len(), 2);
-        assert_eq!(params.0.get("key1").map(|v| v.as_ref()), Some("value1"));
-        assert_eq!(params.0.get("key2").map(|v| v.as_ref()), Some("value2"));
+        assert_eq!(params.0.get("key1").map(AsRef::as_ref), Some("value1"));
+        assert_eq!(params.0.get("key2").map(AsRef::as_ref), Some("value2"));
     }
 
     #[test]
     fn test_spaces_around_brackets() {
         let params = Params::parse("[  val    =3   , va=2]");
         assert_eq!(params.0.len(), 2);
-        assert_eq!(params.0.get("val").map(|v| v.as_ref()), Some("3"));
-        assert_eq!(params.0.get("va").map(|v| v.as_ref()), Some("2"));
+        assert_eq!(params.0.get("val").map(AsRef::as_ref), Some("3"));
+        assert_eq!(params.0.get("va").map(AsRef::as_ref), Some("2"));
     }
 
     #[test]
@@ -100,23 +100,23 @@ mod tests {
     fn test_params_in_middle_of_text() {
         let params = Params::parse("some text [key=value, foo=bar] and more text");
         assert_eq!(params.0.len(), 2);
-        assert_eq!(params.0.get("key").map(|v| v.as_ref()), Some("value"));
-        assert_eq!(params.0.get("foo").map(|v| v.as_ref()), Some("bar"));
+        assert_eq!(params.0.get("key").map(AsRef::as_ref), Some("value"));
+        assert_eq!(params.0.get("foo").map(AsRef::as_ref), Some("bar"));
     }
 
     #[test]
     fn test_params_at_end() {
         let params = Params::parse("prefix text [a=1, b=2]");
         assert_eq!(params.0.len(), 2);
-        assert_eq!(params.0.get("a").map(|v| v.as_ref()), Some("1"));
-        assert_eq!(params.0.get("b").map(|v| v.as_ref()), Some("2"));
+        assert_eq!(params.0.get("a").map(AsRef::as_ref), Some("1"));
+        assert_eq!(params.0.get("b").map(AsRef::as_ref), Some("2"));
     }
 
     #[test]
     fn test_params_at_start() {
         let params = Params::parse("[x=10] some suffix text");
         assert_eq!(params.0.len(), 1);
-        assert_eq!(params.0.get("x").map(|v| v.as_ref()), Some("10"));
+        assert_eq!(params.0.get("x").map(AsRef::as_ref), Some("10"));
     }
 
     #[test]
@@ -135,16 +135,16 @@ mod tests {
     fn test_skips_invalid_bracket_finds_valid() {
         let params = Params::parse("[This is not params] [key=value, foo=bar]");
         assert_eq!(params.0.len(), 2);
-        assert_eq!(params.0.get("key").map(|v| v.as_ref()), Some("value"));
-        assert_eq!(params.0.get("foo").map(|v| v.as_ref()), Some("bar"));
+        assert_eq!(params.0.get("key").map(AsRef::as_ref), Some("value"));
+        assert_eq!(params.0.get("foo").map(AsRef::as_ref), Some("bar"));
     }
 
     #[test]
     fn test_multiple_invalid_then_valid() {
         let params = Params::parse("[no equals here] [also invalid] [a=1, b=2]");
         assert_eq!(params.0.len(), 2);
-        assert_eq!(params.0.get("a").map(|v| v.as_ref()), Some("1"));
-        assert_eq!(params.0.get("b").map(|v| v.as_ref()), Some("2"));
+        assert_eq!(params.0.get("a").map(AsRef::as_ref), Some("1"));
+        assert_eq!(params.0.get("b").map(AsRef::as_ref), Some("2"));
     }
 
     #[test]
@@ -157,15 +157,15 @@ mod tests {
     fn test_spaces_between_params() {
         let params = Params::parse("[key=value,  ,  , foo=bar]");
         assert_eq!(params.0.len(), 2);
-        assert_eq!(params.0.get("key").map(|v| v.as_ref()), Some("value"));
-        assert_eq!(params.0.get("foo").map(|v| v.as_ref()), Some("bar"));
+        assert_eq!(params.0.get("key").map(AsRef::as_ref), Some("value"));
+        assert_eq!(params.0.get("foo").map(AsRef::as_ref), Some("bar"));
     }
 
     #[test]
     fn test_url_with_items() {
         let params = Params::parse("https://www.youtube.com/playlist?list=... [items=:3:]");
         assert_eq!(params.0.len(), 1);
-        assert_eq!(params.0.get("items").map(|v| v.as_ref()), Some(":3:"));
+        assert_eq!(params.0.get("items").map(AsRef::as_ref), Some(":3:"));
     }
 
     #[test]

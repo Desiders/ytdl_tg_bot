@@ -10,7 +10,14 @@ use std::sync::Arc;
 use url::Url;
 
 pub struct SendVideo<Messenger> {
-    pub messenger: Arc<Messenger>,
+    messenger: Arc<Messenger>,
+}
+
+impl<Messenger> SendVideo<Messenger> {
+    #[must_use]
+    pub const fn new(messenger: Arc<Messenger>) -> Self {
+        Self { messenger }
+    }
 }
 
 pub struct SendVideoInput<'a> {
@@ -27,15 +34,36 @@ pub struct SendVideoInput<'a> {
 }
 
 pub struct SendAudio<Messenger> {
-    pub messenger: Arc<Messenger>,
+    messenger: Arc<Messenger>,
+}
+
+impl<Messenger> SendAudio<Messenger> {
+    #[must_use]
+    pub const fn new(messenger: Arc<Messenger>) -> Self {
+        Self { messenger }
+    }
 }
 
 pub struct SendPhoto<Messenger> {
-    pub messenger: Arc<Messenger>,
+    messenger: Arc<Messenger>,
+}
+
+impl<Messenger> SendPhoto<Messenger> {
+    #[must_use]
+    pub const fn new(messenger: Arc<Messenger>) -> Self {
+        Self { messenger }
+    }
 }
 
 pub struct SendPhotoUrl<Messenger> {
-    pub messenger: Arc<Messenger>,
+    messenger: Arc<Messenger>,
+}
+
+impl<Messenger> SendPhotoUrl<Messenger> {
+    #[must_use]
+    pub const fn new(messenger: Arc<Messenger>) -> Self {
+        Self { messenger }
+    }
 }
 
 pub struct SendAudioInput<'a> {

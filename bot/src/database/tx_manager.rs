@@ -1,64 +1,84 @@
-use sea_orm::{AccessMode, DatabaseConnection, DatabaseTransaction, IsolationLevel, TransactionTrait as _};
+//! `sea_orm` implementations of [`TxManager`](super::interfaces::tx_manager::TxManager) and
+//! [`ActiveTxManager`](super::interfaces::tx_manager::ActiveTxManager).
+
+use async_trait::async_trait;
+use sea_orm::{DatabaseConnection, DatabaseTransaction, TransactionTrait as _};
 use std::sync::Arc;
 
 use crate::{
-    database::daos::{chat, chat_config, downloaded_media},
-    errors::database::{BeginError, CommitError, RollbackError, TransactionNotBegin},
+    database::{
+        factories::TxManagerFactories,
+        interfaces::{
+            chat::{ChatReader, ChatRepo},
+            chat_config::{ChatConfigReader, ChatConfigRepo},
+            downloaded_media::{DownloadedMediaReader, DownloadedMediaRepo},
+            tx_manager::{ActiveTxManager, TxManager},
+        },
+    },
+    errors::database::{BeginError, CommitError, RollbackError},
 };
 
-pub struct TxManager {
+pub struct SeaOrmTxManager {
     pool: Arc<DatabaseConnection>,
-    transaction: Option<DatabaseTransaction>,
+    factories: Arc<TxManagerFactories>,
 }
 
-impl TxManager {
-    pub const fn new(pool: Arc<DatabaseConnection>) -> Self {
-        Self { pool, transaction: None }
+impl SeaOrmTxManager {
+    #[must_use]
+    pub const fn new(pool: Arc<DatabaseConnection>, factories: Arc<TxManagerFactories>) -> Self {
+        Self { pool, factories }
     }
 }
 
-impl TxManager {
-    pub async fn begin(&mut self) -> Result<(), BeginError> {
-        if self.transaction.is_none() {
-            self.transaction = Some(self.pool.begin().await?);
-        }
+pub struct SeaOrmActiveTxManager {
+    transaction: DatabaseTransaction,
+    factories: Arc<TxManagerFactories>,
+}
+
+#[async_trait]
+impl TxManager for SeaOrmTxManager {
+    async fn begin(&self) -> Result<Box<dyn ActiveTxManager>, BeginError> {
+        let transaction = self.pool.begin().await?;
+        Ok(Box::new(SeaOrmActiveTxManager {
+            transaction,
+            factories: self.factories.clone(),
+        }))
+    }
+
+    fn chat_reader(&self) -> Box<dyn ChatReader + '_> {
+        self.factories.chat_reader.create(self.pool.as_ref())
+    }
+
+    fn chat_config_reader(&self) -> Box<dyn ChatConfigReader + '_> {
+        self.factories.chat_config_reader.create(self.pool.as_ref())
+    }
+
+    fn downloaded_media_reader(&self) -> Box<dyn DownloadedMediaReader + '_> {
+        self.factories.downloaded_media_reader.create(self.pool.as_ref())
+    }
+}
+
+#[async_trait]
+impl ActiveTxManager for SeaOrmActiveTxManager {
+    async fn commit(self: Box<Self>) -> Result<(), CommitError> {
+        self.transaction.commit().await?;
         Ok(())
     }
 
-    #[allow(dead_code)]
-    pub async fn begin_with_config(&mut self, level: IsolationLevel, access_mode: AccessMode) -> Result<(), BeginError> {
-        if self.transaction.is_none() {
-            self.transaction = Some(self.pool.begin_with_config(Some(level), Some(access_mode)).await?);
-        }
+    async fn rollback(self: Box<Self>) -> Result<(), RollbackError> {
+        self.transaction.rollback().await?;
         Ok(())
     }
 
-    pub async fn commit(&mut self) -> Result<(), CommitError> {
-        if let Some(transaction) = self.transaction.take() {
-            transaction.commit().await?;
-        }
-        Ok(())
+    fn chat_repo(&self) -> Box<dyn ChatRepo + '_> {
+        self.factories.chat_repo.create(&self.transaction)
     }
 
-    pub async fn rollback(&mut self) -> Result<(), RollbackError> {
-        if let Some(transaction) = self.transaction.take() {
-            transaction.rollback().await?;
-        }
-        Ok(())
+    fn chat_config_repo(&self) -> Box<dyn ChatConfigRepo + '_> {
+        self.factories.chat_config_repo.create(&self.transaction)
     }
 
-    #[inline]
-    pub fn chat_dao(&self) -> Result<chat::Dao<'_, DatabaseTransaction>, TransactionNotBegin> {
-        Ok(chat::Dao::new(self.transaction.as_ref().ok_or(TransactionNotBegin)?))
-    }
-
-    #[inline]
-    pub fn chat_config_dao(&self) -> Result<chat_config::Dao<'_, DatabaseTransaction>, TransactionNotBegin> {
-        Ok(chat_config::Dao::new(self.transaction.as_ref().ok_or(TransactionNotBegin)?))
-    }
-
-    #[inline]
-    pub fn downloaded_media_dao(&self) -> Result<downloaded_media::Dao<'_, DatabaseTransaction>, TransactionNotBegin> {
-        Ok(downloaded_media::Dao::new(self.transaction.as_ref().ok_or(TransactionNotBegin)?))
+    fn downloaded_media_repo(&self) -> Box<dyn DownloadedMediaRepo + '_> {
+        self.factories.downloaded_media_repo.create(&self.transaction)
     }
 }

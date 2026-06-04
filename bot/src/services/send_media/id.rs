@@ -32,7 +32,14 @@ pub struct EditMediaInput<'a> {
 }
 
 pub struct SendVideo<Messenger> {
-    pub messenger: Arc<Messenger>,
+    messenger: Arc<Messenger>,
+}
+
+impl<Messenger> SendVideo<Messenger> {
+    #[must_use]
+    pub const fn new(messenger: Arc<Messenger>) -> Self {
+        Self { messenger }
+    }
 }
 
 impl<Messenger> Interactor<SendMediaInput<'_>> for &SendVideo<Messenger>
@@ -56,11 +63,25 @@ where
 }
 
 pub struct SendAudio<Messenger> {
-    pub messenger: Arc<Messenger>,
+    messenger: Arc<Messenger>,
+}
+
+impl<Messenger> SendAudio<Messenger> {
+    #[must_use]
+    pub const fn new(messenger: Arc<Messenger>) -> Self {
+        Self { messenger }
+    }
 }
 
 pub struct SendPhoto<Messenger> {
-    pub messenger: Arc<Messenger>,
+    messenger: Arc<Messenger>,
+}
+
+impl<Messenger> SendPhoto<Messenger> {
+    #[must_use]
+    pub const fn new(messenger: Arc<Messenger>) -> Self {
+        Self { messenger }
+    }
 }
 
 impl<Messenger> Interactor<SendMediaInput<'_>> for &SendAudio<Messenger>
@@ -104,7 +125,14 @@ where
 }
 
 pub struct EditVideo<Messenger> {
-    pub messenger: Arc<Messenger>,
+    messenger: Arc<Messenger>,
+}
+
+impl<Messenger> EditVideo<Messenger> {
+    #[must_use]
+    pub const fn new(messenger: Arc<Messenger>) -> Self {
+        Self { messenger }
+    }
 }
 
 impl<Messenger> Interactor<EditMediaInput<'_>> for &EditVideo<Messenger>
@@ -127,11 +155,25 @@ where
 }
 
 pub struct EditAudio<Messenger> {
-    pub messenger: Arc<Messenger>,
+    messenger: Arc<Messenger>,
+}
+
+impl<Messenger> EditAudio<Messenger> {
+    #[must_use]
+    pub const fn new(messenger: Arc<Messenger>) -> Self {
+        Self { messenger }
+    }
 }
 
 pub struct EditPhoto<Messenger> {
-    pub messenger: Arc<Messenger>,
+    messenger: Arc<Messenger>,
+}
+
+impl<Messenger> EditPhoto<Messenger> {
+    #[must_use]
+    pub const fn new(messenger: Arc<Messenger>) -> Self {
+        Self { messenger }
+    }
 }
 
 impl<Messenger> Interactor<EditMediaInput<'_>> for &EditAudio<Messenger>
@@ -173,7 +215,14 @@ where
 }
 
 pub struct SendVideoPlaylist<Messenger> {
-    pub messenger: Arc<Messenger>,
+    messenger: Arc<Messenger>,
+}
+
+impl<Messenger> SendVideoPlaylist<Messenger> {
+    #[must_use]
+    pub const fn new(messenger: Arc<Messenger>) -> Self {
+        Self { messenger }
+    }
 }
 
 impl<Messenger> Interactor<SendPlaylistInput> for &SendVideoPlaylist<Messenger>
@@ -203,11 +252,25 @@ where
 }
 
 pub struct SendAudioPlaylist<Messenger> {
-    pub messenger: Arc<Messenger>,
+    messenger: Arc<Messenger>,
+}
+
+impl<Messenger> SendAudioPlaylist<Messenger> {
+    #[must_use]
+    pub const fn new(messenger: Arc<Messenger>) -> Self {
+        Self { messenger }
+    }
 }
 
 pub struct SendPhotoPlaylist<Messenger> {
-    pub messenger: Arc<Messenger>,
+    messenger: Arc<Messenger>,
+}
+
+impl<Messenger> SendPhotoPlaylist<Messenger> {
+    #[must_use]
+    pub const fn new(messenger: Arc<Messenger>) -> Self {
+        Self { messenger }
+    }
 }
 
 impl<Messenger> Interactor<SendPlaylistInput> for &SendAudioPlaylist<Messenger>

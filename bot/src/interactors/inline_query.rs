@@ -21,9 +21,24 @@ use crate::{
 const SELECT_INLINE_QUERY_CACHE_TIME: i64 = 86_400;
 
 pub struct SelectByUrl<Messenger> {
-    pub error_formatter: Arc<ErrorFormatter>,
-    pub messenger: Arc<Messenger>,
-    pub get_basic_info_media: Arc<get_media::GetShortMediaByURL>,
+    error_formatter: Arc<ErrorFormatter>,
+    messenger: Arc<Messenger>,
+    get_basic_info_media: Arc<get_media::GetShortMediaByURL>,
+}
+
+impl<Messenger> SelectByUrl<Messenger> {
+    #[must_use]
+    pub const fn new(
+        error_formatter: Arc<ErrorFormatter>,
+        messenger: Arc<Messenger>,
+        get_basic_info_media: Arc<get_media::GetShortMediaByURL>,
+    ) -> Self {
+        Self {
+            error_formatter,
+            messenger,
+            get_basic_info_media,
+        }
+    }
 }
 
 pub struct SelectByUrlInput<'a> {
@@ -136,9 +151,24 @@ where
 }
 
 pub struct SelectByText<Messenger> {
-    pub error_formatter: Arc<ErrorFormatter>,
-    pub messenger: Arc<Messenger>,
-    pub get_basic_info_media: Arc<get_media::SearchMediaInfo>,
+    error_formatter: Arc<ErrorFormatter>,
+    messenger: Arc<Messenger>,
+    get_basic_info_media: Arc<get_media::SearchMediaInfo>,
+}
+
+impl<Messenger> SelectByText<Messenger> {
+    #[must_use]
+    pub const fn new(
+        error_formatter: Arc<ErrorFormatter>,
+        messenger: Arc<Messenger>,
+        get_basic_info_media: Arc<get_media::SearchMediaInfo>,
+    ) -> Self {
+        Self {
+            error_formatter,
+            messenger,
+            get_basic_info_media,
+        }
+    }
 }
 
 pub struct SelectByTextInput<'a> {

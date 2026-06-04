@@ -4,7 +4,7 @@ RUN apk add --no-cache \
         ca-certificates \
     && rm -rf /var/cache/apk/*
 
-FROM rust:1.91 AS build
+FROM rust:1.94 AS build
 RUN apt update && apt install -y musl-tools upx && rm -rf /var/lib/apt/lists/*
 RUN rustup target add x86_64-unknown-linux-musl
 

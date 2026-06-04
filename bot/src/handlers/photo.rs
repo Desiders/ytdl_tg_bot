@@ -1,11 +1,10 @@
 use crate::{
-    database::TxManager,
     entities::{ChatConfig, OwnChatConfig, Params},
     interactors::{photo, Interactor as _},
     services::messenger::MessengerPort,
 };
 
-use froodi::{Inject, InjectTransient};
+use froodi::Inject;
 use telers::{
     event::{telegram::HandlerResult, EventReturn},
     types::Message,
@@ -22,7 +21,6 @@ pub async fn download<Messenger>(
     Extension(chat_cfg): Extension<ChatConfig>,
     Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Inject(interactor): Inject<photo::Download<Messenger>>,
-    InjectTransient(mut tx_manager): InjectTransient<TxManager>,
 ) -> HandlerResult
 where
     Messenger: MessengerPort,
@@ -35,7 +33,6 @@ where
             url: &url,
             chat_cfg: &chat_cfg,
             link_is_visible: own_chat_cfg.as_ref().is_some_and(|chat_cfg| chat_cfg.link_is_visible),
-            tx_manager: &mut tx_manager,
         })
         .await?;
     Ok(EventReturn::Finish)

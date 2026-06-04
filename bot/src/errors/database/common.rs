@@ -14,12 +14,7 @@ pub struct CommitError(#[from] pub DbErr);
 #[error("Rollback error: {0}")]
 pub struct RollbackError(#[from] pub DbErr);
 
-#[derive(Debug, thiserror::Error)]
-#[error("Transaction not begin")]
-pub struct TransactionNotBegin;
-
 impl_from_unexpected_error!(BeginError);
 impl_from_unexpected_error!(CommitError);
 impl_from_unexpected_error!(RollbackError);
-impl_from_unexpected_error!(TransactionNotBegin);
 impl_from_unexpected_error!(DbErr);

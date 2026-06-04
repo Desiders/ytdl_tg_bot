@@ -17,9 +17,20 @@ use crate::{
 use tracing::error;
 
 pub struct Start<Messenger> {
-    pub cfg: Arc<Config>,
-    pub error_formatter: Arc<ErrorFormatter>,
-    pub messenger: Arc<Messenger>,
+    cfg: Arc<Config>,
+    error_formatter: Arc<ErrorFormatter>,
+    messenger: Arc<Messenger>,
+}
+
+impl<Messenger> Start<Messenger> {
+    #[must_use]
+    pub const fn new(cfg: Arc<Config>, error_formatter: Arc<ErrorFormatter>, messenger: Arc<Messenger>) -> Self {
+        Self {
+            cfg,
+            error_formatter,
+            messenger,
+        }
+    }
 }
 
 pub struct StartInput<'a> {

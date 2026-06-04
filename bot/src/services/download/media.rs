@@ -143,7 +143,14 @@ impl<'a> DownloadMediaPlaylistInput<'a> {
 }
 
 pub struct DownloadVideo {
-    pub node_router: Arc<NodeRouter>,
+    node_router: Arc<NodeRouter>,
+}
+
+impl DownloadVideo {
+    #[must_use]
+    pub const fn new(node_router: Arc<NodeRouter>) -> Self {
+        Self { node_router }
+    }
 }
 
 impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
@@ -215,7 +222,14 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
 }
 
 pub struct DownloadAudio {
-    pub node_router: Arc<NodeRouter>,
+    node_router: Arc<NodeRouter>,
+}
+
+impl DownloadAudio {
+    #[must_use]
+    pub const fn new(node_router: Arc<NodeRouter>) -> Self {
+        Self { node_router }
+    }
 }
 
 impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
@@ -287,7 +301,14 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
 }
 
 pub struct DownloadPhoto {
-    pub node_router: Arc<NodeRouter>,
+    node_router: Arc<NodeRouter>,
+}
+
+impl DownloadPhoto {
+    #[must_use]
+    pub const fn new(node_router: Arc<NodeRouter>) -> Self {
+        Self { node_router }
+    }
 }
 
 impl Interactor<DownloadMediaInput<'_>> for &DownloadPhoto {
@@ -359,7 +380,14 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadPhoto {
 }
 
 pub struct DownloadVideoPlaylist {
-    pub node_router: Arc<NodeRouter>,
+    node_router: Arc<NodeRouter>,
+}
+
+impl DownloadVideoPlaylist {
+    #[must_use]
+    pub const fn new(node_router: Arc<NodeRouter>) -> Self {
+        Self { node_router }
+    }
 }
 
 impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
@@ -442,7 +470,14 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
 }
 
 pub struct DownloadAudioPlaylist {
-    pub node_router: Arc<NodeRouter>,
+    node_router: Arc<NodeRouter>,
+}
+
+impl DownloadAudioPlaylist {
+    #[must_use]
+    pub const fn new(node_router: Arc<NodeRouter>) -> Self {
+        Self { node_router }
+    }
 }
 
 impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
@@ -525,7 +560,14 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
 }
 
 pub struct DownloadPhotoPlaylist {
-    pub node_router: Arc<NodeRouter>,
+    node_router: Arc<NodeRouter>,
+}
+
+impl DownloadPhotoPlaylist {
+    #[must_use]
+    pub const fn new(node_router: Arc<NodeRouter>) -> Self {
+        Self { node_router }
+    }
 }
 
 impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadPhotoPlaylist {
