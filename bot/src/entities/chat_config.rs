@@ -3,9 +3,10 @@ use crate::{
     locale::Locale,
 };
 
+use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatConfig {
     pub tg_id: i64,
     pub cmd_random_enabled: bool,

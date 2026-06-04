@@ -1,7 +1,8 @@
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, convert::Infallible, future::Future, ops::Range, str::FromStr as _};
 use telers::{Extractor, Request};
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Params(pub HashMap<String, String>);
 
 impl Params {

@@ -56,6 +56,25 @@ password = "..."
 host = "postgres-rw"
 port = 5432
 database = "api"
+max_connections = 20
+acquire_timeout_secs = 30
+connect_timeout_secs = 10
+
+[redis]
+host = "valkey"
+port = 6379
+# password = "..."
+db = 0
+
+[redis.queue]
+workers = 4
+stream_key = "ytdl:downloads"
+group = "workers"
+dead_letter_key = "ytdl:downloads:dead"
+max_attempts = 3
+block_ms = 5000
+claim_min_idle_ms = 60000
+dedup_ttl_secs = 3600
 
 [yt_toolkit]
 url = "http://yt-toolkit-api:8080"

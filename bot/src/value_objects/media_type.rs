@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
+
 use crate::database::models::sea_orm_active_enums::MediaType as Model;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum MediaType {
     Video,
     Audio,

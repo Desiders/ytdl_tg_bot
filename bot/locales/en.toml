@@ -98,6 +98,8 @@ download_retries = "Download retries: %{count}"
 media_download_retries = "%{n} file(s) (retries: %{count}):"
 
 [download]
+queued = "⏳ Queued, waiting for a free download slot..."
+error_queue = "⚠️ Couldn't queue your download. Please try again later."
 preparing = "🔍 Preparing download..."
 playlist_empty = "Playlist is empty"
 no_media_found = "No media found"

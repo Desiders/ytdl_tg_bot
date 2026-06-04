@@ -12,6 +12,7 @@ mod middlewares;
 mod services;
 mod utils;
 mod value_objects;
+mod worker;
 
 use froodi::telers::setup_async_default;
 use services::node_router::NodeRouter;
@@ -27,6 +28,7 @@ use telers::{
     filters::{ChatType, Command, Filter as _, MessageType},
     Bot, Dispatcher, Router,
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
 
@@ -81,8 +83,9 @@ async fn main() {
     let interactors_registry =
         di_container::interactors_registry::<Messenger>(cfg_registry.clone(), tg_messenger_registry, node_router_registry);
     let database_registry = di_container::database_registry(cfg_registry.clone());
+    let queue_registry = di_container::queue_registry(cfg_registry.clone());
 
-    let container = di_container::init(interactors_registry, database_registry);
+    let container = di_container::init(interactors_registry, database_registry, queue_registry);
     let node_router = container.get::<NodeRouter>().await.unwrap();
     let cfg = container.get::<config::Config>().await.unwrap();
 
@@ -205,6 +208,9 @@ async fn main() {
         .bot(bot)
         .build();
 
+    let shutdown = CancellationToken::new();
+    let worker_handles = worker::spawn_pool(container.clone(), shutdown.clone(), cfg.redis.queue.workers).await;
+
     match dispatcher.run_polling().await {
         Ok(()) => {
             info!("Bot stopped");
@@ -212,6 +218,13 @@ async fn main() {
         Err(err) => {
             error!(error = %err, "Bot stopped");
         }
+    }
+
+    // Stop accepting new work and let in-flight jobs finish; anything still pending stays in the
+    // Redis stream's pending list and is reclaimed on the next start.
+    shutdown.cancel();
+    for handle in worker_handles {
+        let _ = handle.await;
     }
 
     container.close().await;

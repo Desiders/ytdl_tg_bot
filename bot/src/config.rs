@@ -69,6 +69,24 @@ pub struct DatabaseConfig {
     pub user: Box<str>,
     pub password: Box<str>,
     pub database: Box<str>,
+    #[serde(default = "default_db_max_connections")]
+    pub max_connections: u32,
+    #[serde(default = "default_db_acquire_timeout_secs")]
+    pub acquire_timeout_secs: u64,
+    #[serde(default = "default_db_connect_timeout_secs")]
+    pub connect_timeout_secs: u64,
+}
+
+const fn default_db_max_connections() -> u32 {
+    20
+}
+
+const fn default_db_acquire_timeout_secs() -> u64 {
+    30
+}
+
+const fn default_db_connect_timeout_secs() -> u64 {
+    10
 }
 
 #[derive(Default, Deserialize, Clone, Debug)]
@@ -121,11 +139,106 @@ pub struct DownloadConfig {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+pub struct RedisConfig {
+    pub host: Box<str>,
+    pub port: u16,
+    #[serde(default)]
+    pub password: Option<Box<str>>,
+    #[serde(default)]
+    pub db: u8,
+    #[serde(default)]
+    pub queue: QueueConfig,
+}
+
+impl RedisConfig {
+    #[must_use]
+    pub fn get_url(&self) -> String {
+        match &self.password {
+            Some(password) => format!(
+                "redis://:{password}@{host}:{port}/{db}",
+                host = self.host,
+                port = self.port,
+                db = self.db
+            ),
+            None => format!("redis://{host}:{port}/{db}", host = self.host, port = self.port, db = self.db),
+        }
+    }
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct QueueConfig {
+    #[serde(default = "default_queue_workers")]
+    pub workers: usize,
+    #[serde(default = "default_queue_stream_key")]
+    pub stream_key: Box<str>,
+    #[serde(default = "default_queue_group")]
+    pub group: Box<str>,
+    #[serde(default = "default_queue_dead_letter_key")]
+    pub dead_letter_key: Box<str>,
+    #[serde(default = "default_queue_max_attempts")]
+    pub max_attempts: u32,
+    #[serde(default = "default_queue_block_ms")]
+    pub block_ms: u64,
+    #[serde(default = "default_queue_claim_min_idle_ms")]
+    pub claim_min_idle_ms: u64,
+    #[serde(default = "default_queue_dedup_ttl_secs")]
+    pub dedup_ttl_secs: u64,
+}
+
+impl Default for QueueConfig {
+    fn default() -> Self {
+        Self {
+            workers: default_queue_workers(),
+            stream_key: default_queue_stream_key(),
+            group: default_queue_group(),
+            dead_letter_key: default_queue_dead_letter_key(),
+            max_attempts: default_queue_max_attempts(),
+            block_ms: default_queue_block_ms(),
+            claim_min_idle_ms: default_queue_claim_min_idle_ms(),
+            dedup_ttl_secs: default_queue_dedup_ttl_secs(),
+        }
+    }
+}
+
+const fn default_queue_workers() -> usize {
+    4
+}
+
+fn default_queue_stream_key() -> Box<str> {
+    "ytdl:downloads".into()
+}
+
+fn default_queue_group() -> Box<str> {
+    "workers".into()
+}
+
+fn default_queue_dead_letter_key() -> Box<str> {
+    "ytdl:downloads:dead".into()
+}
+
+const fn default_queue_max_attempts() -> u32 {
+    3
+}
+
+const fn default_queue_block_ms() -> u64 {
+    5_000
+}
+
+const fn default_queue_claim_min_idle_ms() -> u64 {
+    60_000
+}
+
+const fn default_queue_dedup_ttl_secs() -> u64 {
+    3_600
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct Config {
     pub bot: BotConfig,
     pub chat: ChatConfig,
     pub logging: LoggingConfig,
     pub database: DatabaseConfig,
+    pub redis: RedisConfig,
     pub yt_dlp: YtDlpConfig,
     pub yt_toolkit: YtToolkitConfig,
     pub download: DownloadConfig,

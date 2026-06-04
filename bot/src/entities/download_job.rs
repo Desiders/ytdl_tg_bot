@@ -1,0 +1,66 @@
+//! A durable unit of download work pulled off the Redis queue by a worker.
+//!
+//! Carries everything a worker needs to rebuild the original interactor input without the source
+//! `Update`: where to send the result ([`JobTarget`]), the URL, the parsed [`Params`] and the
+//! chat's [`ChatConfig`].
+
+use serde::{Deserialize, Serialize};
+use url::Url;
+use uuid::Uuid;
+
+use crate::{
+    entities::{ChatConfig, Params},
+    value_objects::MediaType,
+};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DownloadJob {
+    pub job_id: Uuid,
+    pub media_type: MediaType,
+    /// Always `Some` for [`JobTarget::Command`]; may be `None` for inline (URL came via the result).
+    pub url: Option<Url>,
+    pub params: Params,
+    pub chat_cfg: ChatConfig,
+    pub link_is_visible: bool,
+    pub target: JobTarget,
+    #[serde(default)]
+    pub attempts: u32,
+}
+
+impl DownloadJob {
+    /// Builds a fresh job — new `job_id`, zero attempts — for the given target.
+    #[must_use]
+    pub fn new(
+        media_type: MediaType,
+        url: Option<Url>,
+        params: Params,
+        chat_cfg: ChatConfig,
+        link_is_visible: bool,
+        target: JobTarget,
+    ) -> Self {
+        Self {
+            job_id: Uuid::now_v7(),
+            media_type,
+            url,
+            params,
+            chat_cfg,
+            link_is_visible,
+            target,
+            attempts: 0,
+        }
+    }
+}
+
+/// Where the worker delivers the result and which interactor it routes to.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum JobTarget {
+    /// A `/vd`-style command: reply to `message_id` in `chat_id`; `queued_message_id` is the
+    /// "⏳ queued" placeholder the worker deletes before running the download.
+    Command {
+        chat_id: i64,
+        message_id: i64,
+        queued_message_id: i64,
+    },
+    /// A chosen inline result: the worker edits `inline_message_id` in place.
+    Inline { inline_message_id: String, result_id: String },
+}

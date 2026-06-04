@@ -4,5 +4,6 @@ pub(crate) mod downloaded_media;
 pub(crate) mod get_media;
 pub mod messenger;
 pub mod node_router;
+pub mod queue;
 pub(crate) mod send_media;
 pub mod yt_toolkit;
