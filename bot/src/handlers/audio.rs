@@ -1,7 +1,8 @@
 use crate::{
     entities::{ChatConfig, OwnChatConfig, Params},
-    interactors::{audio, Interactor as _},
+    interactors::{audio, enqueue_download, Interactor as _},
     services::messenger::MessengerPort,
+    value_objects::MediaType,
 };
 
 use froodi::Inject;
@@ -20,17 +21,18 @@ pub async fn download<Messenger>(
     Extension(url): Extension<Url>,
     Extension(chat_cfg): Extension<ChatConfig>,
     Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
-    Inject(interactor): Inject<audio::Download<Messenger>>,
+    Inject(interactor): Inject<enqueue_download::EnqueueCommandDownload<Messenger>>,
 ) -> HandlerResult
 where
     Messenger: MessengerPort,
 {
     interactor
-        .execute(audio::DownloadInput {
-            message_id: message.message_id(),
+        .execute(enqueue_download::EnqueueCommandInput {
+            media_type: MediaType::Audio,
             chat_id: message.chat().id(),
-            params: &params,
+            message_id: message.message_id(),
             url: &url,
+            params: &params,
             chat_cfg: &chat_cfg,
             link_is_visible: own_chat_cfg.as_ref().is_some_and(|chat_cfg| chat_cfg.link_is_visible),
         })

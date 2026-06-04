@@ -15,6 +15,7 @@ mutagen-rs = { version = "0.2.5", default-features = false }
 nix = { version = "0.31", features = ["fs"], default-features = false }
 proto = { path = "../proto" }
 psl = { version = "2.1", default-features = false }
+redis = { version = "0.32", features = ["tokio-comp", "connection-manager", "streams"], default-features = false }
 regex = { version = "1.12", features = ["perf"], default-features = false }
 reqwest = { version = "0.13", features = ["rustls", "charset", "query"], default-features = false }
 rust-i18n = { version = "4", default-features = false }
@@ -32,7 +33,7 @@ tonic = { version = "0.14", features = ["transport", "tls-ring", "tls-webpki-roo
 tracing = { version = "0.1", default-features = false }
 tracing-subscriber = { version = "0.3", features = ["registry", "fmt", "ansi", "env-filter"], default-features = false }
 url = { version = "2.5", features = ["serde"], default-features = false }
-uuid = { version = "1.18", features = ["v7", "fast-rng"], default-features = false }
+uuid = { version = "1.18", features = ["v7", "fast-rng", "serde"], default-features = false }
 
 [profile.release]
 lto = "thin"

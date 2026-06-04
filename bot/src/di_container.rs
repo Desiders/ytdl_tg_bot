@@ -2,25 +2,30 @@ use froodi::{
     async_impl::{Container, RegistryWithSync},
     async_registry, boxed, instance, registry,
     DefaultScope::{App, Request},
-    Inject, InstantiateErrorKind, Registry,
+    Inject, InjectTransient, InstantiateErrorKind, Registry,
 };
+use redis::aio::ConnectionManager;
 use reqwest::Client;
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use telers::Bot;
 use tracing::{error, info};
 use uuid::ContextV7;
 
 use crate::{
-    config::{BotConfig, Config, DatabaseConfig, DownloadConfig, TimeoutsConfig, YtDlpConfig},
+    config::{BotConfig, Config, DatabaseConfig, DownloadConfig, RedisConfig, TimeoutsConfig, YtDlpConfig},
     database::{SeaOrmTxManager, TxManager, TxManagerFactories},
-    interactors::{audio, chosen_inline, config, inline_query, lang, photo, start, stats, video},
+    interactors::{audio, chosen_inline, config, enqueue_download, inline_query, lang, photo, start, stats, video},
     services::{
         chat,
         download::media,
         downloaded_media, get_media,
         messenger::telegram::TelegramMessenger,
         node_router::{self, DownloaderServiceTarget, NodeRouter},
+        queue::RedisJobQueue,
         send_media,
     },
     utils::ErrorFormatter,
@@ -36,6 +41,8 @@ pub(super) fn cfg_registry(cfg: Config) -> Registry {
             provide(instance(cfg.blacklisted)),
             provide(instance(cfg.logging)),
             provide(instance(cfg.database)),
+            provide(instance(cfg.redis.clone())),
+            provide(instance(cfg.redis.queue)),
             provide(instance(cfg.yt_dlp)),
             provide(instance(cfg.yt_toolkit)),
             provide(instance(cfg.download)),
@@ -82,7 +89,11 @@ pub(super) fn database_registry(cfg_registry: Registry) -> RegistryWithSync {
             App,
             |Inject(cfg): Inject<DatabaseConfig>| async move {
                 let mut options = ConnectOptions::new(cfg.get_postgres_url());
-                options.sqlx_logging(false);
+                options
+                    .max_connections(cfg.max_connections)
+                    .acquire_timeout(Duration::from_secs(cfg.acquire_timeout_secs))
+                    .connect_timeout(Duration::from_secs(cfg.connect_timeout_secs))
+                    .sqlx_logging(false);
 
                 match Database::connect(options).await {
                     Ok(database_conn) => {
@@ -111,6 +122,40 @@ pub(super) fn database_registry(cfg_registry: Registry) -> RegistryWithSync {
             Request,
             |Inject(pool): Inject<DatabaseConnection>, Inject(factories): Inject<TxManagerFactories>| async move {
                 Ok(boxed!(SeaOrmTxManager::new(pool, factories); TxManager))
+            },
+        ),
+        extend(cfg_registry),
+    }
+}
+
+pub(super) fn queue_registry(cfg_registry: Registry) -> RegistryWithSync {
+    async_registry! {
+        provide(
+            App,
+            |Inject(cfg): Inject<RedisConfig>| async move {
+                let client = match redis::Client::open(cfg.get_url()) {
+                    Ok(client) => client,
+                    Err(err) => {
+                        error!(%err, "Open Redis client error");
+                        return Err(InstantiateErrorKind::Custom(err.into()));
+                    }
+                };
+                match ConnectionManager::new(client).await {
+                    Ok(conn) => {
+                        info!("Redis conn created");
+                        Ok(conn)
+                    }
+                    Err(err) => {
+                        error!(%err, "Create Redis conn error");
+                        Err(InstantiateErrorKind::Custom(err.into()))
+                    }
+                }
+            },
+        ),
+        provide(
+            App,
+            |InjectTransient(conn), Inject(cfg)| async move {
+                Ok(RedisJobQueue::new(conn, cfg))
             },
         ),
         extend(cfg_registry),
@@ -168,6 +213,20 @@ where
             provide(|Inject(node_router)| async move { Ok(media::DownloadVideoPlaylist::new(node_router)) }),
             provide(|Inject(node_router)| async move { Ok(media::DownloadAudioPlaylist::new(node_router)) }),
             provide(|Inject(node_router)| async move { Ok(media::DownloadPhotoPlaylist::new(node_router)) }),
+
+            provide(|
+                Inject(error_formatter),
+                Inject(messenger): Inject<Messenger>,
+                Inject(queue)| async move {
+                    Ok(enqueue_download::EnqueueCommandDownload::new(error_formatter, messenger, queue))
+                }
+            ),
+            provide(|
+                Inject(messenger): Inject<Messenger>,
+                Inject(queue)| async move {
+                    Ok(enqueue_download::EnqueueInlineDownload::new(messenger, queue))
+                }
+            ),
 
             provide(|
                 Inject(error_formatter),
@@ -385,9 +444,13 @@ where
     }
 }
 
-pub(super) fn init(interactors_registry: RegistryWithSync, database_registry: RegistryWithSync) -> Container {
+pub(super) fn init(
+    interactors_registry: RegistryWithSync,
+    database_registry: RegistryWithSync,
+    queue_registry: RegistryWithSync,
+) -> Container {
     let registry = async_registry! {
-        extend(interactors_registry, database_registry),
+        extend(interactors_registry, database_registry, queue_registry),
     };
     Container::new(registry)
 }
