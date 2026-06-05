@@ -2,7 +2,7 @@ use froodi::{
     async_impl::{Container, RegistryWithSync},
     async_registry, boxed, instance, registry,
     DefaultScope::{App, Request},
-    Inject, InjectTransient, InstantiateErrorKind, Registry,
+    Inject, InstantiateErrorKind, Registry,
 };
 use redis::aio::ConnectionManager;
 use reqwest::Client;
@@ -133,18 +133,20 @@ pub(super) fn queue_registry(cfg_registry: Registry) -> RegistryWithSync {
         provide(
             App,
             |Inject(cfg): Inject<RedisConfig>| async move {
-                let client = match redis::Client::open(cfg.get_url()) {
-                    Ok(client) => client,
+                match redis::Client::open(cfg.get_url()) {
+                    Ok(client) => Ok(client),
                     Err(err) => {
                         error!(%err, "Open Redis client error");
-                        return Err(InstantiateErrorKind::Custom(err.into()));
+                        Err(InstantiateErrorKind::Custom(err.into()))
                     }
-                };
-                match ConnectionManager::new(client).await {
-                    Ok(conn) => {
-                        info!("Redis conn created");
-                        Ok(conn)
-                    }
+                }
+            },
+        ),
+        provide(
+            App,
+            |Inject(client): Inject<redis::Client>| async move {
+                match ConnectionManager::new((*client).clone()).await {
+                    Ok(conn) => Ok(conn),
                     Err(err) => {
                         error!(%err, "Create Redis conn error");
                         Err(InstantiateErrorKind::Custom(err.into()))
@@ -154,9 +156,7 @@ pub(super) fn queue_registry(cfg_registry: Registry) -> RegistryWithSync {
         ),
         provide(
             App,
-            |InjectTransient(conn), Inject(cfg)| async move {
-                Ok(RedisJobQueue::new(conn, cfg))
-            },
+            |Inject(conn): Inject<ConnectionManager>, Inject(cfg)| async move { Ok(RedisJobQueue::new((*conn).clone(), cfg)) },
         ),
         extend(cfg_registry),
     }

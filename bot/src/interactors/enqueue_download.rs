@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use rust_i18n::t;
 use telers::errors::HandlerError;
-use tracing::{error, instrument};
+use tracing::{error, info, instrument};
 use url::Url;
 
 use crate::{
@@ -82,6 +82,7 @@ where
             },
         );
 
+        info!(job_id = %job.job_id, "Enqueueing download job");
         if let Err(err) = self.queue.enqueue(&job).await {
             error!(%err, "Enqueue download job error");
             let text = t!("download.error_queue", locale = locale.as_str()).into_owned();
@@ -158,6 +159,7 @@ where
             },
         );
 
+        info!(job_id = %job.job_id, "Enqueueing download job");
         if let Err(err) = self.queue.enqueue(&job).await {
             error!(%err, "Enqueue inline download job error");
             let text = t!("download.error_queue", locale = locale.as_str()).into_owned();
