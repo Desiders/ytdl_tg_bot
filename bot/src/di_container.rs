@@ -215,10 +215,9 @@ where
             provide(|Inject(node_router)| async move { Ok(media::DownloadPhotoPlaylist::new(node_router)) }),
 
             provide(|
-                Inject(error_formatter),
                 Inject(messenger): Inject<Messenger>,
                 Inject(queue)| async move {
-                    Ok(enqueue_download::EnqueueCommandDownload::new(error_formatter, messenger, queue))
+                    Ok(enqueue_download::EnqueueCommandDownload::new(messenger, queue))
                 }
             ),
             provide(|

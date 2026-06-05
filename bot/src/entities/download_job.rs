@@ -54,13 +54,6 @@ impl DownloadJob {
 /// Where the worker delivers the result and which interactor it routes to.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum JobTarget {
-    /// A `/vd`-style command: reply to `message_id` in `chat_id`; `queued_message_id` is the
-    /// "⏳ queued" placeholder the worker deletes before running the download.
-    Command {
-        chat_id: i64,
-        message_id: i64,
-        queued_message_id: i64,
-    },
-    /// A chosen inline result: the worker edits `inline_message_id` in place.
+    Command { chat_id: i64, message_id: i64 },
     Inline { inline_message_id: String, result_id: String },
 }
