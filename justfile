@@ -168,7 +168,7 @@ k8s-logs-pot-provider NAMESPACE:
     kubectl logs -l app=yt-pot-provider -n {{NAMESPACE}}
 
 k8s-logs-valkey NAMESPACE:
-    kubectl logs -l app.kubernetes.io/instance=valkey -n {{NAMESPACE}} -f
+    kubectl logs -l valkey.io/cluster=valkey -n {{NAMESPACE}} -f
 
 help:
     just -l
