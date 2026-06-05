@@ -110,12 +110,7 @@ async fn worker_loop(
 }
 
 #[instrument(skip_all, fields(job_id = %job.job_id, entry_id = entry_id))]
-async fn process(
-    container: Container,
-    queue: &RedisJobQueue,
-    messenger: &TelegramMessenger,
-    QueuedJob { entry_id, job }: QueuedJob,
-) {
+async fn process(container: Container, queue: &RedisJobQueue, messenger: &TelegramMessenger, QueuedJob { entry_id, job }: QueuedJob) {
     // Best-effort dedup: a job replayed after a crash-before-ack must not be delivered twice.
     match queue.is_done(job.job_id).await {
         Ok(true) => {
