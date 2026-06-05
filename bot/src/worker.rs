@@ -19,7 +19,7 @@ use crate::{
     entities::{DownloadJob, JobTarget},
     interactors::{audio, chosen_inline, photo, video, Interactor as _},
     services::{
-        messenger::{telegram::TelegramMessenger, DeleteMessageRequest, MessengerPort as _},
+        messenger::telegram::TelegramMessenger,
         queue::{QueuedJob, RedisJobQueue},
     },
     value_objects::MediaType,
@@ -51,35 +51,20 @@ pub async fn spawn_pool(container: Container, shutdown: CancellationToken, worke
         error!(%err, "Create consumer group error; download workers not started");
         return Vec::new();
     }
-    let messenger = match container.get::<TelegramMessenger>().await {
-        Ok(messenger) => messenger,
-        Err(err) => {
-            error!(%err, "Resolve messenger error; download workers not started");
-            return Vec::new();
-        }
-    };
-
     info!(workers, "Starting download workers");
     (0..workers)
         .map(|id| {
             let consumer = format!("worker-{id}");
             let container = container.clone();
             let queue = queue.clone();
-            let messenger = messenger.clone();
             let shutdown = shutdown.clone();
-            tokio::spawn(async move { worker_loop(consumer, container, queue, messenger, shutdown).await })
+            tokio::spawn(async move { worker_loop(consumer, container, queue, shutdown).await })
         })
         .collect()
 }
 
 #[instrument(skip_all, fields(consumer))]
-async fn worker_loop(
-    consumer: String,
-    container: Container,
-    queue: Arc<RedisJobQueue>,
-    messenger: Arc<TelegramMessenger>,
-    shutdown: CancellationToken,
-) {
+async fn worker_loop(consumer: String, container: Container, queue: Arc<RedisJobQueue>, shutdown: CancellationToken) {
     let mut read_conn = match container.get_transient::<ConnectionManager>().await {
         Ok(conn) => conn,
         Err(err) => {
@@ -92,7 +77,7 @@ async fn worker_loop(
     match queue.reclaim_stale(&consumer).await {
         Ok(reclaimed) => {
             for queued in reclaimed {
-                process(container.clone(), &queue, &messenger, queued).await;
+                process(container.clone(), &queue, queued).await;
             }
         }
         Err(err) => error!(%err, "Reclaim stale jobs error"),
@@ -102,7 +87,7 @@ async fn worker_loop(
         tokio::select! {
             () = shutdown.cancelled() => break,
             res = queue.read_next(&mut read_conn, &consumer) => match res {
-                Ok(Some(queued)) => process(container.clone(), &queue, &messenger, queued).await,
+                Ok(Some(queued)) => process(container.clone(), &queue, queued).await,
                 Ok(None) => {}
                 Err(err) => {
                     error!(%err, "Read job error");
@@ -119,7 +104,7 @@ async fn worker_loop(
 }
 
 #[instrument(skip_all, fields(job_id = %job.job_id, entry_id = entry_id))]
-async fn process(container: Container, queue: &RedisJobQueue, messenger: &TelegramMessenger, QueuedJob { entry_id, job }: QueuedJob) {
+async fn process(container: Container, queue: &RedisJobQueue, QueuedJob { entry_id, job }: QueuedJob) {
     // Best-effort dedup: a job replayed after a crash-before-ack must not be delivered twice.
     match queue.is_done(job.job_id).await {
         Ok(true) => {
@@ -131,7 +116,7 @@ async fn process(container: Container, queue: &RedisJobQueue, messenger: &Telegr
     }
 
     info!("Processing download job");
-    match run_job(container, messenger, &job).await {
+    match run_job(container, &job).await {
         Ok(()) => {
             let _ = queue.mark_done(job.job_id).await;
             if let Err(err) = queue.ack(&entry_id).await {
@@ -152,27 +137,16 @@ async fn process(container: Container, queue: &RedisJobQueue, messenger: &Telegr
     }
 }
 
-async fn run_job(container: Container, messenger: &TelegramMessenger, job: &DownloadJob) -> Result<(), JobError> {
+async fn run_job(container: Container, job: &DownloadJob) -> Result<(), JobError> {
     let child = container.enter().with_scope(Request).build()?;
-    let result = run_in_scope(&child, messenger, job).await;
+    let result = run_in_scope(&child, job).await;
     child.close().await;
     result
 }
 
-async fn run_in_scope(child: &Container, messenger: &TelegramMessenger, job: &DownloadJob) -> Result<(), JobError> {
+async fn run_in_scope(child: &Container, job: &DownloadJob) -> Result<(), JobError> {
     match &job.target {
-        JobTarget::Command {
-            chat_id,
-            message_id,
-            queued_message_id,
-        } => {
-            // The interactor creates its own progress message, so drop the "queued" placeholder.
-            let _ = messenger
-                .delete_message(DeleteMessageRequest {
-                    chat_id: *chat_id,
-                    message_id: *queued_message_id,
-                })
-                .await;
+        JobTarget::Command { chat_id, message_id } => {
             let url = job.url.as_ref().ok_or(JobError::MissingUrl)?;
             // Each media type has its own interactor + `Input` type (same fields, distinct types),
             // so these can't collapse into a macro the way the inline arm below does.
