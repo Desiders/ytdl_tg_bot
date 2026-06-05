@@ -9,6 +9,7 @@
 use std::{sync::Arc, time::Duration};
 
 use froodi::{async_impl::Container, DefaultScope::Request, ResolveErrorKind, ScopeWithErrorKind};
+use redis::aio::ConnectionManager;
 use telers::errors::HandlerError;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -79,6 +80,14 @@ async fn worker_loop(
     messenger: Arc<TelegramMessenger>,
     shutdown: CancellationToken,
 ) {
+    let mut read_conn = match container.get_transient::<ConnectionManager>().await {
+        Ok(conn) => conn,
+        Err(err) => {
+            error!(%err, "Resolve read connection error; worker not started");
+            return;
+        }
+    };
+
     // Recover jobs an earlier (crashed) run left pending for this consumer slot.
     match queue.reclaim_stale(&consumer).await {
         Ok(reclaimed) => {
@@ -92,7 +101,7 @@ async fn worker_loop(
     loop {
         tokio::select! {
             () = shutdown.cancelled() => break,
-            res = queue.read_next(&consumer) => match res {
+            res = queue.read_next(&mut read_conn, &consumer) => match res {
                 Ok(Some(queued)) => process(container.clone(), &queue, &messenger, queued).await,
                 Ok(None) => {}
                 Err(err) => {
@@ -121,6 +130,7 @@ async fn process(container: Container, queue: &RedisJobQueue, messenger: &Telegr
         Err(err) => warn!(%err, "Dedup check error; processing anyway"),
     }
 
+    info!("Processing download job");
     match run_job(container, messenger, &job).await {
         Ok(()) => {
             let _ = queue.mark_done(job.job_id).await;

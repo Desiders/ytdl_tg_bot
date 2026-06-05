@@ -81,8 +81,7 @@ impl RedisJobQueue {
     }
 
     /// Blocks up to `block_ms` for the next undelivered job for this consumer.
-    pub async fn read_next(&self, consumer: &str) -> Result<Option<QueuedJob>, QueueError> {
-        let mut conn = self.conn.clone();
+    pub async fn read_next(&self, conn: &mut ConnectionManager, consumer: &str) -> Result<Option<QueuedJob>, QueueError> {
         let reply: StreamReadReply = redis::cmd("XREADGROUP")
             .arg("GROUP")
             .arg(&*self.cfg.group)
@@ -94,7 +93,7 @@ impl RedisJobQueue {
             .arg("STREAMS")
             .arg(&*self.cfg.stream_key)
             .arg(">")
-            .query_async(&mut conn)
+            .query_async(conn)
             .await?;
 
         let Some(entry) = reply.keys.into_iter().next().and_then(|key| key.ids.into_iter().next()) else {
