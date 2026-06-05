@@ -47,6 +47,7 @@ Cluster components:
 - `cert-manager`
 - CloudNativePG `1.26+`; use `1.29+` for new installs
 - Barman Cloud CNPG-I Plugin installed in the same namespace as the CloudNativePG operator
+- Valkey operator (`valkey-operator`) for the durable download queue
 
 Install `cert-manager`:
 
@@ -84,14 +85,28 @@ kubectl apply -f \
 kubectl rollout status deployment/barman-cloud -n cnpg-system
 ```
 
+Install the Valkey operator (backs the durable download queue):
+
+```bash
+helm repo add valkey https://valkey.io/valkey-helm/
+helm repo update
+
+helm install valkey-operator valkey/valkey-operator \
+  -n valkey-operator-system --create-namespace
+
+kubectl get pods -n valkey-operator-system -l app.kubernetes.io/instance=valkey-operator
+```
+
 Final checks:
 
 ```bash
 kubectl get crd certificates.cert-manager.io
 kubectl get crd clusters.postgresql.cnpg.io
 kubectl get crd objectstores.barmancloud.cnpg.io
+kubectl get crd valkeyclusters.valkey.io
 kubectl get deploy -n cert-manager
 kubectl get deploy -n cnpg-system
+kubectl get deploy -n valkey-operator-system
 ```
 
 ### 2. Namespace
@@ -153,6 +168,7 @@ Required config checks:
 - Database credentials in `configs/config.toml` match the `db` Secret.
 - Normal downloader token from `configs/config.toml` `[download].node_token` is listed in `configs/downloader.toml` `[auth].node_tokens`.
 - Cookie-manager token matches in `configs/downloader.toml` `[auth].cookie_manager_token` and `configs/cookie_assignment.toml` `[download].cookie_manager_token`.
+- `configs/config.toml` `[redis].host` matches the Valkey service name (`valkey` with the bundled operator; confirm with `kubectl get svc -n "${NAMESPACE}"` after the `ValkeyCluster` reconciles).
 - Default in-cluster service URLs are correct if all charts are installed into the same namespace.
 
 ### 5. Optional Cookies
@@ -216,6 +232,7 @@ kubectl get clusters.postgresql.cnpg.io -n "${NAMESPACE}"
 kubectl get backups.postgresql.cnpg.io -n "${NAMESPACE}"
 kubectl get scheduledbackups.postgresql.cnpg.io -n "${NAMESPACE}"
 kubectl get objectstores.barmancloud.cnpg.io -n "${NAMESPACE}"
+kubectl get valkeyclusters.valkey.io -n "${NAMESPACE}"
 kubectl get secret -n "${NAMESPACE}" bot-config downloader-config cookie-assignment-config cookie-assignment-cookies
 ```
 
