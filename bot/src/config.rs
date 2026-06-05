@@ -143,6 +143,8 @@ pub struct RedisConfig {
     pub host: Box<str>,
     pub port: u16,
     #[serde(default)]
+    pub user: Option<Box<str>>,
+    #[serde(default)]
     pub password: Option<Box<str>>,
     #[serde(default)]
     pub db: u8,
@@ -153,15 +155,11 @@ pub struct RedisConfig {
 impl RedisConfig {
     #[must_use]
     pub fn get_url(&self) -> String {
-        match &self.password {
-            Some(password) => format!(
-                "redis://:{password}@{host}:{port}/{db}",
-                host = self.host,
-                port = self.port,
-                db = self.db
-            ),
-            None => format!("redis://{host}:{port}/{db}", host = self.host, port = self.port, db = self.db),
-        }
+        let auth = match (self.user.as_deref(), self.password.as_deref()) {
+            (None, None) => String::new(),
+            (user, password) => format!("{}:{}@", user.unwrap_or(""), password.unwrap_or("")),
+        };
+        format!("redis://{auth}{host}:{port}/{db}", host = self.host, port = self.port, db = self.db)
     }
 }
 

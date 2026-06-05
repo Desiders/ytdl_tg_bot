@@ -63,7 +63,8 @@ connect_timeout_secs = 10
 [redis]
 host = "valkey"
 port = 6379
-# password = "..."
+user = "admin"
+password = "..."
 db = 0
 
 [redis.queue]
