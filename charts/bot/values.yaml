@@ -43,6 +43,12 @@ rustfs:
       tag: "latest"
       pullPolicy: IfNotPresent
 
+valkey:
+  shards: 1
+  replicas: 0
+  storage: 1Gi
+  storageClass: ""
+
 telegramBotApi:
   image:
     pullPolicy: IfNotPresent
