@@ -142,6 +142,10 @@ kubectl -n "${NAMESPACE}" create secret generic s3 \
   --from-literal=access-key-id='rustfsadmin' \
   --from-literal=secret-access-key='<at least 8 characters>' \
   --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl -n "${NAMESPACE}" create secret generic valkey \
+  --from-literal=password='<valkey password>' \
+  --dry-run=client -o yaml | kubectl apply -f -
 ```
 
 The `s3` Secret is used by the internal RustFS backup store and CNPG backup plugin. The chart creates a single-node RustFS instance and bootstraps the `backups` bucket automatically.
@@ -169,6 +173,7 @@ Required config checks:
 - Normal downloader token from `configs/config.toml` `[download].node_token` is listed in `configs/downloader.toml` `[auth].node_tokens`.
 - Cookie-manager token matches in `configs/downloader.toml` `[auth].cookie_manager_token` and `configs/cookie_assignment.toml` `[download].cookie_manager_token`.
 - `configs/config.toml` `[redis].host` matches the Valkey service name (`valkey` with the bundled operator; confirm with `kubectl get svc -n "${NAMESPACE}"` after the `ValkeyCluster` reconciles).
+- `configs/config.toml` `[redis].user` is `admin` and `[redis].password` matches the `valkey` Secret's `password`.
 - Default in-cluster service URLs are correct if all charts are installed into the same namespace.
 
 ### 5. Optional Cookies

@@ -15,3 +15,10 @@ spec:
     appendonly: "yes"
     appendfsync: "everysec"
     maxmemory-policy: "noeviction"
+  users:
+    - name: admin
+      passwordSecret:
+        name: {{ .Values.valkey.auth.secretName }}
+        keys:
+          - {{ .Values.valkey.auth.secretKey }}
+      permissions: "~* &* +@all"

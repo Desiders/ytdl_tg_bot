@@ -48,6 +48,9 @@ valkey:
   replicas: 0
   storage: 1Gi
   storageClass: ""
+  auth:
+    secretName: valkey
+    secretKey: password
 
 telegramBotApi:
   image:
