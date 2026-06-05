@@ -238,7 +238,7 @@ kubectl get backups.postgresql.cnpg.io -n "${NAMESPACE}"
 kubectl get scheduledbackups.postgresql.cnpg.io -n "${NAMESPACE}"
 kubectl get objectstores.barmancloud.cnpg.io -n "${NAMESPACE}"
 kubectl get valkeyclusters.valkey.io -n "${NAMESPACE}"
-kubectl get secret -n "${NAMESPACE}" bot-config downloader-config cookie-assignment-config cookie-assignment-cookies
+kubectl get secret -n "${NAMESPACE}" telegram-bot-api db db-superuser s3 valkey bot-config downloader-config cookie-assignment-config cookie-assignment-cookies
 ```
 
 Logs:
