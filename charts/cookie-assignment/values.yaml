@@ -1,0 +1,6 @@
+cookieAssignment:
+  image:
+    repository: desiders/ytdl_tg_bot.cookie_assignment
+    tag: "1.0.0"
+    pullPolicy: Always
+  cookiesSecretName: cookie-assignment-cookies

@@ -1,0 +1,63 @@
+[server]
+address = "0.0.0.0:50051"
+max_concurrent = 5
+
+[auth]
+node_tokens = ["secret-token-a"]
+cookie_manager_token = "secret-token-b"
+
+[tls]
+ca_cert_path = "tls/ca.crt"
+cert_path = "tls/node.crt"
+key_path = "tls/node.key"
+
+[yt_dlp]
+command = ["python3", "-m", "yt_dlp"]
+max_file_size = 5000000
+extractor_args = "youtube:player_client=default,mweb;player_skip=configs,initial_data;use_ad_playback_context=true"
+
+[gallery_dl]
+command = ["python3", "-m", "gallery_dl"]
+
+[[replace_domains.video]]
+from = '^(?:.*\.)?instagram\.(tv|net|com|org)$|^instagr\.am$'
+to = "vxinstagram.com"
+
+[[replace_domains.video]]
+from = '^(?:.*\.)?twitter\.com$'
+to = "fxtwitter.com"
+
+[[replace_domains.video]]
+from = '^(?:.*\.)?x\.com$'
+to = "fixupx.com"
+
+[[replace_domains.video]]
+from = '^(?:.*\.)?bsky\.app$'
+to = "fxbsky.app"
+
+[[replace_domains.audio]]
+from = '^(?:.*\.)?instagram\.(tv|net|com|org)$|^instagr\.am$'
+to = "vxinstagram.com"
+
+[[replace_domains.audio]]
+from = '^(?:.*\.)?twitter\.com$'
+to = "fxtwitter.com"
+
+[[replace_domains.audio]]
+from = '^(?:.*\.)?x\.com$'
+to = "fixupx.com"
+
+[[replace_domains.audio]]
+from = '^(?:.*\.)?bsky\.app$'
+to = "fxbsky.app"
+
+# [[replace_domains.photo]]
+# from = '...'
+# to = '...'
+
+[yt_pot_provider]
+url = "http://yt-pot-provider:4416"
+# url = "http://127.0.0.1:4416"
+
+[logging]
+dirs = "info,downloader::grpc::capabilities=warn"
