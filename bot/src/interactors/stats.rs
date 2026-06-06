@@ -15,6 +15,7 @@ use crate::{
         downloaded_media,
         messenger::{MessengerPort, SendTextRequest, TextFormat},
         node_router,
+        queue::RedisJobQueue,
     },
     utils::ErrorFormatter,
     value_objects::ChatType,
@@ -25,6 +26,7 @@ pub struct Stats<Messenger> {
     messenger: Arc<Messenger>,
     media_stats: Arc<downloaded_media::GetStats>,
     node_stats: Arc<node_router::GetStats>,
+    queue: Arc<RedisJobQueue>,
 }
 
 impl<Messenger> Stats<Messenger> {
@@ -34,12 +36,14 @@ impl<Messenger> Stats<Messenger> {
         messenger: Arc<Messenger>,
         media_stats: Arc<downloaded_media::GetStats>,
         node_stats: Arc<node_router::GetStats>,
+        queue: Arc<RedisJobQueue>,
     ) -> Self {
         Self {
             error_formatter,
             messenger,
             media_stats,
             node_stats,
+            queue,
         }
     }
 }
@@ -64,6 +68,7 @@ where
             .execute(downloaded_media::GetStatsInput { top_domains_limit: 5 })
             .await;
         let nodes_stats = self.node_stats.execute(node_router::GetStatsInput {}).await.unwrap_or_default();
+        let queue_stats = self.queue.stats().await.unwrap_or_default();
 
         let text = match media_stats {
             Ok((media_stats, chat_stats)) => {
@@ -128,6 +133,10 @@ where
                     d30 = media_stats.last_month.count,
                     total = media_stats.total.count,
                     nodes = nodes,
+                    workers = self.queue.cfg().workers,
+                    queue_waiting = queue_stats.waiting,
+                    queue_in_progress = queue_stats.in_progress,
+                    queue_dead_letter = queue_stats.dead_letter,
                     top_domains = top_domains,
                 )
                 .into_owned()

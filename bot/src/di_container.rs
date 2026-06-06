@@ -260,8 +260,9 @@ where
                 Inject(error_formatter),
                 Inject(messenger): Inject<Messenger>,
                 Inject(get_media_stats),
-                Inject(get_node_stats)| async move {
-                    Ok(stats::Stats::new(error_formatter, messenger, get_media_stats, get_node_stats))
+                Inject(get_node_stats),
+                Inject(queue)| async move {
+                    Ok(stats::Stats::new(error_formatter, messenger, get_media_stats, get_node_stats, queue))
                 }
             ),
             provide(|
