@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use redis::{
     aio::ConnectionManager,
-    streams::{StreamAutoClaimReply, StreamReadReply},
+    streams::{StreamAutoClaimReply, StreamPendingReply, StreamReadReply},
     AsyncCommands as _, RedisError, Value,
 };
 use tracing::error;
@@ -31,6 +31,14 @@ pub enum QueueError {
 pub struct QueuedJob {
     pub entry_id: String,
     pub job: DownloadJob,
+}
+
+/// A point-in-time snapshot of the queue, for `/stats`.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct QueueStats {
+    pub waiting: u64,
+    pub in_progress: u64,
+    pub dead_letter: u64,
 }
 
 pub struct RedisJobQueue {
@@ -164,6 +172,29 @@ impl RedisJobQueue {
         let mut conn = self.conn.clone();
         let _: () = conn.set_ex(done_key(job_id), 1, self.cfg.dedup_ttl_secs).await?;
         Ok(())
+    }
+
+    /// Stream length split into still-waiting vs delivered-but-unacked (in flight), plus the
+    /// dead-letter backlog. `XLEN` counts both undelivered and in-flight entries (acked ones are
+    /// `XDEL`-ed), so subtracting the pending count yields what is still waiting for a worker.
+    pub async fn stats(&self) -> Result<QueueStats, QueueError> {
+        let mut conn = self.conn.clone();
+        let total: u64 = conn.xlen(&*self.cfg.stream_key).await?;
+        let pending: StreamPendingReply = redis::cmd("XPENDING")
+            .arg(&*self.cfg.stream_key)
+            .arg(&*self.cfg.group)
+            .query_async(&mut conn)
+            .await?;
+        let in_progress = match pending {
+            StreamPendingReply::Empty => 0,
+            StreamPendingReply::Data(data) => data.count as u64,
+        };
+        let dead_letter: u64 = conn.xlen(&*self.cfg.dead_letter_key).await?;
+        Ok(QueueStats {
+            waiting: total.saturating_sub(in_progress),
+            in_progress,
+            dead_letter,
+        })
     }
 
     #[must_use]
