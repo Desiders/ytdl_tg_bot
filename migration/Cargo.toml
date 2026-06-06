@@ -1,6 +1,6 @@
 [package]
 name = "migration"
-version = "1.6.0"
+version = "1.7.0"
 edition = "2024"
 rust-version = "1.85.0"
 publish = false
@@ -10,5 +10,17 @@ name = "migration"
 path = "src/lib.rs"
 
 [dependencies]
+sea-orm-migration = { version = "2.0.0-rc.40", features = ["runtime-tokio-rustls", "sqlx-postgres"] }
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
-sea-orm-migration = { version = "2.0.0-rc.11", features = ["runtime-tokio-rustls", "sqlx-postgres"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[profile.k8s-dev]
+inherits = "dev"
+opt-level = 1
+incremental = true
+codegen-units = 256
+debug = 0
+lto = "off"

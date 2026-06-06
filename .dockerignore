@@ -1,9 +1,13 @@
 LICENSE
 LICENCE
 README.md
+AGENTS.md
 
 .gitignore
 .gitattributes
+
+justfile
+rustfmt.toml
 
 .env
 .env.example
@@ -12,14 +16,9 @@ README.md
 
 target/
 
-yt-dlp-cache/
-yt-dlp
+yt-dlp/
 
-cookies/*.txt
-
-docker-compose.yml
-docker-compose.yaml
-Dockerfile
-
-config.toml
-config.example.toml
+cookies/
+configs/
+deployment/
+tls/

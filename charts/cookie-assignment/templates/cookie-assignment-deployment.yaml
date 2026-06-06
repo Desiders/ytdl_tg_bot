@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cookie-assignment
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cookie-assignment
+  template:
+    metadata:
+      labels:
+        app: cookie-assignment
+    spec:
+      containers:
+        - name: cookie-assignment
+          image: "{{ .Values.cookieAssignment.image.repository }}:{{ .Values.cookieAssignment.image.tag }}"
+          imagePullPolicy: {{ .Values.cookieAssignment.image.pullPolicy }}
+          env:
+            - name: COOKIE_ASSIGNMENT_CONFIG_PATH
+              value: /app/configs/cookie_assignment.toml
+            - name: DOWNLOADER_SERVICE_DNS
+              value: "downloader.{{ .Release.Namespace }}.svc.cluster.local:50051"
+          volumeMounts:
+            - name: config
+              mountPath: /app/configs
+              readOnly: true
+            - name: cookies
+              mountPath: /app/cookies
+              readOnly: true
+            - name: tls
+              mountPath: /app/tls/ca.crt
+              subPath: ca.crt
+              readOnly: true
+            - name: tls
+              mountPath: /app/tls/cookie-assignment.crt
+              subPath: tls.crt
+              readOnly: true
+            - name: tls
+              mountPath: /app/tls/cookie-assignment.key
+              subPath: tls.key
+              readOnly: true
+      volumes:
+        - name: config
+          secret:
+            secretName: cookie-assignment-config
+            items:
+              - key: cookie_assignment.toml
+                path: cookie_assignment.toml
+        - name: cookies
+          secret:
+            secretName: {{ .Values.cookieAssignment.cookiesSecretName }}
+        - name: tls
+          secret:
+            secretName: cookie-assignment-tls-secret

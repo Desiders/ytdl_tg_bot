@@ -1,0 +1,137 @@
+_version = 1
+
+[start]
+source_code_label = "исходный код"
+body = """
+<b>Команды</b>
+- <code>/vd</code> — скачать видео. Используйте эту команду, чтобы видеть прогресс \
+загрузки; без неё скачивание происходит в «тихом» режиме.
+- <code>/ad</code> — скачать аудио
+- <code>/pd</code> — скачать фото
+- <code>/rv</code>, <code>/ra</code> — случайное видео или аудио
+- <code>/add_ed</code> — исключить домен из скачивания
+- <code>/rm_ed</code> — вернуть домен в скачивание
+- <code>/change_link_visibility</code> — показывать или скрывать ссылку в подписи к медиа
+- <code>/stats</code> — статистика использования
+- <code>/lang</code> — сменить язык интерфейса
+
+<b>Inline-режим</b>
+- <code>@%{username} &lt;ссылка&gt;</code> — скачать по ссылке
+- <code>@%{username} &lt;название&gt;</code> — поиск на YouTube
+
+<b>Аргументы</b>
+Для <code>/vd</code> и <code>/ad</code>:
+  - lang: предпочитаемый язык аудио, пример: <code>/vd [lang=ru]</code>
+  - items: скачивание плейлиста, <code>начало:конец:шаг</code> \
+(по умолчанию: 1 для каждого параметра, не более 10 файлов за команду), \
+пример: <code>/vd [items=1:3:1]</code>
+  - overwrite: принудительно скачать заново и заменить кэш, \
+пример: <code>/vd [overwrite=true]</code>
+  - crop: скачать только указанный фрагмент, формат <code>начало-конец</code>, \
+поддерживается <code>чч:мм:сс</code> (по умолчанию: 0 для начала, пусто для конца), \
+пример: <code>/vd [crop=00:01:30-]</code>
+Для <code>/rv</code> и <code>/ra</code>:
+  - domains: источники через <code>|</code>, пример: <code>/rv [domains=youtube.com|youtu.be]</code>
+
+<b>Примечания</b>
+- Аргументы указываются в квадратных скобках через запятую: <code>[arg=value,arg2=value]</code>;
+- Все аргументы необязательны;
+- Поддерживаются тысячи сайтов;
+- Inline-режим поддерживает <code>lang</code> и <code>overwrite</code>, но не поддерживает <code>items</code>;
+- Чтобы бот проигнорировал ссылку, добавьте к ней <code>yv2t_bot=false</code>;
+- Скачиваю медиа в наилучшем качестве, до %{max_file_size_in_mb} МБ;
+- Бот с открытым исходным кодом: %{source_code}.\
+"""
+
+[link_visibility]
+changed_to_visible = "Ссылка в подписи теперь <b>отображается</b>"
+changed_to_hidden = "Ссылка в подписи теперь <b>скрыта</b>"
+error = "Не удалось изменить видимость ссылки"
+private_only = "Используйте эту команду в личном чате"
+
+[exclude_domain]
+already_in_list = "Этот домен уже есть в списке исключений"
+limit_reached = "Список исключений переполнен. Максимум — 15 доменов."
+not_in_list = "Домен не найден в списке исключений"
+add_error = "Не удалось добавить домен"
+remove_error = "Не удалось удалить домен"
+current_list_header = "Текущий список исключений:"
+added_template = """
+Домен %{domain} добавлен в список исключений.
+Ссылки с этого хоста не будут скачиваться в «тихом» режиме.
+Удалить его из списка можно командой <code>/rm_exclude_domain</code>.\
+"""
+removed_template = """
+Домен %{domain} удалён из списка исключений.
+Вернуть его обратно можно командой <code>/add_exclude_domain</code>.\
+"""
+
+[stats]
+body = """
+<b>Статистика</b>
+- Количество чатов: %{chats_count}
+- По типам:
+%{chat_types}\
+- Скачано за 1/7/30 дней / всего: %{d1}/%{d7}/%{d30}/%{total}
+- Ноды:
+%{nodes}- Самые популярные домены:
+%{top_domains}\
+"""
+chat_type_line = "  - %{chat_type}: %{count}"
+chat_type_private = "Личные"
+chat_type_group = "Группы"
+chat_type_supergroup = "Супергруппы"
+chat_type_channel = "Каналы"
+chat_type_unknown = "Неизвестно"
+node_line = "%{name}. (%{active}/%{max})"
+top_domain_line = "%{index}. %{domain} (%{count} шт.)"
+get_error = "Не удалось получить статистику"
+
+[progress]
+sending = "📨 Отправляю..."
+downloading = "📥 Скачиваю..."
+downloading_playlist = "📥 Скачиваю плейлист... %{current}/%{total}"
+media_progress = "Прогресс загрузки: %{progress}"
+error_downloading = "🧨 Ошибка при скачивании :("
+error_downloading_some = "🧨 Не удалось скачать некоторые файлы :("
+download_retries = "Попыток загрузки: %{count}"
+media_download_retries = "%{n} файл(ов) (попыток загрузки: %{count}):"
+
+[download]
+error_queue = "⚠️ Не удалось поставить загрузку в очередь. Попробуйте позже."
+preparing = "🔍 Подготовка к скачиванию..."
+playlist_empty = "Плейлист пуст"
+no_media_found = "Медиа не найдено"
+error_parse_range = "Не удалось разобрать диапазон"
+error_parse_sections = "Не удалось разобрать обрезку"
+error_get_info = "Не удалось получить информацию"
+error_get_media = "Не удалось получить медиа"
+error_send_media = "Не удалось отправить медиа"
+error_send_playlist = "Не удалось отправить плейлист"
+error_download_playlist = "Не удалось скачать плейлист"
+error_edit_message = "Не удалось изменить сообщение"
+
+[inline]
+no_name = "Без названия"
+download_video = "Нажмите, чтобы скачать видео"
+download_audio = "Нажмите, чтобы скачать аудио"
+download_photo = "Нажмите, чтобы скачать фото"
+error_search_media = "Не удалось найти медиа"
+
+[bot_commands]
+start = "Показать справку"
+vd = "Скачать видео"
+ad = "Скачать аудио"
+rv = "Случайное видео"
+ra = "Случайное аудио"
+add_ed = "Исключить домен"
+rm_ed = "Вернуть домен"
+change_link_visibility = "Показывать/скрывать ссылку"
+stats = "Статистика"
+lang = "Сменить язык"
+
+[lang]
+unknown = "Неизвестный язык: <code>%{lang}</code>. Доступные: <code>en</code>, <code>ru</code>."
+changed = "Язык изменён на <b>%{lang}</b>."
+error = "Не удалось сменить язык"
+name = "Русский"

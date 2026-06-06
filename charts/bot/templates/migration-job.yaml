@@ -1,0 +1,41 @@
+{{- if and .Values.migration.enabled .Values.migration.runId }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bot-migration-{{ .Values.migration.runId }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  backoffLimit: {{ .Values.migration.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.migration.ttlSecondsAfterFinished }}
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migration
+          image: "{{ .Values.migration.image.repository }}:{{ .Values.migration.image.tag }}"
+          imagePullPolicy: {{ .Values.migration.image.pullPolicy }}
+          env:
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.migration.db.secretName }}
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.migration.db.secretName }}
+                  key: password
+            - name: DB_HOST
+              value: "{{ .Values.migration.db.host }}"
+            - name: DB_PORT
+              value: "{{ .Values.migration.db.port }}"
+            - name: DB_NAME
+              value: "{{ .Values.postgres.database }}"
+            - name: DATABASE_URL
+              value: "postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)"
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              exec /app/migration {{ .Values.migration.command }}
+{{- end }}

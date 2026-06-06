@@ -1,0 +1,36 @@
+FROM debian:bookworm-slim AS base
+RUN apt update && apt install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM rust:1.94-bookworm AS build
+
+WORKDIR /usr/src/app
+
+COPY migration/Cargo.toml migration/Cargo.toml
+
+RUN mkdir -p migration/src && echo "fn main(){}" > migration/src/main.rs
+RUN touch migration/src/lib.rs
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo fetch --manifest-path migration/Cargo.toml
+
+COPY migration/src migration/src
+RUN touch migration/src/main.rs && touch migration/src/lib.rs
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/src/app/target \
+    cargo build --profile k8s-dev --manifest-path migration/Cargo.toml --target-dir /usr/src/app/target
+
+RUN --mount=type=cache,target=/usr/src/app/target \
+    mkdir -p /usr/src/app/bin \
+    && cp /usr/src/app/target/k8s-dev/migration /usr/src/app/bin/migration
+
+FROM base AS final
+WORKDIR /app
+COPY --from=build /usr/src/app/bin/migration /app/migration
+ENV RUST_BACKTRACE=full
+ENTRYPOINT ["/app/migration"]

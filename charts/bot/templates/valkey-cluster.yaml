@@ -1,0 +1,24 @@
+apiVersion: valkey.io/v1alpha1
+kind: ValkeyCluster
+metadata:
+  name: valkey
+  namespace: {{ .Release.Namespace }}
+spec:
+  shards: {{ .Values.valkey.shards }}
+  replicas: {{ .Values.valkey.replicas }}
+  persistence:
+    size: {{ .Values.valkey.storage }}
+    {{- with .Values.valkey.storageClass }}
+    storageClassName: {{ . }}
+    {{- end }}
+  config:
+    appendonly: "yes"
+    appendfsync: "everysec"
+    maxmemory-policy: "noeviction"
+  users:
+    - name: admin
+      passwordSecret:
+        name: {{ .Values.valkey.auth.secretName }}
+        keys:
+          - {{ .Values.valkey.auth.secretKey }}
+      permissions: "~* &* +@all"

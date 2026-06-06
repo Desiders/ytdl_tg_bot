@@ -1,0 +1,27 @@
+FROM alpine:3.22 AS base
+RUN apk add --no-cache \
+        bash \
+        ca-certificates \
+    && rm -rf /var/cache/apk/*
+
+FROM rust:1.94 AS build
+RUN apt update && apt install -y musl-tools upx && rm -rf /var/lib/apt/lists/*
+RUN rustup target add x86_64-unknown-linux-musl
+
+WORKDIR /usr/src/app
+
+COPY migration/Cargo.toml migration/Cargo.toml
+RUN mkdir -p migration/src && echo "fn main(){}" > migration/src/main.rs && touch migration/src/lib.rs
+RUN cargo fetch --manifest-path migration/Cargo.toml
+
+COPY migration/src migration/src
+RUN touch migration/src/main.rs && touch migration/src/lib.rs
+RUN cargo build --release --target x86_64-unknown-linux-musl --manifest-path migration/Cargo.toml --target-dir target
+
+RUN upx --best --lzma target/x86_64-unknown-linux-musl/release/migration
+
+FROM base AS final
+WORKDIR /app
+COPY --from=build /usr/src/app/target/x86_64-unknown-linux-musl/release/migration /app/migration
+ENV RUST_BACKTRACE=full
+ENTRYPOINT ["/app/migration"]
