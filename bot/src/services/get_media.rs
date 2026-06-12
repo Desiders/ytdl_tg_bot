@@ -15,7 +15,10 @@ use crate::{
     errors::ErrorKind,
     interactors::Interactor,
     services::{
-        node_router::{get_media_info, GetMediaInfoErrorKind as ClientGetMediaInfoErrorKind, NodeRouter},
+        node_router::{
+            get_media_info, resolve_to_drm_free, GetMediaInfoErrorKind as ClientGetMediaInfoErrorKind, NodeRouter,
+            ResolveSourceErrorKind as ClientResolveSourceErrorKind,
+        },
         yt_toolkit::{get_video_info, search_video, GetVideoInfoErrorKind, SearchVideoErrorKind},
     },
     value_objects::MediaType,
@@ -39,6 +42,8 @@ pub enum GetMediaByURLErrorKind {
     Database(#[from] ErrorKind<Infallible>),
     #[error("All download nodes are busy. Try again later.")]
     NodeUnavailable,
+    #[error(transparent)]
+    Resolve(#[from] ClientResolveSourceErrorKind),
 }
 
 pub struct GetMediaByURLInput<'a> {
@@ -289,6 +294,17 @@ async fn get_media_by_url(
     media_type_str: &str,
     tx_manager: &dyn TxManager,
 ) -> Result<GetMediaByURLKind, GetMediaByURLErrorKind> {
+    // DRM music links (Spotify, Apple Music, ...) aren't downloadable; resolve them to a DRM-free
+    // source first, then run the normal pipeline against that URL. Non-DRM links are unchanged.
+    let resolved_url = if matches!(media_type, MediaType::Audio) {
+        resolve_to_drm_free(router, url).await?
+    } else {
+        None
+    };
+    let url = resolved_url.as_ref().unwrap_or(url);
+    let domain = resolved_url.as_ref().map_or(domain, |url: &Url| url.domain());
+    let cache_search = resolved_url.as_ref().map_or(cache_search, Url::as_str);
+
     let reader = tx_manager.downloaded_media_reader();
     let is_single_media = playlist_range.is_single_element();
     let (start, end) = if let Some(sections) = sections {

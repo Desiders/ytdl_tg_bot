@@ -100,6 +100,20 @@ message SupportedDomainsResponse {
   repeated string domains_with_cookies = 1;
 }
 
+message ResolveSourceRequest {
+  string url = 1;
+  optional string country = 2;
+}
+
+message ResolveSourceResponse {
+  string download_url = 1;
+  string platform = 2;
+  optional string title = 3;
+  optional string artist = 4;
+  optional string thumbnail_url = 5;
+  string page_url = 6;
+}
+
 service Downloader {
   rpc GetMediaInfo(MediaInfoRequest) returns (MediaInfoResponse);
   rpc DownloadMedia(DownloadRequest) returns (stream DownloadChunk);
@@ -114,4 +128,9 @@ service NodeCookieManager {
   rpc PushCookie(PushCookieRequest) returns (Empty);
   rpc RemoveCookie(RemoveCookieRequest) returns (Empty);
   rpc ListNodeCookies(Empty) returns (ListNodeCookiesResponse);
+}
+
+// Resolves a DRM-platform track link to an equivalent DRM-free, yt-dlp-downloadable source.
+service MusicResolver {
+  rpc ResolveDrmFreeSource(ResolveSourceRequest) returns (ResolveSourceResponse);
 }

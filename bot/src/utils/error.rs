@@ -133,6 +133,7 @@ impl FormatErrorToMessage for get_media::GetMediaByURLErrorKind {
             get_media::GetMediaByURLErrorKind::GetInfo(err) => err.format(token),
             get_media::GetMediaByURLErrorKind::Database(err) => err.format(token),
             get_media::GetMediaByURLErrorKind::NodeUnavailable => Cow::Owned(self.to_string()),
+            get_media::GetMediaByURLErrorKind::Resolve(_) => Cow::Owned(redact_token(self.to_string(), token)),
         }
     }
 }

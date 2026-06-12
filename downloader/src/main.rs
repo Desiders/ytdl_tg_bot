@@ -6,7 +6,7 @@ mod services;
 mod utils;
 
 use proto::downloader::{
-    downloader_server::DownloaderServer, node_capabilities_server::NodeCapabilitiesServer,
+    downloader_server::DownloaderServer, music_resolver_server::MusicResolverServer, node_capabilities_server::NodeCapabilitiesServer,
     node_cookie_manager_server::NodeCookieManagerServer,
 };
 use std::sync::{atomic::AtomicU32, Arc};
@@ -18,8 +18,11 @@ use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt
 use crate::{
     constants::COOKIE_TMP_DIR,
     entities::Cookies,
-    grpc::{auth::AuthInterceptor, capabilities::CapabilitiesService, cookie_manager::CookieManagerService, downloader::DownloaderService},
-    services::DomainReplacer,
+    grpc::{
+        auth::AuthInterceptor, capabilities::CapabilitiesService, cookie_manager::CookieManagerService, downloader::DownloaderService,
+        music_resolver::MusicResolverService,
+    },
+    services::{DomainReplacer, OdesliResolver},
 };
 
 #[tokio::main(flavor = "multi_thread")]
@@ -67,12 +70,20 @@ async fn main() {
         semaphore,
     };
     let cookie_manager_service = CookieManagerService { cookies };
+    let music_resolver_service = MusicResolverService {
+        resolver: Arc::new(OdesliResolver::new(
+            config.odesli.enabled,
+            config.odesli.base_url.clone(),
+            config.odesli.api_key.clone(),
+        )),
+    };
 
     let node_auth = AuthInterceptor::new(config.auth.node_tokens.clone());
     let mut capabilities_tokens = config.auth.node_tokens.clone();
     capabilities_tokens.push(config.auth.cookie_manager_token.clone());
     let capabilities_auth = AuthInterceptor::new(capabilities_tokens);
     let cookie_manager_auth = AuthInterceptor::new(vec![config.auth.cookie_manager_token.clone()]);
+    let music_resolver_auth = AuthInterceptor::new(config.auth.node_tokens.clone());
     let addr = config.server.address.parse().unwrap();
     info!(%addr, "Starting download node");
 
@@ -84,6 +95,7 @@ async fn main() {
             cookie_manager_service,
             cookie_manager_auth,
         ))
+        .add_service(MusicResolverServer::with_interceptor(music_resolver_service, music_resolver_auth))
         .serve_with_shutdown(addr, shutdown_signal())
         .await
         .unwrap();

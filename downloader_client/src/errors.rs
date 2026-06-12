@@ -27,6 +27,30 @@ impl From<NodeFailoverError<GetMediaInfoErrorKind>> for GetMediaInfoErrorKind {
 }
 
 #[derive(Debug, thiserror::Error)]
+pub enum ResolveSourceErrorKind {
+    #[error(transparent)]
+    Rpc(#[from] tonic::Status),
+    #[error(transparent)]
+    Metadata(#[from] tonic::metadata::errors::InvalidMetadataValue),
+    #[error("Invalid resolved url: {0}")]
+    InvalidUrl(#[from] url::ParseError),
+    #[error("All download nodes are busy. Try again later.")]
+    NodeUnavailable,
+    #[error("Could not resolve a DRM-free source for this link.")]
+    NodeContextUnavailable,
+}
+
+impl From<NodeFailoverError<ResolveSourceErrorKind>> for ResolveSourceErrorKind {
+    fn from(err: NodeFailoverError<ResolveSourceErrorKind>) -> Self {
+        match err {
+            NodeFailoverError::NodeUnavailable => Self::NodeUnavailable,
+            NodeFailoverError::NodeContextUnavailable => Self::NodeContextUnavailable,
+            NodeFailoverError::Operation(err) => err,
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
 pub enum DownloadErrorKind {
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
