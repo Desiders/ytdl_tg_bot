@@ -2,7 +2,7 @@ use std::{
     io,
     process::{Output, Stdio},
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use tokio::time;
@@ -11,7 +11,7 @@ use url::Url;
 
 use crate::{config::SpotdlConfig, utils::process_exit_error};
 
-const RESOLVE_TIMEOUT_SECS: u64 = 60;
+const RESOLVE_TIMEOUT_SECS: u64 = 300;
 const PLATFORM: &str = "youtube";
 
 #[derive(Debug, thiserror::Error)]
@@ -58,6 +58,8 @@ impl SpotdlResolver {
 
         let (program, base_args) = self.cfg.command_parts();
         trace!(program, ?base_args, url = %url, "Spotdl args");
+        info!(url = %url, "Resolving DRM-free source");
+        let started_at = Instant::now();
 
         let child = tokio::process::Command::new(program)
             .args(base_args)
@@ -75,20 +77,25 @@ impl SpotdlResolver {
             .map_err(|_| ResolveErrorKind::Timeout)??;
 
         let stderr = String::from_utf8_lossy(&stderr);
+        let stdout = String::from_utf8_lossy(&stdout);
         if !status.success() {
-            return Err(process_exit_error("Spotdl", status, &stderr).into());
+            let message = if stderr.trim().is_empty() { &stdout } else { &stderr };
+            return Err(process_exit_error("Spotdl", status, message.trim()).into());
         }
         if !stderr.is_empty() {
             warn!(%stderr);
         }
-
-        let stdout = String::from_utf8_lossy(&stdout);
         let download_urls = parse_urls(&stdout);
         if download_urls.is_empty() {
             return Err(ResolveErrorKind::NoSource);
         }
 
-        info!(url = %url, urls_count = download_urls.len(), "Resolved DRM-free source");
+        info!(
+            url = %url,
+            urls_count = download_urls.len(),
+            elapsed_ms = started_at.elapsed().as_millis(),
+            "Resolved DRM-free source"
+        );
         Ok(Resolved {
             download_urls,
             platform: PLATFORM.to_owned(),
