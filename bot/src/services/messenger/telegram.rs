@@ -80,7 +80,8 @@ impl MessengerPort for TelegramMessenger {
     }
 
     async fn edit_text(&self, request: EditTextRequest<'_>) -> Result<(), MessengerError> {
-        let method = EditMessageText::new(request.text)
+        let method = EditMessageText::new()
+            .text(request.text)
             .parse_mode_option(request.format.map(ParseMode::from))
             .link_preview_options(LinkPreviewOptions::new().is_disabled(request.disable_link_preview));
 

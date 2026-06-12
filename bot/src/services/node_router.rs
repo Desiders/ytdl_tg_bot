@@ -1,6 +1,6 @@
 pub use downloader_client::{
-    download_media, get_media_info, DownloadErrorKind, DownloadEvent, DownloadSession, DownloaderServiceTarget, GetMediaInfoErrorKind,
-    NodeRouter,
+    download_media, get_media_info, resolve_to_drm_free, DownloadErrorKind, DownloadEvent, DownloadSession, DownloaderServiceTarget,
+    GetMediaInfoErrorKind, NodeRouter, ResolveSourceErrorKind,
 };
 use std::{convert::Infallible, sync::Arc};
 use tracing::{info, instrument};

@@ -97,6 +97,34 @@ pub struct LoggingConfig {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+pub struct OdesliConfig {
+    #[serde(default = "default_odesli_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_odesli_base_url")]
+    pub base_url: Box<str>,
+    #[serde(default)]
+    pub api_key: Option<Box<str>>,
+}
+
+impl Default for OdesliConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_odesli_enabled(),
+            base_url: default_odesli_base_url(),
+            api_key: None,
+        }
+    }
+}
+
+const fn default_odesli_enabled() -> bool {
+    false
+}
+
+fn default_odesli_base_url() -> Box<str> {
+    "https://api.song.link/v1-alpha.1".into()
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct Config {
     pub server: ServerConfig,
     pub auth: AuthConfig,
@@ -107,6 +135,8 @@ pub struct Config {
     pub logging: LoggingConfig,
     #[serde(default)]
     pub replace_domains: ReplaceDomainsConfig,
+    #[serde(default)]
+    pub odesli: OdesliConfig,
 }
 
 #[derive(Error, Debug)]

@@ -59,5 +59,10 @@ to = "fxbsky.app"
 url = "http://yt-pot-provider:4416"
 # url = "http://127.0.0.1:4416"
 
+[odesli]
+enabled = false
+base_url = "https://api.song.link/v1-alpha.1"
+api_key = "..."
+
 [logging]
 dirs = "info,downloader::grpc::capabilities=warn"
