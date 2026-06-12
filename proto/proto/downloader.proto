@@ -102,7 +102,6 @@ message SupportedDomainsResponse {
 
 message ResolveSourceRequest {
   string url = 1;
-  optional string country = 2;
 }
 
 message ResolveSourceResponse {
