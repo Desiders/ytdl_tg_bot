@@ -34,7 +34,6 @@ pub async fn resolve_to_drm_free(router: &NodeRouter, url: &Url) -> Result<Optio
         url.domain(),
         ResolveSourceRequest {
             url: url.as_str().to_owned(),
-            country: None,
         },
     )
     .await?;

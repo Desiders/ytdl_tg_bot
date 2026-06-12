@@ -22,7 +22,7 @@ use crate::{
         auth::AuthInterceptor, capabilities::CapabilitiesService, cookie_manager::CookieManagerService, downloader::DownloaderService,
         music_resolver::MusicResolverService,
     },
-    services::{DomainReplacer, OdesliResolver},
+    services::{DomainReplacer, SpotdlResolver},
 };
 
 #[tokio::main(flavor = "multi_thread")]
@@ -71,11 +71,7 @@ async fn main() {
     };
     let cookie_manager_service = CookieManagerService { cookies };
     let music_resolver_service = MusicResolverService {
-        resolver: Arc::new(OdesliResolver::new(
-            config.odesli.enabled,
-            config.odesli.base_url.clone(),
-            config.odesli.api_key.clone(),
-        )),
+        resolver: Arc::new(SpotdlResolver::new(Arc::new(config.spotdl.clone()))),
     };
 
     let node_auth = AuthInterceptor::new(config.auth.node_tokens.clone());
