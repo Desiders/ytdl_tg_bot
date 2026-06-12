@@ -74,7 +74,10 @@ body = """
 %{chat_types}\
 - Downloads over 1/7/30 days / all time: %{d1}/%{d7}/%{d30}/%{total}
 - Nodes:
-%{nodes}- Queue: %{queue_waiting} waiting / %{queue_in_progress} in progress / %{queue_dead_letter} failed (workers: %{workers})
+%{nodes}- Queue (workers: %{workers}):
+  - Waiting: %{queue_waiting}
+  - In progress: %{queue_in_progress}
+  - Failed: %{queue_dead_letter}
 - Most popular domains:
 %{top_domains}\
 """

@@ -74,7 +74,10 @@ body = """
 %{chat_types}\
 - Скачано за 1/7/30 дней / всего: %{d1}/%{d7}/%{d30}/%{total}
 - Ноды:
-%{nodes}- Очередь: %{queue_waiting} в ожидании / %{queue_in_progress} в обработке / %{queue_dead_letter} с ошибкой (воркеры: %{workers})
+%{nodes}- Очередь (воркеров: %{workers}):
+  - В ожидании: %{queue_waiting}
+  - В обработке: %{queue_in_progress}
+  - С ошибкой: %{queue_dead_letter}
 - Самые популярные домены:
 %{top_domains}\
 """
