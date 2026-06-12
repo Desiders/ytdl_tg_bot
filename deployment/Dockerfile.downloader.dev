@@ -17,6 +17,9 @@ RUN pip install --no-cache-dir -U pip \
  && pip install --no-cache-dir --pre "bgutil-ytdlp-pot-provider" \
  && pip install --no-cache-dir --pre "spotdl"
 
+RUN pip uninstall -y spotapi tls-client \
+ && pip install --no-cache-dir "spotapi @ https://github.com/Desiders/SpotAPI/archive/b299d1d1f13e06273b686fa579edc2968ebdc7fd.tar.gz"
+
 FROM rust:1.91-bookworm AS build
 RUN apt update && apt install -y --no-install-recommends \
         protobuf-compiler \
