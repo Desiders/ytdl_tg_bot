@@ -1,6 +1,6 @@
 use std::{convert::Infallible, sync::Arc};
 
-use proto::downloader::MediaInfoRequest;
+use proto::downloader::{MediaInfoRequest, MediaInfoResponse};
 use reqwest::Client;
 use tracing::{debug, info, instrument, warn};
 use url::Url;
@@ -294,16 +294,28 @@ async fn get_media_by_url(
     media_type_str: &str,
     tx_manager: &dyn TxManager,
 ) -> Result<GetMediaByURLKind, GetMediaByURLErrorKind> {
-    // DRM music links (Spotify, Apple Music, ...) aren't downloadable; resolve them to a DRM-free
-    // source first, then run the normal pipeline against that URL. Non-DRM links are unchanged.
-    let resolved_url = if matches!(media_type, MediaType::Audio) {
-        resolve_to_drm_free(router, url).await?
+    // DRM music links (Spotify, Apple Music, ...) aren't downloadable; resolve them to DRM-free
+    // sources first, then run the normal pipeline against those URLs. Non-DRM links are unchanged.
+    // An album/playlist resolves to several URLs; the `items` range selects among them, like it
+    // selects entries of a regular playlist on the node.
+    let resolved_urls = if matches!(media_type, MediaType::Audio) {
+        resolve_to_drm_free(router, url)
+            .await?
+            .map(|urls| select_by_range(urls, playlist_range))
     } else {
         None
     };
-    let url = resolved_url.as_ref().unwrap_or(url);
-    let domain = resolved_url.as_ref().map_or(domain, |url: &Url| url.domain());
-    let cache_search = resolved_url.as_ref().map_or(cache_search, Url::as_str);
+    if let Some([]) = resolved_urls.as_deref() {
+        warn!("Empty playlist");
+        return Ok(GetMediaByURLKind::Empty);
+    }
+    let single_resolved = resolved_urls.as_ref().and_then(|urls| match urls.as_slice() {
+        [url] => Some(url),
+        _ => None,
+    });
+    let url = single_resolved.unwrap_or(url);
+    let domain = single_resolved.map_or(domain, |url: &Url| url.domain());
+    let cache_search = single_resolved.map_or(cache_search, Url::as_str);
 
     let reader = tx_manager.downloaded_media_reader();
     let is_single_media = playlist_range.is_single_element();
@@ -326,22 +338,50 @@ async fn get_media_by_url(
 
     debug!("Getting media");
 
-    let response = get_media_info(
-        router,
-        domain,
-        MediaInfoRequest {
-            url: url.as_str().to_owned(),
-            audio_language: audio_language.language.clone().unwrap_or_default(),
-            playlist_range: Some((*playlist_range).into()),
-            media_type: media_type_str.to_owned(),
-            max_file_size: router.max_file_size(),
-        },
-    )
-    .await
-    .map_err(|err| match GetInfoErrorKind::from(err) {
+    let map_get_info_err = |err| match GetInfoErrorKind::from(err) {
         GetInfoErrorKind::Client(ClientGetMediaInfoErrorKind::NodeUnavailable) => GetMediaByURLErrorKind::NodeUnavailable,
         err => GetMediaByURLErrorKind::GetInfo(err),
-    })?;
+    };
+    let response = match resolved_urls.as_deref() {
+        // Several resolved tracks: each URL is a single video, so fetch them one by one (the range
+        // was already applied to the URL list) and merge into one playlist-shaped response.
+        Some(urls @ [_, _, ..]) => {
+            let mut entries = vec![];
+            for (index, url) in urls.iter().enumerate() {
+                let response = get_media_info(
+                    router,
+                    url.domain(),
+                    MediaInfoRequest {
+                        url: url.as_str().to_owned(),
+                        audio_language: audio_language.language.clone().unwrap_or_default(),
+                        playlist_range: Some(Range::default().into()),
+                        media_type: media_type_str.to_owned(),
+                        max_file_size: router.max_file_size(),
+                    },
+                )
+                .await
+                .map_err(map_get_info_err)?;
+                entries.extend(response.entries.into_iter().map(|mut entry| {
+                    entry.playlist_index = i32::try_from(index).unwrap_or_default() + 1;
+                    entry
+                }));
+            }
+            MediaInfoResponse { entries }
+        }
+        _ => get_media_info(
+            router,
+            domain,
+            MediaInfoRequest {
+                url: url.as_str().to_owned(),
+                audio_language: audio_language.language.clone().unwrap_or_default(),
+                playlist_range: Some((*playlist_range).into()),
+                media_type: media_type_str.to_owned(),
+                max_file_size: router.max_file_size(),
+            },
+        )
+        .await
+        .map_err(map_get_info_err)?,
+    };
     let playlist = playlist_from_response(response)?;
     let playlist_len = playlist.inner.len();
 
@@ -373,6 +413,21 @@ async fn get_media_by_url(
 
     info!(playlist_len, cached_len = cached.len(), unchached_len = uncached.len(), "Got media");
     Ok(GetMediaByURLKind::Playlist { cached, uncached })
+}
+
+/// Applies the `items` range (1-based `start:count:step`) to the resolved URL list, mirroring how
+/// the node applies it to a regular playlist's entries.
+fn select_by_range(urls: Vec<Url>, range: &Range) -> Vec<Url> {
+    urls.into_iter()
+        .enumerate()
+        .filter(|(index, _)| {
+            let Ok(position) = i16::try_from(*index + 1) else {
+                return false;
+            };
+            position >= range.start && position <= range.count && (position - range.start) % range.step == 0
+        })
+        .map(|(_, url)| url)
+        .collect()
 }
 
 #[allow(clippy::result_large_err)]

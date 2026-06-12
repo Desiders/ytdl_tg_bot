@@ -96,32 +96,22 @@ pub struct LoggingConfig {
     pub dirs: Box<str>,
 }
 
-#[derive(Deserialize, Clone, Debug)]
-pub struct OdesliConfig {
-    #[serde(default = "default_odesli_enabled")]
-    pub enabled: bool,
-    #[serde(default = "default_odesli_base_url")]
-    pub base_url: Box<str>,
+#[derive(Default, Deserialize, Clone, Debug)]
+pub struct SpotdlConfig {
     #[serde(default)]
-    pub api_key: Option<Box<str>>,
+    pub enabled: bool,
+    #[serde(default)]
+    pub command: Vec<Box<str>>,
 }
 
-impl Default for OdesliConfig {
-    fn default() -> Self {
-        Self {
-            enabled: default_odesli_enabled(),
-            base_url: default_odesli_base_url(),
-            api_key: None,
+impl SpotdlConfig {
+    #[must_use]
+    pub fn command_parts(&self) -> (&str, Vec<&str>) {
+        if let Some((program, args)) = self.command.split_first() {
+            return (program.as_ref(), args.iter().map(AsRef::as_ref).collect());
         }
+        ("spotdl", vec![])
     }
-}
-
-const fn default_odesli_enabled() -> bool {
-    false
-}
-
-fn default_odesli_base_url() -> Box<str> {
-    "https://api.song.link/v1-alpha.1".into()
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -136,7 +126,7 @@ pub struct Config {
     #[serde(default)]
     pub replace_domains: ReplaceDomainsConfig,
     #[serde(default)]
-    pub odesli: OdesliConfig,
+    pub spotdl: SpotdlConfig,
 }
 
 #[derive(Error, Debug)]
