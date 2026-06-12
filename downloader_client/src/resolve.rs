@@ -21,10 +21,11 @@ pub fn is_drm_platform(domain: Option<&str>) -> bool {
         || domain.ends_with("deezer.page.link")
 }
 
-/// Resolves a DRM-platform link to an equivalent DRM-free, downloadable URL. Returns `Ok(None)` for
-/// non-DRM links so callers can pass the original URL straight through unchanged.
+/// Resolves a DRM-platform link to equivalent DRM-free, downloadable URLs (several for an
+/// album/playlist). Returns `Ok(None)` for non-DRM links so callers can pass the original URL
+/// straight through unchanged.
 #[instrument(skip_all, fields(url = %url))]
-pub async fn resolve_to_drm_free(router: &NodeRouter, url: &Url) -> Result<Option<Url>, ResolveSourceErrorKind> {
+pub async fn resolve_to_drm_free(router: &NodeRouter, url: &Url) -> Result<Option<Vec<Url>>, ResolveSourceErrorKind> {
     if !is_drm_platform(url.domain()) {
         return Ok(None);
     }
@@ -38,8 +39,12 @@ pub async fn resolve_to_drm_free(router: &NodeRouter, url: &Url) -> Result<Optio
     )
     .await?;
 
-    let resolved = Url::parse(&response.download_url)?;
-    info!(resolved = %resolved, platform = %response.platform, "Resolved DRM-free source");
+    let resolved = response
+        .download_urls
+        .iter()
+        .map(|url| Url::parse(url))
+        .collect::<Result<Vec<_>, _>>()?;
+    info!(urls_count = resolved.len(), platform = %response.platform, "Resolved DRM-free source");
     Ok(Some(resolved))
 }
 

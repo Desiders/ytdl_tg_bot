@@ -22,7 +22,7 @@ impl MusicResolver for MusicResolverService {
         })?;
 
         Ok(Response::new(ResolveSourceResponse {
-            download_url: resolved.download_url,
+            download_urls: resolved.download_urls,
             platform: resolved.platform,
             title: resolved.title,
             artist: resolved.artist,
