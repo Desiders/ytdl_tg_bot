@@ -31,7 +31,7 @@ pub enum ResolveErrorKind {
 /// The chosen DRM-free source.
 #[derive(Debug, Clone)]
 pub struct Resolved {
-    pub download_url: String,
+    pub download_urls: Vec<String>,
     pub platform: String,
     pub title: Option<String>,
     pub artist: Option<String>,
@@ -63,6 +63,7 @@ impl SpotdlResolver {
             .args(base_args)
             .arg("url")
             .arg(url.as_str())
+            .args(["--threads", "1"])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -82,11 +83,14 @@ impl SpotdlResolver {
         }
 
         let stdout = String::from_utf8_lossy(&stdout);
-        let download_url = parse_first_url(&stdout).ok_or(ResolveErrorKind::NoSource)?;
+        let download_urls = parse_urls(&stdout);
+        if download_urls.is_empty() {
+            return Err(ResolveErrorKind::NoSource);
+        }
 
-        info!(url = %url, download_url = %download_url, "Resolved DRM-free source");
+        info!(url = %url, urls_count = download_urls.len(), "Resolved DRM-free source");
         Ok(Resolved {
-            download_url,
+            download_urls,
             platform: PLATFORM.to_owned(),
             title: None,
             artist: None,
@@ -97,42 +101,46 @@ impl SpotdlResolver {
 }
 
 /// `spotdl url` prints matched URLs to stdout, one per line (several for an album/playlist).
-/// Takes the first valid URL; ignores progress/noise lines.
-fn parse_first_url(stdout: &str) -> Option<String> {
+/// Ignores progress/noise lines.
+fn parse_urls(stdout: &str) -> Vec<String> {
     stdout
         .lines()
         .map(str::trim)
-        .find(|line| Url::parse(line).is_ok_and(|url| matches!(url.scheme(), "http" | "https")))
+        .filter(|line| Url::parse(line).is_ok_and(|url| matches!(url.scheme(), "http" | "https")))
         .map(ToOwned::to_owned)
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_first_url;
+    use super::parse_urls;
 
     #[test]
     fn parses_single_url() {
         assert_eq!(
-            parse_first_url("https://music.youtube.com/watch?v=abc\n").as_deref(),
-            Some("https://music.youtube.com/watch?v=abc")
+            parse_urls("https://music.youtube.com/watch?v=abc\n"),
+            vec!["https://music.youtube.com/watch?v=abc"]
         );
     }
 
     #[test]
-    fn takes_first_of_multiple_urls() {
+    fn parses_multiple_urls_in_order() {
         let stdout = "https://music.youtube.com/watch?v=a\nhttps://music.youtube.com/watch?v=b\n";
-        assert_eq!(parse_first_url(stdout).as_deref(), Some("https://music.youtube.com/watch?v=a"));
+        assert_eq!(
+            parse_urls(stdout),
+            vec!["https://music.youtube.com/watch?v=a", "https://music.youtube.com/watch?v=b"]
+        );
     }
 
     #[test]
     fn skips_noise_lines() {
         let stdout = "Processing query...\nhttps://music.youtube.com/watch?v=abc\n";
-        assert_eq!(parse_first_url(stdout).as_deref(), Some("https://music.youtube.com/watch?v=abc"));
+        assert_eq!(parse_urls(stdout), vec!["https://music.youtube.com/watch?v=abc"]);
     }
 
     #[test]
-    fn no_output_is_none() {
-        assert_eq!(parse_first_url(""), None);
-        assert_eq!(parse_first_url("No results found\n"), None);
+    fn no_output_is_empty() {
+        assert!(parse_urls("").is_empty());
+        assert!(parse_urls("No results found\n").is_empty());
     }
 }
