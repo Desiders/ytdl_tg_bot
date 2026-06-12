@@ -102,11 +102,10 @@ message SupportedDomainsResponse {
 
 message ResolveSourceRequest {
   string url = 1;
-  optional string country = 2;
 }
 
 message ResolveSourceResponse {
-  string download_url = 1;
+  repeated string download_urls = 1;
   string platform = 2;
   optional string title = 3;
   optional string artist = 4;
