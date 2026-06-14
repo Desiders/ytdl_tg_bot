@@ -38,7 +38,7 @@ use crate::{
         text_contains_host_with_reply, text_contains_url, text_contains_url_with_reply, text_empty, url_is_blacklisted,
         url_is_skippable_by_param,
     },
-    handlers::{audio, chosen_inline, inline_query, lang, photo, start, stats, video},
+    handlers::{audio, chosen_inline, inline_query, lang, photo, shazam, start, stats, video},
     middlewares::{CreateChatMiddleware, ReactionMiddleware, RemoveTrackingParamsMiddleware},
     services::messenger::telegram::TelegramMessenger,
     utils::{on_shutdown, on_startup},
@@ -70,15 +70,16 @@ async fn main() {
     );
 
     let base_url = format!("{}/bot{{token}}/{{method_name}}", config.telegram_bot_api.url);
-    let files_url = format!("{}/file{{token}}/{{path}}", config.telegram_bot_api.url);
+    let files_url = format!("{}/file/bot{{token}}/{{path}}", config.telegram_bot_api.url);
 
+    let api_server = APIServer::new(&base_url, &files_url, true, BareFilesPathWrapper);
     let bot = Bot::with_client(
         config.bot.token.clone(),
-        Reqwest::default().with_api_server(Cow::Owned(APIServer::new(&base_url, &files_url, true, BareFilesPathWrapper))),
+        Reqwest::default().with_api_server(Cow::Owned(api_server.clone())),
     );
 
     let cfg_registry = di_container::cfg_registry(config.clone());
-    let tg_messenger_registry = di_container::tg_messenger_registry(bot.clone(), cfg_registry.clone());
+    let tg_messenger_registry = di_container::tg_messenger_registry(bot.clone(), api_server, cfg_registry.clone());
     let node_router_registry = di_container::node_router_registry(cfg_registry.clone());
     let interactors_registry =
         di_container::interactors_registry::<Messenger>(cfg_registry.clone(), tg_messenger_registry, node_router_registry);
@@ -196,6 +197,7 @@ async fn main() {
             observer
                 .register(Handler::new(start::<Messenger>).filter(Command::many(["start", "help"])))
                 .register(Handler::new(stats::<Messenger>).filter(Command::one("stats")))
+                .register(Handler::new(shazam::<Messenger>).filter(Command::many(["shazam", "sh"])))
                 .register(Handler::new(lang::<Messenger>).filter(Command::many(["lang", "language"])))
         })
         .on_startup(|observer| observer.register(SimpleHandler::new(on_startup, (bot.clone(), node_router.clone(), cfg.clone()))))

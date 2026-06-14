@@ -1,4 +1,5 @@
 mod lang;
+mod shazam;
 mod start;
 mod stats;
 
@@ -10,5 +11,6 @@ pub mod photo;
 pub mod video;
 
 pub use lang::lang;
+pub use shazam::shazam;
 pub use start::start;
 pub use stats::stats;
