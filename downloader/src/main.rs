@@ -7,11 +7,11 @@ mod utils;
 
 use proto::downloader::{
     downloader_server::DownloaderServer, music_resolver_server::MusicResolverServer, node_capabilities_server::NodeCapabilitiesServer,
-    node_cookie_manager_server::NodeCookieManagerServer,
+    node_cookie_manager_server::NodeCookieManagerServer, song_recognizer_server::SongRecognizerServer,
 };
 use std::sync::{atomic::AtomicU32, Arc};
 use tokio::sync::Semaphore;
-use tonic::transport::Server;
+use tonic::{service::interceptor::InterceptedService, transport::Server};
 use tracing::info;
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
 
@@ -20,9 +20,9 @@ use crate::{
     entities::Cookies,
     grpc::{
         auth::AuthInterceptor, capabilities::CapabilitiesService, cookie_manager::CookieManagerService, downloader::DownloaderService,
-        music_resolver::MusicResolverService,
+        music_resolver::MusicResolverService, song_recognizer::SongRecognizerService,
     },
-    services::{DomainReplacer, SpotdlResolver},
+    services::{DomainReplacer, SongRecognizer, SpotdlResolver},
 };
 
 #[tokio::main(flavor = "multi_thread")]
@@ -73,6 +73,10 @@ async fn main() {
     let music_resolver_service = MusicResolverService {
         resolver: Arc::new(SpotdlResolver::new(Arc::new(config.spotdl.clone()))),
     };
+    let max_recognize_audio_size = config.songrec.max_audio_size;
+    let song_recognizer_service = SongRecognizerService {
+        recognizer: Arc::new(SongRecognizer::new(Arc::new(config.songrec.clone()))),
+    };
 
     let node_auth = AuthInterceptor::new(config.auth.node_tokens.clone());
     let mut capabilities_tokens = config.auth.node_tokens.clone();
@@ -80,6 +84,7 @@ async fn main() {
     let capabilities_auth = AuthInterceptor::new(capabilities_tokens);
     let cookie_manager_auth = AuthInterceptor::new(vec![config.auth.cookie_manager_token.clone()]);
     let music_resolver_auth = AuthInterceptor::new(config.auth.node_tokens.clone());
+    let song_recognizer_auth = AuthInterceptor::new(config.auth.node_tokens.clone());
     let addr = config.server.address.parse().unwrap();
     info!(%addr, "Starting download node");
 
@@ -92,6 +97,10 @@ async fn main() {
             cookie_manager_auth,
         ))
         .add_service(MusicResolverServer::with_interceptor(music_resolver_service, music_resolver_auth))
+        .add_service(InterceptedService::new(
+            SongRecognizerServer::new(song_recognizer_service).max_decoding_message_size(max_recognize_audio_size),
+            song_recognizer_auth,
+        ))
         .serve_with_shutdown(addr, shutdown_signal())
         .await
         .unwrap();
