@@ -20,6 +20,7 @@ const COMMAND_KEYS: &[&str] = &[
     "add_ed",
     "rm_ed",
     "change_link_visibility",
+    "shazam",
     "stats",
     "lang",
 ];

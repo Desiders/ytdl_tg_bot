@@ -25,6 +25,10 @@ pub struct DownloadJob {
     pub target: JobTarget,
     #[serde(default)]
     pub attempts: u32,
+    #[serde(default)]
+    pub progress_message_id: Option<i64>,
+    #[serde(default)]
+    pub base_text: Option<String>,
 }
 
 impl DownloadJob {
@@ -47,7 +51,16 @@ impl DownloadJob {
             link_is_visible,
             target,
             attempts: 0,
+            progress_message_id: None,
+            base_text: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_progress_reuse(mut self, progress_message_id: i64, base_text: Option<String>) -> Self {
+        self.progress_message_id = Some(progress_message_id);
+        self.base_text = base_text;
+        self
     }
 }
 

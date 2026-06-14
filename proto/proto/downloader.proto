@@ -113,6 +113,18 @@ message ResolveSourceResponse {
   string page_url = 6;
 }
 
+message RecognizeSongRequest {
+  bytes audio = 1;
+}
+
+message RecognizeSongResponse {
+  optional string title = 1;
+  optional string artist = 2;
+  optional string album = 3;
+  optional string url = 4;
+  optional string cover_url = 5;
+}
+
 service Downloader {
   rpc GetMediaInfo(MediaInfoRequest) returns (MediaInfoResponse);
   rpc DownloadMedia(DownloadRequest) returns (stream DownloadChunk);
@@ -132,4 +144,9 @@ service NodeCookieManager {
 // Resolves a DRM-platform track link to an equivalent DRM-free, yt-dlp-downloadable source.
 service MusicResolver {
   rpc ResolveDrmFreeSource(ResolveSourceRequest) returns (ResolveSourceResponse);
+}
+
+// Recognizes a song from a short audio clip (Shazam, via SongRec).
+service SongRecognizer {
+  rpc RecognizeSong(RecognizeSongRequest) returns (RecognizeSongResponse);
 }

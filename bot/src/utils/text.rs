@@ -5,6 +5,13 @@ fn invisible_link(webpage_url: Option<&Url>) -> Option<String> {
     webpage_url.map(|url| html_text_link("&#8203;&#8203;", url))
 }
 
+pub fn prefixed(base: Option<&str>, body: &str) -> String {
+    match base {
+        Some(base) => format!("{base}\n\n{body}"),
+        None => body.to_owned(),
+    }
+}
+
 pub fn media_link(webpage_url: Option<&Url>) -> Option<String> {
     let mut text = String::new();
     if let Some(invisible_link) = invisible_link(webpage_url) {

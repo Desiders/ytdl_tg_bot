@@ -7,6 +7,7 @@ pub mod enqueue_download;
 pub mod inline_query;
 pub mod lang;
 pub mod photo;
+pub mod shazam;
 pub mod start;
 pub mod stats;
 pub mod video;

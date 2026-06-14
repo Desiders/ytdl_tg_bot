@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: telegram-bot-api-file-server
+  namespace: {{ .Release.Namespace }}
+data:
+  default.conf: |
+    server {
+        listen {{ .Values.telegramBotApi.fileServer.port }};
+        server_tokens off;
+        location / {
+            root {{ .Values.telegramBotApi.dataDir }};
+            dav_methods DELETE;
+            autoindex off;
+        }
+    }

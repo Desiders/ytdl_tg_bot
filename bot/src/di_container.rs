@@ -11,18 +11,18 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use telers::Bot;
+use telers::{client::telegram::APIServer, Bot};
 use tracing::{error, info};
 use uuid::ContextV7;
 
 use crate::{
-    config::{BotConfig, Config, DatabaseConfig, DownloadConfig, RedisConfig, TimeoutsConfig, YtDlpConfig},
+    config::{BotConfig, Config, DatabaseConfig, DownloadConfig, RedisConfig, TelegramBotApiConfig, TimeoutsConfig, YtDlpConfig},
     database::{SeaOrmTxManager, TxManager, TxManagerFactories},
-    interactors::{audio, chosen_inline, config, enqueue_download, inline_query, lang, photo, start, stats, video},
+    interactors::{audio, chosen_inline, config, enqueue_download, inline_query, lang, photo, shazam, start, stats, video},
     services::{
         chat,
         download::media,
-        downloaded_media, get_media,
+        downloaded_media, file_download, get_media,
         messenger::telegram::TelegramMessenger,
         node_router::{self, DownloaderServiceTarget, NodeRouter},
         queue::RedisJobQueue,
@@ -54,10 +54,11 @@ pub(super) fn cfg_registry(cfg: Config) -> Registry {
     }
 }
 
-pub(super) fn tg_messenger_registry(bot: Bot, cfg_registry: Registry) -> Registry {
+pub(super) fn tg_messenger_registry(bot: Bot, api_server: APIServer, cfg_registry: Registry) -> Registry {
     registry! {
         scope(App) [
             provide(instance(bot)),
+            provide(instance(api_server)),
             provide(|Inject(cfg): Inject<BotConfig>| Ok(ErrorFormatter::new(cfg.token.clone()))),
             provide(|Inject(bot): Inject<Bot>, Inject(error_formatter): Inject<ErrorFormatter>, Inject(cfg): Inject<TimeoutsConfig>| {
                 Ok(TelegramMessenger::new(bot, error_formatter, cfg))
@@ -206,6 +207,16 @@ where
                 Inject(cfg)| async move { Ok(get_media::SearchMediaInfo::new(client, cfg)) }
             ),
 
+            provide(|
+                Inject(bot),
+                Inject(client),
+                Inject(api_server),
+                Inject(cfg): Inject<TelegramBotApiConfig>,
+                Inject(bot_cfg): Inject<BotConfig>| async move {
+                    Ok(file_download::TelegramFileDownloader::new(bot, client, api_server, &cfg, &bot_cfg))
+                }
+            ),
+
             provide(|Inject(node_router)| async move { Ok(node_router::GetStats::new(node_router)) }),
             provide(|Inject(node_router)| async move { Ok(media::DownloadVideo::new(node_router)) }),
             provide(|Inject(node_router)| async move { Ok(media::DownloadAudio::new(node_router)) }),
@@ -263,6 +274,16 @@ where
                 Inject(get_node_stats),
                 Inject(queue)| async move {
                     Ok(stats::Stats::new(error_formatter, messenger, get_media_stats, get_node_stats, queue))
+                }
+            ),
+            provide(|
+                Inject(error_formatter),
+                Inject(messenger): Inject<Messenger>,
+                Inject(file_downloader),
+                Inject(node_router),
+                Inject(search_media),
+                Inject(enqueue_download)| async move {
+                    Ok(shazam::Shazam::new(error_formatter, messenger, file_downloader, node_router, search_media, enqueue_download))
                 }
             ),
             provide(|

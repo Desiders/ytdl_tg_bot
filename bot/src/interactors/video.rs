@@ -186,6 +186,7 @@ where
                         id: &file_id,
                         webpage_url: Some(input.url),
                         link_is_visible: input.link_is_visible,
+                        caption: None,
                     })
                     .await
                 {
@@ -292,6 +293,7 @@ where
                                         downloaded_media_count.load(Ordering::SeqCst),
                                         cached_len + uncached_len,
                                         input.chat_cfg.locale().as_str(),
+                                        None,
                                     )
                                     .await
                                     .is_err()
@@ -305,6 +307,7 @@ where
                                         input.chat_id,
                                         progress_message_id,
                                         input.chat_cfg.locale().as_str(),
+                                        None,
                                     )
                                     .await;
                                 }
@@ -340,6 +343,7 @@ where
                     &errs,
                     media_to_send_count,
                     input.chat_cfg.locale().as_str(),
+                    None,
                 )
                 .await;
 
@@ -351,6 +355,7 @@ where
                         reply_to_message_id: Some(input.message_id),
                         playlist: downloaded_playlist,
                         link_is_visible: input.link_is_visible,
+                        caption: None,
                     })
                     .await
                 {
@@ -510,6 +515,7 @@ where
                         id: &file_id,
                         webpage_url: Some(input.url),
                         link_is_visible: input.link_is_visible,
+                        caption: None,
                     })
                     .await
                 {
@@ -585,6 +591,7 @@ where
                         reply_to_message_id: Some(input.message_id),
                         playlist: downloaded_playlist,
                         link_is_visible: input.link_is_visible,
+                        caption: None,
                     })
                     .await
                 {
@@ -665,6 +672,7 @@ where
                             })
                             .collect(),
                         link_is_visible: false,
+                        caption: None,
                     })
                     .await
                 {

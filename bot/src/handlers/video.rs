@@ -35,6 +35,8 @@ where
             params: &params,
             chat_cfg: &chat_cfg,
             link_is_visible: own_chat_cfg.as_ref().is_some_and(|chat_cfg| chat_cfg.link_is_visible),
+            progress_message_id: None,
+            base_text: None,
         })
         .await?;
     Ok(EventReturn::Finish)

@@ -9,6 +9,7 @@ body = """
 - <code>/ad</code> — скачать аудио
 - <code>/pd</code> — скачать фото
 - <code>/rv</code>, <code>/ra</code> — случайное видео или аудио
+- <code>/shazam</code> — распознать песню из голосового, аудио или видео в ответе
 - <code>/add_ed</code> — исключить домен из скачивания
 - <code>/rm_ed</code> — вернуть домен в скачивание
 - <code>/change_link_visibility</code> — показывать или скрывать ссылку в подписи к медиа
@@ -92,18 +93,18 @@ top_domain_line = "%{index}. %{domain} (%{count} шт.)"
 get_error = "Не удалось получить статистику"
 
 [progress]
-sending = "📨 Отправляю..."
-downloading = "📥 Скачиваю..."
-downloading_playlist = "📥 Скачиваю плейлист... %{current}/%{total}"
+sending = "Отправляю..."
+downloading = "Скачиваю..."
+downloading_playlist = "Скачиваю плейлист... %{current}/%{total}"
 media_progress = "Прогресс загрузки: %{progress}"
-error_downloading = "🧨 Ошибка при скачивании :("
-error_downloading_some = "🧨 Не удалось скачать некоторые файлы :("
+error_downloading = "Ошибка при скачивании :("
+error_downloading_some = "Не удалось скачать некоторые файлы :("
 download_retries = "Попыток загрузки: %{count}"
 media_download_retries = "%{n} файл(ов) (попыток загрузки: %{count}):"
 
 [download]
-error_queue = "⚠️ Не удалось поставить загрузку в очередь. Попробуйте позже."
-preparing = "🔍 Подготовка к скачиванию..."
+error_queue = "Не удалось поставить загрузку в очередь. Попробуйте позже."
+preparing = "Подготовка к скачиванию..."
 playlist_empty = "Плейлист пуст"
 no_media_found = "Медиа не найдено"
 error_parse_range = "Не удалось разобрать диапазон"
@@ -114,6 +115,16 @@ error_send_media = "Не удалось отправить медиа"
 error_send_playlist = "Не удалось отправить плейлист"
 error_download_playlist = "Не удалось скачать плейлист"
 error_edit_message = "Не удалось изменить сообщение"
+
+[shazam]
+no_audio = "Ответьте на голосовое, аудио или видео командой /shazam, либо отправьте такой файл с подписью /shazam."
+too_large = "Это аудио слишком большое для распознавания. Попробуйте короткий голосовой фрагмент."
+recognizing = "Распознаю..."
+no_match = "Не удалось распознать. Попробуйте более чёткий или длинный фрагмент."
+error = "Не удалось распознать аудио :("
+result = "<b>%{title}</b> — %{artist}"
+album = "%{album}"
+link = "<a href=\"%{url}\">Shazam</a>"
 
 [inline]
 no_name = "Без названия"
@@ -131,6 +142,7 @@ ra = "Случайное аудио"
 add_ed = "Исключить домен"
 rm_ed = "Вернуть домен"
 change_link_visibility = "Показывать/скрывать ссылку"
+shazam = "Распознать песню"
 stats = "Статистика"
 lang = "Сменить язык"
 

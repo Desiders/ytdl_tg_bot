@@ -115,6 +115,41 @@ impl SpotdlConfig {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+pub struct SongrecConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub command: Vec<Box<str>>,
+    /// Upper bound for an uploaded recognition clip (a Telegram voice/short audio message).
+    #[serde(default = "default_max_audio_size")]
+    pub max_audio_size: usize,
+}
+
+impl Default for SongrecConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            command: Vec::new(),
+            max_audio_size: default_max_audio_size(),
+        }
+    }
+}
+
+const fn default_max_audio_size() -> usize {
+    25 * 1024 * 1024
+}
+
+impl SongrecConfig {
+    #[must_use]
+    pub fn command_parts(&self) -> (&str, Vec<&str>) {
+        if let Some((program, args)) = self.command.split_first() {
+            return (program.as_ref(), args.iter().map(AsRef::as_ref).collect());
+        }
+        ("songrec", vec![])
+    }
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct Config {
     pub server: ServerConfig,
     pub auth: AuthConfig,
@@ -127,6 +162,8 @@ pub struct Config {
     pub replace_domains: ReplaceDomainsConfig,
     #[serde(default)]
     pub spotdl: SpotdlConfig,
+    #[serde(default)]
+    pub songrec: SongrecConfig,
 }
 
 #[derive(Error, Debug)]
