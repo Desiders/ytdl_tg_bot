@@ -11,5 +11,5 @@ pub use fs::sanitize_send_filename;
 pub use media::AspectKind;
 pub use shutdown::on_shutdown;
 pub use startup::on_startup;
-pub use text::media_link;
+pub use text::{media_link, prefixed};
 pub use url::{get_video_id, ErrorKind as GetVideoIdErrorKind};

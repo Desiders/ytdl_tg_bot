@@ -1,11 +1,14 @@
 use std::fmt::Write as _;
 
 use rust_i18n::t;
-use telers::utils::text::html_expandable_blockquote;
+use telers::utils::text::{html_expandable_blockquote, html_quote};
 
-use crate::services::messenger::{
-    AnswerInlineErrorRequest, DeleteMessageRequest, EditTarget, EditTextRequest, MessengerError, MessengerPort, SendTextRequest,
-    SentMessage, TextFormat,
+use crate::{
+    services::messenger::{
+        AnswerInlineErrorRequest, DeleteMessageRequest, EditTarget, EditTextRequest, MessengerError, MessengerPort, SendTextRequest,
+        SentMessage, TextFormat,
+    },
+    utils::prefixed,
 };
 
 pub async fn new(
@@ -26,13 +29,33 @@ pub async fn new(
         .await
 }
 
+pub async fn is_preparing(
+    messenger: &(impl MessengerPort + ?Sized),
+    chat_id: i64,
+    message_id: i64,
+    locale: &str,
+    base: Option<&str>,
+) -> Result<(), MessengerError> {
+    let text = prefixed(base, &t!("download.preparing", locale = locale));
+    messenger
+        .edit_text(EditTextRequest {
+            target: EditTarget::ChatMessage { chat_id, message_id },
+            text: &text,
+            format: Some(TextFormat::Html),
+            disable_link_preview: true,
+            clear_inline_keyboard: false,
+        })
+        .await
+}
+
 pub async fn is_sending(
     messenger: &(impl MessengerPort + ?Sized),
     chat_id: i64,
     message_id: i64,
     locale: &str,
+    base: Option<&str>,
 ) -> Result<(), MessengerError> {
-    let text = t!("progress.sending", locale = locale).into_owned();
+    let text = prefixed(base, &t!("progress.sending", locale = locale));
     messenger
         .edit_text(EditTextRequest {
             target: EditTarget::ChatMessage { chat_id, message_id },
@@ -51,6 +74,7 @@ pub async fn is_errors_if_exist(
     media_errs: &[Vec<String>],
     media_to_send_count: usize,
     locale: &str,
+    base: Option<&str>,
 ) -> Result<(), MessengerError> {
     let mut errs_text = String::new();
     for (failed_media_index, format_errs) in media_errs.iter().enumerate() {
@@ -88,6 +112,7 @@ pub async fn is_errors_if_exist(
         }
         (_, _) => return Ok(()),
     };
+    let text = prefixed(base, &text);
 
     messenger
         .edit_text(EditTextRequest {
@@ -125,6 +150,7 @@ pub async fn is_downloading_with_progress(
     current_media_index: usize,
     playlist_len: usize,
     locale: &str,
+    base: Option<&str>,
 ) -> Result<(), MessengerError> {
     let header = if playlist_len > 1 {
         t!(
@@ -137,14 +163,16 @@ pub async fn is_downloading_with_progress(
     } else {
         t!("progress.downloading", locale = locale).into_owned()
     };
+    // With a base text the message is HTML, so escape the dynamic progress value.
+    let progress = if base.is_some() { html_quote(&progress) } else { progress };
     let progress_line = t!("progress.media_progress", locale = locale, progress = progress);
-    let text = format!("{header}\n\n{progress_line}");
+    let text = prefixed(base, &format!("{header}\n\n{progress_line}"));
     messenger
         .edit_text(EditTextRequest {
             target: EditTarget::ChatMessage { chat_id, message_id },
             text: &text,
-            format: None,
-            disable_link_preview: false,
+            format: if base.is_some() { Some(TextFormat::Html) } else { None },
+            disable_link_preview: base.is_some(),
             clear_inline_keyboard: false,
         })
         .await

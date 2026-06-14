@@ -15,6 +15,7 @@ pub struct SendMediaInput<'a> {
     pub id: &'a str,
     pub webpage_url: Option<&'a Url>,
     pub link_is_visible: bool,
+    pub caption: Option<&'a str>,
 }
 
 pub struct SendPlaylistInput {
@@ -22,6 +23,7 @@ pub struct SendPlaylistInput {
     pub reply_to_message_id: Option<i64>,
     pub playlist: Vec<MediaInPlaylist>,
     pub link_is_visible: bool,
+    pub caption: Option<String>,
 }
 
 pub struct EditMediaInput<'a> {
@@ -57,6 +59,7 @@ where
                 remote_id: input.id,
                 webpage_url: input.webpage_url,
                 link_is_visible: input.link_is_visible,
+                caption: input.caption,
             })
             .await
     }
@@ -99,6 +102,7 @@ where
                 remote_id: input.id,
                 webpage_url: input.webpage_url,
                 link_is_visible: input.link_is_visible,
+                caption: input.caption,
             })
             .await
     }
@@ -119,6 +123,7 @@ where
                 remote_id: input.id,
                 webpage_url: input.webpage_url,
                 link_is_visible: input.link_is_visible,
+                caption: input.caption,
             })
             .await
     }
@@ -246,6 +251,7 @@ where
                     })
                     .collect(),
                 link_is_visible: input.link_is_visible,
+                caption: input.caption,
             })
             .await
     }
@@ -294,6 +300,7 @@ where
                     })
                     .collect(),
                 link_is_visible: input.link_is_visible,
+                caption: input.caption,
             })
             .await
     }
@@ -320,6 +327,7 @@ where
                     })
                     .collect(),
                 link_is_visible: input.link_is_visible,
+                caption: input.caption,
             })
             .await
     }

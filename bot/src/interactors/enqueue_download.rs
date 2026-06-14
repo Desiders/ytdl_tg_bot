@@ -36,6 +36,8 @@ pub struct EnqueueCommandInput<'a> {
     pub params: &'a Params,
     pub chat_cfg: &'a ChatConfig,
     pub link_is_visible: bool,
+    pub progress_message_id: Option<i64>,
+    pub base_text: Option<&'a str>,
 }
 
 impl<Messenger> Interactor<EnqueueCommandInput<'_>> for &EnqueueCommandDownload<Messenger>
@@ -47,7 +49,7 @@ where
 
     #[instrument(skip_all, fields(chat_id = input.chat_id, message_id = input.message_id, url = input.url.as_str()))]
     async fn execute(self, input: EnqueueCommandInput<'_>) -> Result<Self::Output, Self::Err> {
-        let job = DownloadJob::new(
+        let mut job = DownloadJob::new(
             input.media_type,
             Some(input.url.clone()),
             input.params.clone(),
@@ -58,6 +60,9 @@ where
                 message_id: input.message_id,
             },
         );
+        if let Some(progress_message_id) = input.progress_message_id {
+            job = job.with_progress_reuse(progress_message_id, input.base_text.map(ToOwned::to_owned));
+        }
 
         info!(job_id = %job.job_id, "Enqueueing download job");
         if let Err(err) = self.queue.enqueue(&job).await {

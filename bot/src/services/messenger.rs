@@ -132,6 +132,7 @@ pub struct SendMediaByIdRequest<'a> {
     pub remote_id: &'a str,
     pub webpage_url: Option<&'a Url>,
     pub link_is_visible: bool,
+    pub caption: Option<&'a str>,
 }
 
 pub struct EditMediaByIdRequest<'a> {
@@ -151,6 +152,7 @@ pub struct SendMediaGroupRequest {
     pub reply_to_message_id: Option<i64>,
     pub items: Vec<MediaGroupItem>,
     pub link_is_visible: bool,
+    pub caption: Option<String>,
 }
 
 pub trait MessengerPort: Send + Sync {
