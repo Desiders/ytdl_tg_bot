@@ -117,7 +117,6 @@ impl SongRecognizer {
             .args(base_args)
             .arg("audio-file-to-recognized-song")
             .arg(wav)
-            .arg("--json")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -140,8 +139,8 @@ impl SongRecognizer {
     }
 }
 
-/// `songrec --json` prints the raw Shazam response. A successful match has a `track` object; a
-/// no-match response omits it (only `matches: []` / `retryms`).
+/// `songrec audio-file-to-recognized-song` prints the raw Shazam response. A successful match has a
+/// `track` object; a no-match response omits it (only `matches: []` / `retryms`).
 fn parse_recognized(stdout: &str) -> Result<Recognized, RecognizeErrorKind> {
     let response: ShazamResponse = serde_json::from_str(stdout.trim()).map_err(|err| RecognizeErrorKind::Parse(err.to_string()))?;
     let Some(track) = response.track else {
