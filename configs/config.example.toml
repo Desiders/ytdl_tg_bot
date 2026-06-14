@@ -85,6 +85,13 @@ url = "http://yt-toolkit-api:8080"
 url = "http://telegram-bot-api:8081"
 # url = "https://api.telegram.org"
 
+# `file_server_url` and `work_dir` are required when `url` is a local (self-hosted `--local`) bot
+# API server: in local mode `getFile` returns an absolute path and the server does not serve files
+# over HTTP, so files are fetched from a separate file server (e.g. nginx) exposing `work_dir`.
+# Omit both when `url` is the cloud API (`https://api.telegram.org`) or a non-local server.
+file_server_url = "http://telegram-bot-api:8080"
+work_dir = "/var/lib/telegram-bot-api"
+
 [tracking_params]
 params = [
     "utm_source",

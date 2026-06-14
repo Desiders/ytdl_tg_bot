@@ -116,6 +116,10 @@ pub struct YtToolkitConfig {
 #[derive(Deserialize, Clone, Debug)]
 pub struct TelegramBotApiConfig {
     pub url: Box<str>,
+    #[serde(default)]
+    pub file_server_url: Option<Box<str>>,
+    #[serde(default)]
+    pub work_dir: Option<Box<str>>,
     // pub api_id: Box<str>,
     // pub api_hash: Box<str>,
 }
