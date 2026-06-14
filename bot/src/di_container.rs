@@ -280,8 +280,10 @@ where
                 Inject(error_formatter),
                 Inject(messenger): Inject<Messenger>,
                 Inject(file_downloader),
-                Inject(node_router)| async move {
-                    Ok(shazam::Shazam::new(error_formatter, messenger, file_downloader, node_router))
+                Inject(node_router),
+                Inject(search_media),
+                Inject(enqueue_download)| async move {
+                    Ok(shazam::Shazam::new(error_formatter, messenger, file_downloader, node_router, search_media, enqueue_download))
                 }
             ),
             provide(|

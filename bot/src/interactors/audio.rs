@@ -29,7 +29,7 @@ use crate::{
         messenger::{MessengerPort, TextFormat},
         send_media,
     },
-    utils::ErrorFormatter,
+    utils::{prefixed, ErrorFormatter},
 };
 
 pub struct Download<Messenger> {
@@ -79,6 +79,8 @@ pub struct DownloadInput<'a> {
     pub url: &'a Url,
     pub chat_cfg: &'a ChatConfig,
     pub link_is_visible: bool,
+    pub progress_message_id: Option<i64>,
+    pub base_text: Option<&'a str>,
 }
 
 impl<Messenger> Interactor<DownloadInput<'_>> for &Download<Messenger>
@@ -93,22 +95,28 @@ where
         debug!("Got url");
         let locale = input.chat_cfg.locale();
 
-        let progress_message = match progress::new(
-            self.messenger.as_ref(),
-            t!("download.preparing", locale = locale.as_str()).as_ref(),
-            input.chat_id,
-            Some(input.message_id),
-            None,
-        )
-        .await
-        {
-            Ok(progress_message) => progress_message,
-            Err(err) => {
-                error!(err = %self.error_formatter.format(&err), "Send progress error");
-                return Ok(());
+        // When a progress message is supplied, reuse it and keep the base text above
+        let progress_message_id = match input.progress_message_id {
+            Some(id) => {
+                let _ = progress::is_preparing(self.messenger.as_ref(), input.chat_id, id, locale.as_str(), input.base_text).await;
+                id
             }
+            None => match progress::new(
+                self.messenger.as_ref(),
+                t!("download.preparing", locale = locale.as_str()).as_ref(),
+                input.chat_id,
+                Some(input.message_id),
+                None,
+            )
+            .await
+            {
+                Ok(progress_message) => progress_message.message_id,
+                Err(err) => {
+                    error!(err = %self.error_formatter.format(&err), "Send progress error");
+                    return Ok(());
+                }
+            },
         };
-        let progress_message_id = progress_message.message_id;
 
         let playlist_range = match input.params.0.get("items") {
             Some(raw_value) => match Range::from_str(raw_value) {
@@ -186,6 +194,7 @@ where
                         id: &file_id,
                         webpage_url: Some(input.url),
                         link_is_visible: input.link_is_visible,
+                        caption: input.base_text,
                     })
                     .await
                 {
@@ -200,7 +209,7 @@ where
                         self.messenger.as_ref(),
                         input.chat_id,
                         progress_message_id,
-                        &text,
+                        &prefixed(input.base_text, &text),
                         Some(TextFormat::Html),
                     )
                     .await;
@@ -292,6 +301,7 @@ where
                                         downloaded_media_count.load(Ordering::SeqCst),
                                         cached_len + uncached_len,
                                         input.chat_cfg.locale().as_str(),
+                                        input.base_text,
                                     )
                                     .await
                                     .is_err()
@@ -305,6 +315,7 @@ where
                                         input.chat_id,
                                         progress_message_id,
                                         input.chat_cfg.locale().as_str(),
+                                        input.base_text,
                                     )
                                     .await;
                                 }
@@ -323,7 +334,7 @@ where
                                 self.messenger.as_ref(),
                                 input.chat_id,
                                 progress_message_id,
-                                &text,
+                                &prefixed(input.base_text, &text),
                                 Some(TextFormat::Html),
                             )
                             .await;
@@ -340,6 +351,7 @@ where
                     &errs,
                     media_to_send_count,
                     input.chat_cfg.locale().as_str(),
+                    input.base_text,
                 )
                 .await;
 
@@ -351,6 +363,7 @@ where
                         reply_to_message_id: Some(input.message_id),
                         playlist: downloaded_playlist,
                         link_is_visible: input.link_is_visible,
+                        caption: input.base_text.map(ToOwned::to_owned),
                     })
                     .await
                 {
@@ -365,7 +378,7 @@ where
                         self.messenger.as_ref(),
                         input.chat_id,
                         progress_message_id,
-                        &text,
+                        &prefixed(input.base_text, &text),
                         Some(TextFormat::Html),
                     )
                     .await;
@@ -379,7 +392,7 @@ where
                     self.messenger.as_ref(),
                     input.chat_id,
                     progress_message_id,
-                    &t!("download.playlist_empty", locale = locale.as_str()),
+                    &prefixed(input.base_text, t!("download.playlist_empty", locale = locale.as_str()).as_ref()),
                     Some(TextFormat::Html),
                 )
                 .await;
@@ -468,6 +481,7 @@ where
                             })
                             .collect(),
                         link_is_visible: false,
+                        caption: None,
                     })
                     .await
                 {

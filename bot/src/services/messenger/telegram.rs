@@ -329,11 +329,11 @@ impl MessengerPort for TelegramMessenger {
                         .reply_to_message_id
                         .map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)),
                 )
-                .caption_option(if request.link_is_visible {
-                    media_link(request.webpage_url)
-                } else {
-                    None
-                })
+                .caption_option(caption_with_link(
+                    request.caption.map(ToOwned::to_owned),
+                    request.link_is_visible,
+                    request.webpage_url,
+                ))
                 .disable_notification(true)
                 .parse_mode(ParseMode::HTML),
             2,
@@ -454,24 +454,29 @@ impl MessengerPort for TelegramMessenger {
         Ok(())
     }
 
-    async fn send_audio_group(&self, request: SendMediaGroupRequest) -> Result<(), MessengerError> {
+    async fn send_audio_group(
+        &self,
+        SendMediaGroupRequest {
+            chat_id,
+            reply_to_message_id,
+            items,
+            link_is_visible,
+            caption,
+        }: SendMediaGroupRequest,
+    ) -> Result<(), MessengerError> {
         media_groups(
             &self.bot,
-            request.chat_id,
-            request
-                .items
+            chat_id,
+            items
                 .into_iter()
                 .map(|item| {
+                    let item_caption = caption_with_link(caption.clone(), link_is_visible, item.webpage_url.as_ref());
                     InputMediaAudio::new(InputFile::id(item.remote_id))
-                        .caption_option(if request.link_is_visible {
-                            media_link(item.webpage_url.as_ref())
-                        } else {
-                            None
-                        })
+                        .caption_option(item_caption)
                         .parse_mode(ParseMode::HTML)
                 })
                 .collect(),
-            request.reply_to_message_id,
+            reply_to_message_id,
             Some(self.timeouts_cfg.send_by_id),
         )
         .await?;
@@ -548,6 +553,17 @@ impl From<InlineQueryArticle> for InlineQueryResult {
         }
 
         result.into()
+    }
+}
+
+/// Builds a media caption: an optional custom caption (e.g. recognized-song metadata) followed by
+/// the source "Link" when visible. Either part may be absent.
+fn caption_with_link(caption: Option<String>, link_is_visible: bool, webpage_url: Option<&url::Url>) -> Option<String> {
+    let link = if link_is_visible { media_link(webpage_url) } else { None };
+    match (caption, link) {
+        (Some(caption), Some(link)) => Some(format!("{caption}\n\n{link}")),
+        (Some(text), None) | (None, Some(text)) => Some(text),
+        (None, None) => None,
     }
 }
 
