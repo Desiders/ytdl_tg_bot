@@ -9,6 +9,7 @@ otherwise, downloading happens in silent mode.
 - <code>/ad</code> — download audio
 - <code>/pd</code> — download photo
 - <code>/rv</code>, <code>/ra</code> — random video or audio
+- <code>/shazam</code> — recognize a song from a replied voice, audio or video
 - <code>/add_ed</code> — exclude domain from downloads
 - <code>/rm_ed</code> — re-include domain in downloads
 - <code>/change_link_visibility</code> — show or hide the link in media captions
