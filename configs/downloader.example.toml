@@ -63,5 +63,10 @@ url = "http://yt-pot-provider:4416"
 enabled = false
 command = ["spotdl"]
 
+[songrec]
+enabled = false
+command = ["songrec"]
+max_audio_size = 26214400
+
 [logging]
 dirs = "info,downloader::grpc::capabilities=warn"
