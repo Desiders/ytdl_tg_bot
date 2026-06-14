@@ -22,6 +22,8 @@ spec:
           env:
             - name: TELEGRAM_LOCAL
               value: "1"
+            - name: TELEGRAM_WORK_DIR
+              value: {{ .Values.telegramBotApi.dataDir | quote }}
             - name: TELEGRAM_API_ID
               valueFrom:
                 secretKeyRef:
@@ -32,3 +34,24 @@ spec:
                 secretKeyRef:
                   name: telegram-bot-api
                   key: hash
+          volumeMounts:
+            - name: tgapi-files
+              mountPath: {{ .Values.telegramBotApi.dataDir | quote }}
+        - name: file-server
+          image: "{{ .Values.telegramBotApi.fileServer.image.repository }}:{{ .Values.telegramBotApi.fileServer.image.tag }}"
+          imagePullPolicy: {{ .Values.telegramBotApi.fileServer.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.telegramBotApi.fileServer.port }}
+          volumeMounts:
+            - name: tgapi-files
+              mountPath: {{ .Values.telegramBotApi.dataDir | quote }}
+            - name: file-server-config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+              readOnly: true
+      volumes:
+        - name: tgapi-files
+          emptyDir: {}
+        - name: file-server-config
+          configMap:
+            name: telegram-bot-api-file-server
