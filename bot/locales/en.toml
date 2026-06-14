@@ -115,6 +115,16 @@ error_send_playlist = "Sorry, an error to send playlist"
 error_download_playlist = "Sorry, an error to download playlist"
 error_edit_message = "Sorry, an error to edit the message"
 
+[shazam]
+no_audio = "Reply to a voice or audio message with /shazam, or send an audio file with the /shazam caption."
+too_large = "This audio is too large to recognize. Try a short voice clip."
+recognizing = "🎧 Recognizing..."
+no_match = "🤷 Couldn't recognize this one. Try a clearer or longer clip."
+error = "🧨 Failed to recognize the audio :("
+result = "🎵 <b>%{title}</b>\nby %{artist}"
+album = "💿 %{album}"
+link = "🔗 %{url}"
+
 [inline]
 no_name = "No name"
 download_video = "Click to download video"
@@ -131,6 +141,7 @@ ra = "Random audio"
 add_ed = "Exclude domain"
 rm_ed = "Re-include domain"
 change_link_visibility = "Toggle link visibility"
+shazam = "Recognize a song"
 stats = "Statistics"
 lang = "Switch language"
 
