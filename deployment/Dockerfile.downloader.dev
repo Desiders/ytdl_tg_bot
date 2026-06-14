@@ -1,4 +1,10 @@
-FROM debian:bookworm-slim AS base
+FROM rust:1.91-trixie AS songrec-build
+RUN apt update && apt install -y --no-install-recommends \
+        pkg-config clang libclang-dev libglib2.0-dev libsoup-3.0-dev gettext libasound2-dev libpipewire-0.3-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN cargo install songrec --no-default-features --root /songrec --locked
+
+FROM debian:trixie-slim AS base
 RUN apt update && apt install -y --no-install-recommends \
         ffmpeg \
         python3 \
@@ -7,7 +13,12 @@ RUN apt update && apt install -y --no-install-recommends \
         bash \
         curl \
         ca-certificates \
+        libglib2.0-0t64 \
+        libsoup-3.0-0 \
+        libasound2t64 \
+        libpipewire-0.3-0 \
     && rm -rf /var/lib/apt/lists/*
+COPY --from=songrec-build /songrec/bin/songrec /usr/local/bin/songrec
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
