@@ -55,6 +55,13 @@ valkey:
 telegramBotApi:
   image:
     pullPolicy: IfNotPresent
+  dataDir: /var/lib/telegram-bot-api
+  fileServer:
+    port: 8080
+    image:
+      repository: nginx
+      tag: "1.30-alpine"
+      pullPolicy: IfNotPresent
 
 ytToolkit:
   image:

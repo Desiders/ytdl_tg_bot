@@ -11,3 +11,7 @@ spec:
     - port: 8081
       targetPort: 8081
       protocol: TCP
+    - name: file-server
+      port: {{ .Values.telegramBotApi.fileServer.port }}
+      targetPort: {{ .Values.telegramBotApi.fileServer.port }}
+      protocol: TCP
