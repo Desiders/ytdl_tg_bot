@@ -51,6 +51,37 @@ impl From<NodeFailoverError<ResolveSourceErrorKind>> for ResolveSourceErrorKind 
 }
 
 #[derive(Debug, thiserror::Error)]
+pub enum RecognizeSongErrorKind {
+    #[error(transparent)]
+    Rpc(#[from] tonic::Status),
+    #[error(transparent)]
+    Metadata(#[from] tonic::metadata::errors::InvalidMetadataValue),
+    #[error("All download nodes are busy. Try again later.")]
+    NodeUnavailable,
+    #[error("Could not recognize the song.")]
+    NodeContextUnavailable,
+}
+
+impl RecognizeSongErrorKind {
+    /// True when the node reported that no song matched the clip (a normal "not found"), as opposed
+    /// to a transport/processing failure.
+    #[must_use]
+    pub fn is_no_match(&self) -> bool {
+        matches!(self, Self::Rpc(status) if status.code() == tonic::Code::NotFound)
+    }
+}
+
+impl From<NodeFailoverError<RecognizeSongErrorKind>> for RecognizeSongErrorKind {
+    fn from(err: NodeFailoverError<RecognizeSongErrorKind>) -> Self {
+        match err {
+            NodeFailoverError::NodeUnavailable => Self::NodeUnavailable,
+            NodeFailoverError::NodeContextUnavailable => Self::NodeContextUnavailable,
+            NodeFailoverError::Operation(err) => err,
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
 pub enum DownloadErrorKind {
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
