@@ -116,7 +116,7 @@ error_download_playlist = "Sorry, an error to download playlist"
 error_edit_message = "Sorry, an error to edit the message"
 
 [shazam]
-no_audio = "Reply to a voice or audio message with /shazam, or send an audio file with the /shazam caption."
+no_audio = "Reply to a voice, audio or video message with /shazam, or send one with the /shazam caption."
 too_large = "This audio is too large to recognize. Try a short voice clip."
 recognizing = "Recognizing..."
 no_match = "Couldn't recognize this one. Try a clearer or longer clip."

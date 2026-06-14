@@ -21,14 +21,21 @@ pub async fn shazam<Messenger>(
 where
     Messenger: MessengerPort,
 {
-    // The audio is either attached to this message (voice/audio with the command as a caption) or
-    // in the message it replies to (the usual "reply /shazam to a voice" flow).
+    // The media is either attached to this message (voice/audio/video with the command as a caption)
+    // or in the message it replies to (the usual "reply /shazam to a voice" flow). For video the node
+    // extracts the audio track, so any of these work.
     let reply = message.reply_to_message();
     let source = reply.as_deref().unwrap_or(&message);
     let (file_id, file_size) = source
         .voice()
         .map(|voice| (voice.file_id.to_string(), voice.file_size))
         .or_else(|| source.audio().map(|audio| (audio.file_id.to_string(), audio.file_size)))
+        .or_else(|| source.video().map(|video| (video.file_id.to_string(), video.file_size)))
+        .or_else(|| {
+            source
+                .video_note()
+                .map(|video_note| (video_note.file_id.to_string(), video_note.file_size))
+        })
         .map_or((None, None), |(file_id, file_size)| (Some(file_id), file_size));
 
     interactor
