@@ -1,3 +1,10 @@
+FROM rust:1.91-alpine AS songrec-build
+RUN apk add --no-cache build-base pkgconf clang-dev glib-dev gettext-dev libsoup3-dev alsa-lib-dev pipewire-dev
+# Disable static-musl linking so the pipewire/libspa bindgen build script can dlopen libclang
+# (static musl binaries cannot dlopen), and so the songrec binary links its C libs dynamically.
+ENV RUSTFLAGS="-C target-feature=-crt-static"
+RUN cargo install songrec --no-default-features --root /songrec --locked
+
 FROM alpine:3.22 AS base
 RUN apk add --no-cache \
         ffmpeg \
@@ -8,7 +15,13 @@ RUN apk add --no-cache \
         bash \
         curl \
         ca-certificates \
+        glib \
+        libsoup3 \
+        gettext-libs \
+        alsa-lib \
+        pipewire-libs \
     && rm -rf /var/cache/apk/*
+COPY --from=songrec-build /songrec/bin/songrec /usr/local/bin/songrec
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
@@ -18,8 +31,6 @@ RUN pip install --no-cache-dir -U pip \
  && pip install --no-cache-dir --pre "bgutil-ytdlp-pot-provider" \
  && pip install --no-cache-dir --pre "spotdl"
 
-# Stock spotapi depends on tls_client, a Go shared library that cannot run on musl
-# (golang/go#13492); swap it for a fork that uses curl_cffi instead.
 RUN pip uninstall -y spotapi tls-client \
  && pip install --no-cache-dir "spotapi @ https://github.com/Desiders/SpotAPI/archive/b299d1d1f13e06273b686fa579edc2968ebdc7fd.tar.gz"
 
