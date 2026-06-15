@@ -16,6 +16,13 @@ use tokio::{io::AsyncBufReadExt as _, sync::mpsc};
 use tonic::Status;
 use tracing::{debug, error, instrument, trace, warn};
 
+const STREAM_CHUNK_SIZE: usize = 256 * 1024;
+
+pub enum StreamItem {
+    Data(Vec<u8>),
+    Progress(String),
+}
+
 #[derive(Debug, Clone)]
 pub enum FormatStrategy {
     VideoAndAudio,
@@ -457,6 +464,144 @@ pub async fn download_media(
         }
     );
     res
+}
+
+#[instrument(skip_all)]
+#[allow(clippy::too_many_arguments)]
+pub async fn stream_media(
+    format_id: &str,
+    max_filesize: u64,
+    info_file_path: &Path,
+    yt_dlp_cfg: &YtDlpConfig,
+    pot_provider_url: &str,
+    timeout: u64,
+    cookie_path: Option<&Path>,
+    item_sender: mpsc::Sender<StreamItem>,
+) -> Result<(), DownloadErrorKind> {
+    use tokio::{
+        io::{AsyncReadExt as _, BufReader},
+        time,
+    };
+
+    let max_filesize = max_filesize.to_string();
+    let info_file_path = info_file_path.to_string_lossy();
+    let extractor_arg = format!("youtubepot-bgutilhttp:base_url={pot_provider_url}");
+
+    let mut args = vec![
+        "--js-runtimes",
+        "deno:deno",
+        "--socket-timeout",
+        "5",
+        "-R",
+        "0",
+        "--fragment-retries",
+        "0",
+        "--newline",
+        "--progress-template",
+        "download-progress:%(progress._default_template)s",
+        "--progress-delta",
+        "3",
+        "--max-filesize",
+        &max_filesize,
+        "--no-write-comments",
+        "--no-playlist",
+        "--no-config",
+        "--no-color",
+        "--load-info-json",
+        &info_file_path,
+        "-f",
+        format_id,
+        "-o",
+        "-",
+    ];
+
+    args.push("--extractor-args");
+    args.push(&extractor_arg);
+    args.push("--extractor-args");
+    args.push(&yt_dlp_cfg.extractor_args);
+
+    let cookie_path = cookie_path.map(|val| val.to_string_lossy());
+    if let Some(cookie_path) = cookie_path.as_deref() {
+        trace!("Using cookies from: {cookie_path}");
+        args.push("--cookies");
+        args.push(cookie_path);
+    } else {
+        trace!("No cookies provided");
+    }
+
+    trace!(?args, "Ytdlp stream args");
+
+    let mut child = create_ytdlp_command(yt_dlp_cfg)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()?;
+
+    let mut stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+
+    let stdout_sender = item_sender.clone();
+    let stderr_sender = item_sender;
+
+    let stdout_task = async move {
+        let mut buffer = vec![0u8; STREAM_CHUNK_SIZE];
+        loop {
+            match stdout.read(&mut buffer).await {
+                Ok(0) => break Ok::<(), io::Error>(()),
+                Ok(read) => {
+                    if stdout_sender.send(StreamItem::Data(buffer[..read].to_vec())).await.is_err() {
+                        break Ok(());
+                    }
+                }
+                Err(err) => break Err(err),
+            }
+        }
+    };
+    let stderr_task = async move {
+        let mut lines = BufReader::new(stderr).lines();
+        let mut collected = String::new();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if line.starts_with("download-progress") {
+                if let Some((_, progress)) = line.split_once(':') {
+                    let _ = stderr_sender.send(StreamItem::Progress(progress.to_owned())).await;
+                }
+            } else {
+                collected.push_str(&line);
+                collected.push('\n');
+            }
+        }
+        collected
+    };
+
+    let run = async move {
+        let (stdout_res, stderr_text) = tokio::join!(stdout_task, stderr_task);
+        let status = child.wait().await?;
+        Ok::<_, io::Error>((stdout_res, stderr_text, status))
+    };
+
+    match time::timeout(Duration::from_secs(timeout), run).await {
+        Ok(Ok((stdout_res, stderr_text, status))) => finish_ytdlp(status, stdout_res, &stderr_text),
+        Ok(Err(err)) => Err(err.into()),
+        Err(_) => Err(io::Error::new(io::ErrorKind::TimedOut, "Ytdlp timed out").into()),
+    }
+}
+
+fn finish_ytdlp(status: std::process::ExitStatus, stdout_res: Result<(), io::Error>, stderr_text: &str) -> Result<(), DownloadErrorKind> {
+    if status.success() {
+        stdout_res?;
+        if !stderr_text.trim().is_empty() {
+            warn!("{stderr_text}");
+        }
+        Ok(())
+    } else {
+        error!("{stderr_text}");
+        if let Some(kind) = classify_retryable_error(stderr_text) {
+            return Err(DownloadErrorKind::Retryable(kind));
+        }
+        Err(process_exit_error("Ytdlp", status, stderr_text).into())
+    }
 }
 
 fn create_ytdlp_command(yt_dlp_cfg: &YtDlpConfig) -> tokio::process::Command {

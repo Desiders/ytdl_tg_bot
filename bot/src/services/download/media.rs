@@ -40,6 +40,15 @@ pub enum DownloadMediaPlaylistErrorKind {
     MediaChannel(#[from] mpsc::error::SendError<(MediaForUpload, Media, MediaFormat, Option<i64>)>),
 }
 
+// Bounded so a slow Telegram upload back-pressures the download instead of buffering the whole
+// file in memory: when reqwest stops draining this channel, the gRPC stream stops being read,
+// which back-pressures the downloader and ultimately yt-dlp. The thumbnail channel stays
+// unbounded because reqwest sends the video part fully before reading the thumbnail part.
+// Sized as a byte budget; each queued chunk is one downloader Data frame (mirrors STREAM_CHUNK_SIZE).
+const DOWNLOADER_CHUNK_SIZE: usize = 256 * 1024;
+const MEDIA_CHANNEL_BYTES: usize = 32 * 1024 * 1024;
+const MEDIA_CHANNEL_CAP: usize = MEDIA_CHANNEL_BYTES / DOWNLOADER_CHUNK_SIZE;
+
 pub enum DownloadProgressEvent {
     Progress(String),
     Finished,
@@ -686,7 +695,7 @@ fn build_downloaded_media(
 ) -> PreparedDownload {
     let meta = session.meta().clone();
     let path = output_dir.join(format!("media.{}", meta.ext));
-    let (media_sender, media_receiver) = mpsc::unbounded_channel();
+    let (media_sender, media_receiver) = mpsc::channel(MEDIA_CHANNEL_CAP);
     let (thumb_sender, thumb_receiver) = mpsc::unbounded_channel();
     let mut format = base_format.clone();
     format.ext = meta.ext;
@@ -714,37 +723,53 @@ fn build_downloaded_media(
     }
 }
 
-struct ChannelByteStream {
-    inner: Mutex<mpsc::UnboundedReceiver<Result<Bytes, io::Error>>>,
+trait PollBytes: Send {
+    fn poll_bytes(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<Bytes, io::Error>>>;
 }
 
-impl ChannelByteStream {
-    fn new(receiver: mpsc::UnboundedReceiver<Result<Bytes, io::Error>>) -> Self {
+impl PollBytes for mpsc::Receiver<Result<Bytes, io::Error>> {
+    fn poll_bytes(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<Bytes, io::Error>>> {
+        self.poll_recv(cx)
+    }
+}
+
+impl PollBytes for mpsc::UnboundedReceiver<Result<Bytes, io::Error>> {
+    fn poll_bytes(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<Bytes, io::Error>>> {
+        self.poll_recv(cx)
+    }
+}
+
+struct ChannelByteStream<R: PollBytes> {
+    inner: Mutex<R>,
+}
+
+impl<R: PollBytes> ChannelByteStream<R> {
+    fn new(receiver: R) -> Self {
         Self {
             inner: Mutex::new(receiver),
         }
     }
 }
 
-impl Stream for ChannelByteStream {
+impl<R: PollBytes> Stream for ChannelByteStream<R> {
     type Item = Result<Bytes, io::Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.inner.lock().expect("Channel byte stream mutex poisoned").poll_recv(cx)
+        self.inner.lock().expect("Channel byte stream mutex poisoned").poll_bytes(cx)
     }
 }
 
 async fn forward_download_stream(
     mut session: DownloadSession,
     progress_sender: Option<mpsc::UnboundedSender<DownloadProgressEvent>>,
-    media_sender: mpsc::UnboundedSender<Result<Bytes, io::Error>>,
+    media_sender: mpsc::Sender<Result<Bytes, io::Error>>,
     thumb_sender: Option<mpsc::UnboundedSender<Result<Bytes, io::Error>>>,
 ) {
     loop {
         match session.next_event().await {
             Ok(Some(event)) => {
-                if let Err(err) = handle_download_event(event, progress_sender.as_ref(), &media_sender, thumb_sender.as_ref()) {
-                    let _ = media_sender.send(Err(err));
+                if let Err(err) = handle_download_event(event, progress_sender.as_ref(), &media_sender, thumb_sender.as_ref()).await {
+                    let _ = media_sender.send(Err(err)).await;
                     return;
                 }
             }
@@ -755,17 +780,17 @@ async fn forward_download_stream(
                 return;
             }
             Err(err) => {
-                let _ = media_sender.send(Err(io::Error::other(err)));
+                let _ = media_sender.send(Err(io::Error::other(err))).await;
                 return;
             }
         }
     }
 }
 
-fn handle_download_event(
+async fn handle_download_event(
     event: DownloadEvent,
     progress_sender: Option<&mpsc::UnboundedSender<DownloadProgressEvent>>,
-    media_sender: &mpsc::UnboundedSender<Result<Bytes, io::Error>>,
+    media_sender: &mpsc::Sender<Result<Bytes, io::Error>>,
     thumb_sender: Option<&mpsc::UnboundedSender<Result<Bytes, io::Error>>>,
 ) -> Result<(), io::Error> {
     match event {
@@ -777,6 +802,7 @@ fn handle_download_event(
         }
         DownloadEvent::Data(data) => media_sender
             .send(Ok(data))
+            .await
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "Media stream closed")),
         DownloadEvent::ThumbnailData(data) => thumb_sender
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Unexpected thumbnail stream"))?

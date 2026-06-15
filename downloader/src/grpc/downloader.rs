@@ -18,11 +18,11 @@ use tokio::{
     fs::File,
     io::AsyncReadExt as _,
     sync::{
-        mpsc::{self, UnboundedSender},
+        mpsc::{self, Sender},
         Semaphore,
     },
 };
-use tokio_stream::{wrappers::UnboundedReceiverStream, Stream};
+use tokio_stream::{wrappers::ReceiverStream, Stream};
 use tonic::{Code, Request, Response, Status};
 use tracing::{debug, error, info, warn};
 use url::Url;
@@ -44,6 +44,13 @@ const AUDIO_EXT: &str = "m4a";
 const THUMBNAIL_TIMEOUT_SECS: u64 = 5;
 const FFMPEG_PATH: &str = "/usr/bin/ffmpeg";
 const STREAM_CHUNK_SIZE: usize = 256 * 1024;
+// Bounded so a slow client/Telegram upload back-pressures through tonic's HTTP/2 window into the
+// downloader instead of buffering the whole file in RAM. Sized as a byte budget (then converted to a
+// chunk count) so the memory ceiling is explicit and stays correct if STREAM_CHUNK_SIZE changes.
+const RESPONSE_CHANNEL_BYTES: usize = 16 * 1024 * 1024;
+const RESPONSE_CHANNEL_CAP: usize = RESPONSE_CHANNEL_BYTES / STREAM_CHUNK_SIZE;
+const STREAM_ITEM_CHANNEL_BYTES: usize = 16 * 1024 * 1024;
+const STREAM_ITEM_CHANNEL_CAP: usize = STREAM_ITEM_CHANNEL_BYTES / STREAM_CHUNK_SIZE;
 
 type DownloadStream = Pin<Box<dyn Stream<Item = Result<DownloadChunk, Status>> + Send + 'static>>;
 
@@ -178,7 +185,7 @@ impl Downloader for DownloaderService {
         let domain_replacer = self.domain_replacer.clone();
         let cookies = self.cookies.clone();
 
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(RESPONSE_CHANNEL_CAP);
         let error_tx = tx.clone();
         tokio::spawn(async move {
             let started_at = Instant::now();
@@ -210,7 +217,7 @@ impl Downloader for DownloaderService {
                         %status,
                         "Download stream failed"
                     );
-                    let _ = send_status(&error_tx, status);
+                    let _ = send_status(&error_tx, status).await;
                 }
             } else {
                 info!(
@@ -224,7 +231,7 @@ impl Downloader for DownloaderService {
             drop(guard);
         });
 
-        Ok(Response::new(Box::pin(UnboundedReceiverStream::new(rx))))
+        Ok(Response::new(Box::pin(ReceiverStream::new(rx))))
     }
 }
 
@@ -246,7 +253,7 @@ async fn stream_download(
     yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
     domain_replacer: Arc<DomainReplacer>,
     cookies: Arc<Cookies>,
-    tx: UnboundedSender<Result<DownloadChunk, Status>>,
+    tx: Sender<Result<DownloadChunk, Status>>,
 ) -> Result<(), Status> {
     let url = parse_url(&request.url)?;
     let section = parse_section(request.section);
@@ -270,8 +277,17 @@ async fn stream_download(
     let media_with_format: MediaWithFormat =
         serde_json::from_str(&request.raw_info_json).map_err(|err| Status::invalid_argument(format!("Invalid info file error: {err}")))?;
     let media = Media::from(media_with_format.clone());
-    let format = MediaFormat::from(media_with_format);
     let strategy = parse_format_strategy(&request.media_type, &request.audio_ext)?;
+    // Only a single pre-muxed HTTP(S) format is streamable: it's already a faststart MP4, so it
+    // plays and seeks on the client. HLS/DASH and merges can't be piped as a seekable file, so they
+    // take the download path (which produces a seekable faststart MP4).
+    let can_stream = matches!(strategy, FormatStrategy::VideoAndAudio)
+        && section.is_none()
+        && media_with_format.is_progressive_streamable()
+        && media_with_format
+            .filesize_approx
+            .is_some_and(|size| size <= effective_max_file_size);
+    let format = MediaFormat::from(media_with_format);
     let ext = strategy.output_ext(format.ext.as_str()).to_owned();
 
     info!(
@@ -283,8 +299,26 @@ async fn stream_download(
         section_start = section.as_ref().and_then(|section| section.start),
         section_end = section.as_ref().and_then(|section| section.end),
         max_file_size = effective_max_file_size,
+        can_stream,
         "Starting media download"
     );
+
+    if can_stream {
+        return stream_piped_download(
+            &url,
+            &request.format_id,
+            &request.raw_info_json,
+            &media,
+            &format,
+            ext,
+            effective_max_file_size,
+            yt_dlp_cfg.as_ref(),
+            yt_pot_provider_cfg.as_ref(),
+            cookie.as_deref(),
+            tx,
+        )
+        .await;
+    }
 
     let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(|err| Status::internal(format!("Temp dir error: {err}")))?;
     let output_dir_path = temp_dir.path();
@@ -333,7 +367,7 @@ async fn stream_download(
     loop {
         tokio::select! {
             Some(progress) = progress_rx.recv() => {
-                send_chunk(&tx, DownloadChunk { payload: Some(Payload::Progress(progress)) })?;
+                send_chunk(&tx, DownloadChunk { payload: Some(Payload::Progress(progress)) }).await?;
             }
             res = &mut download_future => {
                 res.map_err(download_error_status)?;
@@ -364,7 +398,8 @@ async fn stream_download(
                 has_thumbnail: thumbnail_downloaded,
             })),
         },
-    )?;
+    )
+    .await?;
 
     if thumbnail_downloaded {
         debug!(url = %url, path = %thumb_file_path.display(), "Starting thumbnail stream to client");
@@ -377,13 +412,146 @@ async fn stream_download(
     Ok(())
 }
 
+// Stream a single progressive format with no intermediate file: yt-dlp writes the media to stdout
+// and we forward each chunk to the client as it arrives. `Meta` is held back until the first byte
+// of media is read, so a failure during format resolution / connection still surfaces as a clean
+// error the bot can fail over to another format. A failure after the first byte aborts the
+// already-started upload — the price of not downloading first.
+#[allow(clippy::too_many_arguments)]
+async fn stream_piped_download(
+    url: &Url,
+    format_id: &str,
+    raw_info_json: &str,
+    media: &Media,
+    format: &MediaFormat,
+    ext: String,
+    effective_max_file_size: u64,
+    yt_dlp_cfg: &YtDlpConfig,
+    yt_pot_provider_cfg: &YtPotProviderConfig,
+    cookie: Option<&std::path::Path>,
+    tx: Sender<Result<DownloadChunk, Status>>,
+) -> Result<(), Status> {
+    let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(|err| Status::internal(format!("Temp dir error: {err}")))?;
+    let output_dir_path = temp_dir.path();
+    let info_file_path = output_dir_path.join("media.info.json");
+    fs::write(&info_file_path, raw_info_json).map_err(|err| Status::internal(format!("Info file error: {err}")))?;
+
+    let thumb_file_path = output_dir_path.join("media.jpg");
+    let thumb_urls = media.get_thumb_urls(format.aspect_ratio_kind());
+    debug!(
+        url = %url,
+        thumbnail_candidate_count = thumb_urls.len(),
+        "Starting thumbnail download for streamed media"
+    );
+    // Fetch the thumbnail concurrently with yt-dlp's connection/first-byte latency rather than
+    // serializing it ahead of the download; it only has to be ready by the time the first media
+    // chunk arrives (when `Meta` and the thumbnail stream are emitted).
+    let mut thumb_task = Some(tokio::spawn({
+        let thumb_file_path = thumb_file_path.clone();
+        async move { download_thumbnail(&thumb_urls, &thumb_file_path).await }
+    }));
+    let duration = resolve_download_duration(media.duration, None);
+
+    let (item_tx, mut item_rx) = mpsc::channel::<ytdl::StreamItem>(STREAM_ITEM_CHANNEL_CAP);
+    let mut download_future = Box::pin(ytdl::stream_media(
+        format_id,
+        effective_max_file_size,
+        &info_file_path,
+        yt_dlp_cfg,
+        &yt_pot_provider_cfg.url,
+        DOWNLOAD_TIMEOUT_SECS,
+        cookie,
+        item_tx,
+    ));
+
+    let mut meta_sent = false;
+    let mut download_done = false;
+    let mut items_drained = false;
+    let mut total_bytes = 0_u64;
+
+    loop {
+        tokio::select! {
+            biased;
+            () = tx.closed() => return Err(Status::cancelled("Client disconnected")),
+            res = &mut download_future, if !download_done => {
+                res.map_err(download_error_status)?;
+                download_done = true;
+                if items_drained {
+                    break;
+                }
+            }
+            item = item_rx.recv(), if !items_drained => {
+                match item {
+                    Some(ytdl::StreamItem::Progress(progress)) => {
+                        send_chunk(&tx, DownloadChunk { payload: Some(Payload::Progress(progress)) }).await?;
+                    }
+                    Some(ytdl::StreamItem::Data(data)) => {
+                        total_bytes += data.len() as u64;
+                        if total_bytes > effective_max_file_size {
+                            warn!(
+                                url = %url,
+                                total_bytes,
+                                max_file_size = effective_max_file_size,
+                                "Streamed media exceeds max file size"
+                            );
+                            return Err(Status::invalid_argument("File exceeds max file size"));
+                        }
+                        if !meta_sent {
+                            let thumbnail_downloaded = match thumb_task.take() {
+                                Some(handle) => handle.await.unwrap_or(false),
+                                None => false,
+                            };
+                            send_chunk(
+                                &tx,
+                                DownloadChunk {
+                                    payload: Some(Payload::Meta(DownloadMeta {
+                                        ext: ext.clone(),
+                                        width: format.width,
+                                        height: format.height,
+                                        duration,
+                                        has_thumbnail: thumbnail_downloaded,
+                                    })),
+                                },
+                            )
+                            .await?;
+                            if thumbnail_downloaded {
+                                stream_thumbnail_file(&thumb_file_path, &tx).await?;
+                            }
+                            meta_sent = true;
+                        }
+                        send_chunk(&tx, DownloadChunk { payload: Some(Payload::Data(data)) }).await?;
+                    }
+                    None => {
+                        items_drained = true;
+                        if download_done {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if !meta_sent {
+        if let Some(handle) = thumb_task.take() {
+            handle.abort();
+        }
+        warn!(url = %url, "Streamed media produced no data");
+        return Err(Status::internal("Downloaded file is empty"));
+    }
+
+    info!(url = %url, bytes_streamed = total_bytes, "Finished streaming downloaded media");
+    drop(temp_dir);
+    Ok(())
+}
+
 async fn stream_photo_download(
     request: DownloadRequest,
     url: Url,
     effective_max_file_size: u64,
     gallery_dl_cfg: Arc<GalleryDlConfig>,
     cookie: Option<std::path::PathBuf>,
-    tx: UnboundedSender<Result<DownloadChunk, Status>>,
+    tx: Sender<Result<DownloadChunk, Status>>,
 ) -> Result<(), Status> {
     let raw_info: RawPhotoInfo =
         serde_json::from_str(&request.raw_info_json).map_err(|err| Status::invalid_argument(format!("Invalid info file error: {err}")))?;
@@ -429,7 +597,8 @@ async fn stream_photo_download(
                 has_thumbnail: false,
             })),
         },
-    )?;
+    )
+    .await?;
 
     stream_media_to_client(&url, &media_file_path, file_size, &tx).await?;
     drop(temp_dir);
@@ -503,7 +672,7 @@ async fn stream_media_to_client(
     url: &Url,
     media_file_path: &std::path::Path,
     file_size: u64,
-    tx: &UnboundedSender<Result<DownloadChunk, Status>>,
+    tx: &Sender<Result<DownloadChunk, Status>>,
 ) -> Result<(), Status> {
     debug!(url = %url, path = %media_file_path.display(), file_size, "Starting media stream to client");
     let stream_started_at = Instant::now();
@@ -662,10 +831,7 @@ async fn download_thumbnail(thumb_urls: &[Url], thumb_file_path: &std::path::Pat
     false
 }
 
-async fn stream_thumbnail_file(
-    thumb_file_path: &std::path::Path,
-    tx: &UnboundedSender<Result<DownloadChunk, Status>>,
-) -> Result<(), Status> {
+async fn stream_thumbnail_file(thumb_file_path: &std::path::Path, tx: &Sender<Result<DownloadChunk, Status>>) -> Result<(), Status> {
     match File::open(thumb_file_path).await {
         Ok(mut file) => {
             let mut buffer = vec![0u8; STREAM_CHUNK_SIZE];
@@ -685,7 +851,8 @@ async fn stream_thumbnail_file(
                     DownloadChunk {
                         payload: Some(Payload::ThumbnailData(buffer[..read].to_vec())),
                     },
-                )?;
+                )
+                .await?;
             }
         }
         Err(err) => {
@@ -695,7 +862,7 @@ async fn stream_thumbnail_file(
     Ok(())
 }
 
-async fn stream_media_file(media_file_path: &std::path::Path, tx: &UnboundedSender<Result<DownloadChunk, Status>>) -> Result<u64, Status> {
+async fn stream_media_file(media_file_path: &std::path::Path, tx: &Sender<Result<DownloadChunk, Status>>) -> Result<u64, Status> {
     let mut file = File::open(media_file_path)
         .await
         .map_err(|err| Status::internal(format!("Open file error: {err}")))?;
@@ -715,7 +882,8 @@ async fn stream_media_file(media_file_path: &std::path::Path, tx: &UnboundedSend
             DownloadChunk {
                 payload: Some(Payload::Data(buffer[..read].to_vec())),
             },
-        )?;
+        )
+        .await?;
     }
     Ok(total_streamed)
 }
@@ -784,13 +952,13 @@ async fn resolve_media_file_path(
 }
 
 #[allow(clippy::result_large_err)]
-fn send_chunk(tx: &UnboundedSender<Result<DownloadChunk, Status>>, chunk: DownloadChunk) -> Result<(), Status> {
-    tx.send(Ok(chunk)).map_err(|_| Status::cancelled("Client disconnected"))
+async fn send_chunk(tx: &Sender<Result<DownloadChunk, Status>>, chunk: DownloadChunk) -> Result<(), Status> {
+    tx.send(Ok(chunk)).await.map_err(|_| Status::cancelled("Client disconnected"))
 }
 
 #[allow(clippy::result_large_err)]
-fn send_status(tx: &UnboundedSender<Result<DownloadChunk, Status>>, status: Status) -> Result<(), Status> {
-    tx.send(Err(status)).map_err(|_| Status::cancelled("Client disconnected"))
+async fn send_status(tx: &Sender<Result<DownloadChunk, Status>>, status: Status) -> Result<(), Status> {
+    tx.send(Err(status)).await.map_err(|_| Status::cancelled("Client disconnected"))
 }
 
 #[allow(clippy::cast_possible_truncation)]

@@ -50,6 +50,9 @@ impl From<RawPhotoInfo> for MediaWithFormat {
             aspect_ratio: None,
             filesize_approx: raw_info.filesize_approx,
             playlist_index: Some(raw_info.playlist_index),
+            protocol: None,
+            vcodec: None,
+            acodec: None,
         }
     }
 }

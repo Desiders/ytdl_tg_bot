@@ -184,6 +184,24 @@ pub struct MediaWithFormat {
     pub aspect_ratio: Option<f32>,
     pub filesize_approx: Option<u64>,
     pub playlist_index: Option<i16>,
+    #[serde(default)]
+    pub protocol: Option<String>,
+    #[serde(default)]
+    pub vcodec: Option<String>,
+    #[serde(default)]
+    pub acodec: Option<String>,
+}
+
+impl MediaWithFormat {
+    // Streamable only when it's a single pre-muxed HTTP(S) file that yt-dlp can write to stdout
+    // as-is. Such formats (e.g. YouTube progressive) are already faststart MP4, so Telegram plays
+    // and seeks them. HLS/DASH and `+` merges are excluded: a pipe can't produce a seekable file.
+    pub fn is_progressive_streamable(&self) -> bool {
+        !self.format_id.contains('+')
+            && matches!(self.protocol.as_deref(), Some("https" | "http"))
+            && self.vcodec.as_deref().is_some_and(|codec| codec != "none")
+            && self.acodec.as_deref().is_some_and(|codec| codec != "none")
+    }
 }
 
 pub type RawMediaWithFormat = String;
