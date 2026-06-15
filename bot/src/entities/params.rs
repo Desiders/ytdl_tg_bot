@@ -59,7 +59,12 @@ impl Extractor for Params {
     type Error = Infallible;
 
     fn extract(request: &Request) -> impl Future<Output = Result<Self, Self::Error>> + Send {
-        let params = request.update.text().map(Params::parse).unwrap_or_default();
+        let params = request
+            .update
+            .text()
+            .or(request.update.query())
+            .map(Params::parse)
+            .unwrap_or_default();
         async move { Ok(params) }
     }
 }
