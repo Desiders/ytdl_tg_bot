@@ -5,10 +5,7 @@ mod text_empty;
 mod text_url;
 mod via_bot;
 
-pub use chosen_inline::{
-    is_audio as is_audio_inline_result, is_auto as is_auto_inline_result, is_photo as is_photo_inline_result,
-    is_video as is_video_inline_result,
-};
+pub use chosen_inline::{is_audio as is_audio_inline_result, is_auto as is_auto_inline_result, is_video as is_video_inline_result};
 pub use exclude_domain::is_exclude_domain;
 pub use random_cmd::random_cmd_is_enabled;
 pub use text_empty::text_empty;
