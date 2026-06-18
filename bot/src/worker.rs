@@ -10,12 +10,13 @@ use std::{sync::Arc, time::Duration};
 
 use froodi::{async_impl::Container, DefaultScope::Request, ResolveErrorKind, ScopeWithErrorKind};
 use redis::aio::ConnectionManager;
-use telers::errors::HandlerError;
+use telers::{errors::HandlerError, methods::SetMessageReaction, Bot};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, instrument, warn};
 
 use crate::{
+    config::DomainsWithReactionsConfig,
     entities::{DownloadJob, JobTarget},
     interactors::{audio, auto, chosen_inline, photo, video, Interactor as _},
     services::{
@@ -140,6 +141,11 @@ async fn process(container: Container, queue: &RedisJobQueue, QueuedJob { entry_
 async fn run_job(container: Container, job: &DownloadJob) -> Result<(), JobError> {
     let child = container.enter().with_scope(Request).build()?;
     let result = run_in_scope(&child, job).await;
+    // Clear the acknowledgment reaction once processing is done, on success or failure alike (the
+    // handler only enqueued). No-op for inline jobs and links the reaction middleware ignored.
+    if let JobTarget::Command { chat_id, message_id } = &job.target {
+        clear_reaction(&child, job, *chat_id, *message_id).await;
+    }
     child.close().await;
     result
 }
@@ -174,51 +180,51 @@ async fn run_in_scope(child: &Container, job: &DownloadJob) -> Result<(), JobErr
                         })
                         .await?;
                 }
-                return Ok(());
-            }
-            // Each media type has its own interactor + `Input` type (same fields, distinct types),
-            // so these can't collapse into a macro the way the inline arm below does.
-            match job.media_type {
-                MediaType::Video => {
-                    let interactor = child.get::<video::Download<TelegramMessenger>>().await?;
-                    interactor
-                        .execute(video::DownloadInput {
-                            message_id: *message_id,
-                            chat_id: *chat_id,
-                            params: &job.params,
-                            url,
-                            chat_cfg: &job.chat_cfg,
-                            link_is_visible: job.link_is_visible,
-                        })
-                        .await?;
-                }
-                MediaType::Audio => {
-                    let interactor = child.get::<audio::Download<TelegramMessenger>>().await?;
-                    interactor
-                        .execute(audio::DownloadInput {
-                            message_id: *message_id,
-                            chat_id: *chat_id,
-                            params: &job.params,
-                            url,
-                            chat_cfg: &job.chat_cfg,
-                            link_is_visible: job.link_is_visible,
-                            progress_message_id: job.progress_message_id,
-                            base_text: job.base_text.as_deref(),
-                        })
-                        .await?;
-                }
-                MediaType::Photo => {
-                    let interactor = child.get::<photo::Download<TelegramMessenger>>().await?;
-                    interactor
-                        .execute(photo::DownloadInput {
-                            message_id: *message_id,
-                            chat_id: *chat_id,
-                            params: &job.params,
-                            url,
-                            chat_cfg: &job.chat_cfg,
-                            link_is_visible: job.link_is_visible,
-                        })
-                        .await?;
+            } else {
+                // Each media type has its own interactor + `Input` type (same fields, distinct types),
+                // so these can't collapse into a macro the way the inline arm below does.
+                match job.media_type {
+                    MediaType::Video => {
+                        let interactor = child.get::<video::Download<TelegramMessenger>>().await?;
+                        interactor
+                            .execute(video::DownloadInput {
+                                message_id: *message_id,
+                                chat_id: *chat_id,
+                                params: &job.params,
+                                url,
+                                chat_cfg: &job.chat_cfg,
+                                link_is_visible: job.link_is_visible,
+                            })
+                            .await?;
+                    }
+                    MediaType::Audio => {
+                        let interactor = child.get::<audio::Download<TelegramMessenger>>().await?;
+                        interactor
+                            .execute(audio::DownloadInput {
+                                message_id: *message_id,
+                                chat_id: *chat_id,
+                                params: &job.params,
+                                url,
+                                chat_cfg: &job.chat_cfg,
+                                link_is_visible: job.link_is_visible,
+                                progress_message_id: job.progress_message_id,
+                                base_text: job.base_text.as_deref(),
+                            })
+                            .await?;
+                    }
+                    MediaType::Photo => {
+                        let interactor = child.get::<photo::Download<TelegramMessenger>>().await?;
+                        interactor
+                            .execute(photo::DownloadInput {
+                                message_id: *message_id,
+                                chat_id: *chat_id,
+                                params: &job.params,
+                                url,
+                                chat_cfg: &job.chat_cfg,
+                                link_is_visible: job.link_is_visible,
+                            })
+                            .await?;
+                    }
                 }
             }
         }
@@ -251,4 +257,28 @@ async fn run_in_scope(child: &Container, job: &DownloadJob) -> Result<(), JobErr
         }
     }
     Ok(())
+}
+
+// Removes the acknowledgment reaction the middleware set on the user's message. The middleware sets
+// it on receipt; the worker clears it here once the job is actually done (not when the handler
+// finished enqueuing). No-op for links the reaction middleware ignores.
+async fn clear_reaction(child: &Container, job: &DownloadJob, chat_id: i64, message_id: i64) {
+    let Some(domain) = job.url.as_ref().and_then(|url| url.domain()) else {
+        return;
+    };
+    let Ok(domains_with_reactions) = child.get::<DomainsWithReactionsConfig>().await else {
+        return;
+    };
+    if !domains_with_reactions
+        .domains
+        .contains(&domain.trim_start_matches("www.").to_owned())
+    {
+        return;
+    }
+    let Ok(bot) = child.get::<Bot>().await else {
+        return;
+    };
+    if let Err(err) = bot.send(SetMessageReaction::new(chat_id, message_id)).await {
+        error!(%err, "Unset reaction error");
+    }
 }

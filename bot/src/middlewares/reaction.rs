@@ -55,17 +55,8 @@ impl Middleware for ReactionMiddleware {
             }
         }
 
-        let resp = next(request).await;
-
-        tokio::spawn(async move {
-            match bot.send(SetMessageReaction::new(chat_id, message_id)).await {
-                Ok(_) => {}
-                Err(err) => {
-                    error!(%err, "Unset reaction error");
-                }
-            }
-        });
-
-        resp
+        // The reaction stays as an acknowledgment; the worker clears it once the queued download job
+        // is actually processed (see `worker::clear_reaction`), not when this handler finishes.
+        next(request).await
     }
 }
