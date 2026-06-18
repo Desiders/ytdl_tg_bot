@@ -22,7 +22,7 @@ use crate::{
         auth::AuthInterceptor, capabilities::CapabilitiesService, cookie_manager::CookieManagerService, downloader::DownloaderService,
         music_resolver::MusicResolverService, song_recognizer::SongRecognizerService,
     },
-    services::{DomainReplacer, SongRecognizer, SpotdlResolver},
+    services::{DomainReplacer, SnapsaveResolver, SongRecognizer, SpotdlResolver},
 };
 
 #[tokio::main(flavor = "multi_thread")]
@@ -65,6 +65,7 @@ async fn main() {
         gallery_dl_cfg: Arc::new(config.gallery_dl),
         yt_pot_provider_cfg: Arc::new(config.yt_pot_provider),
         domain_replacer: Arc::new(DomainReplacer::new(&config.replace_domains)),
+        snapsave: Arc::new(SnapsaveResolver::new(&config.snapsave)),
         cookies: cookies.clone(),
         active_downloads: active_downloads.clone(),
         semaphore,

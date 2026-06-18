@@ -114,6 +114,14 @@ impl SpotdlConfig {
     }
 }
 
+#[derive(Default, Deserialize, Clone, Debug)]
+pub struct SnapsaveConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub proxy: Option<Box<str>>,
+}
+
 #[derive(Deserialize, Clone, Debug)]
 pub struct SongrecConfig {
     #[serde(default)]
@@ -162,6 +170,8 @@ pub struct Config {
     pub replace_domains: ReplaceDomainsConfig,
     #[serde(default)]
     pub spotdl: SpotdlConfig,
+    #[serde(default)]
+    pub snapsave: SnapsaveConfig,
     #[serde(default)]
     pub songrec: SongrecConfig,
 }

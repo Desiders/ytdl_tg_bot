@@ -14,6 +14,7 @@ proto = { path = "../proto" }
 regex = { version = "1.12", features = ["perf"], default-features = false }
 serde = { version = "1.0", features = ["derive"], default-features = false }
 serde_json = { version = "1.0", features = ["std"], default-features = false }
+snapsave-parser = { git = "https://github.com/Desiders/snapsave-parser.git", rev = "803865c62cf4694d652d6823e3ced75697def647" }
 tempfile = { version = "3.9", default-features = false }
 thiserror = { version = "2.0", default-features = false }
 tokio = { version = "1.36", features = ["rt-multi-thread", "macros", "process", "sync", "fs", "io-util", "time", "signal"], default-features = false }

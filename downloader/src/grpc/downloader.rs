@@ -34,6 +34,7 @@ use crate::{
         domain_replacer::{DomainReplacer, MediaKind},
         download_and_convert, embed_thumbnail,
         gallery_dl::{self, GetInfoErrorKind},
+        snapsave::{ResolvedMedia, SnapsaveResolver},
         ytdl::{self, FormatStrategy},
     },
 };
@@ -59,6 +60,7 @@ pub struct DownloaderService {
     pub gallery_dl_cfg: Arc<GalleryDlConfig>,
     pub yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
     pub domain_replacer: Arc<DomainReplacer>,
+    pub snapsave: Arc<SnapsaveResolver>,
     pub cookies: Arc<Cookies>,
     pub active_downloads: Arc<AtomicU32>,
     pub semaphore: Arc<Semaphore>,
@@ -85,21 +87,40 @@ impl Downloader for DownloaderService {
             "photo" => MediaKind::Photo,
             _ => MediaKind::Video,
         };
-        // Deterministic cookie-aware domain replacement, identical for every media type and
-        // reproduced at download time: with a cookie use the original URL (and its cookie); without
-        // one use the proxy (a cookie-free frontend) when a rule is configured. Keeping it
-        // deterministic — no failure-fallback — lets the separate download request resolve the same
-        // host, which gallery-dl's `direct_url` filter relies on.
-        let source_url = if has_cookie {
-            url.clone()
+        // Source URLs to fetch info from. Instagram/Facebook with no cookie resolve to direct CDN
+        // URLs via snapsave (showing the original URL); otherwise the deterministic cookie-aware
+        // domain replacement (vxinstagram fallback). `original` is set when we must override the
+        // reported `webpage_url` back to the post URL.
+        let snapsave_items = if !has_cookie && self.snapsave.is_supported(&url) {
+            self.snapsave
+                .resolve(&url, kind)
+                .await
+                .map(|items| select_by_range(items, &playlist_range))
         } else {
-            self.domain_replacer.replace_url(&url, kind).unwrap_or_else(|| url.clone())
+            None
         };
-        let source_cookie = if source_url.as_str() == url.as_str() { cookie } else { None };
+        let (source_items, original) = match snapsave_items {
+            Some(items) if !items.is_empty() => (items, Some(url.clone())),
+            _ => {
+                let source_url = if has_cookie {
+                    url.clone()
+                } else {
+                    self.domain_replacer.replace_url(&url, kind).unwrap_or_else(|| url.clone())
+                };
+                (
+                    vec![ResolvedMedia {
+                        url: source_url,
+                        thumbnail: None,
+                    }],
+                    None,
+                )
+            }
+        };
 
         info!(
             url = %url,
-            source_url = %source_url,
+            source_count = source_items.len(),
+            via_snapsave = original.is_some(),
             media_type = %request.media_type,
             audio_language = %request.audio_language,
             allow_playlist,
@@ -108,37 +129,76 @@ impl Downloader for DownloaderService {
             "Fetching media info"
         );
 
-        let playlist = if request.media_type == "photo" {
-            gallery_dl::get_media_info(
-                source_url.as_str(),
-                self.gallery_dl_cfg.as_ref(),
-                &playlist_range,
-                GET_INFO_TIMEOUT_SECS,
-                source_cookie.as_deref(),
-            )
-            .await
-            .map_err(|err| match err {
-                GetInfoErrorKind::EmptyEntries => Status::not_found(err.to_string()),
-                err => Status::internal(err.to_string()),
-            })?
-        } else {
-            let format_strategy = parse_format_strategy(&request.media_type, &request.audio_language)?;
-            let playlist = ytdl::get_media_info(
-                source_url.as_str(),
-                &format_strategy,
-                &audio_language,
-                self.yt_dlp_cfg.as_ref(),
-                &self.yt_pot_provider_cfg.url,
-                &playlist_range,
-                allow_playlist,
-                GET_INFO_TIMEOUT_SECS,
-                source_cookie.as_deref(),
-            )
-            .await?;
-
-            reject_active_livestreams(&playlist)?;
-            playlist
-        };
+        let mut playlist = Playlist { inner: vec![] };
+        for item in &source_items {
+            let source_url = &item.url;
+            let source_cookie = if original.is_none() && source_url.as_str() == url.as_str() {
+                cookie.as_deref()
+            } else {
+                None
+            };
+            let part = if request.media_type == "photo" {
+                gallery_dl::get_media_info(
+                    source_url.as_str(),
+                    self.gallery_dl_cfg.as_ref(),
+                    &playlist_range,
+                    GET_INFO_TIMEOUT_SECS,
+                    source_cookie,
+                )
+                .await
+                .map_err(|err| match err {
+                    GetInfoErrorKind::EmptyEntries => Status::not_found(err.to_string()),
+                    err => Status::internal(err.to_string()),
+                })?
+            } else {
+                let format_strategy = parse_format_strategy(&request.media_type, &request.audio_language)?;
+                let part = ytdl::get_media_info(
+                    source_url.as_str(),
+                    &format_strategy,
+                    &audio_language,
+                    self.yt_dlp_cfg.as_ref(),
+                    &self.yt_pot_provider_cfg.url,
+                    &playlist_range,
+                    allow_playlist,
+                    GET_INFO_TIMEOUT_SECS,
+                    source_cookie,
+                )
+                .await?;
+                reject_active_livestreams(&part)?;
+                part
+            };
+            for (mut media, mut formats) in part.inner {
+                if let Some(original) = &original {
+                    media.webpage_url = original.clone();
+                    // Name from the original post (e.g. reel shortcode), not the CDN path ("v2"); a
+                    // bare CDN id also collides across posts in the per-item cache.
+                    let base = snapsave_name(original);
+                    let name = if source_items.len() > 1 {
+                        format!("{base}_{}", playlist.inner.len() + 1)
+                    } else {
+                        base
+                    };
+                    media.id = name.clone();
+                    media.title = Some(name);
+                    // yt-dlp's generic info gives the tokenized CDN URL no real ext and no thumbnail.
+                    // Patch the `--load-info-json` blob (which the separate download request reads) so
+                    // the file gets a valid container (else metadata postprocessing fails) and a poster.
+                    for (format, raw) in &mut formats {
+                        if format.ext == "unknown_video" {
+                            format.ext = "mp4".to_owned();
+                        }
+                        *raw = patch_info_json(raw, &format.ext, item.thumbnail.as_ref());
+                    }
+                }
+                playlist.inner.push((media, formats));
+            }
+        }
+        // Reindex a snapsave carousel so each item keeps a distinct position.
+        if original.is_some() && playlist.inner.len() > 1 {
+            for (index, (media, _)) in playlist.inner.iter_mut().enumerate() {
+                media.playlist_index = i16::try_from(index + 1).unwrap_or(media.playlist_index);
+            }
+        }
 
         let entries_count = playlist.inner.len();
         info!(
@@ -741,6 +801,44 @@ fn reject_active_livestreams(playlist: &Playlist) -> Result<(), Status> {
         return Err(Status::invalid_argument("Livestream downloads are not supported"));
     }
     Ok(())
+}
+
+// A media name from a post URL: its last non-empty path segment (the reel/post shortcode).
+fn snapsave_name(url: &Url) -> String {
+    url.path_segments()
+        .and_then(|segments| segments.filter(|segment| !segment.is_empty()).next_back())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| "media".to_owned())
+}
+
+// Sets the top-level `ext` (so yt-dlp names the output with a real container) and, when given, the
+// `thumbnail` in a `--load-info-json` blob. Returns the input unchanged if it isn't a JSON object.
+fn patch_info_json(raw: &str, ext: &str, thumbnail: Option<&Url>) -> String {
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return raw.to_owned();
+    };
+    let Some(object) = value.as_object_mut() else {
+        return raw.to_owned();
+    };
+    object.insert("ext".to_owned(), serde_json::Value::String(ext.to_owned()));
+    if let Some(thumbnail) = thumbnail {
+        object.insert("thumbnail".to_owned(), serde_json::Value::String(thumbnail.to_string()));
+    }
+    serde_json::to_string(&value).unwrap_or_else(|_| raw.to_owned())
+}
+
+// Selects snapsave carousel URLs by the `items` range (1-based start:count:step), mirroring playlist
+// range selection on the node.
+fn select_by_range<T>(items: Vec<T>, range: &Range) -> Vec<T> {
+    items
+        .into_iter()
+        .enumerate()
+        .filter(|(index, _)| {
+            i16::try_from(*index + 1)
+                .is_ok_and(|position| position >= range.start && position <= range.count && (position - range.start) % range.step == 0)
+        })
+        .map(|(_, item)| item)
+        .collect()
 }
 
 #[allow(clippy::result_large_err)]

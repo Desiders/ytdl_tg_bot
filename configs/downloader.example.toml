@@ -63,6 +63,12 @@ url = "http://yt-pot-provider:4416"
 enabled = false
 command = ["spotdl"]
 
+# Resolve Instagram/Facebook links to direct media via snapsave.app (cookie-free), replacing the
+# vxinstagram domain-replace. On failure/disabled, falls back to that rule.
+[snapsave]
+enabled = false
+# proxy = "socks5://127.0.0.1:1080"
+
 [songrec]
 enabled = false
 command = ["songrec"]
