@@ -138,18 +138,24 @@ impl Downloader for DownloaderService {
                 None
             };
             let part = if request.media_type == "photo" {
-                gallery_dl::get_media_info(
-                    source_url.as_str(),
-                    self.gallery_dl_cfg.as_ref(),
-                    &playlist_range,
-                    GET_INFO_TIMEOUT_SECS,
-                    source_cookie,
-                )
-                .await
-                .map_err(|err| match err {
-                    GetInfoErrorKind::EmptyEntries => Status::not_found(err.to_string()),
-                    err => Status::internal(err.to_string()),
-                })?
+                if original.is_some() {
+                    // snapsave gives a direct image URL; synthesize the entry and fetch it directly at
+                    // download time (gallery-dl re-extracts a page, which fails for direct URLs).
+                    synthesize_photo(item, &url)?
+                } else {
+                    gallery_dl::get_media_info(
+                        source_url.as_str(),
+                        self.gallery_dl_cfg.as_ref(),
+                        &playlist_range,
+                        GET_INFO_TIMEOUT_SECS,
+                        source_cookie,
+                    )
+                    .await
+                    .map_err(|err| match err {
+                        GetInfoErrorKind::EmptyEntries => Status::not_found(err.to_string()),
+                        err => Status::internal(err.to_string()),
+                    })?
+                }
             } else {
                 let format_strategy = parse_format_strategy(&request.media_type, &request.audio_language)?;
                 let part = ytdl::get_media_info(
@@ -629,17 +635,25 @@ async fn stream_photo_download(
     let output_dir_path = temp_dir.path();
     let media_file_path = output_dir_path.join(format!("media.{}", raw_info.ext));
 
-    gallery_dl::download_media(
-        url.as_str(),
-        &raw_info,
-        effective_max_file_size,
-        output_dir_path,
-        gallery_dl_cfg.as_ref(),
-        DOWNLOAD_TIMEOUT_SECS,
-        cookie.as_deref(),
-    )
-    .await
-    .map_err(|err| Status::internal(err.to_string()))?;
+    if raw_info.direct {
+        // snapsave image: fetch the direct CDN URL straight to a file (gallery-dl would re-extract
+        // the page, which fails for a direct URL). Size is validated below.
+        download_and_convert(raw_info.direct_url.as_str(), &media_file_path, FFMPEG_PATH, DOWNLOAD_TIMEOUT_SECS)
+            .await
+            .map_err(|err| Status::internal(err.to_string()))?;
+    } else {
+        gallery_dl::download_media(
+            url.as_str(),
+            &raw_info,
+            effective_max_file_size,
+            output_dir_path,
+            gallery_dl_cfg.as_ref(),
+            DOWNLOAD_TIMEOUT_SECS,
+            cookie.as_deref(),
+        )
+        .await
+        .map_err(|err| Status::internal(err.to_string()))?;
+    }
 
     let media_file_path = resolve_media_file_path(output_dir_path, &media_file_path).await?;
     let file_size = validate_download_file(&url, &media_file_path, effective_max_file_size).await?;
@@ -801,6 +815,38 @@ fn reject_active_livestreams(playlist: &Playlist) -> Result<(), Status> {
         return Err(Status::invalid_argument("Livestream downloads are not supported"));
     }
     Ok(())
+}
+
+// Builds a single-photo playlist for a snapsave image: the direct CDN URL is fetched as-is at
+// download time (`direct` marker), with the original post URL shown.
+fn synthesize_photo(item: &ResolvedMedia, webpage_url: &Url) -> Result<Playlist, Status> {
+    let raw = RawPhotoInfo {
+        id: snapsave_name(webpage_url),
+        display_id: None,
+        webpage_url: webpage_url.clone(),
+        direct_url: item.url.clone(),
+        title: None,
+        uploader: None,
+        ext: photo_ext(&item.url),
+        width: None,
+        height: None,
+        filesize_approx: None,
+        playlist_index: 1,
+        direct: true,
+    };
+    let entry = raw
+        .into_playlist_entry()
+        .map_err(|err| Status::internal(format!("Photo info error: {err}")))?;
+    Ok(Playlist::new(vec![entry]))
+}
+
+// Image extension from a URL's last path segment, defaulting to `jpg`.
+fn photo_ext(url: &Url) -> String {
+    url.path_segments()
+        .and_then(|segments| segments.filter(|segment| !segment.is_empty()).next_back())
+        .and_then(|name| name.rsplit_once('.').map(|(_, ext)| ext.to_ascii_lowercase()))
+        .filter(|ext| matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp" | "heic"))
+        .unwrap_or_else(|| "jpg".to_owned())
 }
 
 // A media name from a post URL: its last non-empty path segment (the reel/post shortcode).

@@ -18,6 +18,9 @@ pub struct RawPhotoInfo {
     pub height: Option<i64>,
     pub filesize_approx: Option<u64>,
     pub playlist_index: i16,
+    // Set for snapsave images: fetch `direct_url` directly instead of re-extracting via gallery-dl.
+    #[serde(default)]
+    pub direct: bool,
 }
 
 impl RawPhotoInfo {
@@ -122,6 +125,7 @@ impl GalleryDlEntry {
             height,
             filesize_approx: self.extract_filesize(),
             playlist_index: 0,
+            direct: false,
         })
     }
 
