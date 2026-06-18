@@ -510,6 +510,16 @@ where
                     ))
                 }
             ),
+            provide(|
+                Inject(get_video),
+                Inject(get_audio),
+                Inject(get_photo),
+                Inject(video): Inject<chosen_inline::DownloadVideo<Messenger>>,
+                Inject(audio): Inject<chosen_inline::DownloadAudio<Messenger>>,
+                Inject(photo): Inject<chosen_inline::DownloadPhoto<Messenger>>| async move {
+                    Ok(chosen_inline::DownloadAuto::new(get_video, get_audio, get_photo, video, audio, photo))
+                }
+            ),
         ],
         extend(cfg_registry, tg_messenger_registry, node_router_registry),
     }

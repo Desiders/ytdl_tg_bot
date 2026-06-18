@@ -34,9 +34,9 @@ use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt
 
 use crate::{
     filters::{
-        is_audio_inline_result, is_exclude_domain, is_photo_inline_result, is_via_bot, is_video_inline_result, random_cmd_is_enabled,
-        text_contains_host_with_reply, text_contains_url, text_contains_url_with_reply, text_empty, url_is_blacklisted,
-        url_is_skippable_by_param,
+        is_audio_inline_result, is_auto_inline_result, is_exclude_domain, is_photo_inline_result, is_via_bot, is_video_inline_result,
+        random_cmd_is_enabled, text_contains_host_with_reply, text_contains_url, text_contains_url_with_reply, text_empty,
+        url_is_blacklisted, url_is_skippable_by_param,
     },
     handlers::{audio, chosen_inline, inline_query, lang, photo, shazam, start, stats, video},
     middlewares::{CreateChatMiddleware, ReactionMiddleware, RemoveTrackingParamsMiddleware},
@@ -174,6 +174,11 @@ async fn main() {
         .on_chosen_inline_result(|observer| {
             observer
                 .register_inner_middleware(RemoveTrackingParamsMiddleware)
+                .register(
+                    Handler::new(chosen_inline::download_auto::<Messenger>)
+                        .filter(is_auto_inline_result)
+                        .filter(text_contains_url.or(text_empty.invert())),
+                )
                 .register(
                     Handler::new(chosen_inline::download_video::<Messenger>)
                         .filter(is_video_inline_result)

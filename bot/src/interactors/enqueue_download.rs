@@ -103,6 +103,9 @@ pub struct EnqueueInlineInput<'a> {
     pub params: &'a Params,
     pub chat_cfg: &'a ChatConfig,
     pub link_is_visible: bool,
+    /// When set, the worker classifies the link and runs the inline auto download (`media_type` is
+    /// then an ignored placeholder).
+    pub auto: bool,
 }
 
 impl<Messenger> Interactor<EnqueueInlineInput<'_>> for &EnqueueInlineDownload<Messenger>
@@ -125,6 +128,8 @@ where
                 result_id: input.result_id.to_owned(),
             },
         );
+        // Inline shows progress via message edits, so `quiet` is irrelevant here.
+        let job = if input.auto { job.as_auto(false) } else { job };
 
         info!(job_id = %job.job_id, "Enqueueing download job");
         if let Err(err) = self.queue.enqueue(&job).await {

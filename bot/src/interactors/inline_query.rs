@@ -105,8 +105,17 @@ where
             let result_id = Uuid::new_v4();
 
             results.push(InlineQueryArticle {
-                id: format!("video_{result_id}"),
+                id: format!("auto_{result_id}"),
                 title: title.to_owned(),
+                content_text: t!("download.preparing", locale = input.locale).into_owned(),
+                content_format: Some(TextFormat::Html),
+                thumbnail_url: thumbnail.clone(),
+                description: Some(t!("inline.download_auto", locale = input.locale).into_owned()),
+                callback_data: Some("auto_download".to_owned()),
+            });
+            results.push(InlineQueryArticle {
+                id: format!("video_{result_id}"),
+                title: "↑".to_owned(),
                 content_text: t!("download.preparing", locale = input.locale).into_owned(),
                 content_format: Some(TextFormat::Html),
                 thumbnail_url: thumbnail.clone(),
@@ -118,18 +127,9 @@ where
                 title: "↑".to_owned(),
                 content_text: t!("download.preparing", locale = input.locale).into_owned(),
                 content_format: Some(TextFormat::Html),
-                thumbnail_url: thumbnail.clone(),
+                thumbnail_url: thumbnail,
                 description: Some(t!("inline.download_audio", locale = input.locale).into_owned()),
                 callback_data: Some("audio_download".to_owned()),
-            });
-            results.push(InlineQueryArticle {
-                id: format!("photo_{result_id}"),
-                title: "↑".to_owned(),
-                content_text: t!("download.preparing", locale = input.locale).into_owned(),
-                content_format: Some(TextFormat::Html),
-                thumbnail_url: thumbnail,
-                description: Some(t!("inline.download_photo", locale = input.locale).into_owned()),
-                callback_data: Some("photo_download".to_owned()),
             });
         }
 

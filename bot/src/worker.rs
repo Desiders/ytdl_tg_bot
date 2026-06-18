@@ -249,10 +249,14 @@ async fn run_in_scope(child: &Container, job: &DownloadJob) -> Result<(), JobErr
                         .await?;
                 }};
             }
-            match job.media_type {
-                MediaType::Video => run!(chosen_inline::DownloadVideo<TelegramMessenger>),
-                MediaType::Audio => run!(chosen_inline::DownloadAudio<TelegramMessenger>),
-                MediaType::Photo => run!(chosen_inline::DownloadPhoto<TelegramMessenger>),
+            if job.auto {
+                run!(chosen_inline::DownloadAuto<TelegramMessenger>);
+            } else {
+                match job.media_type {
+                    MediaType::Video => run!(chosen_inline::DownloadVideo<TelegramMessenger>),
+                    MediaType::Audio => run!(chosen_inline::DownloadAudio<TelegramMessenger>),
+                    MediaType::Photo => run!(chosen_inline::DownloadPhoto<TelegramMessenger>),
+                }
             }
         }
     }

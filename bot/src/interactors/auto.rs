@@ -456,6 +456,71 @@ where
     }
 }
 
+// First-success probe over video -> audio -> photo. Falls back to video so an undownloadable link
+// still surfaces the video extractor's error to the user.
+pub(crate) async fn classify(
+    get_video: &get_media::GetVideoByURL,
+    get_audio: &get_media::GetAudioByURL,
+    get_photo: &get_media::GetPhotoByURL,
+    url: &Url,
+    range: &Range,
+    sections: Option<&Sections>,
+    audio_language: &Language,
+    overwrite_cache: bool,
+) -> MediaType {
+    if let Ok(result) = get_video
+        .execute(get_media::GetMediaByURLInput {
+            url,
+            playlist_range: range,
+            cache_search: url.as_str(),
+            domain: url.domain(),
+            audio_language,
+            sections,
+            overwrite_cache,
+        })
+        .await
+    {
+        match result {
+            SingleCached(_) => return MediaType::Video,
+            Playlist { cached, uncached } if has_video_stream(&cached, &uncached) => return MediaType::Video,
+            _ => {}
+        }
+    }
+    if let Ok(result) = get_audio
+        .execute(get_media::GetMediaByURLInput {
+            url,
+            playlist_range: range,
+            cache_search: url.as_str(),
+            domain: url.domain(),
+            audio_language,
+            sections,
+            overwrite_cache,
+        })
+        .await
+    {
+        if !matches!(result, Empty) {
+            return MediaType::Audio;
+        }
+    }
+    if let Ok(result) = get_photo
+        .execute(get_media::GetMediaByURLInput {
+            url,
+            playlist_range: range,
+            cache_search: url.as_str(),
+            domain: url.domain(),
+            audio_language: &Language::default(),
+            sections: None,
+            overwrite_cache,
+        })
+        .await
+    {
+        if !matches!(result, Empty) {
+            return MediaType::Photo;
+        }
+    }
+    MediaType::Video
+}
+
 // Video when any uncached format has dimensions or a video container ext (generic/snapsave often
 // omits width), or when every entry was already cached as video.
 fn has_video_stream(cached: &[MediaInPlaylist], uncached: &[(Media, Vec<(MediaFormat, RawMediaWithFormat)>)]) -> bool {
@@ -513,60 +578,17 @@ impl<Messenger> Auto<Messenger> {
         audio_language: &Language,
         overwrite_cache: bool,
     ) -> MediaType {
-        if let Ok(result) = self
-            .get_video
-            .execute(get_media::GetMediaByURLInput {
-                url,
-                playlist_range: range,
-                cache_search: url.as_str(),
-                domain: url.domain(),
-                audio_language,
-                sections,
-                overwrite_cache,
-            })
-            .await
-        {
-            match result {
-                SingleCached(_) => return MediaType::Video,
-                Playlist { cached, uncached } if has_video_stream(&cached, &uncached) => return MediaType::Video,
-                _ => {}
-            }
-        }
-        if let Ok(result) = self
-            .get_audio
-            .execute(get_media::GetMediaByURLInput {
-                url,
-                playlist_range: range,
-                cache_search: url.as_str(),
-                domain: url.domain(),
-                audio_language,
-                sections,
-                overwrite_cache,
-            })
-            .await
-        {
-            if !matches!(result, Empty) {
-                return MediaType::Audio;
-            }
-        }
-        if let Ok(result) = self
-            .get_photo
-            .execute(get_media::GetMediaByURLInput {
-                url,
-                playlist_range: range,
-                cache_search: url.as_str(),
-                domain: url.domain(),
-                audio_language: &Language::default(),
-                sections: None,
-                overwrite_cache,
-            })
-            .await
-        {
-            if !matches!(result, Empty) {
-                return MediaType::Photo;
-            }
-        }
-        MediaType::Video
+        classify(
+            self.get_video.as_ref(),
+            self.get_audio.as_ref(),
+            self.get_photo.as_ref(),
+            url,
+            range,
+            sections,
+            audio_language,
+            overwrite_cache,
+        )
+        .await
     }
 }
 

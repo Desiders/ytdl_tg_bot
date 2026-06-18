@@ -12,7 +12,7 @@ use crate::{
     config::Config,
     entities::{language::Language, ChatConfig, Params, Range, Sections},
     handlers_utils::progress,
-    interactors::Interactor,
+    interactors::{auto, Interactor},
     services::{
         download::media,
         downloaded_media,
@@ -24,6 +24,7 @@ use crate::{
         send_media,
     },
     utils::ErrorFormatter,
+    value_objects::MediaType,
 };
 
 pub struct DownloadVideo<Messenger> {
@@ -945,4 +946,83 @@ fn resolve_url(url: Option<&Url>, result_id: &str) -> Url {
 
     let (_, video_id) = result_id.split_once('_').expect("Incorrect inline message ID");
     Url::parse(&format!("https://www.youtube.com/watch?v={video_id}")).expect("Invalid inline YouTube URL")
+}
+
+// Inline auto: classify the link (video -> audio -> photo), then run that type's inline downloader.
+pub struct DownloadAuto<Messenger> {
+    get_video: Arc<get_media::GetVideoByURL>,
+    get_audio: Arc<get_media::GetAudioByURL>,
+    get_photo: Arc<get_media::GetPhotoByURL>,
+    video: Arc<DownloadVideo<Messenger>>,
+    audio: Arc<DownloadAudio<Messenger>>,
+    photo: Arc<DownloadPhoto<Messenger>>,
+}
+
+impl<Messenger> DownloadAuto<Messenger> {
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub const fn new(
+        get_video: Arc<get_media::GetVideoByURL>,
+        get_audio: Arc<get_media::GetAudioByURL>,
+        get_photo: Arc<get_media::GetPhotoByURL>,
+        video: Arc<DownloadVideo<Messenger>>,
+        audio: Arc<DownloadAudio<Messenger>>,
+        photo: Arc<DownloadPhoto<Messenger>>,
+    ) -> Self {
+        Self {
+            get_video,
+            get_audio,
+            get_photo,
+            video,
+            audio,
+            photo,
+        }
+    }
+}
+
+impl<Messenger> Interactor<DownloadInput<'_>> for &DownloadAuto<Messenger>
+where
+    Messenger: MessengerPort,
+{
+    type Output = ();
+    type Err = HandlerError;
+
+    #[instrument(skip_all, fields(inline_message_id = input.inline_message_id, result_id = input.result_id))]
+    async fn execute(self, input: DownloadInput<'_>) -> Result<Self::Output, Self::Err> {
+        debug!("Got inline auto");
+
+        let url = resolve_url(input.url, input.result_id);
+        let playlist_range = input
+            .params
+            .0
+            .get("items")
+            .and_then(|raw| Range::from_str(raw).ok())
+            .unwrap_or_default();
+        let sections = input.params.0.get("crop").and_then(|raw| Sections::from_str(raw).ok());
+        let audio_language = input
+            .params
+            .0
+            .get("lang")
+            .and_then(|raw| Language::from_str(raw).ok())
+            .unwrap_or_default();
+        let overwrite_cache = input.params.get_bool("overwrite");
+
+        let media_type = auto::classify(
+            self.get_video.as_ref(),
+            self.get_audio.as_ref(),
+            self.get_photo.as_ref(),
+            &url,
+            &playlist_range,
+            sections.as_ref(),
+            &audio_language,
+            overwrite_cache,
+        )
+        .await;
+
+        match media_type {
+            MediaType::Video => self.video.execute(input).await,
+            MediaType::Audio => self.audio.execute(input).await,
+            MediaType::Photo => self.photo.execute(input).await,
+        }
+    }
 }

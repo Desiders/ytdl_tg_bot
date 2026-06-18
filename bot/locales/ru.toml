@@ -128,6 +128,7 @@ link = "<a href=\"%{url}\">Shazam</a>"
 
 [inline]
 no_name = "Без названия"
+download_auto = "Нажмите, чтобы скачать (авто)"
 download_video = "Нажмите, чтобы скачать видео"
 download_audio = "Нажмите, чтобы скачать аудио"
 download_photo = "Нажмите, чтобы скачать фото"
