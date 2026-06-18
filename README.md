@@ -12,13 +12,20 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 
 ## Features
 
-- Video download 
+- Auto media-type detection — send a link and the bot picks video / audio / photo for you
+- Video download
 - Audio download
+- Photo download
 - Playlist download
+- Inline mode (auto / video / audio)
+- Song recognition (`/shazam`) — identify a track from an audio, voice, video or video note, then download it
+- Cookie-free Instagram / Facebook downloads (via [`snapsave-parser`](https://github.com/Desiders/snapsave-parser))
+- Broad platform support — YouTube, TikTok, Instagram, Facebook, Twitter/X, Spotify, VK, Bluesky, Coub and more
 - Language selection
+- Media crop
 - Skip download param
 - Random media
-- Media crop
+- Reactions on supported links
 - Stats
 - Exclude domains list
 
