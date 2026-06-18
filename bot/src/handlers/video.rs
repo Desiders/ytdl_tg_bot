@@ -37,29 +37,68 @@ where
             link_is_visible: own_chat_cfg.as_ref().is_some_and(|chat_cfg| chat_cfg.link_is_visible),
             progress_message_id: None,
             base_text: None,
+            auto: false,
+            quiet: false,
         })
         .await?;
     Ok(EventReturn::Finish)
 }
 
 #[instrument(skip_all, fields(%message_id = message.message_id(), %url = url.as_str(), ?params))]
-pub async fn download_quiet<Messenger>(
+pub async fn download_auto<Messenger>(
     message: Message,
     params: Params,
     Extension(url): Extension<Url>,
+    Extension(chat_cfg): Extension<ChatConfig>,
     Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
-    Inject(interactor): Inject<video::DownloadQuiet<Messenger>>,
+    Inject(interactor): Inject<enqueue_download::EnqueueCommandDownload<Messenger>>,
 ) -> HandlerResult
 where
     Messenger: MessengerPort,
 {
     interactor
-        .execute(video::DownloadQuietInput {
-            message_id: message.message_id(),
+        .execute(enqueue_download::EnqueueCommandInput {
+            media_type: MediaType::Video,
             chat_id: message.chat().id(),
-            params: &params,
+            message_id: message.message_id(),
             url: &url,
+            params: &params,
+            chat_cfg: &chat_cfg,
             link_is_visible: own_chat_cfg.as_ref().is_some_and(|chat_cfg| chat_cfg.link_is_visible),
+            progress_message_id: None,
+            base_text: None,
+            auto: true,
+            quiet: false,
+        })
+        .await?;
+    Ok(EventReturn::Finish)
+}
+
+#[instrument(skip_all, fields(%message_id = message.message_id(), %url = url.as_str(), ?params))]
+pub async fn download_auto_quiet<Messenger>(
+    message: Message,
+    params: Params,
+    Extension(url): Extension<Url>,
+    Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
+    Inject(interactor): Inject<enqueue_download::EnqueueCommandDownload<Messenger>>,
+) -> HandlerResult
+where
+    Messenger: MessengerPort,
+{
+    interactor
+        .execute(enqueue_download::EnqueueCommandInput {
+            media_type: MediaType::Video,
+            chat_id: message.chat().id(),
+            message_id: message.message_id(),
+            url: &url,
+            params: &params,
+            chat_cfg: &chat_cfg,
+            link_is_visible: own_chat_cfg.as_ref().is_some_and(|chat_cfg| chat_cfg.link_is_visible),
+            progress_message_id: None,
+            base_text: None,
+            auto: true,
+            quiet: true,
         })
         .await?;
     Ok(EventReturn::Finish)

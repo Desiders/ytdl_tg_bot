@@ -29,6 +29,13 @@ pub struct DownloadJob {
     pub progress_message_id: Option<i64>,
     #[serde(default)]
     pub base_text: Option<String>,
+    /// Auto jobs carry no committed media type: the worker classifies (video -> audio -> photo) and
+    /// runs the auto download. `media_type` is an ignored placeholder for these.
+    #[serde(default)]
+    pub auto: bool,
+    /// For auto jobs: run silently (no progress message). Set for group chats.
+    #[serde(default)]
+    pub quiet: bool,
 }
 
 impl DownloadJob {
@@ -53,7 +60,16 @@ impl DownloadJob {
             attempts: 0,
             progress_message_id: None,
             base_text: None,
+            auto: false,
+            quiet: false,
         }
+    }
+
+    #[must_use]
+    pub fn as_auto(mut self, quiet: bool) -> Self {
+        self.auto = true;
+        self.quiet = quiet;
+        self
     }
 
     #[must_use]

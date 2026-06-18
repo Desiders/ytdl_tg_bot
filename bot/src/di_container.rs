@@ -18,7 +18,7 @@ use uuid::ContextV7;
 use crate::{
     config::{BotConfig, Config, DatabaseConfig, DownloadConfig, RedisConfig, TelegramBotApiConfig, TimeoutsConfig, YtDlpConfig},
     database::{SeaOrmTxManager, TxManager, TxManagerFactories},
-    interactors::{audio, chosen_inline, config, enqueue_download, inline_query, lang, photo, shazam, start, stats, video},
+    interactors::{audio, auto, chosen_inline, config, enqueue_download, inline_query, lang, photo, shazam, start, stats, video},
     services::{
         chat,
         download::media,
@@ -414,6 +414,56 @@ where
                         cfg, error_formatter, messenger, get_media,
                         upload_media, send_media_by_id, send_playlist, add_downloaded_media,
                     ))
+                }
+            ),
+            provide(|
+                Inject(cfg),
+                Inject(error_formatter),
+                Inject(playlist_downloader),
+                Inject(upload_media): Inject<send_media::upload::SendAudio<Messenger>>,
+                Inject(send_media_by_id): Inject<send_media::id::SendAudio<Messenger>>,
+                Inject(send_playlist): Inject<send_media::id::SendAudioPlaylist<Messenger>>,
+                Inject(add_downloaded_media)| async move {
+                    Ok(auto::AudioFulfiller::new(
+                        cfg, error_formatter, playlist_downloader,
+                        upload_media, send_media_by_id, send_playlist, add_downloaded_media,
+                    ))
+                }
+            ),
+            provide(|
+                Inject(cfg),
+                Inject(error_formatter),
+                Inject(upload_media): Inject<send_media::upload::SendPhotoUrl<Messenger>>,
+                Inject(send_media_by_id): Inject<send_media::id::SendPhoto<Messenger>>,
+                Inject(send_playlist): Inject<send_media::id::SendPhotoPlaylist<Messenger>>,
+                Inject(add_downloaded_media)| async move {
+                    Ok(auto::PhotoFulfiller::new(
+                        cfg, error_formatter,
+                        upload_media, send_media_by_id, send_playlist, add_downloaded_media,
+                    ))
+                }
+            ),
+            provide(|
+                Inject(error_formatter),
+                Inject(get_video),
+                Inject(get_audio),
+                Inject(get_photo),
+                Inject(video): Inject<video::DownloadQuiet<Messenger>>,
+                Inject(audio): Inject<auto::AudioFulfiller<Messenger>>,
+                Inject(photo): Inject<auto::PhotoFulfiller<Messenger>>| async move {
+                    Ok(auto::AutoQuiet::new(
+                        error_formatter, get_video, get_audio, get_photo, video, audio, photo,
+                    ))
+                }
+            ),
+            provide(|
+                Inject(get_video),
+                Inject(get_audio),
+                Inject(get_photo),
+                Inject(video): Inject<video::Download<Messenger>>,
+                Inject(audio): Inject<audio::Download<Messenger>>,
+                Inject(photo): Inject<photo::Download<Messenger>>| async move {
+                    Ok(auto::Auto::new(get_video, get_audio, get_photo, video, audio, photo))
                 }
             ),
             provide(|

@@ -17,7 +17,7 @@ use tracing::{error, info, instrument, warn};
 
 use crate::{
     entities::{DownloadJob, JobTarget},
-    interactors::{audio, chosen_inline, photo, video, Interactor as _},
+    interactors::{audio, auto, chosen_inline, photo, video, Interactor as _},
     services::{
         messenger::telegram::TelegramMessenger,
         queue::{QueuedJob, RedisJobQueue},
@@ -148,6 +148,34 @@ async fn run_in_scope(child: &Container, job: &DownloadJob) -> Result<(), JobErr
     match &job.target {
         JobTarget::Command { chat_id, message_id } => {
             let url = job.url.as_ref().ok_or(JobError::MissingUrl)?;
+            if job.auto {
+                // Bare link with no committed type: classify (video -> audio -> photo) and download.
+                if job.quiet {
+                    let interactor = child.get::<auto::AutoQuiet<TelegramMessenger>>().await?;
+                    interactor
+                        .execute(auto::AutoQuietInput {
+                            message_id: *message_id,
+                            chat_id: *chat_id,
+                            params: &job.params,
+                            url,
+                            link_is_visible: job.link_is_visible,
+                        })
+                        .await?;
+                } else {
+                    let interactor = child.get::<auto::Auto<TelegramMessenger>>().await?;
+                    interactor
+                        .execute(auto::AutoInput {
+                            message_id: *message_id,
+                            chat_id: *chat_id,
+                            url,
+                            params: &job.params,
+                            chat_cfg: &job.chat_cfg,
+                            link_is_visible: job.link_is_visible,
+                        })
+                        .await?;
+                }
+                return Ok(());
+            }
             // Each media type has its own interactor + `Input` type (same fields, distinct types),
             // so these can't collapse into a macro the way the inline arm below does.
             match job.media_type {

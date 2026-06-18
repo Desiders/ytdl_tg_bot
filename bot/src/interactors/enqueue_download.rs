@@ -38,6 +38,11 @@ pub struct EnqueueCommandInput<'a> {
     pub link_is_visible: bool,
     pub progress_message_id: Option<i64>,
     pub base_text: Option<&'a str>,
+    /// When set, the worker classifies the link and runs the auto download (`media_type` is then an
+    /// ignored placeholder).
+    pub auto: bool,
+    /// For auto jobs: run silently (group chats). Ignored when `auto` is false.
+    pub quiet: bool,
 }
 
 impl<Messenger> Interactor<EnqueueCommandInput<'_>> for &EnqueueCommandDownload<Messenger>
@@ -60,6 +65,9 @@ where
                 message_id: input.message_id,
             },
         );
+        if input.auto {
+            job = job.as_auto(input.quiet);
+        }
         if let Some(progress_message_id) = input.progress_message_id {
             job = job.with_progress_reuse(progress_message_id, input.base_text.map(ToOwned::to_owned));
         }

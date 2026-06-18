@@ -1,6 +1,7 @@
 mod base;
 
 pub mod audio;
+pub mod auto;
 pub mod chosen_inline;
 pub mod config;
 pub mod enqueue_download;

@@ -150,14 +150,14 @@ async fn main() {
                         .filter(Command::one("change_link_visibility")),
                 )
                 .register(
-                    Handler::new(video::download::<Messenger>)
+                    Handler::new(video::download_auto::<Messenger>)
                         .filter(ChatType::one(Private))
                         .filter(text_contains_url_with_reply)
                         .filter(is_via_bot.invert())
                         .filter(is_exclude_domain.invert()),
                 )
                 .register(
-                    Handler::new(video::download_quiet::<Messenger>)
+                    Handler::new(video::download_auto_quiet::<Messenger>)
                         .filter(text_contains_url)
                         .filter(url_is_blacklisted.invert())
                         .filter(url_is_skippable_by_param.invert())

@@ -229,6 +229,8 @@ where
                 link_is_visible: false,
                 progress_message_id: Some(progress_message_id),
                 base_text: Some(&caption),
+                auto: false,
+                quiet: false,
             })
             .await
         {

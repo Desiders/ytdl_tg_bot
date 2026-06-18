@@ -18,13 +18,13 @@ use crate::{
     config::Config,
     entities::{language::Language, ChatConfig, Domains, MediaInPlaylist, Params, Range, Sections},
     handlers_utils::progress,
-    interactors::Interactor,
+    interactors::{auto::FulfillCtx, Interactor},
     services::{
         download::media,
         downloaded_media,
         get_media::{
             self,
-            GetMediaByURLKind::{Empty, Playlist, SingleCached},
+            GetMediaByURLKind::{self, Empty, Playlist, SingleCached},
         },
         messenger::{MessengerPort, TextFormat},
         send_media,
@@ -493,6 +493,16 @@ where
         };
         let overwrite_cache = input.params.get_bool("overwrite");
 
+        let ctx = FulfillCtx {
+            chat_id: input.chat_id,
+            message_id: input.message_id,
+            url: input.url,
+            link_is_visible: input.link_is_visible,
+            sections: sections.as_ref(),
+            audio_language: &audio_language,
+            overwrite_cache,
+        };
+
         match self
             .get_media
             .execute(get_media::GetMediaByURLInput {
@@ -506,15 +516,32 @@ where
             })
             .await
         {
-            Ok(SingleCached(file_id)) => {
+            Ok(result) => self.fulfill(result, &ctx).await,
+            Err(err) => {
+                error!(err = %self.error_formatter.format(&err), "Get error");
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl<Messenger> DownloadQuiet<Messenger>
+where
+    Messenger: MessengerPort,
+{
+    // Silent video download+send for an already-resolved result (shared with the auto path).
+    pub async fn fulfill(&self, result: GetMediaByURLKind, ctx: &FulfillCtx<'_>) {
+        match result {
+            SingleCached(file_id) => {
                 if let Err(err) = self
                     .send_media_by_id
                     .execute(send_media::id::SendMediaInput {
-                        chat_id: input.chat_id,
-                        reply_to_message_id: Some(input.message_id),
+                        chat_id: ctx.chat_id,
+                        reply_to_message_id: Some(ctx.message_id),
                         id: &file_id,
-                        webpage_url: Some(input.url),
-                        link_is_visible: input.link_is_visible,
+                        webpage_url: Some(ctx.url),
+                        link_is_visible: ctx.link_is_visible,
                         caption: None,
                     })
                     .await
@@ -522,10 +549,10 @@ where
                     error!(err = %self.error_formatter.format(&err), "Send error");
                 }
             }
-            Ok(Playlist { cached, uncached }) => {
+            Playlist { cached, uncached } => {
                 let mut downloaded_playlist = Vec::with_capacity(cached.len() + uncached.len());
                 downloaded_playlist.extend(cached);
-                let (download_input, mut media_receiver) = media::DownloadMediaPlaylistInput::new(input.url, uncached, sections.as_ref());
+                let (download_input, mut media_receiver) = media::DownloadMediaPlaylistInput::new(ctx.url, uncached, ctx.sections);
 
                 tokio::join!(
                     async {
@@ -534,7 +561,7 @@ where
                                 .upload_media
                                 .execute(send_media::upload::SendVideoInput {
                                     chat_id: self.cfg.chat.receiver_chat_id,
-                                    reply_to_message_id: Some(input.message_id),
+                                    reply_to_message_id: Some(ctx.message_id),
                                     media_for_upload,
                                     name: media.title.as_deref().unwrap_or(media.id.as_ref()),
                                     width: format.width,
@@ -566,9 +593,9 @@ where
                                     id: media.id.clone(),
                                     display_id: media.display_id.clone(),
                                     domain: media.webpage_url.host_str().map(ToOwned::to_owned),
-                                    audio_language: audio_language.clone(),
-                                    sections: sections.clone(),
-                                    overwrite_cache,
+                                    audio_language: ctx.audio_language.clone(),
+                                    sections: ctx.sections.cloned(),
+                                    overwrite_cache: ctx.overwrite_cache,
                                 })
                                 .await
                             {
@@ -587,10 +614,10 @@ where
                 if let Err(err) = self
                     .send_playlist
                     .execute(send_media::id::SendPlaylistInput {
-                        chat_id: input.chat_id,
-                        reply_to_message_id: Some(input.message_id),
+                        chat_id: ctx.chat_id,
+                        reply_to_message_id: Some(ctx.message_id),
                         playlist: downloaded_playlist,
-                        link_is_visible: input.link_is_visible,
+                        link_is_visible: ctx.link_is_visible,
                         caption: None,
                     })
                     .await
@@ -598,15 +625,10 @@ where
                     error!(err = %self.error_formatter.format(&err), "Send error");
                 }
             }
-            Ok(Empty) => {
+            Empty => {
                 warn!("Empty playlist");
             }
-            Err(err) => {
-                error!(err = %self.error_formatter.format(&err), "Get error");
-            }
         }
-
-        Ok(())
     }
 }
 
