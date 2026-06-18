@@ -24,8 +24,8 @@ domains = [
     "x.com", "facebook.com",
     "share.google", "drive.google.com",
     "vxinstagram.com", "instagram.com",
-    "fxtwitter.com", "fixupx.com", "fxbsky.app",
-    "coub.com",
+    "fxtwitter.com", "fixupx.com", "fxbsky.app", "coub.com",
+    "open.spotify.com", "spotify.com",
 ]
 
 [random_cmd]
@@ -34,8 +34,8 @@ domains = [
     "youtube.com", "youtu.be", "m.youtube.com", "music.youtube.com", "studio.youtube.com",
     "vm.tiktok.com", "vt.tiktok.com", "tiktok.com",
     "vxinstagram.com", "instagram.com",
-    "fxbsky.app", "facebook.com",
-    "coub.com",
+    "fxbsky.app", "facebook.com", "coub.com",
+    "open.spotify.com", "spotify.com",
 ]
 
 [yt_dlp]
