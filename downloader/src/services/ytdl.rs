@@ -40,7 +40,7 @@ impl FormatStrategy {
     fn fallbacks(&self) -> &[&str] {
         match self {
             Self::VideoAndAudio => &["b", "bv*+ba", "w"],
-            Self::AudioOnly { .. } => &["ba", "wa", "ba*"],
+            Self::AudioOnly { .. } => &["ba", "wa", "b*"],
         }
     }
 
@@ -669,7 +669,7 @@ mod tests {
             &Language::default(),
         );
 
-        assert_eq!(result, "ba,ba,wa,ba*");
+        assert_eq!(result, "ba,ba,wa,ba*/b*");
     }
 
     #[test]
@@ -684,7 +684,7 @@ mod tests {
             },
         );
 
-        assert_eq!(result, "ba[language^=en],ba,wa,ba*");
+        assert_eq!(result, "ba[language^=en],ba,wa,ba*/b*");
     }
 
     #[test]
@@ -699,7 +699,7 @@ mod tests {
             },
         );
 
-        assert_eq!(result, "ba[language^=ru],ba,wa,ba*");
+        assert_eq!(result, "ba[language^=ru],ba,wa,ba*/b*");
     }
 
     #[test]
