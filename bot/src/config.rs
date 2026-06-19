@@ -23,6 +23,12 @@ pub struct ChatConfig {
 pub struct TimeoutsConfig {
     pub send_by_upload: f32,
     pub send_by_id: f32,
+    #[serde(default = "default_job_timeout")]
+    pub job: f32,
+}
+
+fn default_job_timeout() -> f32 {
+    480.0
 }
 
 impl Default for TimeoutsConfig {
@@ -30,6 +36,7 @@ impl Default for TimeoutsConfig {
         Self {
             send_by_upload: 210.0,
             send_by_id: 360.0,
+            job: default_job_timeout(),
         }
     }
 }

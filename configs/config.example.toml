@@ -11,6 +11,7 @@ receiver_chat_id = 123
 [timeouts]
 send_by_upload = 210
 send_by_id = 360
+job = 480
 
 [blacklisted]
 domains = ["t.me", "2girls1cup.ca"]

@@ -18,11 +18,11 @@ use tokio::{
     fs::File,
     io::AsyncReadExt as _,
     sync::{
-        mpsc::{self, Sender},
+        mpsc::{self, UnboundedSender},
         Semaphore,
     },
 };
-use tokio_stream::{wrappers::ReceiverStream, Stream};
+use tokio_stream::{wrappers::UnboundedReceiverStream, Stream};
 use tonic::{Code, Request, Response, Status};
 use tracing::{debug, error, info, warn};
 use url::Url;
@@ -45,13 +45,6 @@ const AUDIO_EXT: &str = "m4a";
 const THUMBNAIL_TIMEOUT_SECS: u64 = 5;
 const FFMPEG_PATH: &str = "/usr/bin/ffmpeg";
 const STREAM_CHUNK_SIZE: usize = 256 * 1024;
-// Bounded so a slow client/Telegram upload back-pressures through tonic's HTTP/2 window into the
-// downloader instead of buffering the whole file in RAM. Sized as a byte budget (then converted to a
-// chunk count) so the memory ceiling is explicit and stays correct if STREAM_CHUNK_SIZE changes.
-const RESPONSE_CHANNEL_BYTES: usize = 16 * 1024 * 1024;
-const RESPONSE_CHANNEL_CAP: usize = RESPONSE_CHANNEL_BYTES / STREAM_CHUNK_SIZE;
-const STREAM_ITEM_CHANNEL_BYTES: usize = 16 * 1024 * 1024;
-const STREAM_ITEM_CHANNEL_CAP: usize = STREAM_ITEM_CHANNEL_BYTES / STREAM_CHUNK_SIZE;
 
 type DownloadStream = Pin<Box<dyn Stream<Item = Result<DownloadChunk, Status>> + Send + 'static>>;
 
@@ -251,7 +244,7 @@ impl Downloader for DownloaderService {
         let domain_replacer = self.domain_replacer.clone();
         let cookies = self.cookies.clone();
 
-        let (tx, rx) = mpsc::channel(RESPONSE_CHANNEL_CAP);
+        let (tx, rx) = mpsc::unbounded_channel();
         let error_tx = tx.clone();
         tokio::spawn(async move {
             let started_at = Instant::now();
@@ -297,7 +290,7 @@ impl Downloader for DownloaderService {
             drop(guard);
         });
 
-        Ok(Response::new(Box::pin(ReceiverStream::new(rx))))
+        Ok(Response::new(Box::pin(UnboundedReceiverStream::new(rx))))
     }
 }
 
@@ -319,7 +312,7 @@ async fn stream_download(
     yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
     domain_replacer: Arc<DomainReplacer>,
     cookies: Arc<Cookies>,
-    tx: Sender<Result<DownloadChunk, Status>>,
+    tx: UnboundedSender<Result<DownloadChunk, Status>>,
 ) -> Result<(), Status> {
     let url = parse_url(&request.url)?;
     let section = parse_section(request.section);
@@ -495,7 +488,7 @@ async fn stream_piped_download(
     yt_dlp_cfg: &YtDlpConfig,
     yt_pot_provider_cfg: &YtPotProviderConfig,
     cookie: Option<&std::path::Path>,
-    tx: Sender<Result<DownloadChunk, Status>>,
+    tx: UnboundedSender<Result<DownloadChunk, Status>>,
 ) -> Result<(), Status> {
     let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(|err| Status::internal(format!("Temp dir error: {err}")))?;
     let output_dir_path = temp_dir.path();
@@ -518,7 +511,7 @@ async fn stream_piped_download(
     }));
     let duration = resolve_download_duration(media.duration, None);
 
-    let (item_tx, mut item_rx) = mpsc::channel::<ytdl::StreamItem>(STREAM_ITEM_CHANNEL_CAP);
+    let (item_tx, mut item_rx) = mpsc::unbounded_channel::<ytdl::StreamItem>();
     let mut download_future = Box::pin(ytdl::stream_media(
         format_id,
         effective_max_file_size,
@@ -617,7 +610,7 @@ async fn stream_photo_download(
     effective_max_file_size: u64,
     gallery_dl_cfg: Arc<GalleryDlConfig>,
     cookie: Option<std::path::PathBuf>,
-    tx: Sender<Result<DownloadChunk, Status>>,
+    tx: UnboundedSender<Result<DownloadChunk, Status>>,
 ) -> Result<(), Status> {
     let raw_info: RawPhotoInfo =
         serde_json::from_str(&request.raw_info_json).map_err(|err| Status::invalid_argument(format!("Invalid info file error: {err}")))?;
@@ -746,7 +739,7 @@ async fn stream_media_to_client(
     url: &Url,
     media_file_path: &std::path::Path,
     file_size: u64,
-    tx: &Sender<Result<DownloadChunk, Status>>,
+    tx: &UnboundedSender<Result<DownloadChunk, Status>>,
 ) -> Result<(), Status> {
     debug!(url = %url, path = %media_file_path.display(), file_size, "Starting media stream to client");
     let stream_started_at = Instant::now();
@@ -975,7 +968,10 @@ async fn download_thumbnail(thumb_urls: &[Url], thumb_file_path: &std::path::Pat
     false
 }
 
-async fn stream_thumbnail_file(thumb_file_path: &std::path::Path, tx: &Sender<Result<DownloadChunk, Status>>) -> Result<(), Status> {
+async fn stream_thumbnail_file(
+    thumb_file_path: &std::path::Path,
+    tx: &UnboundedSender<Result<DownloadChunk, Status>>,
+) -> Result<(), Status> {
     match File::open(thumb_file_path).await {
         Ok(mut file) => {
             let mut buffer = vec![0u8; STREAM_CHUNK_SIZE];
@@ -1006,7 +1002,7 @@ async fn stream_thumbnail_file(thumb_file_path: &std::path::Path, tx: &Sender<Re
     Ok(())
 }
 
-async fn stream_media_file(media_file_path: &std::path::Path, tx: &Sender<Result<DownloadChunk, Status>>) -> Result<u64, Status> {
+async fn stream_media_file(media_file_path: &std::path::Path, tx: &UnboundedSender<Result<DownloadChunk, Status>>) -> Result<u64, Status> {
     let mut file = File::open(media_file_path)
         .await
         .map_err(|err| Status::internal(format!("Open file error: {err}")))?;
@@ -1096,13 +1092,13 @@ async fn resolve_media_file_path(
 }
 
 #[allow(clippy::result_large_err)]
-async fn send_chunk(tx: &Sender<Result<DownloadChunk, Status>>, chunk: DownloadChunk) -> Result<(), Status> {
-    tx.send(Ok(chunk)).await.map_err(|_| Status::cancelled("Client disconnected"))
+async fn send_chunk(tx: &UnboundedSender<Result<DownloadChunk, Status>>, chunk: DownloadChunk) -> Result<(), Status> {
+    tx.send(Ok(chunk)).map_err(|_| Status::cancelled("Client disconnected"))
 }
 
 #[allow(clippy::result_large_err)]
-async fn send_status(tx: &Sender<Result<DownloadChunk, Status>>, status: Status) -> Result<(), Status> {
-    tx.send(Err(status)).await.map_err(|_| Status::cancelled("Client disconnected"))
+async fn send_status(tx: &UnboundedSender<Result<DownloadChunk, Status>>, status: Status) -> Result<(), Status> {
+    tx.send(Err(status)).map_err(|_| Status::cancelled("Client disconnected"))
 }
 
 #[allow(clippy::cast_possible_truncation)]

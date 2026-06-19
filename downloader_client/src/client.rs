@@ -1,4 +1,4 @@
-use std::{collections::HashSet, env, fs, io, net::SocketAddr};
+use std::{collections::HashSet, env, fs, io, net::SocketAddr, time::Duration};
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
 use url::Url;
 
@@ -79,7 +79,15 @@ impl NodeClient {
             .ca_certificate(Certificate::from_pem(self.ca_cert_pem.as_ref()))
             .identity(Identity::from_pem(self.cert_pem.as_ref(), self.key_pem.as_ref()))
             .domain_name(self.server_name.as_ref());
-        let endpoint = Endpoint::from_shared(address.to_owned())?.tls_config(tls_cfg)?;
+        // HTTP/2 keepalive: a stalled/half-open connection (e.g. a download stream that stops
+        // delivering after 100%) is otherwise never noticed and `stream.message()` hangs forever.
+        // Pinging while idle turns a dead connection into a stream error instead of an infinite wait.
+        let endpoint = Endpoint::from_shared(address.to_owned())?
+            .tls_config(tls_cfg)?
+            .connect_timeout(Duration::from_secs(10))
+            .http2_keep_alive_interval(Duration::from_secs(30))
+            .keep_alive_timeout(Duration::from_secs(20))
+            .keep_alive_while_idle(true);
         Ok(endpoint.connect_lazy())
     }
 }

@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, instrument, warn};
 
 use crate::{
-    config::DomainsWithReactionsConfig,
+    config::{DomainsWithReactionsConfig, TimeoutsConfig},
     entities::{DownloadJob, JobTarget},
     interactors::{audio, auto, chosen_inline, photo, video, Interactor as _},
     services::{
@@ -36,6 +36,8 @@ enum JobError {
     Handler(#[from] HandlerError),
     #[error("Command job is missing its URL")]
     MissingUrl,
+    #[error("Job timed out")]
+    Timeout,
 }
 
 /// Ensures the consumer group exists and spawns `workers` worker tasks. Returns their join handles
@@ -140,7 +142,11 @@ async fn process(container: Container, queue: &RedisJobQueue, QueuedJob { entry_
 
 async fn run_job(container: Container, job: &DownloadJob) -> Result<(), JobError> {
     let child = container.enter().with_scope(Request).build()?;
-    let result = run_in_scope(&child, job).await;
+    let job_timeout = Duration::from_secs_f32(child.get::<TimeoutsConfig>().await.unwrap().job);
+    let result = match tokio::time::timeout(job_timeout, run_in_scope(&child, job)).await {
+        Ok(result) => result,
+        Err(_) => Err(JobError::Timeout),
+    };
     // Clear the acknowledgment reaction once processing is done, on success or failure alike (the
     // handler only enqueued). No-op for inline jobs and links the reaction middleware ignored.
     if let JobTarget::Command { chat_id, message_id } = &job.target {

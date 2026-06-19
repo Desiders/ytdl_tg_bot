@@ -476,7 +476,7 @@ pub async fn stream_media(
     pot_provider_url: &str,
     timeout: u64,
     cookie_path: Option<&Path>,
-    item_sender: mpsc::Sender<StreamItem>,
+    item_sender: mpsc::UnboundedSender<StreamItem>,
 ) -> Result<(), DownloadErrorKind> {
     use tokio::{
         io::{AsyncReadExt as _, BufReader},
@@ -551,7 +551,7 @@ pub async fn stream_media(
             match stdout.read(&mut buffer).await {
                 Ok(0) => break Ok::<(), io::Error>(()),
                 Ok(read) => {
-                    if stdout_sender.send(StreamItem::Data(buffer[..read].to_vec())).await.is_err() {
+                    if stdout_sender.send(StreamItem::Data(buffer[..read].to_vec())).is_err() {
                         break Ok(());
                     }
                 }
@@ -565,7 +565,7 @@ pub async fn stream_media(
         while let Ok(Some(line)) = lines.next_line().await {
             if line.starts_with("download-progress") {
                 if let Some((_, progress)) = line.split_once(':') {
-                    let _ = stderr_sender.send(StreamItem::Progress(progress.to_owned())).await;
+                    let _ = stderr_sender.send(StreamItem::Progress(progress.to_owned()));
                 }
             } else {
                 collected.push_str(&line);
