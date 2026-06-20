@@ -34,7 +34,7 @@ use crate::{
         domain_replacer::{DomainReplacer, MediaKind},
         download_and_convert, embed_thumbnail,
         gallery_dl::{self, GetInfoErrorKind},
-        remux_copy,
+        probe_video, remux_copy,
         snapsave::{ResolvedMedia, SnapsaveResolver},
         ytdl::{self, FormatStrategy},
     },
@@ -45,6 +45,7 @@ const DOWNLOAD_TIMEOUT_SECS: u64 = 420;
 const AUDIO_EXT: &str = "m4a";
 const THUMBNAIL_TIMEOUT_SECS: u64 = 5;
 const FFMPEG_PATH: &str = "/usr/bin/ffmpeg";
+const FFPROBE_PATH: &str = "/usr/bin/ffprobe";
 const STREAM_CHUNK_SIZE: usize = 256 * 1024;
 
 type DownloadStream = Pin<Box<dyn Stream<Item = Result<DownloadChunk, Status>> + Send + 'static>>;
@@ -638,8 +639,6 @@ async fn stream_photo_download(
     let media_file_path = output_dir_path.join(format!("media.{}", raw_info.ext));
 
     if raw_info.direct {
-        // snapsave image: fetch the direct CDN URL straight to a file (gallery-dl would re-extract
-        // the page, which fails for a direct URL). Size is validated below.
         download_and_convert(raw_info.direct_url.as_str(), &media_file_path, FFMPEG_PATH, DOWNLOAD_TIMEOUT_SECS)
             .await
             .map_err(|err| Status::internal(err.to_string()))?;
@@ -660,8 +659,6 @@ async fn stream_photo_download(
     let media_file_path = resolve_media_file_path(output_dir_path, &media_file_path).await?;
     let file_size = validate_download_file(&url, &media_file_path, effective_max_file_size).await?;
 
-    // Like the video path, `Meta` is sent only after the download succeeds and the file is
-    // validated, so the bot never starts an upload it would have to abort.
     send_chunk(
         &tx,
         DownloadChunk {
@@ -681,9 +678,6 @@ async fn stream_photo_download(
     Ok(())
 }
 
-// snapsave video: remux the direct CDN URL straight to a faststart MP4 (stream copy, no re-encode)
-// and stream the file, skipping both yt-dlp calls. Mirrors the non-streaming download path but with
-// ffmpeg `-c copy` in place of yt-dlp; dimensions/duration are left for Telegram to probe.
 async fn stream_direct_video(
     url: &Url,
     media: &Media,
@@ -721,14 +715,15 @@ async fn stream_direct_video(
     }
     let file_size = validate_download_file(url, &media_file_path, effective_max_file_size).await?;
 
+    let probed = probe_video(&media_file_path, FFPROBE_PATH, THUMBNAIL_TIMEOUT_SECS).await;
     send_chunk(
         &tx,
         DownloadChunk {
             payload: Some(Payload::Meta(DownloadMeta {
                 ext: "mp4".to_owned(),
-                width: format.width,
-                height: format.height,
-                duration: resolve_download_duration(media.duration, None),
+                width: probed.width.or(format.width),
+                height: probed.height.or(format.height),
+                duration: resolve_download_duration(probed.duration.or(media.duration), None),
                 has_thumbnail: thumbnail_downloaded,
             })),
         },
