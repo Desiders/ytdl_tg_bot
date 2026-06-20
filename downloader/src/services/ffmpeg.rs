@@ -16,9 +16,30 @@ pub enum ConvertErrorKind {
 #[instrument(skip_all)]
 pub async fn download_and_convert(url: &str, output_file_path: &Path, executable_path: &str, timeout: u64) -> Result<(), ConvertErrorKind> {
     let output_file_path = output_file_path.to_string_lossy();
-
     let args = ["-y", "-hide_banner", "-loglevel", "error", "-i", url, &output_file_path];
+    run_ffmpeg(&args, executable_path, timeout).await
+}
 
+#[instrument(skip_all)]
+pub async fn remux_copy(url: &str, output_file_path: &Path, executable_path: &str, timeout: u64) -> Result<(), ConvertErrorKind> {
+    let output_file_path = output_file_path.to_string_lossy();
+    let args = [
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        url,
+        "-c",
+        "copy",
+        "-movflags",
+        "+faststart",
+        &output_file_path,
+    ];
+    run_ffmpeg(&args, executable_path, timeout).await
+}
+
+async fn run_ffmpeg(args: &[&str], executable_path: &str, timeout: u64) -> Result<(), ConvertErrorKind> {
     let child = Command::new(executable_path)
         .args(args)
         .stdin(Stdio::null())

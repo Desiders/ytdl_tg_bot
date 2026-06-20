@@ -8,7 +8,7 @@ pub mod thumbnail;
 pub mod ytdl;
 
 pub use domain_replacer::DomainReplacer;
-pub use ffmpeg::download_and_convert;
+pub use ffmpeg::{download_and_convert, remux_copy};
 pub use snapsave::SnapsaveResolver;
 pub use songrec::SongRecognizer;
 pub use spotdl::SpotdlResolver;

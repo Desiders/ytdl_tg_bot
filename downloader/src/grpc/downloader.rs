@@ -34,6 +34,7 @@ use crate::{
         domain_replacer::{DomainReplacer, MediaKind},
         download_and_convert, embed_thumbnail,
         gallery_dl::{self, GetInfoErrorKind},
+        remux_copy,
         snapsave::{ResolvedMedia, SnapsaveResolver},
         ytdl::{self, FormatStrategy},
     },
@@ -92,7 +93,7 @@ impl Downloader for DownloaderService {
         } else {
             None
         };
-        let (source_items, original) = match snapsave_items {
+        let (source_items, snapsave_url) = match snapsave_items {
             Some(items) if !items.is_empty() => (items, Some(url.clone())),
             _ => {
                 let source_url = if has_cookie {
@@ -113,7 +114,7 @@ impl Downloader for DownloaderService {
         info!(
             url = %url,
             source_count = source_items.len(),
-            via_snapsave = original.is_some(),
+            via_snapsave = snapsave_url.is_some(),
             media_type = %request.media_type,
             audio_language = %request.audio_language,
             allow_playlist,
@@ -125,15 +126,13 @@ impl Downloader for DownloaderService {
         let mut playlist = Playlist { inner: vec![] };
         for item in &source_items {
             let source_url = &item.url;
-            let source_cookie = if original.is_none() && source_url.as_str() == url.as_str() {
+            let source_cookie = if snapsave_url.is_none() && source_url.as_str() == url.as_str() {
                 cookie.as_deref()
             } else {
                 None
             };
             let part = if request.media_type == "photo" {
-                if original.is_some() {
-                    // snapsave gives a direct image URL; synthesize the entry and fetch it directly at
-                    // download time (gallery-dl re-extracts a page, which fails for direct URLs).
+                if snapsave_url.is_some() {
                     synthesize_photo(item, &url)?
                 } else {
                     gallery_dl::get_media_info(
@@ -149,6 +148,8 @@ impl Downloader for DownloaderService {
                         err => Status::internal(err.to_string()),
                     })?
                 }
+            } else if snapsave_url.is_some() && request.media_type == "video" {
+                synthesize_video(item, &url)?
             } else {
                 let format_strategy = parse_format_strategy(&request.media_type, &request.audio_language)?;
                 let part = ytdl::get_media_info(
@@ -167,7 +168,7 @@ impl Downloader for DownloaderService {
                 part
             };
             for (mut media, mut formats) in part.inner {
-                if let Some(original) = &original {
+                if let Some(original) = &snapsave_url {
                     media.webpage_url = original.clone();
                     // Name from the original post (e.g. reel shortcode), not the CDN path ("v2"); a
                     // bare CDN id also collides across posts in the per-item cache.
@@ -193,7 +194,7 @@ impl Downloader for DownloaderService {
             }
         }
         // Reindex a snapsave carousel so each item keeps a distinct position.
-        if original.is_some() && playlist.inner.len() > 1 {
+        if snapsave_url.is_some() && playlist.inner.len() > 1 {
             for (index, (media, _)) in playlist.inner.iter_mut().enumerate() {
                 media.playlist_index = i16::try_from(index + 1).unwrap_or(media.playlist_index);
             }
@@ -336,6 +337,14 @@ async fn stream_download(
     let media_with_format: MediaWithFormat =
         serde_json::from_str(&request.raw_info_json).map_err(|err| Status::invalid_argument(format!("Invalid info file error: {err}")))?;
     let media = Media::from(media_with_format.clone());
+    if media_with_format.direct {
+        let direct_url = media_with_format
+            .direct_url
+            .clone()
+            .ok_or_else(|| Status::invalid_argument("Direct video is missing its URL"))?;
+        let format = MediaFormat::from(media_with_format);
+        return stream_direct_video(&url, &media, &format, &direct_url, effective_max_file_size, tx).await;
+    }
     let strategy = parse_format_strategy(&request.media_type, &request.audio_ext)?;
     // Only a single pre-muxed HTTP(S) format is streamable: it's already a faststart MP4, so it
     // plays and seeks on the client. HLS/DASH and merges can't be piped as a seekable file, so they
@@ -672,6 +681,68 @@ async fn stream_photo_download(
     Ok(())
 }
 
+// snapsave video: remux the direct CDN URL straight to a faststart MP4 (stream copy, no re-encode)
+// and stream the file, skipping both yt-dlp calls. Mirrors the non-streaming download path but with
+// ffmpeg `-c copy` in place of yt-dlp; dimensions/duration are left for Telegram to probe.
+async fn stream_direct_video(
+    url: &Url,
+    media: &Media,
+    format: &MediaFormat,
+    direct_url: &Url,
+    effective_max_file_size: u64,
+    tx: UnboundedSender<Result<DownloadChunk, Status>>,
+) -> Result<(), Status> {
+    info!(url = %url, direct_url = %direct_url, media_type = "video", "Starting direct media download");
+
+    let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(|err| Status::internal(format!("Temp dir error: {err}")))?;
+    let output_dir_path = temp_dir.path();
+    let media_file_path = output_dir_path.join("media.mp4");
+    let thumb_file_path = output_dir_path.join("media.jpg");
+    let thumb_urls = media.get_thumb_urls(format.aspect_ratio_kind());
+
+    let thumbnail_downloaded = download_thumbnail(&thumb_urls, &thumb_file_path).await;
+
+    // Racing `tx.closed()` lets a client disconnect kill ffmpeg via `kill_on_drop`.
+    let mut remux_future = Box::pin(remux_copy(
+        direct_url.as_str(),
+        &media_file_path,
+        FFMPEG_PATH,
+        DOWNLOAD_TIMEOUT_SECS,
+    ));
+    tokio::select! {
+        res = &mut remux_future => res.map_err(|err| Status::internal(err.to_string()))?,
+        () = tx.closed() => return Err(Status::cancelled("Client disconnected")),
+    }
+    drop(remux_future);
+
+    let media_file_path = resolve_media_file_path(output_dir_path, &media_file_path).await?;
+    if thumbnail_downloaded {
+        try_embed_thumbnail(url, &media_file_path, &thumb_file_path).await;
+    }
+    let file_size = validate_download_file(url, &media_file_path, effective_max_file_size).await?;
+
+    send_chunk(
+        &tx,
+        DownloadChunk {
+            payload: Some(Payload::Meta(DownloadMeta {
+                ext: "mp4".to_owned(),
+                width: format.width,
+                height: format.height,
+                duration: resolve_download_duration(media.duration, None),
+                has_thumbnail: thumbnail_downloaded,
+            })),
+        },
+    )
+    .await?;
+
+    if thumbnail_downloaded {
+        stream_thumbnail_file(&thumb_file_path, &tx).await?;
+    }
+    stream_media_to_client(url, &media_file_path, file_size, &tx).await?;
+    drop(temp_dir);
+    Ok(())
+}
+
 /// Embed `thumb_file_path` into `media_file_path`. Best-effort — failures are
 /// logged but not surfaced to the caller (the media file is still usable).
 async fn try_embed_thumbnail(url: &Url, media_file_path: &std::path::Path, thumb_file_path: &std::path::Path) {
@@ -812,6 +883,41 @@ fn reject_active_livestreams(playlist: &Playlist) -> Result<(), Status> {
 
 // Builds a single-photo playlist for a snapsave image: the direct CDN URL is fetched as-is at
 // download time (`direct` marker), with the original post URL shown.
+// Build a `direct`-marked video entry from a snapsave CDN URL, so the download path remuxes it with
+// ffmpeg instead of invoking yt-dlp. Dimensions/duration are left to Telegram's own probing (the
+// yt-dlp generic extractor didn't reliably provide them for these CDN URLs either).
+fn synthesize_video(item: &ResolvedMedia, webpage_url: &Url) -> Result<Playlist, Status> {
+    let name = snapsave_name(webpage_url);
+    let media = MediaWithFormat {
+        id: name.clone(),
+        display_id: None,
+        webpage_url: webpage_url.clone(),
+        direct_url: Some(item.url.clone()),
+        title: Some(name),
+        language: None,
+        uploader: None,
+        duration: None,
+        thumbnail: item.thumbnail.clone(),
+        thumbnails: vec![],
+        live_status: None,
+        is_live: false,
+        format_id: "direct".to_owned(),
+        format_note: Some("direct".to_owned()),
+        ext: "mp4".to_owned(),
+        width: None,
+        height: None,
+        aspect_ratio: None,
+        filesize_approx: None,
+        playlist_index: Some(1),
+        protocol: None,
+        vcodec: None,
+        acodec: None,
+        direct: true,
+    };
+    let raw = serde_json::to_string(&media).map_err(|err| Status::internal(format!("Video info error: {err}")))?;
+    Ok(Playlist::new(vec![(media, raw)]))
+}
+
 fn synthesize_photo(item: &ResolvedMedia, webpage_url: &Url) -> Result<Playlist, Status> {
     let raw = RawPhotoInfo {
         id: snapsave_name(webpage_url),

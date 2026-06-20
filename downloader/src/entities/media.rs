@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
     fmt,
@@ -57,7 +57,7 @@ impl fmt::Display for MediaFormat {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Thumbnail {
     pub width: Option<i16>,
     pub height: Option<i16>,
@@ -158,7 +158,7 @@ impl fmt::Display for Media {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct MediaWithFormat {
     pub id: String,
     pub display_id: Option<String>,
@@ -190,6 +190,8 @@ pub struct MediaWithFormat {
     pub vcodec: Option<String>,
     #[serde(default)]
     pub acodec: Option<String>,
+    #[serde(default)]
+    pub direct: bool,
 }
 
 impl MediaWithFormat {
