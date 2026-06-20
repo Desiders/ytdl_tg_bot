@@ -32,7 +32,7 @@ use crate::{
     entities::{Cookies, Language, Media, MediaFormat, MediaWithFormat, Playlist, Range, RawPhotoInfo, Sections},
     services::{
         domain_replacer::{DomainReplacer, MediaKind},
-        download_and_convert, embed_thumbnail,
+        download_and_convert, embed_thumbnail, extract_audio,
         gallery_dl::{self, GetInfoErrorKind},
         probe_video, remux_copy,
         snapsave::{ResolvedMedia, SnapsaveOutcome, SnapsaveResolver},
@@ -154,7 +154,9 @@ impl Downloader for DownloaderService {
                     })?
                 }
             } else if snapsave_url.is_some() && request.media_type == "video" {
-                synthesize_video(item, &url)?
+                synthesize_direct(item, &url, "mp4")?
+            } else if snapsave_url.is_some() && request.media_type == "audio" {
+                synthesize_direct(item, &url, AUDIO_EXT)?
             } else {
                 let format_strategy = parse_format_strategy(&request.media_type, &request.audio_language)?;
                 let part = ytdl::get_media_info(
@@ -346,7 +348,10 @@ async fn stream_download(
         let direct_url = media_with_format
             .direct_url
             .clone()
-            .ok_or_else(|| Status::invalid_argument("Direct-fetch video is missing its URL"))?;
+            .ok_or_else(|| Status::invalid_argument("Direct-fetch media is missing its URL"))?;
+        if request.media_type == "audio" {
+            return stream_direct_audio(&url, &media, &direct_url, effective_max_file_size, tx).await;
+        }
         let format = MediaFormat::from(media_with_format);
         return stream_direct_video(&url, &media, &format, &direct_url, effective_max_file_size, tx).await;
     }
@@ -682,6 +687,65 @@ async fn stream_photo_download(
     Ok(())
 }
 
+async fn stream_direct_audio(
+    url: &Url,
+    media: &Media,
+    direct_url: &Url,
+    effective_max_file_size: u64,
+    tx: UnboundedSender<Result<DownloadChunk, Status>>,
+) -> Result<(), Status> {
+    info!(url = %url, direct_url = %direct_url, media_type = "audio", "Starting direct media download");
+
+    let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(|err| Status::internal(format!("Temp dir error: {err}")))?;
+    let output_dir_path = temp_dir.path();
+    let media_file_path = output_dir_path.join(format!("media.{AUDIO_EXT}"));
+    let thumb_file_path = output_dir_path.join("media.jpg");
+    let thumb_urls = media.get_thumb_urls(None);
+
+    let thumbnail_downloaded = download_thumbnail(&thumb_urls, &thumb_file_path).await;
+
+    // Racing `tx.closed()` lets a client disconnect kill ffmpeg via `kill_on_drop`.
+    let mut extract_future = Box::pin(extract_audio(
+        direct_url.as_str(),
+        &media_file_path,
+        FFMPEG_PATH,
+        DOWNLOAD_TIMEOUT_SECS,
+    ));
+    tokio::select! {
+        res = &mut extract_future => res.map_err(|err| Status::internal(err.to_string()))?,
+        () = tx.closed() => return Err(Status::cancelled("Client disconnected")),
+    }
+    drop(extract_future);
+
+    let media_file_path = resolve_media_file_path(output_dir_path, &media_file_path).await?;
+    if thumbnail_downloaded {
+        try_embed_thumbnail(url, &media_file_path, &thumb_file_path).await;
+    }
+    let file_size = validate_download_file(url, &media_file_path, effective_max_file_size).await?;
+
+    let probed = probe_video(&media_file_path, FFPROBE_PATH, THUMBNAIL_TIMEOUT_SECS).await;
+    send_chunk(
+        &tx,
+        DownloadChunk {
+            payload: Some(Payload::Meta(DownloadMeta {
+                ext: AUDIO_EXT.to_owned(),
+                width: None,
+                height: None,
+                duration: resolve_download_duration(probed.duration.or(media.duration), None),
+                has_thumbnail: thumbnail_downloaded,
+            })),
+        },
+    )
+    .await?;
+
+    if thumbnail_downloaded {
+        stream_thumbnail_file(&thumb_file_path, &tx).await?;
+    }
+    stream_media_to_client(url, &media_file_path, file_size, &tx).await?;
+    drop(temp_dir);
+    Ok(())
+}
+
 async fn stream_direct_video(
     url: &Url,
     media: &Media,
@@ -880,12 +944,10 @@ fn reject_active_livestreams(playlist: &Playlist) -> Result<(), Status> {
     Ok(())
 }
 
-// Builds a single-photo playlist for a snapsave image: the direct CDN URL is fetched as-is at
-// download time (`direct` marker), with the original post URL shown.
-// Build a `direct`-marked video entry from a snapsave CDN URL, so the download path remuxes it with
-// ffmpeg instead of invoking yt-dlp. Dimensions/duration are left to Telegram's own probing (the
-// yt-dlp generic extractor didn't reliably provide them for these CDN URLs either).
-fn synthesize_video(item: &ResolvedMedia, webpage_url: &Url) -> Result<Playlist, Status> {
+// Builds a `direct_fetch`-marked entry from a snapsave CDN URL so the download path fetches it with
+// ffmpeg (remux for video, audio extract for m4a) instead of invoking yt-dlp, with the original post
+// URL shown. Dimensions/duration are probed from the finished file at download time.
+fn synthesize_direct(item: &ResolvedMedia, webpage_url: &Url, ext: &str) -> Result<Playlist, Status> {
     let name = snapsave_name(webpage_url);
     let media = MediaWithFormat {
         id: name.clone(),
@@ -902,7 +964,7 @@ fn synthesize_video(item: &ResolvedMedia, webpage_url: &Url) -> Result<Playlist,
         is_live: false,
         format_id: "direct".to_owned(),
         format_note: Some("direct".to_owned()),
-        ext: "mp4".to_owned(),
+        ext: ext.to_owned(),
         width: None,
         height: None,
         aspect_ratio: None,
@@ -917,6 +979,8 @@ fn synthesize_video(item: &ResolvedMedia, webpage_url: &Url) -> Result<Playlist,
     Ok(Playlist::new(vec![(media, raw)]))
 }
 
+// Builds a single-photo playlist for a snapsave image: the direct CDN URL is fetched as-is at
+// download time (`direct` marker), with the original post URL shown.
 fn synthesize_photo(item: &ResolvedMedia, webpage_url: &Url) -> Result<Playlist, Status> {
     let raw = RawPhotoInfo {
         id: snapsave_name(webpage_url),

@@ -108,6 +108,43 @@ pub async fn remux_copy(url: &str, output_file_path: &Path, executable_path: &st
     run_ffmpeg(&args, executable_path, timeout).await
 }
 
+#[instrument(skip_all)]
+pub async fn extract_audio(url: &str, output_file_path: &Path, executable_path: &str, timeout: u64) -> Result<(), ConvertErrorKind> {
+    let output_file_path = output_file_path.to_string_lossy();
+    let copy_args = [
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        url,
+        "-vn",
+        "-c:a",
+        "copy",
+        "-movflags",
+        "+faststart",
+        &output_file_path,
+    ];
+    if run_ffmpeg(&copy_args, executable_path, timeout).await.is_ok() {
+        return Ok(());
+    }
+    let aac_args = [
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        url,
+        "-vn",
+        "-c:a",
+        "aac",
+        "-movflags",
+        "+faststart",
+        &output_file_path,
+    ];
+    run_ffmpeg(&aac_args, executable_path, timeout).await
+}
+
 async fn run_ffmpeg(args: &[&str], executable_path: &str, timeout: u64) -> Result<(), ConvertErrorKind> {
     let child = Command::new(executable_path)
         .args(args)
