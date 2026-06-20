@@ -35,7 +35,7 @@ use crate::{
         download_and_convert, embed_thumbnail,
         gallery_dl::{self, GetInfoErrorKind},
         probe_video, remux_copy,
-        snapsave::{ResolvedMedia, SnapsaveResolver},
+        snapsave::{ResolvedMedia, SnapsaveOutcome, SnapsaveResolver},
         ytdl::{self, FormatStrategy},
     },
 };
@@ -86,17 +86,21 @@ impl Downloader for DownloaderService {
         // URLs via snapsave (showing the original URL); otherwise the deterministic cookie-aware
         // domain replacement (vxinstagram fallback). `original` is set when we must override the
         // reported `webpage_url` back to the post URL.
-        let snapsave_items = if !has_cookie && self.snapsave.is_supported(&url) {
-            self.snapsave
-                .resolve(&url, kind)
-                .await
-                .map(|items| select_by_range(items, &playlist_range))
+        let snapsave_outcome = if !has_cookie && self.snapsave.is_supported(&url) {
+            self.snapsave.resolve(&url, kind).await
         } else {
-            None
+            SnapsaveOutcome::Unavailable
         };
-        let (source_items, snapsave_url) = match snapsave_items {
-            Some(items) if !items.is_empty() => (items, Some(url.clone())),
-            _ => {
+        let (source_items, snapsave_url) = match snapsave_outcome {
+            SnapsaveOutcome::Resolved(items) => {
+                let items = select_by_range(items, &playlist_range);
+                if items.is_empty() {
+                    return Err(Status::not_found("Requested items are out of range"));
+                }
+                (items, Some(url.clone()))
+            }
+            SnapsaveOutcome::WrongKind => return Err(Status::not_found("No media of the requested type")),
+            SnapsaveOutcome::Unavailable => {
                 let source_url = if has_cookie {
                     url.clone()
                 } else {
@@ -338,11 +342,11 @@ async fn stream_download(
     let media_with_format: MediaWithFormat =
         serde_json::from_str(&request.raw_info_json).map_err(|err| Status::invalid_argument(format!("Invalid info file error: {err}")))?;
     let media = Media::from(media_with_format.clone());
-    if media_with_format.direct {
+    if media_with_format.direct_fetch {
         let direct_url = media_with_format
             .direct_url
             .clone()
-            .ok_or_else(|| Status::invalid_argument("Direct video is missing its URL"))?;
+            .ok_or_else(|| Status::invalid_argument("Direct-fetch video is missing its URL"))?;
         let format = MediaFormat::from(media_with_format);
         return stream_direct_video(&url, &media, &format, &direct_url, effective_max_file_size, tx).await;
     }
@@ -907,7 +911,7 @@ fn synthesize_video(item: &ResolvedMedia, webpage_url: &Url) -> Result<Playlist,
         protocol: None,
         vcodec: None,
         acodec: None,
-        direct: true,
+        direct_fetch: true,
     };
     let raw = serde_json::to_string(&media).map_err(|err| Status::internal(format!("Video info error: {err}")))?;
     Ok(Playlist::new(vec![(media, raw)]))

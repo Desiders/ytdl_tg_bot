@@ -56,7 +56,7 @@ impl From<RawPhotoInfo> for MediaWithFormat {
             protocol: None,
             vcodec: None,
             acodec: None,
-            direct: false,
+            direct_fetch: false,
         }
     }
 }

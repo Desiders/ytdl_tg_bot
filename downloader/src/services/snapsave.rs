@@ -4,13 +4,17 @@ use url::Url;
 
 use crate::{config::SnapsaveConfig, services::domain_replacer::MediaKind};
 
-/// A direct media URL resolved from `snapsave.app`, with its preview thumbnail when available.
 pub struct ResolvedMedia {
     pub url: Url,
     pub thumbnail: Option<Url>,
 }
 
-/// Resolves Instagram/Facebook links to direct media URLs via `snapsave.app` (cookie-free)
+pub enum SnapsaveOutcome {
+    Resolved(Vec<ResolvedMedia>),
+    WrongKind,
+    Unavailable,
+}
+
 #[derive(Clone)]
 pub struct SnapsaveResolver {
     enabled: bool,
@@ -26,25 +30,21 @@ impl SnapsaveResolver {
         }
     }
 
-    /// Offline gate: enabled and an Instagram/Facebook host.
     #[must_use]
     pub fn is_supported(&self, url: &Url) -> bool {
         self.enabled && is_instagram_or_facebook(url)
     }
 
-    /// Resolves `url` to its direct media for `kind`, or `None` on any miss (disabled, request/parse
-    /// failure, or no media of the wanted kind) so the caller can fall back.
-    pub async fn resolve(&self, url: &Url, kind: MediaKind) -> Option<Vec<ResolvedMedia>> {
+    pub async fn resolve(&self, url: &Url, kind: MediaKind) -> SnapsaveOutcome {
         if !self.enabled {
-            return None;
+            return SnapsaveOutcome::Unavailable;
         }
 
         let target = url.to_string();
         let proxy = self.proxy.clone();
-        // Audio extracts from the video stream, so only photos want the image entries.
         let wanted_type = if matches!(kind, MediaKind::Photo) { "image" } else { "video" };
 
-        tokio::task::spawn_blocking(move || {
+        let resolved = tokio::task::spawn_blocking(move || {
             let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().ok()?;
             runtime.block_on(async move {
                 let snap = match proxy.as_deref() {
@@ -78,12 +78,16 @@ impl SnapsaveResolver {
                         Some(ResolvedMedia { url, thumbnail })
                     })
                     .collect();
-                (!items.is_empty()).then_some(items)
+                Some(items)
             })
         })
-        .await
-        .ok()
-        .flatten()
+        .await;
+
+        match resolved {
+            Ok(Some(items)) if !items.is_empty() => SnapsaveOutcome::Resolved(items),
+            Ok(Some(_)) => SnapsaveOutcome::WrongKind,
+            Ok(None) | Err(_) => SnapsaveOutcome::Unavailable,
+        }
     }
 }
 

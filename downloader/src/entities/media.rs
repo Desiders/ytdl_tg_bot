@@ -190,8 +190,9 @@ pub struct MediaWithFormat {
     pub vcodec: Option<String>,
     #[serde(default)]
     pub acodec: Option<String>,
+    // Fetch `direct_url` directly (snapsave), skipping yt-dlp
     #[serde(default)]
-    pub direct: bool,
+    pub direct_fetch: bool,
 }
 
 impl MediaWithFormat {
