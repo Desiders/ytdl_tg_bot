@@ -200,6 +200,7 @@ async fn run_in_scope(child: &Container, job: &DownloadJob) -> Result<(), JobErr
                                 url,
                                 chat_cfg: &job.chat_cfg,
                                 link_is_visible: job.link_is_visible,
+                                prefetched: None,
                             })
                             .await?;
                     }
@@ -215,6 +216,7 @@ async fn run_in_scope(child: &Container, job: &DownloadJob) -> Result<(), JobErr
                                 link_is_visible: job.link_is_visible,
                                 progress_message_id: job.progress_message_id,
                                 base_text: job.base_text.as_deref(),
+                                prefetched: None,
                             })
                             .await?;
                     }
@@ -228,6 +230,7 @@ async fn run_in_scope(child: &Container, job: &DownloadJob) -> Result<(), JobErr
                                 url,
                                 chat_cfg: &job.chat_cfg,
                                 link_is_visible: job.link_is_visible,
+                                prefetched: None,
                             })
                             .await?;
                     }
@@ -251,6 +254,7 @@ async fn run_in_scope(child: &Container, job: &DownloadJob) -> Result<(), JobErr
                             link_is_visible: job.link_is_visible,
                             inline_message_id,
                             result_id,
+                            prefetched: None,
                         })
                         .await?;
                 }};

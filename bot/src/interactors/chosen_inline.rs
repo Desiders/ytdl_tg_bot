@@ -18,7 +18,7 @@ use crate::{
         downloaded_media,
         get_media::{
             self,
-            GetMediaByURLKind::{Empty, Playlist, SingleCached},
+            GetMediaByURLKind::{self, Empty, Playlist, SingleCached},
         },
         messenger::{MessengerPort, TextFormat},
         send_media,
@@ -141,6 +141,8 @@ pub struct DownloadInput<'a> {
     pub link_is_visible: bool,
     pub inline_message_id: &'a str,
     pub result_id: &'a str,
+    // Media already resolved by inline-auto's classify probe; skips the redundant re-fetch when set.
+    pub prefetched: Option<GetMediaByURLKind>,
 }
 
 impl<Messenger> Interactor<DownloadInput<'_>> for &DownloadVideo<Messenger>
@@ -219,19 +221,24 @@ where
     };
     let overwrite_cache = input.params.get_bool("overwrite");
 
-    match interactor
-        .get_media
-        .execute(get_media::GetMediaByURLInput {
-            url: &url,
-            playlist_range: &playlist_range,
-            cache_search: url.as_str(),
-            domain: url.domain(),
-            audio_language: &audio_language,
-            sections: sections.as_ref(),
-            overwrite_cache,
-        })
-        .await
-    {
+    let result = match input.prefetched {
+        Some(result) => Ok(result),
+        None => {
+            interactor
+                .get_media
+                .execute(get_media::GetMediaByURLInput {
+                    url: &url,
+                    playlist_range: &playlist_range,
+                    cache_search: url.as_str(),
+                    domain: url.domain(),
+                    audio_language: &audio_language,
+                    sections: sections.as_ref(),
+                    overwrite_cache,
+                })
+                .await
+        }
+    };
+    match result {
         Ok(SingleCached(file_id)) => {
             if let Err(err) = interactor
                 .edit_media_by_id
@@ -500,19 +507,24 @@ where
     };
     let overwrite_cache = input.params.get_bool("overwrite");
 
-    match interactor
-        .get_media
-        .execute(get_media::GetMediaByURLInput {
-            url: &url,
-            playlist_range: &playlist_range,
-            cache_search: url.as_str(),
-            domain: url.domain(),
-            audio_language: &audio_language,
-            sections: sections.as_ref(),
-            overwrite_cache,
-        })
-        .await
-    {
+    let result = match input.prefetched {
+        Some(result) => Ok(result),
+        None => {
+            interactor
+                .get_media
+                .execute(get_media::GetMediaByURLInput {
+                    url: &url,
+                    playlist_range: &playlist_range,
+                    cache_search: url.as_str(),
+                    domain: url.domain(),
+                    audio_language: &audio_language,
+                    sections: sections.as_ref(),
+                    overwrite_cache,
+                })
+                .await
+        }
+    };
+    match result {
         Ok(SingleCached(file_id)) => {
             if let Err(err) = interactor
                 .edit_media_by_id
@@ -755,19 +767,24 @@ where
     let playlist_range = Range::default();
     let overwrite_cache = input.params.get_bool("overwrite");
 
-    match interactor
-        .get_media
-        .execute(get_media::GetMediaByURLInput {
-            url: &url,
-            playlist_range: &playlist_range,
-            cache_search: url.as_str(),
-            domain: url.domain(),
-            audio_language: &Language::default(),
-            sections: None,
-            overwrite_cache,
-        })
-        .await
-    {
+    let result = match input.prefetched {
+        Some(result) => Ok(result),
+        None => {
+            interactor
+                .get_media
+                .execute(get_media::GetMediaByURLInput {
+                    url: &url,
+                    playlist_range: &playlist_range,
+                    cache_search: url.as_str(),
+                    domain: url.domain(),
+                    audio_language: &Language::default(),
+                    sections: None,
+                    overwrite_cache,
+                })
+                .await
+        }
+    };
+    match result {
         Ok(SingleCached(file_id)) => {
             if let Err(err) = interactor
                 .edit_media_by_id
@@ -1007,7 +1024,7 @@ where
             .unwrap_or_default();
         let overwrite_cache = input.params.get_bool("overwrite");
 
-        let media_type = auto::classify(
+        let (media_type, prefetched) = auto::classify(
             self.get_video.as_ref(),
             self.get_audio.as_ref(),
             self.get_photo.as_ref(),
@@ -1019,6 +1036,7 @@ where
         )
         .await;
 
+        let input = DownloadInput { prefetched, ..input };
         match media_type {
             MediaType::Video => self.video.execute(input).await,
             MediaType::Audio => self.audio.execute(input).await,

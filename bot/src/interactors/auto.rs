@@ -456,8 +456,9 @@ where
     }
 }
 
-// First-success probe over video -> audio -> photo. Falls back to video so an undownloadable link
-// still surfaces the video extractor's error to the user.
+// First-success probe over video -> audio -> photo. Returns the resolved media alongside the type so
+// the caller can download it without re-fetching. Falls back to video (with no resolved media) so an
+// undownloadable link still surfaces the video extractor's error to the user.
 pub(crate) async fn classify(
     get_video: &get_media::GetVideoByURL,
     get_audio: &get_media::GetAudioByURL,
@@ -467,7 +468,7 @@ pub(crate) async fn classify(
     sections: Option<&Sections>,
     audio_language: &Language,
     overwrite_cache: bool,
-) -> MediaType {
+) -> (MediaType, Option<GetMediaByURLKind>) {
     if let Ok(result) = get_video
         .execute(get_media::GetMediaByURLInput {
             url,
@@ -481,8 +482,10 @@ pub(crate) async fn classify(
         .await
     {
         match result {
-            SingleCached(_) => return MediaType::Video,
-            Playlist { cached, uncached } if has_video_stream(&cached, &uncached) => return MediaType::Video,
+            SingleCached(file_id) => return (MediaType::Video, Some(SingleCached(file_id))),
+            Playlist { cached, uncached } if has_video_stream(&cached, &uncached) => {
+                return (MediaType::Video, Some(Playlist { cached, uncached }));
+            }
             _ => {}
         }
     }
@@ -499,7 +502,7 @@ pub(crate) async fn classify(
         .await
     {
         if !matches!(result, Empty) {
-            return MediaType::Audio;
+            return (MediaType::Audio, Some(result));
         }
     }
     if let Ok(result) = get_photo
@@ -515,10 +518,10 @@ pub(crate) async fn classify(
         .await
     {
         if !matches!(result, Empty) {
-            return MediaType::Photo;
+            return (MediaType::Photo, Some(result));
         }
     }
-    MediaType::Video
+    (MediaType::Video, None)
 }
 
 // Video when any uncached format has dimensions or a video container ext (generic/snapsave often
@@ -577,7 +580,7 @@ impl<Messenger> Auto<Messenger> {
         sections: Option<&Sections>,
         audio_language: &Language,
         overwrite_cache: bool,
-    ) -> MediaType {
+    ) -> (MediaType, Option<GetMediaByURLKind>) {
         classify(
             self.get_video.as_ref(),
             self.get_audio.as_ref(),
@@ -627,7 +630,7 @@ where
             .unwrap_or_default();
         let overwrite_cache = input.params.get_bool("overwrite");
 
-        let media_type = self
+        let (media_type, prefetched) = self
             .classify(input.url, &playlist_range, sections.as_ref(), &audio_language, overwrite_cache)
             .await;
 
@@ -641,6 +644,7 @@ where
                         url: input.url,
                         chat_cfg: input.chat_cfg,
                         link_is_visible: input.link_is_visible,
+                        prefetched,
                     })
                     .await
             }
@@ -655,6 +659,7 @@ where
                         link_is_visible: input.link_is_visible,
                         progress_message_id: None,
                         base_text: None,
+                        prefetched,
                     })
                     .await
             }
@@ -667,6 +672,7 @@ where
                         url: input.url,
                         chat_cfg: input.chat_cfg,
                         link_is_visible: input.link_is_visible,
+                        prefetched,
                     })
                     .await
             }

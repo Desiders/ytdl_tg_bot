@@ -79,6 +79,8 @@ pub struct DownloadInput<'a> {
     pub url: &'a Url,
     pub chat_cfg: &'a ChatConfig,
     pub link_is_visible: bool,
+    // Media already resolved by auto-mode's classify probe; skips the redundant re-fetch when set.
+    pub prefetched: Option<GetMediaByURLKind>,
 }
 
 impl<Messenger> Interactor<DownloadInput<'_>> for &Download<Messenger>
@@ -164,19 +166,23 @@ where
         };
         let overwrite_cache = input.params.get_bool("overwrite");
 
-        match self
-            .get_media
-            .execute(get_media::GetMediaByURLInput {
-                url: input.url,
-                playlist_range: &playlist_range,
-                cache_search: input.url.as_str(),
-                domain: input.url.domain(),
-                audio_language: &audio_language,
-                sections: sections.as_ref(),
-                overwrite_cache,
-            })
-            .await
-        {
+        let result = match input.prefetched {
+            Some(result) => Ok(result),
+            None => {
+                self.get_media
+                    .execute(get_media::GetMediaByURLInput {
+                        url: input.url,
+                        playlist_range: &playlist_range,
+                        cache_search: input.url.as_str(),
+                        domain: input.url.domain(),
+                        audio_language: &audio_language,
+                        sections: sections.as_ref(),
+                        overwrite_cache,
+                    })
+                    .await
+            }
+        };
+        match result {
             Ok(SingleCached(file_id)) => {
                 if let Err(err) = self
                     .send_media_by_id
