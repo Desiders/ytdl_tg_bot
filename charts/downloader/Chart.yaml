@@ -3,4 +3,4 @@ name: downloader
 description: A downloader node of audio and video
 type: application
 version: 1.0.0
-appVersion: "1.2.0"
+appVersion: "1.3.0"

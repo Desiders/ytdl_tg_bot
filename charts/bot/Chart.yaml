@@ -3,4 +3,4 @@ name: bot
 description: A telegram bot for downloading audio and video 
 type: application
 version: 1.0.0
-appVersion: "5.2.0"
+appVersion: "5.3.0"
