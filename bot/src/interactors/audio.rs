@@ -81,7 +81,6 @@ pub struct DownloadInput<'a> {
     pub link_is_visible: bool,
     pub progress_message_id: Option<i64>,
     pub base_text: Option<&'a str>,
-    // Media already resolved by auto-mode's classify probe; skips the redundant re-fetch when set.
     pub prefetched: Option<GetMediaByURLKind>,
 }
 

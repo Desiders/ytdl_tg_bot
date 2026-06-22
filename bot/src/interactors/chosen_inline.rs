@@ -9,7 +9,7 @@ use tracing::{debug, error, instrument, warn};
 use url::Url;
 
 use crate::{
-    config::Config,
+    config::{AudioFirstConfig, Config},
     entities::{language::Language, ChatConfig, Params, Range, Sections},
     handlers_utils::progress,
     interactors::{auto, Interactor},
@@ -141,7 +141,6 @@ pub struct DownloadInput<'a> {
     pub link_is_visible: bool,
     pub inline_message_id: &'a str,
     pub result_id: &'a str,
-    // Media already resolved by inline-auto's classify probe; skips the redundant re-fetch when set.
     pub prefetched: Option<GetMediaByURLKind>,
 }
 
@@ -967,6 +966,7 @@ fn resolve_url(url: Option<&Url>, result_id: &str) -> Url {
 
 // Inline auto: classify the link (video -> audio -> photo), then run that type's inline downloader.
 pub struct DownloadAuto<Messenger> {
+    audio_first: Arc<AudioFirstConfig>,
     get_video: Arc<get_media::GetVideoByURL>,
     get_audio: Arc<get_media::GetAudioByURL>,
     get_photo: Arc<get_media::GetPhotoByURL>,
@@ -979,6 +979,7 @@ impl<Messenger> DownloadAuto<Messenger> {
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub const fn new(
+        audio_first: Arc<AudioFirstConfig>,
         get_video: Arc<get_media::GetVideoByURL>,
         get_audio: Arc<get_media::GetAudioByURL>,
         get_photo: Arc<get_media::GetPhotoByURL>,
@@ -987,6 +988,7 @@ impl<Messenger> DownloadAuto<Messenger> {
         photo: Arc<DownloadPhoto<Messenger>>,
     ) -> Self {
         Self {
+            audio_first,
             get_video,
             get_audio,
             get_photo,
@@ -1033,6 +1035,7 @@ where
             sections.as_ref(),
             &audio_language,
             overwrite_cache,
+            auto::is_audio_first(&self.audio_first, &url),
         )
         .await;
 

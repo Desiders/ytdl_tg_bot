@@ -79,7 +79,6 @@ pub struct DownloadInput<'a> {
     pub url: &'a Url,
     pub chat_cfg: &'a ChatConfig,
     pub link_is_visible: bool,
-    // Media already resolved by auto-mode's classify probe; skips the redundant re-fetch when set.
     pub prefetched: Option<GetMediaByURLKind>,
 }
 

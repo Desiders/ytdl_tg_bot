@@ -49,6 +49,7 @@ pub(super) fn cfg_registry(cfg: Config) -> Registry {
             provide(instance(cfg.telegram_bot_api)),
             provide(instance(cfg.domains_with_reactions)),
             provide(instance(cfg.random_cmd)),
+            provide(instance(cfg.audio_first)),
             provide(instance(cfg.tracking_params)),
         ]
     }
@@ -444,26 +445,25 @@ where
                 }
             ),
             provide(|
-                Inject(error_formatter),
+                Inject(audio_first),
                 Inject(get_video),
                 Inject(get_audio),
                 Inject(get_photo),
                 Inject(video): Inject<video::DownloadQuiet<Messenger>>,
                 Inject(audio): Inject<auto::AudioFulfiller<Messenger>>,
                 Inject(photo): Inject<auto::PhotoFulfiller<Messenger>>| async move {
-                    Ok(auto::AutoQuiet::new(
-                        error_formatter, get_video, get_audio, get_photo, video, audio, photo,
-                    ))
+                    Ok(auto::AutoQuiet::new(audio_first, get_video, get_audio, get_photo, video, audio, photo))
                 }
             ),
             provide(|
+                Inject(audio_first),
                 Inject(get_video),
                 Inject(get_audio),
                 Inject(get_photo),
                 Inject(video): Inject<video::Download<Messenger>>,
                 Inject(audio): Inject<audio::Download<Messenger>>,
                 Inject(photo): Inject<photo::Download<Messenger>>| async move {
-                    Ok(auto::Auto::new(get_video, get_audio, get_photo, video, audio, photo))
+                    Ok(auto::Auto::new(audio_first, get_video, get_audio, get_photo, video, audio, photo))
                 }
             ),
             provide(|
@@ -511,13 +511,14 @@ where
                 }
             ),
             provide(|
+                Inject(audio_first),
                 Inject(get_video),
                 Inject(get_audio),
                 Inject(get_photo),
                 Inject(video): Inject<chosen_inline::DownloadVideo<Messenger>>,
                 Inject(audio): Inject<chosen_inline::DownloadAudio<Messenger>>,
                 Inject(photo): Inject<chosen_inline::DownloadPhoto<Messenger>>| async move {
-                    Ok(chosen_inline::DownloadAuto::new(get_video, get_audio, get_photo, video, audio, photo))
+                    Ok(chosen_inline::DownloadAuto::new(audio_first, get_video, get_audio, get_photo, video, audio, photo))
                 }
             ),
         ],

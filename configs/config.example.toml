@@ -39,6 +39,14 @@ domains = [
     "open.spotify.com", "spotify.com",
 ]
 
+[audio_first]
+domains = [
+    "music.youtube.com",
+    "open.spotify.com", "spotify.com",
+    "music.apple.com",
+    "soundcloud.com", "m.soundcloud.com",
+]
+
 [yt_dlp]
 max_file_size = 5000000
 

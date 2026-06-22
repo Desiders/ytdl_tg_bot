@@ -59,6 +59,12 @@ pub struct RandomCmdConfig {
     pub domains: Vec<String>,
 }
 
+#[derive(Default, Deserialize, Clone, Debug)]
+pub struct AudioFirstConfig {
+    #[serde(default)]
+    pub domains: Vec<String>,
+}
+
 #[derive(Deserialize, Clone, Debug)]
 pub struct LoggingConfig {
     pub dirs: Box<str>,
@@ -260,6 +266,8 @@ pub struct Config {
     pub domains_with_reactions: DomainsWithReactionsConfig,
     #[serde(default)]
     pub random_cmd: RandomCmdConfig,
+    #[serde(default)]
+    pub audio_first: AudioFirstConfig,
     #[serde(default)]
     pub tracking_params: TrackingParamsConfig,
 }

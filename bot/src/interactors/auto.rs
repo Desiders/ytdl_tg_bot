@@ -5,7 +5,7 @@ use tracing::{debug, error, instrument, warn};
 use url::Url;
 
 use crate::{
-    config::Config,
+    config::{AudioFirstConfig, Config},
     entities::{language::Language, ChatConfig, Media, MediaFormat, MediaInPlaylist, Params, Range, RawMediaWithFormat, Sections},
     interactors::Interactor,
     services::{
@@ -297,7 +297,7 @@ where
 // Silent variant of `Auto`: the same video -> audio -> photo classification, but sends with no
 // progress message. Runs in the worker; used for group chats.
 pub struct AutoQuiet<Messenger> {
-    error_formatter: Arc<ErrorFormatter>,
+    audio_first: Arc<AudioFirstConfig>,
     get_video: Arc<get_media::GetVideoByURL>,
     get_audio: Arc<get_media::GetAudioByURL>,
     get_photo: Arc<get_media::GetPhotoByURL>,
@@ -310,7 +310,7 @@ impl<Messenger> AutoQuiet<Messenger> {
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub const fn new(
-        error_formatter: Arc<ErrorFormatter>,
+        audio_first: Arc<AudioFirstConfig>,
         get_video: Arc<get_media::GetVideoByURL>,
         get_audio: Arc<get_media::GetAudioByURL>,
         get_photo: Arc<get_media::GetPhotoByURL>,
@@ -319,7 +319,7 @@ impl<Messenger> AutoQuiet<Messenger> {
         photo: Arc<PhotoFulfiller<Messenger>>,
     ) -> Self {
         Self {
-            error_formatter,
+            audio_first,
             get_video,
             get_audio,
             get_photo,
@@ -385,80 +385,34 @@ where
             overwrite_cache,
         };
 
-        // Cascade video -> audio -> photo, first success wins. Video is taken only when the probe
-        // actually carries a video stream; any other outcome (audio-only, empty, or an error such as
-        // Spotify's DRM or an Instagram photo's unsupported-URL) falls through to the next step.
-        match self
-            .get_video
-            .execute(get_media::GetMediaByURLInput {
-                url: input.url,
-                playlist_range: &playlist_range,
-                cache_search: input.url.as_str(),
-                domain: input.url.domain(),
-                audio_language: &audio_language,
-                sections: sections.as_ref(),
-                overwrite_cache,
-            })
-            .await
-        {
-            Ok(SingleCached(file_id)) => {
-                self.video.fulfill(SingleCached(file_id), &ctx).await;
-                return Ok(());
-            }
-            Ok(Playlist { cached, uncached }) if has_video_stream(&cached, &uncached) => {
-                self.video.fulfill(Playlist { cached, uncached }, &ctx).await;
-                return Ok(());
-            }
-            Ok(_) => {}
-            Err(err) => debug!(err = %self.error_formatter.format(&err), "Auto video probe failed"),
-        }
+        // Same classification as the loud `Auto`, then send silently via the type's fulfiller.
+        let (media_type, result) = classify(
+            self.get_video.as_ref(),
+            self.get_audio.as_ref(),
+            self.get_photo.as_ref(),
+            input.url,
+            &playlist_range,
+            sections.as_ref(),
+            &audio_language,
+            overwrite_cache,
+            is_audio_first(&self.audio_first, input.url),
+        )
+        .await;
 
-        match self
-            .get_audio
-            .execute(get_media::GetMediaByURLInput {
-                url: input.url,
-                playlist_range: &playlist_range,
-                cache_search: input.url.as_str(),
-                domain: input.url.domain(),
-                audio_language: &audio_language,
-                sections: sections.as_ref(),
-                overwrite_cache,
-            })
-            .await
-        {
-            Ok(Empty) => {}
-            Ok(result) => {
-                self.audio.fulfill(result, &ctx).await;
-                return Ok(());
-            }
-            Err(err) => debug!(err = %self.error_formatter.format(&err), "Auto audio probe failed"),
-        }
-
-        match self
-            .get_photo
-            .execute(get_media::GetMediaByURLInput {
-                url: input.url,
-                playlist_range: &playlist_range,
-                cache_search: input.url.as_str(),
-                domain: input.url.domain(),
-                audio_language: &Language::default(),
-                sections: None,
-                overwrite_cache,
-            })
-            .await
-        {
-            Ok(Empty) => debug!("Auto found no downloadable media"),
-            Ok(result) => self.photo.fulfill(result, &ctx).await,
-            Err(err) => debug!(err = %self.error_formatter.format(&err), "Auto found no downloadable media"),
+        match result {
+            Some(result) => match media_type {
+                MediaType::Video => self.video.fulfill(result, &ctx).await,
+                MediaType::Audio => self.audio.fulfill(result, &ctx).await,
+                MediaType::Photo => self.photo.fulfill(result, &ctx).await,
+            },
+            None => debug!("Auto found no downloadable media"),
         }
 
         Ok(())
     }
 }
 
-// First-success probe over video -> audio -> photo. Returns the resolved media alongside the type so
-// the caller can download it without re-fetching. Falls back to video (with no resolved media) so an
-// undownloadable link still surfaces the video extractor's error to the user.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn classify(
     get_video: &get_media::GetVideoByURL,
     get_audio: &get_media::GetAudioByURL,
@@ -468,8 +422,38 @@ pub(crate) async fn classify(
     sections: Option<&Sections>,
     audio_language: &Language,
     overwrite_cache: bool,
+    audio_first: bool,
 ) -> (MediaType, Option<GetMediaByURLKind>) {
-    if let Ok(result) = get_video
+    if audio_first {
+        if let Some((media_type, result)) = probe_audio(get_audio, url, range, sections, audio_language, overwrite_cache).await {
+            return (media_type, Some(result));
+        }
+        if let Some((media_type, result)) = probe_video(get_video, url, range, sections, audio_language, overwrite_cache).await {
+            return (media_type, Some(result));
+        }
+    } else {
+        if let Some((media_type, result)) = probe_video(get_video, url, range, sections, audio_language, overwrite_cache).await {
+            return (media_type, Some(result));
+        }
+        if let Some((media_type, result)) = probe_audio(get_audio, url, range, sections, audio_language, overwrite_cache).await {
+            return (media_type, Some(result));
+        }
+    }
+    if let Some((media_type, result)) = probe_photo(get_photo, url, range, overwrite_cache).await {
+        return (media_type, Some(result));
+    }
+    (MediaType::Video, None)
+}
+
+async fn probe_video(
+    get_video: &get_media::GetVideoByURL,
+    url: &Url,
+    range: &Range,
+    sections: Option<&Sections>,
+    audio_language: &Language,
+    overwrite_cache: bool,
+) -> Option<(MediaType, GetMediaByURLKind)> {
+    match get_video
         .execute(get_media::GetMediaByURLInput {
             url,
             playlist_range: range,
@@ -480,16 +464,23 @@ pub(crate) async fn classify(
             overwrite_cache,
         })
         .await
+        .ok()?
     {
-        match result {
-            SingleCached(file_id) => return (MediaType::Video, Some(SingleCached(file_id))),
-            Playlist { cached, uncached } if has_video_stream(&cached, &uncached) => {
-                return (MediaType::Video, Some(Playlist { cached, uncached }));
-            }
-            _ => {}
-        }
+        SingleCached(file_id) => Some((MediaType::Video, SingleCached(file_id))),
+        Playlist { cached, uncached } if has_video_stream(&cached, &uncached) => Some((MediaType::Video, Playlist { cached, uncached })),
+        _ => None,
     }
-    if let Ok(result) = get_audio
+}
+
+async fn probe_audio(
+    get_audio: &get_media::GetAudioByURL,
+    url: &Url,
+    range: &Range,
+    sections: Option<&Sections>,
+    audio_language: &Language,
+    overwrite_cache: bool,
+) -> Option<(MediaType, GetMediaByURLKind)> {
+    let result = get_audio
         .execute(get_media::GetMediaByURLInput {
             url,
             playlist_range: range,
@@ -500,12 +491,17 @@ pub(crate) async fn classify(
             overwrite_cache,
         })
         .await
-    {
-        if !matches!(result, Empty) {
-            return (MediaType::Audio, Some(result));
-        }
-    }
-    if let Ok(result) = get_photo
+        .ok()?;
+    (!matches!(result, Empty)).then_some((MediaType::Audio, result))
+}
+
+async fn probe_photo(
+    get_photo: &get_media::GetPhotoByURL,
+    url: &Url,
+    range: &Range,
+    overwrite_cache: bool,
+) -> Option<(MediaType, GetMediaByURLKind)> {
+    let result = get_photo
         .execute(get_media::GetMediaByURLInput {
             url,
             playlist_range: range,
@@ -516,16 +512,17 @@ pub(crate) async fn classify(
             overwrite_cache,
         })
         .await
-    {
-        if !matches!(result, Empty) {
-            return (MediaType::Photo, Some(result));
-        }
-    }
-    (MediaType::Video, None)
+        .ok()?;
+    (!matches!(result, Empty)).then_some((MediaType::Photo, result))
 }
 
 // Video when any uncached format has dimensions or a video container ext (generic/snapsave often
 // omits width), or when every entry was already cached as video.
+pub(crate) fn is_audio_first(cfg: &AudioFirstConfig, url: &Url) -> bool {
+    url.domain()
+        .is_some_and(|domain| cfg.domains.contains(&domain.trim_start_matches("www.").to_owned()))
+}
+
 fn has_video_stream(cached: &[MediaInPlaylist], uncached: &[(Media, Vec<(MediaFormat, RawMediaWithFormat)>)]) -> bool {
     if uncached.iter().any(|(_, formats)| {
         formats
@@ -540,6 +537,7 @@ fn has_video_stream(cached: &[MediaInPlaylist], uncached: &[(Media, Vec<(MediaFo
 // Default bare-link download: classify the link (video -> audio -> photo), then run that type's
 // downloader with its progress message. Runs in the worker; used for private chats.
 pub struct Auto<Messenger> {
+    audio_first: Arc<AudioFirstConfig>,
     get_video: Arc<get_media::GetVideoByURL>,
     get_audio: Arc<get_media::GetAudioByURL>,
     get_photo: Arc<get_media::GetPhotoByURL>,
@@ -552,6 +550,7 @@ impl<Messenger> Auto<Messenger> {
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub const fn new(
+        audio_first: Arc<AudioFirstConfig>,
         get_video: Arc<get_media::GetVideoByURL>,
         get_audio: Arc<get_media::GetAudioByURL>,
         get_photo: Arc<get_media::GetPhotoByURL>,
@@ -560,6 +559,7 @@ impl<Messenger> Auto<Messenger> {
         photo: Arc<super::photo::Download<Messenger>>,
     ) -> Self {
         Self {
+            audio_first,
             get_video,
             get_audio,
             get_photo,
@@ -573,6 +573,7 @@ impl<Messenger> Auto<Messenger> {
 impl<Messenger> Auto<Messenger> {
     // First-success probe over video -> audio -> photo. Falls back to video so an undownloadable link
     // still surfaces the video extractor's error to the user.
+    #[allow(clippy::too_many_arguments)]
     async fn classify(
         &self,
         url: &Url,
@@ -580,6 +581,7 @@ impl<Messenger> Auto<Messenger> {
         sections: Option<&Sections>,
         audio_language: &Language,
         overwrite_cache: bool,
+        audio_first: bool,
     ) -> (MediaType, Option<GetMediaByURLKind>) {
         classify(
             self.get_video.as_ref(),
@@ -590,6 +592,7 @@ impl<Messenger> Auto<Messenger> {
             sections,
             audio_language,
             overwrite_cache,
+            audio_first,
         )
         .await
     }
@@ -631,7 +634,14 @@ where
         let overwrite_cache = input.params.get_bool("overwrite");
 
         let (media_type, prefetched) = self
-            .classify(input.url, &playlist_range, sections.as_ref(), &audio_language, overwrite_cache)
+            .classify(
+                input.url,
+                &playlist_range,
+                sections.as_ref(),
+                &audio_language,
+                overwrite_cache,
+                is_audio_first(&self.audio_first, input.url),
+            )
             .await;
 
         match media_type {
