@@ -6,7 +6,7 @@ use std::{
         atomic::{AtomicU32, Ordering},
         Arc,
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use proto::downloader::{
@@ -21,6 +21,7 @@ use tokio::{
         mpsc::{self, UnboundedSender},
         Semaphore,
     },
+    time,
 };
 use tokio_stream::{wrappers::UnboundedReceiverStream, Stream};
 use tonic::{Code, Request, Response, Status};
@@ -42,6 +43,7 @@ use crate::{
 
 const GET_INFO_TIMEOUT_SECS: u64 = 180;
 const DOWNLOAD_TIMEOUT_SECS: u64 = 420;
+const DOWNLOAD_TASK_TIMEOUT_SECS: u64 = 600;
 const AUDIO_EXT: &str = "m4a";
 const THUMBNAIL_TIMEOUT_SECS: u64 = 5;
 const FFMPEG_PATH: &str = "/usr/bin/ffmpeg";
@@ -256,7 +258,7 @@ impl Downloader for DownloaderService {
         let error_tx = tx.clone();
         tokio::spawn(async move {
             let started_at = Instant::now();
-            if let Err(status) = stream_download(
+            let stream = stream_download(
                 request,
                 yt_dlp_cfg,
                 gallery_dl_cfg,
@@ -264,10 +266,9 @@ impl Downloader for DownloaderService {
                 domain_replacer,
                 cookies,
                 tx,
-            )
-            .await
-            {
-                if status.code() == Code::Cancelled {
+            );
+            match time::timeout(Duration::from_secs(DOWNLOAD_TASK_TIMEOUT_SECS), stream).await {
+                Ok(Err(status)) if status.code() == Code::Cancelled => {
                     info!(
                         url = %request_url,
                         format_id = %request_format_id,
@@ -275,7 +276,8 @@ impl Downloader for DownloaderService {
                         elapsed_ms = started_at.elapsed().as_millis(),
                         "Download stream cancelled by client"
                     );
-                } else {
+                }
+                Ok(Err(status)) => {
                     error!(
                         url = %request_url,
                         format_id = %request_format_id,
@@ -286,14 +288,25 @@ impl Downloader for DownloaderService {
                     );
                     let _ = send_status(&error_tx, status).await;
                 }
-            } else {
-                info!(
-                    url = %request_url,
-                    format_id = %request_format_id,
-                    media_type = %request_media_type,
-                    elapsed_ms = started_at.elapsed().as_millis(),
-                    "Download stream finished"
-                );
+                Ok(Ok(())) => {
+                    info!(
+                        url = %request_url,
+                        format_id = %request_format_id,
+                        media_type = %request_media_type,
+                        elapsed_ms = started_at.elapsed().as_millis(),
+                        "Download stream finished"
+                    );
+                }
+                Err(_) => {
+                    error!(
+                        url = %request_url,
+                        format_id = %request_format_id,
+                        media_type = %request_media_type,
+                        elapsed_ms = started_at.elapsed().as_millis(),
+                        "Download task exceeded the overall timeout; aborting to release node capacity"
+                    );
+                    let _ = send_status(&error_tx, Status::deadline_exceeded("Download exceeded overall timeout")).await;
+                }
             }
             drop(guard);
         });
