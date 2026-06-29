@@ -197,7 +197,11 @@ async fn get_playlist_entries(
         .enumerate()
         .filter_map(|(idx, raw)| {
             let photo_index = i16::try_from(idx + 1).ok()?;
-            is_selected_by_range(photo_index, playlist_range).then_some(RawPhotoInfo {
+            if !is_selected_by_range(photo_index, playlist_range) {
+                return None;
+            }
+            Some(RawPhotoInfo {
+                id: format!("{}_{photo_index}", raw.id),
                 playlist_index: photo_index,
                 ..raw
             })
