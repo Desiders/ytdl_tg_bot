@@ -84,11 +84,11 @@ impl Downloader for DownloaderService {
             "photo" => MediaKind::Photo,
             _ => MediaKind::Video,
         };
-        // Source URLs to fetch info from. Instagram/Facebook with no cookie resolve to direct CDN
-        // URLs via snapsave (showing the original URL); otherwise the deterministic cookie-aware
-        // domain replacement (vxinstagram fallback). `original` is set when we must override the
-        // reported `webpage_url` back to the post URL.
-        let snapsave_outcome = if !has_cookie && self.snapsave.is_supported(&url) {
+        // Source URLs to fetch info from. Cookie-free Instagram/Facebook resolve to direct CDN URLs
+        // via snapsave (showing the original URL); everything else uses the cookie-aware domain
+        // replacement (vxinstagram fallback). `snapsave_url` is set when we override `webpage_url`.
+        let snapsave_applicable = !has_cookie && self.snapsave.is_supported(&url);
+        let snapsave_outcome = if snapsave_applicable {
             self.snapsave.resolve(&url, kind).await
         } else {
             SnapsaveOutcome::Unavailable
@@ -102,6 +102,12 @@ impl Downloader for DownloaderService {
                 (items, Some(url.clone()))
             }
             SnapsaveOutcome::WrongKind => return Err(Status::not_found("No media of the requested type")),
+            // snapsave is the only cookie-free path for Instagram/Facebook; when it is down, the
+            // vxinstagram + yt-dlp fallback only 404s, so fail fast instead of tying up a worker on it.
+            // `not_found` (not `unavailable`) so the bot treats it as a per-request miss, not node failover.
+            SnapsaveOutcome::Unavailable if snapsave_applicable => {
+                return Err(Status::not_found("Instagram/Facebook resolver is unavailable"));
+            }
             SnapsaveOutcome::Unavailable => {
                 let source_url = if has_cookie {
                     url.clone()
