@@ -44,6 +44,18 @@ impl Range {
     pub fn to_range_string(self) -> String {
         format!("{}:{}:{}", self.start, self.count, self.step)
     }
+
+    pub fn is_default(self) -> bool {
+        self == Self::default()
+    }
+
+    pub fn all() -> Self {
+        Range {
+            start: DEFAULT_START,
+            count: DEFAULT_START + (MAX_ELEMENTS * DEFAULT_STEP) - DEFAULT_STEP,
+            step: DEFAULT_STEP,
+        }
+    }
 }
 
 impl Default for Range {

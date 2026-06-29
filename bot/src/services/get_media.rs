@@ -294,6 +294,14 @@ async fn get_media_by_url(
     media_type_str: &str,
     tx_manager: &dyn TxManager,
 ) -> Result<GetMediaByURLKind, GetMediaByURLErrorKind> {
+    // A photo post is an album by default: with no explicit `items=`, request every image up to the
+    // playlist cap (the single-element default would otherwise return only the first photo).
+    let request_range = if matches!(media_type, MediaType::Photo) && playlist_range.is_default() {
+        Range::all()
+    } else {
+        *playlist_range
+    };
+
     // DRM music links (Spotify, Apple Music, ...) aren't downloadable; resolve them to DRM-free
     // sources first, then run the normal pipeline against those URLs. Non-DRM links are unchanged.
     // An album/playlist resolves to several URLs; the `items` range selects among them, like it
@@ -374,7 +382,7 @@ async fn get_media_by_url(
             MediaInfoRequest {
                 url: url.as_str().to_owned(),
                 audio_language: audio_language.language.clone().unwrap_or_default(),
-                playlist_range: Some((*playlist_range).into()),
+                playlist_range: Some(request_range.into()),
                 media_type: media_type_str.to_owned(),
                 max_file_size: router.max_file_size(),
             },
