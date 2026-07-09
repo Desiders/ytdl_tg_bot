@@ -32,14 +32,14 @@ pub enum FormatStrategy {
 impl FormatStrategy {
     fn templates(&self) -> &[&str] {
         match self {
-            Self::VideoAndAudio => &["b{combined_args}/bv{video_args}+ba{audio_args}"],
+            Self::VideoAndAudio => &["bv{video_args}+ba{audio_args}/b{combined_args}"],
             Self::AudioOnly { .. } => &["ba{audio_args}"],
         }
     }
 
     fn fallbacks(&self) -> &[&str] {
         match self {
-            Self::VideoAndAudio => &["b", "bv*+ba", "w"],
+            Self::VideoAndAudio => &["bv*+ba", "b", "w"],
             Self::AudioOnly { .. } => &["ba", "wa", "b*"],
         }
     }
@@ -623,9 +623,9 @@ mod tests {
 
         assert_eq!(
             result,
-            "b[vcodec!*=av01][height<=1080]/bv[vcodec!=none][vcodec!*=av01][height<=1080]+ba,\
-            b[vcodec!*=av01][height<=720]/bv[vcodec!=none][vcodec!*=av01][height<=720]+ba,\
-            b,bv*+ba,w"
+            "bv[vcodec!=none][vcodec!*=av01][height<=1080]+ba/b[vcodec!*=av01][height<=1080],\
+            bv[vcodec!=none][vcodec!*=av01][height<=720]+ba/b[vcodec!*=av01][height<=720],\
+            bv*+ba,b,w"
         );
     }
 
@@ -643,7 +643,7 @@ mod tests {
 
         assert_eq!(
             result,
-            "b[vcodec!*=av01][height<=1080]/bv[vcodec!=none][vcodec!*=av01][height<=1080]+ba[language^=ru],b,bv*+ba,w"
+            "bv[vcodec!=none][vcodec!*=av01][height<=1080]+ba[language^=ru]/b[vcodec!*=av01][height<=1080],bv*+ba,b,w"
         );
     }
 
@@ -655,7 +655,7 @@ mod tests {
 
         assert_eq!(
             result,
-            "b[vcodec!*=av01][height<=1080]/bv[vcodec!=none][vcodec!*=av01][height<=1080]+ba,b,bv*+ba,w"
+            "bv[vcodec!=none][vcodec!*=av01][height<=1080]+ba/b[vcodec!*=av01][height<=1080],bv*+ba,b,w"
         );
     }
 
@@ -710,9 +710,9 @@ mod tests {
 
         assert_eq!(
             result,
-            "b[vcodec!*=av01][height<=2160]/bv[vcodec!=none][vcodec!*=av01][height<=2160]+ba,b[vcodec!*=av01]\
-            [height<=1080]/bv[vcodec!=none][vcodec!*=av01][height<=1080]+ba,b[vcodec!*=av01][height<=720]/bv\
-            [vcodec!=none][vcodec!*=av01][height<=720]+ba,b,bv*+ba,w"
+            "bv[vcodec!=none][vcodec!*=av01][height<=2160]+ba/b[vcodec!*=av01][height<=2160],bv[vcodec!=none]\
+            [vcodec!*=av01][height<=1080]+ba/b[vcodec!*=av01][height<=1080],bv[vcodec!=none][vcodec!*=av01]\
+            [height<=720]+ba/b[vcodec!*=av01][height<=720],bv*+ba,b,w"
         );
     }
 
