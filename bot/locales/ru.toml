@@ -148,7 +148,7 @@ stats = "Статистика"
 lang = "Сменить язык"
 
 [lang]
-unknown = "Неизвестный язык: <code>%{lang}</code>. Доступные: <code>en</code>, <code>ru</code>."
+unknown = "Неизвестный язык: <code>%{lang}</code>. Доступные: <code>en</code>, <code>ru</code>, <code>uk</code>."
 changed = "Язык изменён на <b>%{lang}</b>."
 error = "Не удалось сменить язык"
 name = "Русский"
