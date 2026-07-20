@@ -148,7 +148,7 @@ stats = "Statistics"
 lang = "Switch language"
 
 [lang]
-unknown = "Unknown language: <code>%{lang}</code>. Available: <code>en</code>, <code>ru</code>."
+unknown = "Unknown language: <code>%{lang}</code>. Available: <code>en</code>, <code>ru</code>, <code>uk</code>."
 changed = "Language changed to <b>%{lang}</b>."
 error = "Failed to change language"
 name = "English"

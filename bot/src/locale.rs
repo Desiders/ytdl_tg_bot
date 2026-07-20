@@ -3,6 +3,7 @@ pub enum Locale {
     #[default]
     En,
     Ru,
+    Uk,
 }
 
 impl Locale {
@@ -10,6 +11,7 @@ impl Locale {
         match self {
             Self::En => "en",
             Self::Ru => "ru",
+            Self::Uk => "uk",
         }
     }
 
@@ -17,6 +19,7 @@ impl Locale {
         match raw.trim().to_ascii_lowercase().as_str() {
             "en" => Some(Self::En),
             "ru" => Some(Self::Ru),
+            "uk" => Some(Self::Uk),
             _ => None,
         }
     }
@@ -24,6 +27,7 @@ impl Locale {
     pub fn from_code(code: Option<&str>) -> Self {
         match code {
             Some(val) if val.to_ascii_lowercase().starts_with("ru") => Self::Ru,
+            Some(val) if val.to_ascii_lowercase().starts_with("uk") => Self::Uk,
             _ => Self::En,
         }
     }
@@ -31,7 +35,8 @@ impl Locale {
     pub fn toggle(self) -> Self {
         match self {
             Self::En => Self::Ru,
-            Self::Ru => Self::En,
+            Self::Ru => Self::Uk,
+            Self::Uk => Self::En,
         }
     }
 }

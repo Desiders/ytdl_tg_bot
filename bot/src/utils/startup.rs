@@ -41,6 +41,12 @@ async fn set_my_commands(bot: Bot) -> HandlerResult {
             .language_code(Locale::Ru.as_str()),
     )
     .await?;
+    bot.send(
+        SetMyCommands::new(build_commands(Locale::Uk.as_str()))
+            .scope(BotCommandScopeAllPrivateChats {})
+            .language_code(Locale::Uk.as_str()),
+    )
+    .await?;
     Ok(())
 }
 
