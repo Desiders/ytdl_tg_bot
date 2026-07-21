@@ -1,7 +1,7 @@
 bot:
   image:
     repository: desiders/ytdl_tg_bot
-    tag: "5.2.0"
+    tag: "5.4.0"
     pullPolicy: Always
 
 postgres:
