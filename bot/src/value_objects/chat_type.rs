@@ -30,13 +30,20 @@ impl From<ChatType> for Model {
     }
 }
 
-impl From<telers::enums::ChatType> for ChatType {
-    fn from(value: telers::enums::ChatType) -> Self {
+#[derive(Debug, thiserror::Error)]
+#[error("Unsupported chat type: {0}")]
+pub struct UnsupportedChatTypeError(pub &'static str);
+
+impl TryFrom<telers::enums::ChatType> for ChatType {
+    type Error = UnsupportedChatTypeError;
+
+    fn try_from(value: telers::enums::ChatType) -> Result<Self, Self::Error> {
         match value {
-            telers::enums::ChatType::Private => Self::Private,
-            telers::enums::ChatType::Group => Self::Group,
-            telers::enums::ChatType::Supergroup => Self::Supergroup,
-            telers::enums::ChatType::Channel => Self::Channel,
+            telers::enums::ChatType::Private => Ok(Self::Private),
+            telers::enums::ChatType::Group => Ok(Self::Group),
+            telers::enums::ChatType::Supergroup => Ok(Self::Supergroup),
+            telers::enums::ChatType::Channel => Ok(Self::Channel),
+            value @ telers::enums::ChatType::Unknown => Err(UnsupportedChatTypeError(value.into())),
         }
     }
 }

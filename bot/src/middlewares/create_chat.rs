@@ -7,7 +7,7 @@ use telers::{
     types::Chat::Private,
     Request,
 };
-use tracing::{error, instrument};
+use tracing::{error, instrument, warn};
 
 use crate::{
     entities::{Chat, ChatConfig, OwnChatConfig},
@@ -24,12 +24,16 @@ impl Middleware for CreateChatMiddleware {
     #[instrument(skip_all)]
     async fn call(&mut self, mut request: Request) -> Result<MiddlewareResponse, EventErrorKind> {
         let (chat_id, cmd_random_enabled, username, chat_type) = match (request.update.chat(), request.update.from()) {
-            (Some(chat), _) => (
-                chat.id(),
-                matches!(chat, Private(_)),
-                chat.username(),
-                ChatType::from(enums::ChatType::from(chat)),
-            ),
+            (Some(chat), _) => {
+                let chat_type = match ChatType::try_from(enums::ChatType::from(chat)) {
+                    Ok(chat_type) => chat_type,
+                    Err(err) => {
+                        warn!(%err, chat_id = chat.id(), "Skipping update");
+                        return Ok((request, EventReturn::Cancel));
+                    }
+                };
+                (chat.id(), matches!(chat, Private(_)), chat.username(), chat_type)
+            }
             (None, Some(from)) => (from.id, false, from.username.as_deref(), ChatType::Private),
             _ => return Ok((request, EventReturn::Finish)),
         };

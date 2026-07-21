@@ -70,7 +70,7 @@ impl MessengerPort for TelegramMessenger {
                     .reply_parameters_option(
                         request
                             .reply_to_message_id
-                            .map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)),
+                            .map(|id| ReplyParameters::new().message_id(id).allow_sending_without_reply(true)),
                     ),
             )
             .await?;
@@ -160,7 +160,7 @@ impl MessengerPort for TelegramMessenger {
             .thumbnail_option(thumbnail)
             .caption_option(if link_is_visible { media_link(Some(webpage_url)) } else { None })
             .parse_mode(ParseMode::HTML)
-            .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)));
+            .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new().message_id(id).allow_sending_without_reply(true)));
 
         let message = once(&self.bot, method, Some(self.timeouts_cfg.send_by_upload)).await?;
         drop(temp_dir);
@@ -208,7 +208,7 @@ impl MessengerPort for TelegramMessenger {
             .thumbnail_option(thumbnail)
             .caption_option(if link_is_visible { media_link(Some(webpage_url)) } else { None })
             .parse_mode(ParseMode::HTML)
-            .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)));
+            .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new().message_id(id).allow_sending_without_reply(true)));
 
         let message = once(&self.bot, method, Some(self.timeouts_cfg.send_by_upload)).await?;
         drop(temp_dir);
@@ -245,7 +245,7 @@ impl MessengerPort for TelegramMessenger {
             .disable_notification(true)
             .caption_option(if link_is_visible { media_link(Some(webpage_url)) } else { None })
             .parse_mode(ParseMode::HTML)
-            .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)));
+            .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new().message_id(id).allow_sending_without_reply(true)));
 
         let message = once(&self.bot, method, Some(self.timeouts_cfg.send_by_upload)).await?;
         drop(temp_dir);
@@ -278,7 +278,7 @@ impl MessengerPort for TelegramMessenger {
             .disable_notification(true)
             .caption_option(if link_is_visible { media_link(Some(webpage_url)) } else { None })
             .parse_mode(ParseMode::HTML)
-            .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)));
+            .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new().message_id(id).allow_sending_without_reply(true)));
 
         let message = once(&self.bot, method, Some(self.timeouts_cfg.send_by_upload)).await?;
         let message_id = message.message_id();
@@ -303,7 +303,7 @@ impl MessengerPort for TelegramMessenger {
                 .reply_parameters_option(
                     request
                         .reply_to_message_id
-                        .map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)),
+                        .map(|id| ReplyParameters::new().message_id(id).allow_sending_without_reply(true)),
                 )
                 .caption_option(if request.link_is_visible {
                     media_link(request.webpage_url)
@@ -327,7 +327,7 @@ impl MessengerPort for TelegramMessenger {
                 .reply_parameters_option(
                     request
                         .reply_to_message_id
-                        .map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)),
+                        .map(|id| ReplyParameters::new().message_id(id).allow_sending_without_reply(true)),
                 )
                 .caption_option(caption_with_link(
                     request.caption.map(ToOwned::to_owned),
@@ -350,7 +350,7 @@ impl MessengerPort for TelegramMessenger {
                 .reply_parameters_option(
                     request
                         .reply_to_message_id
-                        .map(|id| ReplyParameters::new(id).allow_sending_without_reply(true)),
+                        .map(|id| ReplyParameters::new().message_id(id).allow_sending_without_reply(true)),
                 )
                 .caption_option(if request.link_is_visible {
                     media_link(request.webpage_url)
@@ -682,7 +682,7 @@ async fn send_media_group(
         bot,
         SendMediaGroup::new(chat_id.clone(), media_group)
             .disable_notification(true)
-            .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new(id).allow_sending_without_reply(true))),
+            .reply_parameters_option(reply_to_message_id.map(|id| ReplyParameters::new().message_id(id).allow_sending_without_reply(true))),
         3,
         request_timeout,
     )
