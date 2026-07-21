@@ -99,19 +99,22 @@ async fn main() {
                     Handler::new(video::download::<Messenger>)
                         .filter(MessageType::one(Text))
                         .filter(Command::many(["vd", "video", "video_download"]))
-                        .filter(text_contains_url_with_reply),
+                        .filter(text_contains_url_with_reply)
+                        .filter(url_is_blacklisted.invert()),
                 )
                 .register(
                     Handler::new(audio::download::<Messenger>)
                         .filter(MessageType::one(Text))
                         .filter(Command::many(["ad", "audio", "audio_download"]))
-                        .filter(text_contains_url_with_reply),
+                        .filter(text_contains_url_with_reply)
+                        .filter(url_is_blacklisted.invert()),
                 )
                 .register(
                     Handler::new(photo::download::<Messenger>)
                         .filter(MessageType::one(Text))
                         .filter(Command::many(["pd", "photo", "photo_download"]))
-                        .filter(text_contains_url_with_reply),
+                        .filter(text_contains_url_with_reply)
+                        .filter(url_is_blacklisted.invert()),
                 )
                 .register(
                     Handler::new(video::random::<Messenger>)
@@ -153,6 +156,7 @@ async fn main() {
                     Handler::new(video::download_auto::<Messenger>)
                         .filter(ChatType::one(Private))
                         .filter(text_contains_url_with_reply)
+                        .filter(url_is_blacklisted.invert())
                         .filter(is_via_bot.invert())
                         .filter(is_exclude_domain.invert()),
                 )
@@ -168,7 +172,11 @@ async fn main() {
         .on_inline_query(|observer| {
             observer
                 .register_inner_middleware(RemoveTrackingParamsMiddleware)
-                .register(Handler::new(inline_query::select_by_url::<Messenger>).filter(text_contains_url))
+                .register(
+                    Handler::new(inline_query::select_by_url::<Messenger>)
+                        .filter(text_contains_url)
+                        .filter(url_is_blacklisted.invert()),
+                )
                 .register(Handler::new(inline_query::select_by_text::<Messenger>).filter(text_empty.invert()))
         })
         .on_chosen_inline_result(|observer| {
