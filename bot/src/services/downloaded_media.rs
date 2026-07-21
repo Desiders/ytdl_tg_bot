@@ -178,6 +178,19 @@ pub struct GetRandomMediaInput<'a> {
     pub domains: Option<&'a Domains>,
 }
 
+// Config domains are the whitelist: an explicit `domains=` param can only narrow it, never extend it.
+fn whitelisted_domains(cfg: &RandomCmdConfig, requested: Option<&Domains>) -> Vec<String> {
+    match requested {
+        Some(requested) if !requested.domains.is_empty() => requested
+            .domains
+            .iter()
+            .map(|domain| domain.trim_start_matches("www.").to_owned())
+            .filter(|domain| cfg.domains.contains(domain))
+            .collect(),
+        _ => cfg.domains.clone(),
+    }
+}
+
 pub struct GetRandomVideo {
     cfg: Arc<RandomCmdConfig>,
     tx_manager: Arc<Box<dyn TxManager>>,
@@ -199,11 +212,7 @@ impl Interactor<GetRandomMediaInput<'_>> for &GetRandomVideo {
         let media = self
             .tx_manager
             .downloaded_media_reader()
-            .get_random(
-                limit,
-                MediaType::Video,
-                domains.map_or(&self.cfg.domains, |val| val.domains.as_ref()),
-            )
+            .get_random(limit, MediaType::Video, &whitelisted_domains(&self.cfg, domains))
             .await?;
         info!(len = media.len(), ?media, "Got random video");
 
@@ -232,11 +241,7 @@ impl Interactor<GetRandomMediaInput<'_>> for &GetRandomAudio {
         let media = self
             .tx_manager
             .downloaded_media_reader()
-            .get_random(
-                limit,
-                MediaType::Audio,
-                domains.map_or(&self.cfg.domains, |val| val.domains.as_ref()),
-            )
+            .get_random(limit, MediaType::Audio, &whitelisted_domains(&self.cfg, domains))
             .await?;
         info!(len = media.len(), "Got random audio");
 
