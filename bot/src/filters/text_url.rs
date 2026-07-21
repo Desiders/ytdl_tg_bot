@@ -4,7 +4,7 @@ use froodi::async_impl::Container;
 use psl::Psl;
 use std::{convert::Infallible, future::Future, str::FromStr};
 use telers::{types::Message, FilterResult, Request};
-use tracing::error;
+use tracing::{error, info};
 use url::{Host, Url};
 
 pub fn get_url_from_text(text: &str) -> Option<Url> {
@@ -112,6 +112,7 @@ pub fn text_contains_host_with_reply(request: &mut Request) -> impl Future<Outpu
 pub fn url_is_blacklisted(request: &mut Request) -> impl Future<Output = FilterResult<Infallible>> {
     let url_option = request.extensions.get::<Url>().cloned();
     let container_option = request.extensions.get::<Container>().cloned();
+    let chat_id = request.update.chat().map(telers::types::Chat::id);
     async move {
         let Some(url) = url_option else {
             return Ok(false);
@@ -123,7 +124,13 @@ pub fn url_is_blacklisted(request: &mut Request) -> impl Future<Output = FilterR
             return Ok(false);
         };
         Ok(match container.get::<BlacklistedConfig>().await {
-            Ok(cfg) => cfg.domains.iter().map(String::as_str).collect::<Vec<_>>().contains(&domain),
+            Ok(cfg) => {
+                let blacklisted = cfg.domains.iter().any(|blacklisted| blacklisted == domain);
+                if blacklisted {
+                    info!(?chat_id, domain, "Skipping blacklisted domain");
+                }
+                blacklisted
+            }
             Err(err) => {
                 error!(%err);
                 false
