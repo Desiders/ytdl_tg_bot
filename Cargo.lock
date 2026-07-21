@@ -4402,9 +4402,9 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "telers"
-version = "1.0.0-beta.7"
+version = "1.0.0-beta.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68f1779e03f365f8f44e3ca767d8efe2c3474411e1b1ad880a893e4ffba16b94"
+checksum = "6abd9c510fd3bfdea1efd02ec169c633a53f3915bb3f3515d19e9b458d7a2cb6"
 dependencies = [
  "anyhow",
  "backoff",

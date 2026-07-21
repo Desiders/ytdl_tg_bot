@@ -22,7 +22,7 @@ rust-i18n = { version = "4", default-features = false }
 sea-orm = { version = "2.0.0-rc.40", features = ["macros", "sqlx-postgres", "runtime-tokio-rustls", "with-time", "with-uuid"], default-features = false }
 serde = { version = "1.0", default-features = false }
 serde_json = { version = "1.0", default-features = false }
-telers = { version = "1.0.0-beta.7", features = ["default-signal", "rustls-tls"], default-features = false }
+telers = { version = "1.0.0-beta.8", features = ["default-signal", "rustls-tls"], default-features = false }
 tempfile = { version = "3.9", default-features = false }
 thiserror = { version = "2.0", default-features = false }
 time = { version = ">=0.3, <0.3.48", features = ["serde-human-readable"], default-features = false }
