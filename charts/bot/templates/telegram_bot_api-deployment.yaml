@@ -22,6 +22,8 @@ spec:
           env:
             - name: TELEGRAM_LOCAL
               value: "1"
+            - name: TELEGRAM_VERBOSITY
+              value: {{ .Values.telegramBotApi.verbosity | quote }}
             - name: TELEGRAM_WORK_DIR
               value: {{ .Values.telegramBotApi.dataDir | quote }}
             - name: TELEGRAM_API_ID

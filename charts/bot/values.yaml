@@ -56,6 +56,7 @@ telegramBotApi:
   image:
     pullPolicy: IfNotPresent
   dataDir: /var/lib/telegram-bot-api
+  verbosity: 2
   fileServer:
     port: 8080
     image:
