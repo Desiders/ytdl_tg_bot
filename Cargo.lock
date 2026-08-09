@@ -591,6 +591,7 @@ dependencies = [
  "async-trait",
  "backoff",
  "bytes",
+ "clear-urls",
  "downloader_client",
  "froodi",
  "futures-util",
@@ -776,6 +777,18 @@ name = "clap_lex"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
+
+[[package]]
+name = "clear-urls"
+version = "1.0.0"
+source = "git+https://github.com/Desiders/clear-urls#14785dfef6379afd56fd68b7cf60a840ba3794db"
+dependencies = [
+ "form_urlencoded",
+ "miniserde",
+ "percent-encoding",
+ "regex-automata",
+ "thiserror",
+]
 
 [[package]]
 name = "cmake"
@@ -2395,6 +2408,28 @@ checksum = "f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e"
 dependencies = [
  "mime",
  "unicase",
+]
+
+[[package]]
+name = "mini-internal"
+version = "0.1.46"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34dea53b00d87f21b1535cbef93765c75f159dbbfeef16152f0b6b3bf28f3bb6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.2",
+]
+
+[[package]]
+name = "miniserde"
+version = "0.1.46"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8f82621301d3b99a1542736de96e5df69865b235987d6470b28c7aa670cfeb1"
+dependencies = [
+ "itoa",
+ "mini-internal",
+ "zmij",
 ]
 
 [[package]]

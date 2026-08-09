@@ -16,7 +16,10 @@ use tracing::{error, info};
 use uuid::ContextV7;
 
 use crate::{
-    config::{BotConfig, Config, DatabaseConfig, DownloadConfig, RedisConfig, TelegramBotApiConfig, TimeoutsConfig, YtDlpConfig},
+    config::{
+        BotConfig, Config, DatabaseConfig, DownloadConfig, RedisConfig, TelegramBotApiConfig, TimeoutsConfig, TrackingParamsConfig,
+        YtDlpConfig,
+    },
     database::{SeaOrmTxManager, TxManager, TxManagerFactories},
     interactors::{audio, auto, chosen_inline, config, enqueue_download, inline_query, lang, photo, shazam, start, stats, video},
     services::{
@@ -28,7 +31,7 @@ use crate::{
         queue::RedisJobQueue,
         send_media,
     },
-    utils::ErrorFormatter,
+    utils::{ErrorFormatter, UrlCleaner},
 };
 
 pub(super) fn cfg_registry(cfg: Config) -> Registry {
@@ -177,6 +180,15 @@ where
         scope(App) [
             provide(|| async move { Ok(Mutex::new(ContextV7::new())) }),
             provide(|| async move { Ok(Client::new()) }),
+            provide(|Inject(cfg): Inject<TrackingParamsConfig>| async move {
+                match UrlCleaner::from_embedded_rules(&cfg) {
+                    Ok(cleaner) => Ok(cleaner),
+                    Err(err) => {
+                        error!(%err, "Compile URL cleaner rules error");
+                        Err(InstantiateErrorKind::Custom(err.into()))
+                    }
+                }
+            }),
 
             provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::upload::SendVideo::new(messenger)) }),
             provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::upload::SendAudio::new(messenger)) }),
@@ -318,23 +330,23 @@ where
 
             provide(|
                 Inject(node_router),
-                Inject(cfg),
+                Inject(url_cleaner),
                 Inject(tx_manager)| async move {
-                    Ok(get_media::GetVideoByURL::new(node_router, cfg, tx_manager))
+                    Ok(get_media::GetVideoByURL::new(node_router, url_cleaner, tx_manager))
                 }
             ),
             provide(|
                 Inject(node_router),
-                Inject(cfg),
+                Inject(url_cleaner),
                 Inject(tx_manager)| async move {
-                    Ok(get_media::GetAudioByURL::new(node_router, cfg, tx_manager))
+                    Ok(get_media::GetAudioByURL::new(node_router, url_cleaner, tx_manager))
                 }
             ),
             provide(|
                 Inject(node_router),
-                Inject(cfg),
+                Inject(url_cleaner),
                 Inject(tx_manager)| async move {
-                    Ok(get_media::GetPhotoByURL::new(node_router, cfg, tx_manager))
+                    Ok(get_media::GetPhotoByURL::new(node_router, url_cleaner, tx_manager))
                 }
             ),
 

@@ -6,7 +6,7 @@ use tracing::{debug, info, instrument, warn};
 use url::Url;
 
 use crate::{
-    config::{TrackingParamsConfig, YtToolkitConfig},
+    config::YtToolkitConfig,
     database::TxManager,
     entities::{
         language::Language, yt_toolkit::BasicInfo, DownloadedMedia, Media, MediaFormat, MediaInPlaylist, Playlist, Range,
@@ -21,6 +21,7 @@ use crate::{
         },
         yt_toolkit::{get_video_info, search_video, GetVideoInfoErrorKind, SearchVideoErrorKind},
     },
+    utils::UrlCleaner,
     value_objects::MediaType,
 };
 
@@ -67,16 +68,16 @@ pub enum GetMediaByURLKind {
 
 pub struct GetVideoByURL {
     node_router: Arc<NodeRouter>,
-    cfg: Arc<TrackingParamsConfig>,
+    url_cleaner: Arc<UrlCleaner>,
     tx_manager: Arc<Box<dyn TxManager>>,
 }
 
 impl GetVideoByURL {
     #[must_use]
-    pub const fn new(node_router: Arc<NodeRouter>, cfg: Arc<TrackingParamsConfig>, tx_manager: Arc<Box<dyn TxManager>>) -> Self {
+    pub const fn new(node_router: Arc<NodeRouter>, url_cleaner: Arc<UrlCleaner>, tx_manager: Arc<Box<dyn TxManager>>) -> Self {
         Self {
             node_router,
-            cfg,
+            url_cleaner,
             tx_manager,
         }
     }
@@ -101,7 +102,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
     ) -> Result<Self::Output, Self::Err> {
         get_media_by_url(
             self.node_router.as_ref(),
-            self.cfg.as_ref(),
+            self.url_cleaner.as_ref(),
             url,
             playlist_range,
             cache_search,
@@ -119,16 +120,16 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
 
 pub struct GetAudioByURL {
     node_router: Arc<NodeRouter>,
-    cfg: Arc<TrackingParamsConfig>,
+    url_cleaner: Arc<UrlCleaner>,
     tx_manager: Arc<Box<dyn TxManager>>,
 }
 
 impl GetAudioByURL {
     #[must_use]
-    pub const fn new(node_router: Arc<NodeRouter>, cfg: Arc<TrackingParamsConfig>, tx_manager: Arc<Box<dyn TxManager>>) -> Self {
+    pub const fn new(node_router: Arc<NodeRouter>, url_cleaner: Arc<UrlCleaner>, tx_manager: Arc<Box<dyn TxManager>>) -> Self {
         Self {
             node_router,
-            cfg,
+            url_cleaner,
             tx_manager,
         }
     }
@@ -153,7 +154,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
     ) -> Result<Self::Output, Self::Err> {
         get_media_by_url(
             self.node_router.as_ref(),
-            self.cfg.as_ref(),
+            self.url_cleaner.as_ref(),
             url,
             playlist_range,
             cache_search,
@@ -171,16 +172,16 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
 
 pub struct GetPhotoByURL {
     node_router: Arc<NodeRouter>,
-    cfg: Arc<TrackingParamsConfig>,
+    url_cleaner: Arc<UrlCleaner>,
     tx_manager: Arc<Box<dyn TxManager>>,
 }
 
 impl GetPhotoByURL {
     #[must_use]
-    pub const fn new(node_router: Arc<NodeRouter>, cfg: Arc<TrackingParamsConfig>, tx_manager: Arc<Box<dyn TxManager>>) -> Self {
+    pub const fn new(node_router: Arc<NodeRouter>, url_cleaner: Arc<UrlCleaner>, tx_manager: Arc<Box<dyn TxManager>>) -> Self {
         Self {
             node_router,
-            cfg,
+            url_cleaner,
             tx_manager,
         }
     }
@@ -205,7 +206,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetPhotoByURL {
     ) -> Result<Self::Output, Self::Err> {
         get_media_by_url(
             self.node_router.as_ref(),
-            self.cfg.as_ref(),
+            self.url_cleaner.as_ref(),
             url,
             playlist_range,
             cache_search,
@@ -282,7 +283,7 @@ impl Interactor<SearchMediaInfoInput<'_>> for &SearchMediaInfo {
 #[allow(clippy::too_many_arguments)]
 async fn get_media_by_url(
     router: &NodeRouter,
-    tracking_params_cfg: &TrackingParamsConfig,
+    url_cleaner: &UrlCleaner,
     url: &Url,
     playlist_range: &Range,
     cache_search: &str,
@@ -396,7 +397,7 @@ async fn get_media_by_url(
     let mut cached = vec![];
     let mut uncached = vec![];
     for (mut media, formats) in playlist.inner {
-        media.remove_url_tracking_params(tracking_params_cfg);
+        media.clean_webpage_url(url_cleaner);
         let domain = media.webpage_url.domain();
         if !overwrite_cache {
             if let Some(DownloadedMedia { file_id, .. }) = reader
