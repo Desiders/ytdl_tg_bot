@@ -1,5 +1,8 @@
+use clear_urls::UrlCleaner as ClearUrls;
 use thiserror::Error;
 use url::Url;
+
+use crate::config::TrackingParamsConfig;
 
 #[derive(Debug, Error)]
 pub enum ErrorKind {
@@ -8,6 +11,55 @@ pub enum ErrorKind {
 
     #[error("No video ID found")]
     NoVideoIdFound,
+}
+
+pub struct UrlCleaner {
+    inner: ClearUrls,
+    extra_params: Box<[Box<str>]>,
+}
+
+impl UrlCleaner {
+    pub fn from_embedded_rules(cfg: &TrackingParamsConfig) -> Result<Self, clear_urls::Error> {
+        Ok(Self {
+            inner: ClearUrls::from_embedded_rules()?,
+            extra_params: cfg.params.clone().into(),
+        })
+    }
+
+    #[must_use]
+    pub fn clean(&self, url: &Url) -> Option<Url> {
+        let result = self.inner.clean(url.as_str());
+        let mut cleaned = if result.changed {
+            Url::parse(&result.url).ok()?
+        } else {
+            url.clone()
+        };
+
+        let extra_removed = self.remove_extra_params(&mut cleaned);
+        (result.changed || extra_removed).then_some(cleaned)
+    }
+
+    fn remove_extra_params(&self, url: &mut Url) -> bool {
+        if self.extra_params.is_empty() || url.query().is_none() {
+            return false;
+        }
+
+        let params = url
+            .query_pairs()
+            .filter(|(key, _)| self.extra_params.iter().all(|param| **param != **key))
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect::<Box<[_]>>();
+        if params.len() == url.query_pairs().count() {
+            return false;
+        }
+
+        if params.is_empty() {
+            url.set_query(None);
+        } else {
+            url.query_pairs_mut().clear().extend_pairs(params);
+        }
+        true
+    }
 }
 
 const VIDEO_ID_LENGTH: usize = 11;

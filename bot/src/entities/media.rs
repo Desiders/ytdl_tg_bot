@@ -13,7 +13,7 @@ use std::{
 use tempfile::TempDir;
 use url::Url;
 
-use crate::{config::TrackingParamsConfig, utils::AspectKind};
+use crate::utils::{AspectKind, UrlCleaner};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ShortMedia {
@@ -106,14 +106,10 @@ pub struct Media {
 }
 
 impl Media {
-    pub fn remove_url_tracking_params(&mut self, cfg: &TrackingParamsConfig) {
-        let params = self
-            .webpage_url
-            .query_pairs()
-            .filter(|(key, _)| cfg.params.iter().all(|val| **val != **key))
-            .map(|(k, v)| (k.into_owned(), v.into_owned()))
-            .collect::<Box<[_]>>();
-        self.webpage_url.query_pairs_mut().clear().extend_pairs(params);
+    pub fn clean_webpage_url(&mut self, cleaner: &UrlCleaner) {
+        if let Some(cleaned) = cleaner.clean(&self.webpage_url) {
+            self.webpage_url = cleaned;
+        }
     }
 
     pub fn get_thumb_urls(&self, aspect_kind: Option<AspectKind>) -> Vec<Url> {

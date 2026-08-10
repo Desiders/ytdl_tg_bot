@@ -39,7 +39,7 @@ use crate::{
         url_is_skippable_by_param,
     },
     handlers::{audio, chosen_inline, inline_query, lang, photo, shazam, start, stats, video},
-    middlewares::{CreateChatMiddleware, ReactionMiddleware, RemoveTrackingParamsMiddleware},
+    middlewares::{CleanUrlMiddleware, CreateChatMiddleware, ReactionMiddleware},
     services::messenger::telegram::TelegramMessenger,
     utils::{on_shutdown, on_startup},
 };
@@ -93,7 +93,7 @@ async fn main() {
     let download_router = Router::new("download")
         .on_message(|observer| {
             observer
-                .register_inner_middleware(RemoveTrackingParamsMiddleware)
+                .register_inner_middleware(CleanUrlMiddleware)
                 .register_inner_middleware(ReactionMiddleware)
                 .register(
                     Handler::new(video::download::<Messenger>)
@@ -171,7 +171,7 @@ async fn main() {
         })
         .on_inline_query(|observer| {
             observer
-                .register_inner_middleware(RemoveTrackingParamsMiddleware)
+                .register_inner_middleware(CleanUrlMiddleware)
                 .register(
                     Handler::new(inline_query::select_by_url::<Messenger>)
                         .filter(text_contains_url)
@@ -181,7 +181,7 @@ async fn main() {
         })
         .on_chosen_inline_result(|observer| {
             observer
-                .register_inner_middleware(RemoveTrackingParamsMiddleware)
+                .register_inner_middleware(CleanUrlMiddleware)
                 .register(
                     Handler::new(chosen_inline::download_auto::<Messenger>)
                         .filter(is_auto_inline_result)

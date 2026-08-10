@@ -8,6 +8,7 @@ resolver = "2"
 async-trait = "0.1"
 backoff = { version = "0.4", features = ["tokio"], default-features = false }
 bytes = { version = "1", default-features = false }
+clear-urls = { git = "https://github.com/Desiders/clear-urls", features = ["std", "embedded-rules"], default-features = false }
 downloader_client = { path = "../downloader_client" }
 froodi = { version = "1.0.0-beta.17", features = ["async", "thread_safe", "telers"], default-features = false }
 futures-util = { version = "0.3", default-features = false }
