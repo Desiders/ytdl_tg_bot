@@ -92,6 +92,14 @@ pub struct ReplaceDomainsConfig {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+pub struct UserAgentRule {
+    /// Domains the `user_agent` applies to.
+    /// Subdomains are matched too, so `tiktok.com` also covers `vt.tiktok.com`.
+    pub domains: Vec<Box<str>>,
+    pub user_agent: Box<str>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
 pub struct LoggingConfig {
     pub dirs: Box<str>,
 }
@@ -168,6 +176,8 @@ pub struct Config {
     pub logging: LoggingConfig,
     #[serde(default)]
     pub replace_domains: ReplaceDomainsConfig,
+    #[serde(default)]
+    pub user_agents: Vec<UserAgentRule>,
     #[serde(default)]
     pub spotdl: SpotdlConfig,
     #[serde(default)]

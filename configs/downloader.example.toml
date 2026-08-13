@@ -55,6 +55,12 @@ to = "fxbsky.app"
 # from = '...'
 # to = '...'
 
+# Custom `User-Agent` passed to yt-dlp per domain. Subdomains are matched too, so `tiktok.com`
+# also covers `vt.tiktok.com`. The first matching rule wins.
+[[user_agents]]
+domains = ["tiktok.com"]
+user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+
 [yt_pot_provider]
 url = "http://yt-pot-provider:4416"
 # url = "http://127.0.0.1:4416"

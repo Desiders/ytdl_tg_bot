@@ -606,6 +606,7 @@ dependencies = [
  "sea-orm",
  "serde",
  "serde_json",
+ "takecell",
  "telers",
  "tempfile",
  "thiserror",

@@ -229,6 +229,7 @@ pub async fn get_media_info(
     allow_playlist: bool,
     timeout: u64,
     cookie_path: Option<&Path>,
+    user_agent: Option<&str>,
 ) -> Result<Playlist, GetInfoErrorKind> {
     use tokio::time;
 
@@ -278,6 +279,11 @@ pub async fn get_media_info(
         args.push(cookie_path);
     } else {
         trace!("No cookies provided");
+    }
+
+    if let Some(user_agent) = user_agent {
+        args.push("--user-agent");
+        args.push(user_agent);
     }
 
     args.push("--");
@@ -330,6 +336,7 @@ pub async fn download_media(
     pot_provider_url: &str,
     timeout: u64,
     cookie_path: Option<&Path>,
+    user_agent: Option<&str>,
     progress_sender: Option<&mpsc::UnboundedSender<String>>,
 ) -> Result<(), DownloadErrorKind> {
     use tokio::{io::BufReader, time};
@@ -396,6 +403,11 @@ pub async fn download_media(
         args.push(cookie_path);
     } else {
         trace!("No cookies provided");
+    }
+
+    if let Some(user_agent) = user_agent {
+        args.push("--user-agent");
+        args.push(user_agent);
     }
 
     let sections = sections.map(Sections::to_download_sections_string);
@@ -476,6 +488,7 @@ pub async fn stream_media(
     pot_provider_url: &str,
     timeout: u64,
     cookie_path: Option<&Path>,
+    user_agent: Option<&str>,
     item_sender: mpsc::UnboundedSender<StreamItem>,
 ) -> Result<(), DownloadErrorKind> {
     use tokio::{
@@ -527,6 +540,11 @@ pub async fn stream_media(
         args.push(cookie_path);
     } else {
         trace!("No cookies provided");
+    }
+
+    if let Some(user_agent) = user_agent {
+        args.push("--user-agent");
+        args.push(user_agent);
     }
 
     trace!(?args, "Ytdlp stream args");

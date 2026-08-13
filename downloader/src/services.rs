@@ -5,6 +5,7 @@ pub mod snapsave;
 pub mod songrec;
 pub mod spotdl;
 pub mod thumbnail;
+pub mod user_agent;
 pub mod ytdl;
 
 pub use domain_replacer::DomainReplacer;
@@ -13,3 +14,4 @@ pub use snapsave::SnapsaveResolver;
 pub use songrec::SongRecognizer;
 pub use spotdl::SpotdlResolver;
 pub use thumbnail::embed_thumbnail;
+pub use user_agent::UserAgentResolver;

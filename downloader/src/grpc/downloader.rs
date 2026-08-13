@@ -37,6 +37,7 @@ use crate::{
         gallery_dl::{self, GetInfoErrorKind},
         probe_video, remux_copy,
         snapsave::{ResolvedMedia, SnapsaveOutcome, SnapsaveResolver},
+        user_agent::UserAgentResolver,
         ytdl::{self, FormatStrategy},
     },
 };
@@ -57,6 +58,7 @@ pub struct DownloaderService {
     pub gallery_dl_cfg: Arc<GalleryDlConfig>,
     pub yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
     pub domain_replacer: Arc<DomainReplacer>,
+    pub user_agents: Arc<UserAgentResolver>,
     pub snapsave: Arc<SnapsaveResolver>,
     pub cookies: Arc<Cookies>,
     pub active_downloads: Arc<AtomicU32>,
@@ -177,6 +179,7 @@ impl Downloader for DownloaderService {
                     allow_playlist,
                     GET_INFO_TIMEOUT_SECS,
                     source_cookie,
+                    self.user_agents.resolve(source_url),
                 )
                 .await?;
                 reject_active_livestreams(&part)?;
@@ -258,6 +261,7 @@ impl Downloader for DownloaderService {
         let gallery_dl_cfg = self.gallery_dl_cfg.clone();
         let yt_pot_provider_cfg = self.yt_pot_provider_cfg.clone();
         let domain_replacer = self.domain_replacer.clone();
+        let user_agents = self.user_agents.clone();
         let cookies = self.cookies.clone();
 
         let (tx, rx) = mpsc::unbounded_channel();
@@ -270,6 +274,7 @@ impl Downloader for DownloaderService {
                 gallery_dl_cfg,
                 yt_pot_provider_cfg,
                 domain_replacer,
+                user_agents,
                 cookies,
                 tx,
             );
@@ -338,6 +343,7 @@ async fn stream_download(
     gallery_dl_cfg: Arc<GalleryDlConfig>,
     yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
     domain_replacer: Arc<DomainReplacer>,
+    user_agents: Arc<UserAgentResolver>,
     cookies: Arc<Cookies>,
     tx: UnboundedSender<Result<DownloadChunk, Status>>,
 ) -> Result<(), Status> {
@@ -412,6 +418,7 @@ async fn stream_download(
             yt_dlp_cfg.as_ref(),
             yt_pot_provider_cfg.as_ref(),
             cookie.as_deref(),
+            user_agents.resolve(&url),
             tx,
         )
         .await;
@@ -452,6 +459,7 @@ async fn stream_download(
         &yt_pot_provider_cfg.url,
         DOWNLOAD_TIMEOUT_SECS,
         cookie.as_deref(),
+        user_agents.resolve(&url),
         Some(&progress_tx),
     ));
 
@@ -526,6 +534,7 @@ async fn stream_piped_download(
     yt_dlp_cfg: &YtDlpConfig,
     yt_pot_provider_cfg: &YtPotProviderConfig,
     cookie: Option<&std::path::Path>,
+    user_agent: Option<&str>,
     tx: UnboundedSender<Result<DownloadChunk, Status>>,
 ) -> Result<(), Status> {
     let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(|err| Status::internal(format!("Temp dir error: {err}")))?;
@@ -558,6 +567,7 @@ async fn stream_piped_download(
         &yt_pot_provider_cfg.url,
         DOWNLOAD_TIMEOUT_SECS,
         cookie,
+        user_agent,
         item_tx,
     ));
 
