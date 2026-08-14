@@ -18,7 +18,7 @@ impl MusicResolver for MusicResolverService {
 
         let resolved = self.resolver.resolve(&url).await.map_err(|err| {
             error!(url = %url, %err, "Resolve DRM-free source failed");
-            resolve_error_status(err)
+            resolve_error_status(&err)
         })?;
 
         Ok(Response::new(ResolveSourceResponse {
@@ -32,7 +32,7 @@ impl MusicResolver for MusicResolverService {
     }
 }
 
-fn resolve_error_status(err: ResolveErrorKind) -> Status {
+fn resolve_error_status(err: &ResolveErrorKind) -> Status {
     match err {
         ResolveErrorKind::InvalidUrl(_) => Status::invalid_argument(err.to_string()),
         ResolveErrorKind::NoSource => Status::not_found(err.to_string()),

@@ -25,7 +25,7 @@ where
     // or in the message it replies to (the usual "reply /shazam to a voice" flow). For video the node
     // extracts the audio track, so any of these work.
     let reply = message.reply_to_message();
-    let source = reply.as_deref().unwrap_or(&message);
+    let source = reply.unwrap_or(&message);
     let (file_id, file_size) = source
         .voice()
         .map(|voice| (voice.file_id.to_string(), voice.file_size))

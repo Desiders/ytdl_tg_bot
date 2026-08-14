@@ -66,7 +66,7 @@ where
             },
         );
         if input.auto {
-            job = job.as_auto(input.quiet);
+            job = job.with_auto(input.quiet);
         }
         if let Some(progress_message_id) = input.progress_message_id {
             job = job.with_progress_reuse(progress_message_id, input.base_text.map(ToOwned::to_owned));
@@ -129,7 +129,7 @@ where
             },
         );
         // Inline shows progress via message edits, so `quiet` is irrelevant here.
-        let job = if input.auto { job.as_auto(false) } else { job };
+        let job = if input.auto { job.with_auto(false) } else { job };
 
         info!(job_id = %job.job_id, "Enqueueing download job");
         if let Err(err) = self.queue.enqueue(&job).await {

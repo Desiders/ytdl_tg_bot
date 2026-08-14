@@ -6,7 +6,7 @@ use crate::{authenticated_request, with_node_failover, NodeAttemptErrorKind, Nod
 
 const MAX_ENCODING_MESSAGE_SIZE: usize = 25 * 1024 * 1024;
 
-/// A song recognized from an audio clip (Shazam, via SongRec on a node).
+/// A song recognized from an audio clip (Shazam, via `SongRec` on a node).
 #[derive(Debug, Clone)]
 pub struct RecognizedSong {
     pub title: Option<String>,

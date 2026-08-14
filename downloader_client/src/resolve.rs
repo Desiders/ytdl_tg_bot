@@ -19,6 +19,10 @@ pub fn is_spotify_platform(domain: Option<&str>) -> bool {
 /// Resolves a DRM-platform link to equivalent DRM-free, downloadable URLs (several for an
 /// album/playlist). Returns `Ok(None)` for non-DRM links so callers can pass the original URL
 /// straight through unchanged.
+///
+/// # Errors
+///
+/// Returns an error if the node request fails or the resolver reports no usable source.
 #[instrument(skip_all, fields(url = %url))]
 pub async fn resolve_to_drm_free(router: &NodeRouter, url: &Url) -> Result<Option<Vec<Url>>, ResolveSourceErrorKind> {
     if !is_spotify_platform(url.domain()) {

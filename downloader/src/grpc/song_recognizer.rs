@@ -17,7 +17,7 @@ impl SongRecognizer for SongRecognizerService {
 
         let recognized = self.recognizer.recognize(&audio).await.map_err(|err| {
             error!(%err, "Recognize song failed");
-            recognize_error_status(err)
+            recognize_error_status(&err)
         })?;
 
         Ok(Response::new(RecognizeSongResponse {
@@ -30,7 +30,7 @@ impl SongRecognizer for SongRecognizerService {
     }
 }
 
-fn recognize_error_status(err: RecognizeErrorKind) -> Status {
+fn recognize_error_status(err: &RecognizeErrorKind) -> Status {
     match err {
         RecognizeErrorKind::EmptyAudio | RecognizeErrorKind::Decode => Status::invalid_argument(err.to_string()),
         RecognizeErrorKind::NoMatch => Status::not_found(err.to_string()),

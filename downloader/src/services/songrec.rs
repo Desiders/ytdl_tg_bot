@@ -34,7 +34,7 @@ pub enum RecognizeErrorKind {
     Disabled,
 }
 
-/// A recognized song's metadata, from Shazam via SongRec.
+/// A recognized song's metadata, from Shazam via `SongRec`.
 #[derive(Debug, Clone)]
 pub struct Recognized {
     pub title: Option<String>,

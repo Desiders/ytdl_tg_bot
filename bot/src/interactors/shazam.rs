@@ -165,7 +165,7 @@ where
         }
     }
 
-    /// Best-effort: searches YouTube for the recognized track and enqueues a normal audio download so
+    /// Best-effort: searches `YouTube` for the recognized track and enqueues a normal audio download so
     /// the song is sent (with the usual download progress). Silently skips on any miss.
     async fn download_song(
         &self,

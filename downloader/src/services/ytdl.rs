@@ -687,7 +687,7 @@ mod tests {
             &Language::default(),
         );
 
-        assert_eq!(result, "ba,ba,wa,ba*/b*");
+        assert_eq!(result, "ba,ba,wa,b*");
     }
 
     #[test]
@@ -702,7 +702,7 @@ mod tests {
             },
         );
 
-        assert_eq!(result, "ba[language^=en],ba,wa,ba*/b*");
+        assert_eq!(result, "ba[language^=en],ba,wa,b*");
     }
 
     #[test]
@@ -717,7 +717,7 @@ mod tests {
             },
         );
 
-        assert_eq!(result, "ba[language^=ru],ba,wa,ba*/b*");
+        assert_eq!(result, "ba[language^=ru],ba,wa,b*");
     }
 
     #[test]

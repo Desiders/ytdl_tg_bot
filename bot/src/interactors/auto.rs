@@ -399,13 +399,14 @@ where
         )
         .await;
 
-        match result {
-            Some(result) => match media_type {
+        if let Some(result) = result {
+            match media_type {
                 MediaType::Video => self.video.fulfill(result, &ctx).await,
                 MediaType::Audio => self.audio.fulfill(result, &ctx).await,
                 MediaType::Photo => self.photo.fulfill(result, &ctx).await,
-            },
-            None => debug!("Auto found no downloadable media"),
+            }
+        } else {
+            debug!("Auto found no downloadable media");
         }
 
         Ok(())

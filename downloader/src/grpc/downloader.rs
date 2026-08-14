@@ -196,14 +196,14 @@ impl Downloader for DownloaderService {
                     } else {
                         base
                     };
-                    media.id = name.clone();
+                    media.id.clone_from(&name);
                     media.title = Some(name);
                     // yt-dlp's generic info gives the tokenized CDN URL no real ext and no thumbnail.
                     // Patch the `--load-info-json` blob (which the separate download request reads) so
                     // the file gets a valid container (else metadata postprocessing fails) and a poster.
                     for (format, raw) in &mut formats {
                         if format.ext == "unknown_video" {
-                            format.ext = "mp4".to_owned();
+                            "mp4".clone_into(&mut format.ext);
                         }
                         *raw = patch_info_json(raw, &format.ext, item.thumbnail.as_ref());
                     }
@@ -297,7 +297,7 @@ impl Downloader for DownloaderService {
                         %status,
                         "Download stream failed"
                     );
-                    let _ = send_status(&error_tx, status).await;
+                    let _ = send_status(&error_tx, status);
                 }
                 Ok(Ok(())) => {
                     info!(
@@ -316,7 +316,7 @@ impl Downloader for DownloaderService {
                         elapsed_ms = started_at.elapsed().as_millis(),
                         "Download task exceeded the overall timeout; aborting to release node capacity"
                     );
-                    let _ = send_status(&error_tx, Status::deadline_exceeded("Download exceeded overall timeout")).await;
+                    let _ = send_status(&error_tx, Status::deadline_exceeded("Download exceeded overall timeout"));
                 }
             }
             drop(guard);
@@ -472,7 +472,7 @@ async fn stream_download(
     loop {
         tokio::select! {
             Some(progress) = progress_rx.recv() => {
-                send_chunk(&tx, DownloadChunk { payload: Some(Payload::Progress(progress)) }).await?;
+                send_chunk(&tx, DownloadChunk { payload: Some(Payload::Progress(progress)) })?;
             }
             res = &mut download_future => {
                 res.map_err(download_error_status)?;
@@ -503,8 +503,7 @@ async fn stream_download(
                 has_thumbnail: thumbnail_downloaded,
             })),
         },
-    )
-    .await?;
+    )?;
 
     if thumbnail_downloaded {
         debug!(url = %url, path = %thumb_file_path.display(), "Starting thumbnail stream to client");
@@ -590,7 +589,7 @@ async fn stream_piped_download(
             item = item_rx.recv(), if !items_drained => {
                 match item {
                     Some(ytdl::StreamItem::Progress(progress)) => {
-                        send_chunk(&tx, DownloadChunk { payload: Some(Payload::Progress(progress)) }).await?;
+                        send_chunk(&tx, DownloadChunk { payload: Some(Payload::Progress(progress)) })?;
                     }
                     Some(ytdl::StreamItem::Data(data)) => {
                         total_bytes += data.len() as u64;
@@ -619,14 +618,13 @@ async fn stream_piped_download(
                                         has_thumbnail: thumbnail_downloaded,
                                     })),
                                 },
-                            )
-                            .await?;
+                            )?;
                             if thumbnail_downloaded {
                                 stream_thumbnail_file(&thumb_file_path, &tx).await?;
                             }
                             meta_sent = true;
                         }
-                        send_chunk(&tx, DownloadChunk { payload: Some(Payload::Data(data)) }).await?;
+                        send_chunk(&tx, DownloadChunk { payload: Some(Payload::Data(data)) })?;
                     }
                     None => {
                         items_drained = true;
@@ -708,8 +706,7 @@ async fn stream_photo_download(
                 has_thumbnail: false,
             })),
         },
-    )
-    .await?;
+    )?;
 
     stream_media_to_client(&url, &media_file_path, file_size, &tx).await?;
     drop(temp_dir);
@@ -764,8 +761,7 @@ async fn stream_direct_audio(
                 has_thumbnail: thumbnail_downloaded,
             })),
         },
-    )
-    .await?;
+    )?;
 
     if thumbnail_downloaded {
         stream_thumbnail_file(&thumb_file_path, &tx).await?;
@@ -824,8 +820,7 @@ async fn stream_direct_video(
                 has_thumbnail: thumbnail_downloaded,
             })),
         },
-    )
-    .await?;
+    )?;
 
     if thumbnail_downloaded {
         stream_thumbnail_file(&thumb_file_path, &tx).await?;
@@ -1034,7 +1029,7 @@ fn synthesize_photo(item: &ResolvedMedia, webpage_url: &Url) -> Result<Playlist,
 // Image extension from a URL's last path segment, defaulting to `jpg`.
 fn photo_ext(url: &Url) -> String {
     url.path_segments()
-        .and_then(|segments| segments.filter(|segment| !segment.is_empty()).next_back())
+        .and_then(|mut segments| segments.rfind(|segment| !segment.is_empty()))
         .and_then(|name| name.rsplit_once('.').map(|(_, ext)| ext.to_ascii_lowercase()))
         .filter(|ext| matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp" | "heic"))
         .unwrap_or_else(|| "jpg".to_owned())
@@ -1043,9 +1038,8 @@ fn photo_ext(url: &Url) -> String {
 // A media name from a post URL: its last non-empty path segment (the reel/post shortcode).
 fn snapsave_name(url: &Url) -> String {
     url.path_segments()
-        .and_then(|segments| segments.filter(|segment| !segment.is_empty()).next_back())
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| "media".to_owned())
+        .and_then(|mut segments| segments.rfind(|segment| !segment.is_empty()))
+        .map_or_else(|| "media".to_owned(), ToOwned::to_owned)
 }
 
 // Sets the top-level `ext` (so yt-dlp names the output with a real container) and, when given, the
@@ -1189,8 +1183,7 @@ async fn stream_thumbnail_file(
                     DownloadChunk {
                         payload: Some(Payload::ThumbnailData(buffer[..read].to_vec())),
                     },
-                )
-                .await?;
+                )?;
             }
         }
         Err(err) => {
@@ -1220,8 +1213,7 @@ async fn stream_media_file(media_file_path: &std::path::Path, tx: &UnboundedSend
             DownloadChunk {
                 payload: Some(Payload::Data(buffer[..read].to_vec())),
             },
-        )
-        .await?;
+        )?;
     }
     Ok(total_streamed)
 }
@@ -1290,12 +1282,12 @@ async fn resolve_media_file_path(
 }
 
 #[allow(clippy::result_large_err)]
-async fn send_chunk(tx: &UnboundedSender<Result<DownloadChunk, Status>>, chunk: DownloadChunk) -> Result<(), Status> {
+fn send_chunk(tx: &UnboundedSender<Result<DownloadChunk, Status>>, chunk: DownloadChunk) -> Result<(), Status> {
     tx.send(Ok(chunk)).map_err(|_| Status::cancelled("Client disconnected"))
 }
 
 #[allow(clippy::result_large_err)]
-async fn send_status(tx: &UnboundedSender<Result<DownloadChunk, Status>>, status: Status) -> Result<(), Status> {
+fn send_status(tx: &UnboundedSender<Result<DownloadChunk, Status>>, status: Status) -> Result<(), Status> {
     tx.send(Err(status)).map_err(|_| Status::cancelled("Client disconnected"))
 }
 

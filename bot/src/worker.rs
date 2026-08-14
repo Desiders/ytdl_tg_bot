@@ -143,7 +143,7 @@ async fn process(container: Container, queue: &RedisJobQueue, QueuedJob { entry_
 async fn run_job(container: Container, job: &DownloadJob) -> Result<(), JobError> {
     let child = container.enter().with_scope(Request).build()?;
     let job_timeout = Duration::from_secs_f32(child.get::<TimeoutsConfig>().await.unwrap().job);
-    let result = match tokio::time::timeout(job_timeout, run_in_scope(&child, job)).await {
+    let result = match tokio::time::timeout(job_timeout, Box::pin(run_in_scope(&child, job))).await {
         Ok(result) => result,
         Err(_) => Err(JobError::Timeout),
     };
@@ -175,16 +175,15 @@ async fn run_in_scope(child: &Container, job: &DownloadJob) -> Result<(), JobErr
                         .await?;
                 } else {
                     let interactor = child.get::<auto::Auto<TelegramMessenger>>().await?;
-                    interactor
-                        .execute(auto::AutoInput {
-                            message_id: *message_id,
-                            chat_id: *chat_id,
-                            url,
-                            params: &job.params,
-                            chat_cfg: &job.chat_cfg,
-                            link_is_visible: job.link_is_visible,
-                        })
-                        .await?;
+                    Box::pin(interactor.execute(auto::AutoInput {
+                        message_id: *message_id,
+                        chat_id: *chat_id,
+                        url,
+                        params: &job.params,
+                        chat_cfg: &job.chat_cfg,
+                        link_is_visible: job.link_is_visible,
+                    }))
+                    .await?;
                 }
             } else {
                 // Each media type has its own interactor + `Input` type (same fields, distinct types),
@@ -192,33 +191,31 @@ async fn run_in_scope(child: &Container, job: &DownloadJob) -> Result<(), JobErr
                 match job.media_type {
                     MediaType::Video => {
                         let interactor = child.get::<video::Download<TelegramMessenger>>().await?;
-                        interactor
-                            .execute(video::DownloadInput {
-                                message_id: *message_id,
-                                chat_id: *chat_id,
-                                params: &job.params,
-                                url,
-                                chat_cfg: &job.chat_cfg,
-                                link_is_visible: job.link_is_visible,
-                                prefetched: None,
-                            })
-                            .await?;
+                        Box::pin(interactor.execute(video::DownloadInput {
+                            message_id: *message_id,
+                            chat_id: *chat_id,
+                            params: &job.params,
+                            url,
+                            chat_cfg: &job.chat_cfg,
+                            link_is_visible: job.link_is_visible,
+                            prefetched: None,
+                        }))
+                        .await?;
                     }
                     MediaType::Audio => {
                         let interactor = child.get::<audio::Download<TelegramMessenger>>().await?;
-                        interactor
-                            .execute(audio::DownloadInput {
-                                message_id: *message_id,
-                                chat_id: *chat_id,
-                                params: &job.params,
-                                url,
-                                chat_cfg: &job.chat_cfg,
-                                link_is_visible: job.link_is_visible,
-                                progress_message_id: job.progress_message_id,
-                                base_text: job.base_text.as_deref(),
-                                prefetched: None,
-                            })
-                            .await?;
+                        Box::pin(interactor.execute(audio::DownloadInput {
+                            message_id: *message_id,
+                            chat_id: *chat_id,
+                            params: &job.params,
+                            url,
+                            chat_cfg: &job.chat_cfg,
+                            link_is_visible: job.link_is_visible,
+                            progress_message_id: job.progress_message_id,
+                            base_text: job.base_text.as_deref(),
+                            prefetched: None,
+                        }))
+                        .await?;
                     }
                     MediaType::Photo => {
                         let interactor = child.get::<photo::Download<TelegramMessenger>>().await?;

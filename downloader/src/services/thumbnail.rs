@@ -37,14 +37,11 @@ pub async fn embed_thumbnail(media_path: &Path, thumbnail_path: &Path) -> Result
 fn embed(media_path: &Path, thumbnail: Vec<u8>) -> Result<(), EmbedThumbnailErrorKind> {
     let mut tagged_file = read_from_path(media_path)?;
 
-    let tag = match tagged_file.primary_tag_mut() {
-        Some(tag) => tag,
-        None => {
-            let tag_type = tagged_file.primary_tag_type();
-            tagged_file.insert_tag(Tag::new(tag_type));
-            tagged_file.primary_tag_mut().expect("primary tag present after insert")
-        }
-    };
+    if tagged_file.primary_tag_mut().is_none() {
+        let tag_type = tagged_file.primary_tag_type();
+        tagged_file.insert_tag(Tag::new(tag_type));
+    }
+    let tag = tagged_file.primary_tag_mut().expect("primary tag present after insert");
 
     let picture = Picture::unchecked(thumbnail)
         .pic_type(PictureType::CoverFront)

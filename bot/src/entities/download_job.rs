@@ -66,7 +66,7 @@ impl DownloadJob {
     }
 
     #[must_use]
-    pub fn as_auto(mut self, quiet: bool) -> Self {
+    pub fn with_auto(mut self, quiet: bool) -> Self {
         self.auto = true;
         self.quiet = quiet;
         self

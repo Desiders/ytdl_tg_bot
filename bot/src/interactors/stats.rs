@@ -24,8 +24,8 @@ use crate::{
 pub struct Stats<Messenger> {
     error_formatter: Arc<ErrorFormatter>,
     messenger: Arc<Messenger>,
-    media_stats: Arc<downloaded_media::GetStats>,
-    node_stats: Arc<node_router::GetStats>,
+    media: Arc<downloaded_media::GetStats>,
+    nodes: Arc<node_router::GetStats>,
     queue: Arc<RedisJobQueue>,
 }
 
@@ -34,15 +34,15 @@ impl<Messenger> Stats<Messenger> {
     pub const fn new(
         error_formatter: Arc<ErrorFormatter>,
         messenger: Arc<Messenger>,
-        media_stats: Arc<downloaded_media::GetStats>,
-        node_stats: Arc<node_router::GetStats>,
+        media: Arc<downloaded_media::GetStats>,
+        nodes: Arc<node_router::GetStats>,
         queue: Arc<RedisJobQueue>,
     ) -> Self {
         Self {
             error_formatter,
             messenger,
-            media_stats,
-            node_stats,
+            media,
+            nodes,
             queue,
         }
     }
@@ -63,11 +63,8 @@ where
 
     async fn execute(self, input: StatsInput<'_>) -> Result<Self::Output, Self::Err> {
         let locale = input.chat_cfg.map_or(Locale::En, ChatConfig::locale).as_str();
-        let media_stats = self
-            .media_stats
-            .execute(downloaded_media::GetStatsInput { top_domains_limit: 5 })
-            .await;
-        let nodes_stats = self.node_stats.execute(node_router::GetStatsInput {}).await.unwrap_or_default();
+        let media_stats = self.media.execute(downloaded_media::GetStatsInput { top_domains_limit: 5 }).await;
+        let nodes_stats = self.nodes.execute(node_router::GetStatsInput {}).await.unwrap_or_default();
         let queue_stats = self.queue.stats().await.unwrap_or_default();
 
         let text = match media_stats {

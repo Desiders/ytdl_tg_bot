@@ -310,7 +310,7 @@ async fn get_media_by_url(
     let resolved_urls = if matches!(media_type, MediaType::Audio) {
         resolve_to_drm_free(router, url)
             .await?
-            .map(|urls| select_by_range(urls, playlist_range))
+            .map(|urls| select_by_range(urls, *playlist_range))
     } else {
         None
     };
@@ -426,7 +426,7 @@ async fn get_media_by_url(
 
 /// Applies the `items` range (1-based `start:count:step`) to the resolved URL list, mirroring how
 /// the node applies it to a regular playlist's entries.
-fn select_by_range(urls: Vec<Url>, range: &Range) -> Vec<Url> {
+fn select_by_range(urls: Vec<Url>, range: Range) -> Vec<Url> {
     urls.into_iter()
         .enumerate()
         .filter(|(index, _)| {
