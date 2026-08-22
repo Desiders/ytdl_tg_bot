@@ -1,11 +1,11 @@
-FROM rust:1.91-alpine AS songrec-build
+FROM rust:1.98-alpine3.24 AS songrec-build
 RUN apk add --no-cache build-base pkgconf clang-dev glib-dev gettext-dev libsoup3-dev alsa-lib-dev pipewire-dev
 # Disable static-musl linking so the pipewire/libspa bindgen build script can dlopen libclang
 # (static musl binaries cannot dlopen), and so the songrec binary links its C libs dynamically.
 ENV RUSTFLAGS="-C target-feature=-crt-static"
 RUN cargo install songrec --no-default-features --root /songrec --locked
 
-FROM alpine:3.22 AS base
+FROM alpine:3.24 AS base
 RUN apk add --no-cache \
         ffmpeg \
         python3 \
@@ -34,7 +34,7 @@ RUN pip install --no-cache-dir -U pip \
 RUN pip uninstall -y spotapi tls-client \
  && pip install --no-cache-dir "spotapi @ https://github.com/Desiders/SpotAPI/archive/b299d1d1f13e06273b686fa579edc2968ebdc7fd.tar.gz"
 
-FROM rust:1.91 AS build
+FROM rust:1.98 AS build
 RUN apt update && apt install -y musl-tools protobuf-compiler upx && rm -rf /var/lib/apt/lists/*
 RUN rustup target add x86_64-unknown-linux-musl
 
