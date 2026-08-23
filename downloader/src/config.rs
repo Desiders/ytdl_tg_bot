@@ -51,7 +51,7 @@ impl YtDlpConfig {
 }
 
 fn default_extractor_args() -> Box<str> {
-    "youtube:player_client=default,mweb;player_skip=configs,initial_data;use_ad_playback_context=true".into()
+    "youtube:player_client=default,mweb;player_skip=initial_data;use_ad_playback_context=true".into()
 }
 
 #[derive(Default, Deserialize, Clone, Debug)]
