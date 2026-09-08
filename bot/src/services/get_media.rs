@@ -398,7 +398,7 @@ async fn get_media_by_url(
     let mut uncached = vec![];
     for (mut media, formats) in playlist.inner {
         media.clean_webpage_url(url_cleaner);
-        let domain = media.webpage_url.domain();
+        let domain = media.webpage_url.host_str();
         if !overwrite_cache {
             if let Some(DownloadedMedia { file_id, .. }) = reader
                 .get(&media.id, domain, audio_language.language.as_deref(), media_type, start, end)
