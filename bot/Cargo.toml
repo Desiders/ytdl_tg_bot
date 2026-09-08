@@ -37,6 +37,11 @@ tracing-subscriber = { version = "0.3", features = ["registry", "fmt", "ansi", "
 url = { version = "2.5", features = ["serde"], default-features = false }
 uuid = { version = "1.18", features = ["v7", "fast-rng", "serde"], default-features = false }
 
+[dev-dependencies]
+migration = { path = "../migration" }
+testcontainers-modules = { version = "0.15", features = ["postgres"], default-features = false }
+tokio = { version = "1.36", features = ["macros"], default-features = false }
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

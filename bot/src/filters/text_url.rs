@@ -154,7 +154,7 @@ pub fn url_is_skippable_by_param(request: &mut Request) -> impl Future<Output = 
 
 #[cfg(test)]
 mod tests {
-    use super::get_url_from_text;
+    use super::{get_host_from_text, get_url_from_text};
 
     #[test]
     fn skips_non_network_scheme_and_returns_next_url() {
@@ -165,11 +165,83 @@ mod tests {
 
     #[test]
     fn skips_ip_literal_hosts() {
-        assert!(get_url_from_text("https://127.0.0.1 https://10 https://[::1]/x").is_none());
+        for text in [
+            "https://127.0.0.1",
+            "https://127.0.0.1:8080/x",
+            "http://192.168.1.10/clip.mp4",
+            "https://10",
+            "https://2130706433",
+            "https://0x7f.1",
+            "https://[::1]/x",
+        ] {
+            assert!(get_url_from_text(text).is_none(), "{text}");
+        }
 
         let url = get_url_from_text("https://10 https://example.com/x").expect("expected URL");
 
         assert_eq!(url.as_str(), "https://example.com/x");
+    }
+
+    #[test]
+    fn skips_non_network_schemes_and_bare_hosts() {
+        for text in [
+            "mailto:someone@example.com",
+            "file:///tmp/video.mp4",
+            "javascript:alert(1)",
+            "data:text/plain,hi",
+            "example.com/watch?v=1",
+            "www.example.com",
+            "",
+        ] {
+            assert!(get_url_from_text(text).is_none(), "{text}");
+        }
+    }
+
+    #[test]
+    fn takes_first_network_url_among_words() {
+        let url = get_url_from_text("look at this: https://one.example/a and https://two.example/b").expect("expected URL");
+
+        assert_eq!(url.as_str(), "https://one.example/a");
+    }
+
+    #[test]
+    fn keeps_query_fragment_port_and_userinfo() {
+        let url = get_url_from_text("https://user:pw@example.com:8443/v?id=1&x=2#t=3").expect("expected URL");
+
+        assert_eq!(url.as_str(), "https://user:pw@example.com:8443/v?id=1&x=2#t=3");
+        assert_eq!(url.domain(), Some("example.com"));
+    }
+
+    #[test]
+    fn normalizes_scheme_and_host_case() {
+        let url = get_url_from_text("HTTPS://WWW.EXAMPLE.COM/Path").expect("expected URL");
+
+        assert_eq!(url.as_str(), "https://www.example.com/Path");
+    }
+
+    #[test]
+    fn accepts_other_network_schemes() {
+        assert_eq!(get_url_from_text("http://example.com/a").unwrap().as_str(), "http://example.com/a");
+        assert_eq!(get_url_from_text("ftp://example.com/a").unwrap().scheme(), "ftp");
+    }
+
+    #[test]
+    fn host_from_text_requires_known_public_suffix() {
+        assert_eq!(
+            get_host_from_text("https://sub.example.co.uk/x").unwrap().to_string(),
+            "sub.example.co.uk"
+        );
+        assert_eq!(get_host_from_text("block example.com please").unwrap().to_string(), "example.com");
+        for text in [
+            "localhost",
+            "https://localhost/x",
+            "127.0.0.1",
+            "https://127.0.0.1/x",
+            "intranet.localdomain",
+            "",
+        ] {
+            assert!(get_host_from_text(text).is_none(), "{text}");
+        }
     }
 
     #[test]
