@@ -65,10 +65,10 @@ helm-install-infra NAMESPACE:
     helm install infra ./charts/infra -n {{NAMESPACE}} --create-namespace
 
 helm-upgrade-bot NAMESPACE:
-    helm upgrade bot ./charts/bot -n {{NAMESPACE}}
+    helm upgrade bot ./charts/bot -n {{NAMESPACE}} --reset-values
 
 helm-upgrade-infra NAMESPACE:
-    helm upgrade infra ./charts/infra -n {{NAMESPACE}}
+    helm upgrade infra ./charts/infra -n {{NAMESPACE}} --reset-values
 
 helm-install-downloader NAMESPACE:
     helm install downloader ./charts/downloader -n {{NAMESPACE}} --create-namespace
@@ -77,10 +77,10 @@ helm-install-cookie-assignment NAMESPACE:
     helm install cookie-assignment ./charts/cookie-assignment -n {{NAMESPACE}} --create-namespace
 
 helm-upgrade-downloader NAMESPACE:
-    helm upgrade downloader ./charts/downloader -n {{NAMESPACE}}
+    helm upgrade downloader ./charts/downloader -n {{NAMESPACE}} --reset-values
 
 helm-upgrade-cookie-assignment NAMESPACE:
-    helm upgrade cookie-assignment ./charts/cookie-assignment -n {{NAMESPACE}}
+    helm upgrade cookie-assignment ./charts/cookie-assignment -n {{NAMESPACE}} --reset-values
 
 scale-downloader NAMESPACE REPLICAS="1":
     helm upgrade downloader ./charts/downloader -n {{NAMESPACE}} --set downloader.replicas={{REPLICAS}}
