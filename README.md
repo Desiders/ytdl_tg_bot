@@ -20,14 +20,36 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 - Inline mode (auto / video / audio)
 - Song recognition (`/shazam`) — identify a track from an audio, voice, video or video note, then download it
 - Cookie-free Instagram / Facebook downloads (via [`snapsave-parser`](https://github.com/Desiders/snapsave-parser))
+- Spotify tracks, albums and playlists — resolved to DRM-free sources via [`spotdl`](https://github.com/spotDL/spotify-downloader)
 - Broad platform support — YouTube, TikTok, Instagram, Facebook, Twitter/X, Spotify, VK, Bluesky, Coub and more
-- Language selection
+- Durable download queue — jobs survive bot restarts (Valkey streams)
+- Cached re-sends — already downloaded media is sent by Telegram `file_id` without touching a downloader node
+- Language selection (English, Russian, Ukrainian)
 - Media crop
 - Skip download param
 - Random media
 - Reactions on supported links
 - Stats
 - Exclude domains list
+
+## Commands
+
+| Command | Description |
+| --- | --- |
+| `/vd`, `/video` | Download video with progress messages |
+| `/ad`, `/audio` | Download audio |
+| `/pd`, `/photo` | Download photo |
+| `/rv`, `/ra` | Random video or audio from the configured domains |
+| `/shazam`, `/sh` | Recognize a song from a replied voice, audio, video or video note, then download it |
+| `/add_ed`, `/rm_ed` | Exclude or re-include a domain for the current chat |
+| `/change_link_visibility` | Show or hide the source link in captions (private chats) |
+| `/stats` | Cache, node, queue and chat statistics |
+| `/lang` | Switch interface language |
+| `/start`, `/help` | Help text with all arguments |
+
+A bare link in a private chat is downloaded automatically with media-type detection; in groups the same happens silently. Append `yv2t_bot=false` to a link to make the bot ignore it.
+
+Arguments go in square brackets after the command, for example `/vd [lang=ru,items=1:3:1,crop=00:01:30-,overwrite=true]`. Inline mode (`@bot <url>` or `@bot <title>`) supports `lang` and `overwrite`.
 
 ## Self Install
 
@@ -181,7 +203,16 @@ Required config checks:
 - Cookie-manager token matches in `configs/downloader.toml` `[auth].cookie_manager_token` and `configs/cookie_assignment.toml` `[download].cookie_manager_token`.
 - `configs/config.toml` `[redis].host` matches the Valkey service name (`valkey` with the bundled operator; confirm with `kubectl get svc -n "${NAMESPACE}"` after the `ValkeyCluster` reconciles).
 - `configs/config.toml` `[redis].user` is `admin` and `[redis].password` matches the `valkey` Secret's `password`.
+- `configs/config.toml` `[telegram_bot_api]` keeps `file_server_url` and `work_dir` when using the bundled local Bot API server; remove both only when pointing `url` at `https://api.telegram.org`.
 - Default in-cluster service URLs are correct if all charts are installed into the same namespace.
+
+Optional downloader features are off by default in `configs/downloader.toml`; enable the ones you need:
+
+- `[spotdl].enabled` — Spotify links.
+- `[snapsave].enabled` — cookie-free Instagram / Facebook (optionally through `[snapsave].proxy`).
+- `[songrec].enabled` — `/shazam`.
+- `[[user_agents]]` — per-domain `User-Agent` overrides for yt-dlp.
+- `[[replace_domains.<video|audio|photo>]]` — domain rewrites used when the node has no cookie for the site.
 
 ### 5. Optional Cookies
 
@@ -216,7 +247,7 @@ just helm-install-cookie-assignment "${NAMESPACE}"
 Notes:
 
 - `infra` creates the shared internal CA issuer.
-- `bot` creates PostgreSQL, RustFS, Telegram Bot API, yt-toolkit, and the bot Deployment.
+- `bot` creates PostgreSQL, Valkey, RustFS, Telegram Bot API with its file server, yt-toolkit, and the bot Deployment.
 - `k8s-migration` runs DB migrations after PostgreSQL exists.
 - The bot pod can restart until PostgreSQL is ready and migrations have run.
 - `downloader` creates the headless downloader service and worker pods.
@@ -254,6 +285,11 @@ Logs:
 just k8s-logs-bot "${NAMESPACE}"
 just k8s-logs-downloader "${NAMESPACE}"
 just k8s-logs-cookie-assignment "${NAMESPACE}"
+just k8s-logs-db "${NAMESPACE}"
+just k8s-logs-valkey "${NAMESPACE}"
+just k8s-logs-telegram-api "${NAMESPACE}"
+just k8s-logs-yt-toolkit "${NAMESPACE}"
+just k8s-logs-pot-provider "${NAMESPACE}"
 ```
 
 Manual backup check:
@@ -496,6 +532,27 @@ Run a different migration command:
 ```bash
 just k8s-migration "${NAMESPACE}" down
 ```
+
+Reach the database from your machine and regenerate SeaORM entities after a migration:
+
+```bash
+just k8s-port-forward-db "${NAMESPACE}"
+just generate-entities-from-db "${NAMESPACE}"
+```
+
+## Local Development
+
+```bash
+cargo check -p bot            # or downloader, downloader_client, cookie_assignment
+just lint                     # clippy::pedantic across the workspace
+just fmt                      # nightly rustfmt
+cargo test -p downloader_client
+cargo test -p bot             # database tests start PostgreSQL via testcontainers and need Docker
+```
+
+Each binary reads its config from a path env var, defaulting to the `configs/` files: `CONFIG_PATH` (bot), `DOWNLOADER_CONFIG_PATH`, and `COOKIE_ASSIGNMENT_CONFIG_PATH`. The bot and cookie assignment also require `DOWNLOADER_SERVICE_DNS=<host>:<port>`, whose host is used as the TLS server name.
+
+See [AGENTS.md](AGENTS.md) for architecture, invariants, and change rules.
 
 ## Dev Images
 
