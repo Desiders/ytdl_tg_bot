@@ -16,6 +16,15 @@ use crate::{
     value_objects::MediaType,
 };
 
+const DOMAIN_MATCHES: &str = "(lower(domain) = lower($1) OR right(lower($1), length(domain) + 1) = ('.' || lower(domain)))";
+
+// ids are free text (generic-extractor ids carry file names), so escape them before use as a regex
+fn url_contains_token(column: &str) -> String {
+    format!(
+        r"({column} <> '' AND strpos($1, {column}) > 0 AND $1 ~ ('(^|[/?&=])' || regexp_replace({column}, '([\[\]\\.^$*+?(){{}}|])', '\\\1', 'g') || '([&?/]|$)'))"
+    )
+}
+
 pub struct SeaOrmDownloadedMediaReader<'a, Conn> {
     conn: &'a Conn,
 }
@@ -38,7 +47,7 @@ impl<Conn: ConnectionTrait> DownloadedMediaReader for SeaOrmDownloadedMediaReade
         crop_end_time: Option<i32>,
     ) -> Result<Option<DownloadedMedia>, ErrorKind<Infallible>> {
         use downloaded_media::{
-            Column::{AudioLanguage, CropEndTime, CropStartTime, DisplayId, Id, MediaType},
+            Column::{AudioLanguage, CropEndTime, CropStartTime, DisplayId, Domain, Id, MediaType},
             Entity,
         };
 
@@ -50,18 +59,16 @@ impl<Conn: ConnectionTrait> DownloadedMediaReader for SeaOrmDownloadedMediaReade
                     .eq(search)
                     .or(Expr::col(DisplayId).eq(search))
                     // if `search` is URL
-                    .or(Expr::cust_with_values("$1 ~ ('(^|[/?&=])' || id::text || '([&?/]|$)')", [search]))
-                    .or(Expr::cust_with_values(
-                        "$1 ~ ('(^|[/?&=])' || display_id::text || '([&?/]|$)')",
-                        [search],
-                    )),
+                    .or(Expr::cust_with_values(url_contains_token("id"), [search]))
+                    .or(Expr::cust_with_values(url_contains_token("display_id"), [search])),
             );
         if let Some(lang) = audio_language {
             query = query.filter(AudioLanguage.eq(lang));
         }
-        if let Some(domain) = domain {
-            query = query.filter(Expr::cust_with_values("$1 ~* ('(^|\\.)' || domain || '$')", [domain]));
-        }
+        query = match domain {
+            Some(domain) => query.filter(Expr::cust_with_values(DOMAIN_MATCHES, [domain])),
+            None => query.filter(Domain.is_null()),
+        };
         if let Some(time) = crop_start_time {
             query = query.filter(CropStartTime.eq(time));
         } else {
