@@ -1,0 +1,23 @@
+name: cleanup-images
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  packages: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          owner: ${{ github.repository_owner }}
+          packages: ytdl_tg_bot,ytdl_tg_bot.downloader,ytdl_tg_bot.cookie_assignment,ytdl_tg_bot.migration
+          delete-tags: sha-*
+          keep-n-tagged: 3
+          exclude-tags: latest
+          delete-untagged: true
