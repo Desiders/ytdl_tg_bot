@@ -11,7 +11,7 @@ pub fn get_url_from_text(text: &str) -> Option<Url> {
     let words: Vec<&str> = text.split_whitespace().collect();
     for word in words {
         if let Ok(url) = Url::parse(word) {
-            if url.origin().is_tuple() {
+            if url.origin().is_tuple() && url.domain().is_some() {
                 return Some(url);
             }
         }
@@ -161,6 +161,15 @@ mod tests {
         let url = get_url_from_text("text: https://example.com/watch?v=1").expect("expected URL");
 
         assert_eq!(url.as_str(), "https://example.com/watch?v=1");
+    }
+
+    #[test]
+    fn skips_ip_literal_hosts() {
+        assert!(get_url_from_text("https://127.0.0.1 https://10 https://[::1]/x").is_none());
+
+        let url = get_url_from_text("https://10 https://example.com/x").expect("expected URL");
+
+        assert_eq!(url.as_str(), "https://example.com/x");
     }
 
     #[test]
