@@ -14,10 +14,12 @@ WORKDIR /usr/src/app
 COPY bot/Cargo.toml bot/Cargo.toml
 COPY downloader_client/Cargo.toml downloader_client/Cargo.toml
 COPY proto/Cargo.toml proto/Cargo.toml
+COPY migration/Cargo.toml migration/Cargo.toml
 
 RUN mkdir -p bot/src && echo "fn main(){}" > bot/src/main.rs
 RUN mkdir -p downloader_client/src && echo "fn main(){}" > downloader_client/src/main.rs
 RUN mkdir -p proto/src && echo "" > proto/src/lib.rs
+RUN mkdir -p migration/src && echo "" > migration/src/lib.rs
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
