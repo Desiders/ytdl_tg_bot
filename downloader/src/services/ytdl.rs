@@ -17,6 +17,7 @@ use tonic::Status;
 use tracing::{debug, error, instrument, trace, warn};
 
 const STREAM_CHUNK_SIZE: usize = 256 * 1024;
+const VIDEO_FORMAT_SORT: &str = "height,ext,quality,codec,source,lang";
 
 pub enum StreamItem {
     Data(Vec<u8>),
@@ -254,7 +255,7 @@ pub async fn get_media_info(
         "-I",
         &playlist_range,
         "--format-sort",
-        "ext,quality,codec,source,lang",
+        VIDEO_FORMAT_SORT,
         "--compat-options",
         "manifest-filesize-approx",
         "-f",
