@@ -235,17 +235,13 @@ impl Playlist {
             .into_values()
             .map(|mut media_with_formats| {
                 let (first_format, raw) = media_with_formats.remove(0);
-                let mut formats = vec![];
-                if media_with_formats.is_empty() {
-                    formats.push((first_format.clone().into(), raw));
-                } else {
-                    for (media_with_format, raw) in media_with_formats {
-                        let format: MediaFormat = media_with_format.into();
-                        if formats.contains(&(format.clone(), raw.clone())) {
-                            continue;
-                        }
-                        formats.push((format, raw));
+                let mut formats = vec![(first_format.clone().into(), raw)];
+                for (media_with_format, raw) in media_with_formats {
+                    let format: MediaFormat = media_with_format.into();
+                    if formats.contains(&(format.clone(), raw.clone())) {
+                        continue;
                     }
+                    formats.push((format, raw));
                 }
                 (first_format.into(), formats)
             })
