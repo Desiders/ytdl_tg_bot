@@ -89,6 +89,7 @@ chat_type_supergroup = "Supergroup"
 chat_type_channel = "Channel"
 chat_type_unknown = "Unknown"
 node_line = "%{name}. (%{active}/%{max})"
+node_unavailable = "%{name}. Unavailable (load unknown)"
 top_domain_line = "%{index}. %{domain} (%{count})"
 get_error = "Failed to fetch statistics"
 

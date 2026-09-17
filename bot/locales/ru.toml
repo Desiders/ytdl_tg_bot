@@ -89,6 +89,7 @@ chat_type_supergroup = "Супергруппы"
 chat_type_channel = "Каналы"
 chat_type_unknown = "Неизвестно"
 node_line = "%{name}. (%{active}/%{max})"
+node_unavailable = "%{name}. Недоступен (нагрузка неизвестна)"
 top_domain_line = "%{index}. %{domain} (%{count} шт.)"
 get_error = "Не удалось получить статистику"
 

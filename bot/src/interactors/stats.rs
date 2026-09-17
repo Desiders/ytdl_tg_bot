@@ -92,6 +92,10 @@ where
 
                 let mut nodes = String::new();
                 for node_stats in nodes_stats {
+                    if !node_stats.available {
+                        let _ = writeln!(nodes, "{}", t!("stats.node_unavailable", locale = locale, name = html_quote(node_stats.name)));
+                        continue;
+                    }
                     let _ = writeln!(
                         nodes,
                         "{}",
