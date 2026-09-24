@@ -1,4 +1,6 @@
-use std::{io, path::Path};
+use std::{io, path::Path, sync::Arc};
+
+use crate::grpc::downloader::ACTIVE_DOWNLOAD;
 
 use lofty::{
     config::WriteOptions,
@@ -29,9 +31,15 @@ pub async fn embed_thumbnail(media_path: &Path, thumbnail_path: &Path) -> Result
 
     // lofty buffers the whole media file in memory to rewrite it; run the blocking work off the
     // async runtime so a large write does not stall a worker thread.
-    tokio::task::spawn_blocking(move || embed(&media_path, thumbnail))
-        .await
-        .map_err(|_| EmbedThumbnailErrorKind::Join)?
+    let activity = ACTIVE_DOWNLOAD.try_with(Arc::clone).ok();
+    tokio::task::spawn_blocking(move || {
+        // spawn_blocking cannot be aborted once running. Its real work must stay
+        // accounted for even when the RPC deadline/disconnect drops its waiter.
+        let _activity = activity;
+        embed(&media_path, thumbnail)
+    })
+    .await
+    .map_err(|_| EmbedThumbnailErrorKind::Join)?
 }
 
 fn embed(media_path: &Path, thumbnail: Vec<u8>) -> Result<(), EmbedThumbnailErrorKind> {

@@ -16,7 +16,7 @@ mod worker;
 
 use froodi::telers::setup_async_default;
 use services::node_router::NodeRouter;
-use std::borrow::Cow;
+use std::{borrow::Cow, time::Duration};
 
 use telers::{
     client::{
@@ -28,6 +28,7 @@ use telers::{
     filters::{ChatType, Command, Filter as _, MessageType},
     Bot, Dispatcher, Router,
 };
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
@@ -45,6 +46,7 @@ use crate::{
 };
 
 type Messenger = TelegramMessenger;
+const WORKER_SHUTDOWN_GRACE: Duration = Duration::from_secs(20);
 
 rust_i18n::i18n!("locales", fallback = "en");
 
@@ -230,12 +232,43 @@ async fn main() {
         }
     }
 
-    // Stop accepting new work and let in-flight jobs finish; anything still pending stays in the
-    // Redis stream's pending list and is reclaimed on the next start.
+    // Stop accepting new work, then bound the time spent draining in-flight jobs.
     shutdown.cancel();
-    for handle in worker_handles {
-        let _ = handle.await;
-    }
+    drain_workers(worker_handles, WORKER_SHUTDOWN_GRACE).await;
 
     container.close().await;
+}
+
+async fn drain_workers(mut worker_handles: Vec<JoinHandle<()>>, grace: Duration) {
+    if tokio::time::timeout(grace, async {
+        for handle in &mut worker_handles {
+            let _ = handle.await;
+        }
+    })
+    .await
+    .is_err()
+    {
+        for handle in &worker_handles {
+            handle.abort();
+        }
+        for handle in worker_handles {
+            let _ = handle.await;
+        }
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn drain_cancels_a_worker_that_exceeds_its_grace() {
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let worker = tokio::spawn(async move {
+            let _ = started.send(());
+            std::future::pending::<()>().await;
+        });
+        ready.await.unwrap();
+        drain_workers(vec![worker], Duration::from_millis(10)).await;
+    }
 }

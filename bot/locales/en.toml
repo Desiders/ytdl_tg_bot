@@ -77,7 +77,7 @@ body = """
 - Nodes:
 %{nodes}- Queue (workers: %{workers}):
   - Waiting: %{queue_waiting}
-  - In progress: %{queue_in_progress}
+  - Pending (unacknowledged): %{queue_pending}
   - Failed: %{queue_dead_letter}
 - Most popular domains:
 %{top_domains}\
@@ -90,6 +90,7 @@ chat_type_channel = "Channel"
 chat_type_unknown = "Unknown"
 node_line = "%{name}. (%{active}/%{max})"
 node_unavailable = "%{name}. Unavailable (load unknown)"
+queue_unavailable = "Unavailable"
 top_domain_line = "%{index}. %{domain} (%{count})"
 get_error = "Failed to fetch statistics"
 

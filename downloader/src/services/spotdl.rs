@@ -9,7 +9,10 @@ use tokio::time;
 use tracing::{info, trace, warn};
 use url::Url;
 
-use crate::{config::SpotdlConfig, utils::process_exit_error};
+use crate::{
+    config::SpotdlConfig,
+    utils::{process_exit_error, ProcessGroup},
+};
 
 const RESOLVE_TIMEOUT_SECS: u64 = 300;
 const PLATFORM: &str = "youtube";
@@ -70,7 +73,9 @@ impl SpotdlResolver {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true)
+            .process_group(0)
             .spawn()?;
+        let _process_group = ProcessGroup::new(&child);
 
         let Output { status, stdout, stderr } = time::timeout(Duration::from_secs(RESOLVE_TIMEOUT_SECS), child.wait_with_output())
             .await

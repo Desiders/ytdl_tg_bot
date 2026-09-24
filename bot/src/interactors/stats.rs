@@ -65,7 +65,25 @@ where
         let locale = input.chat_cfg.map_or(Locale::En, ChatConfig::locale).as_str();
         let media_stats = self.media.execute(downloaded_media::GetStatsInput { top_domains_limit: 5 }).await;
         let nodes_stats = self.nodes.execute(node_router::GetStatsInput {}).await.unwrap_or_default();
-        let queue_stats = self.queue.stats().await.unwrap_or_default();
+        let queue_stats = match self.queue.stats().await {
+            Ok(stats) => Some(stats),
+            Err(err) => {
+                error!(%err, "Get queue statistics error");
+                None
+            }
+        };
+        let queue_waiting = queue_stats.map_or_else(
+            || t!("stats.queue_unavailable", locale = locale).into_owned(),
+            |stats| stats.waiting.to_string(),
+        );
+        let queue_pending = queue_stats.map_or_else(
+            || t!("stats.queue_unavailable", locale = locale).into_owned(),
+            |stats| stats.pending.to_string(),
+        );
+        let queue_dead_letter = queue_stats.map_or_else(
+            || t!("stats.queue_unavailable", locale = locale).into_owned(),
+            |stats| stats.dead_letter.to_string(),
+        );
 
         let text = match media_stats {
             Ok((media_stats, chat_stats)) => {
@@ -93,7 +111,11 @@ where
                 let mut nodes = String::new();
                 for node_stats in nodes_stats {
                     if !node_stats.available {
-                        let _ = writeln!(nodes, "{}", t!("stats.node_unavailable", locale = locale, name = html_quote(node_stats.name)));
+                        let _ = writeln!(
+                            nodes,
+                            "{}",
+                            t!("stats.node_unavailable", locale = locale, name = html_quote(node_stats.name))
+                        );
                         continue;
                     }
                     let _ = writeln!(
@@ -135,9 +157,9 @@ where
                     total = media_stats.total.count,
                     nodes = nodes,
                     workers = self.queue.cfg().workers,
-                    queue_waiting = queue_stats.waiting,
-                    queue_in_progress = queue_stats.in_progress,
-                    queue_dead_letter = queue_stats.dead_letter,
+                    queue_waiting = queue_waiting,
+                    queue_pending = queue_pending,
+                    queue_dead_letter = queue_dead_letter,
                     top_domains = top_domains,
                 )
                 .into_owned()

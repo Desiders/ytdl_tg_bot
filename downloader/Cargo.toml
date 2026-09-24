@@ -9,7 +9,7 @@ backoff = { version = "0.4", features = ["tokio"], default-features = false }
 bytes = { version = "1", default-features = false }
 futures-util = { version = "0.3", default-features = false }
 lofty = { version = "0.24", default-features = false }
-nix = { version = "0.31", features = ["fs"], default-features = false }
+nix = { version = "0.31", features = ["fs", "signal", "process"], default-features = false }
 proto = { path = "../proto" }
 regex = { version = "1.12", features = ["perf"], default-features = false }
 serde = { version = "1.0", features = ["derive"], default-features = false }
@@ -18,8 +18,8 @@ snapsave-parser = { git = "https://github.com/Desiders/snapsave-parser.git", rev
 tempfile = { version = "3.9", default-features = false }
 thiserror = { version = "2.0", default-features = false }
 tokio = { version = "1.36", features = ["rt-multi-thread", "macros", "process", "sync", "fs", "io-util", "time", "signal"], default-features = false }
-tokio-stream = { version = "0.1", default-features = false }
-tokio-util = { version = "0.7", default-features = false }
+tokio-stream = { version = "0.1", features = ["net"], default-features = false }
+tokio-util = { version = "0.7", features = ["rt"], default-features = false }
 toml = { version = "1.0.6", features = ["parse", "serde"], default-features = false }
 tonic = { version = "0.14", features = ["transport", "tls-aws-lc"], default-features = false }
 tracing = { version = "0.1", default-features = false }

@@ -11,7 +11,8 @@ receiver_chat_id = 123
 [timeouts]
 send_by_upload = 210
 send_by_id = 360
-job = 480
+# Covers the 180-second media-info and 600-second downloader limits plus cleanup slack.
+job = 900
 
 [blacklisted]
 domains = ["t.me", "2girls1cup.ca"]
@@ -85,7 +86,8 @@ group = "workers"
 dead_letter_key = "ytdl:downloads:dead"
 max_attempts = 3
 block_ms = 5000
-claim_min_idle_ms = 60000
+# At least job timeout + 600-second downloader limit + 60 seconds of cleanup slack.
+claim_min_idle_ms = 1560000
 dedup_ttl_secs = 3600
 
 [yt_toolkit]

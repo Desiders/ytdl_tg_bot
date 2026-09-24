@@ -7,6 +7,7 @@ use crate::{NodeHandle, NodeRouter};
 pub enum NodeAttemptErrorKind {
     ResourceExhausted,
     Unavailable,
+    ExecutionUncertain,
     ContextUnavailable,
     Unauthenticated,
     Fatal,
@@ -14,8 +15,10 @@ pub enum NodeAttemptErrorKind {
 
 #[derive(Debug)]
 pub enum NodeFailoverError<E> {
+    AllNodesBusy,
     NodeUnavailable,
     NodeContextUnavailable,
+    ExecutionUncertain,
     Operation(E),
 }
 
@@ -39,24 +42,26 @@ where
 {
     let mut excluded = HashSet::new();
     let mut saw_retryable_context_error = false;
+    let mut saw_busy = false;
 
     loop {
         let Some(node) = router.pick_node(domain, &excluded) else {
-            return if saw_retryable_context_error {
+            return if saw_busy {
+                Err(NodeFailoverError::AllNodesBusy)
+            } else if saw_retryable_context_error {
                 Err(NodeFailoverError::NodeContextUnavailable)
             } else {
                 Err(NodeFailoverError::NodeUnavailable)
             };
         };
 
-        node.reserve_download_slot();
         let result = execute(node.clone()).await;
-        node.release_download_slot();
 
         match result {
             Ok(result) => return Ok(result),
             Err(err) => match classify_error(&err) {
                 NodeAttemptErrorKind::ResourceExhausted => {
+                    saw_busy = true;
                     excluded.insert(node.address.to_string());
                 }
                 NodeAttemptErrorKind::ContextUnavailable => {
@@ -65,8 +70,14 @@ where
                     excluded.insert(node.address.to_string());
                 }
                 NodeAttemptErrorKind::Unavailable => {
+                    node.mark_unavailable();
                     warn!(node = %node.address, error = %err, "Download node unavailable");
                     excluded.insert(node.address.to_string());
+                }
+                NodeAttemptErrorKind::ExecutionUncertain => {
+                    node.mark_unavailable();
+                    warn!(node = %node.address, error = %err, "Download execution outcome is uncertain");
+                    return Err(NodeFailoverError::ExecutionUncertain);
                 }
                 NodeAttemptErrorKind::Unauthenticated => {
                     error!(node = %node.address, error = %err, "Download node authentication failed");

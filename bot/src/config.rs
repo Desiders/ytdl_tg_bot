@@ -8,6 +8,14 @@ use std::{
 };
 use thiserror::Error;
 
+// Covers the 180-second media-info and 600-second downloader task limits, plus 60 seconds slack.
+const MIN_JOB_TIMEOUT_SECS: f32 = 840.0;
+const DEFAULT_JOB_TIMEOUT_SECS: f32 = 900.0;
+const DOWNLOADER_TASK_TIMEOUT_SECS: u64 = 600;
+const QUEUE_RECOVERY_MARGIN_SECS: u64 = 60;
+const DEFAULT_QUEUE_CLAIM_MIN_IDLE_MS: u64 =
+    (DEFAULT_JOB_TIMEOUT_SECS as u64 + DOWNLOADER_TASK_TIMEOUT_SECS + QUEUE_RECOVERY_MARGIN_SECS) * 1_000;
+
 #[derive(Deserialize, Clone, Debug)]
 pub struct BotConfig {
     pub token: Box<str>,
@@ -27,8 +35,20 @@ pub struct TimeoutsConfig {
     pub job: f32,
 }
 
+impl TimeoutsConfig {
+    fn validate(&self) -> Result<(), ParseError> {
+        if !self.job.is_finite() || self.job < MIN_JOB_TIMEOUT_SECS {
+            return Err(ParseError::JobTimeoutTooShort {
+                configured: self.job,
+                minimum: MIN_JOB_TIMEOUT_SECS,
+            });
+        }
+        Ok(())
+    }
+}
+
 fn default_job_timeout() -> f32 {
-    480.0
+    DEFAULT_JOB_TIMEOUT_SECS
 }
 
 impl Default for TimeoutsConfig {
@@ -200,6 +220,21 @@ pub struct QueueConfig {
     pub dedup_ttl_secs: u64,
 }
 
+impl QueueConfig {
+    fn validate(&self, job_timeout_secs: f32) -> Result<(), ParseError> {
+        let minimum = (job_timeout_secs.ceil() as u64)
+            .saturating_add(DOWNLOADER_TASK_TIMEOUT_SECS + QUEUE_RECOVERY_MARGIN_SECS)
+            .saturating_mul(1_000);
+        if self.claim_min_idle_ms < minimum {
+            return Err(ParseError::ClaimMinIdleTooShort {
+                configured: self.claim_min_idle_ms,
+                minimum,
+            });
+        }
+        Ok(())
+    }
+}
+
 impl Default for QueueConfig {
     fn default() -> Self {
         Self {
@@ -240,7 +275,7 @@ const fn default_queue_block_ms() -> u64 {
 }
 
 const fn default_queue_claim_min_idle_ms() -> u64 {
-    60_000
+    DEFAULT_QUEUE_CLAIM_MIN_IDLE_MS
 }
 
 const fn default_queue_dedup_ttl_secs() -> u64 {
@@ -278,6 +313,14 @@ pub enum ParseError {
     IO(#[from] io::Error),
     #[error(transparent)]
     Toml(#[from] toml::de::Error),
+    #[error(
+        "`[redis.queue].claim_min_idle_ms` must be at least {minimum} ms to cover the job timeout and a possible remaining downloader execution (configured: {configured} ms)"
+    )]
+    ClaimMinIdleTooShort { configured: u64, minimum: u64 },
+    #[error(
+        "`[timeouts].job` must be at least {minimum} seconds to cover media-info and downloader execution limits (configured: {configured} seconds)"
+    )]
+    JobTimeoutTooShort { configured: f32, minimum: f32 },
 }
 
 /// # Panics
@@ -303,8 +346,41 @@ pub fn get_path() -> Box<str> {
 /// Returns an error if the file cannot be read or the TOML cannot be parsed.
 pub fn parse_from_fs(path: impl AsRef<Path>) -> Result<Config, ParseError> {
     let raw = fs::read_to_string(path)?;
-    let cfg = toml::from_str(&raw)?;
+    let cfg: Config = toml::from_str(&raw)?;
+    cfg.timeouts.validate()?;
+    cfg.redis.queue.validate(cfg.timeouts.job)?;
     Ok(cfg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn queue_recovery_interval_covers_job_and_downloader_lifetimes() {
+        let mut queue = QueueConfig::default();
+        assert!(queue.validate(DEFAULT_JOB_TIMEOUT_SECS).is_ok());
+
+        queue.claim_min_idle_ms = DEFAULT_QUEUE_CLAIM_MIN_IDLE_MS - 1;
+        assert!(matches!(queue.validate(DEFAULT_JOB_TIMEOUT_SECS), Err(ParseError::ClaimMinIdleTooShort { .. })));
+        queue.claim_min_idle_ms = DEFAULT_QUEUE_CLAIM_MIN_IDLE_MS;
+        assert!(matches!(queue.validate(DEFAULT_JOB_TIMEOUT_SECS + 1.0), Err(ParseError::ClaimMinIdleTooShort { .. })));
+    }
+
+    #[test]
+    fn job_timeout_covers_media_info_download_and_cleanup_margin() {
+        let defaults = TimeoutsConfig::default();
+        assert_eq!(defaults.job, DEFAULT_JOB_TIMEOUT_SECS);
+        assert!(defaults.validate().is_ok());
+
+        let mut too_short = defaults;
+        too_short.job = MIN_JOB_TIMEOUT_SECS - 1.0;
+        assert!(matches!(too_short.validate(), Err(ParseError::JobTimeoutTooShort { .. })));
+
+        too_short.job = f32::NAN;
+        assert!(matches!(too_short.validate(), Err(ParseError::JobTimeoutTooShort { .. })));
+    }
+
 }
 
 impl From<DownloaderTlsConfig> for downloader_client::DownloaderTlsConfig {

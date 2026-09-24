@@ -19,6 +19,8 @@ use crate::{
     services::node_router::{download_media, DownloadErrorKind, DownloadEvent, DownloadSession, NodeRouter},
 };
 
+const MEDIA_STREAM_CHANNEL_CAPACITY: usize = 4;
+
 #[derive(thiserror::Error, Debug)]
 pub enum DownloadMediaErrorKind {
     #[error("Temp dir error: {0}")]
@@ -34,6 +36,8 @@ pub enum DownloadMediaErrorKind {
 pub enum DownloadMediaPlaylistErrorKind {
     #[error("Temp dir error: {0}")]
     TempDir(io::Error),
+    #[error(transparent)]
+    Download(#[from] DownloadErrorKind),
     #[error("Channel error: {0}")]
     ErrChannel(#[from] mpsc::error::SendError<Vec<DownloadErrorKind>>),
     #[error("Channel error: {0}")]
@@ -211,6 +215,9 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadVideo {
                     return Ok(Some((media_for_upload, format, duration)));
                 }
                 Err(err) => {
+                    if err.is_execution_uncertain() {
+                        return Err(err.into());
+                    }
                     err_sender.send(err)?;
                 }
             }
@@ -290,6 +297,9 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadAudio {
                     return Ok(Some((media_for_upload, format, duration)));
                 }
                 Err(err) => {
+                    if err.is_execution_uncertain() {
+                        return Err(err.into());
+                    }
                     err_sender.send(err)?;
                 }
             }
@@ -369,6 +379,9 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadPhoto {
                     return Ok(Some((media_for_upload, format, duration)));
                 }
                 Err(err) => {
+                    if err.is_execution_uncertain() {
+                        return Err(err.into());
+                    }
                     err_sender.send(err)?;
                 }
             }
@@ -453,6 +466,9 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
                         break;
                     }
                     Err(err) => {
+                        if err.is_execution_uncertain() {
+                            return Err(err.into());
+                        }
                         errs.push(err);
                     }
                 }
@@ -543,6 +559,9 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
                         break;
                     }
                     Err(err) => {
+                        if err.is_execution_uncertain() {
+                            return Err(err.into());
+                        }
                         errs.push(err);
                     }
                 }
@@ -633,6 +652,9 @@ impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadPhotoPlaylist {
                         break;
                     }
                     Err(err) => {
+                        if err.is_execution_uncertain() {
+                            return Err(err.into());
+                        }
                         errs.push(err);
                     }
                 }
@@ -686,7 +708,7 @@ fn build_downloaded_media(
 ) -> PreparedDownload {
     let meta = session.meta().clone();
     let path = output_dir.join(format!("media.{}", meta.ext));
-    let (media_sender, media_receiver) = mpsc::unbounded_channel();
+    let (media_sender, media_receiver) = mpsc::channel(MEDIA_STREAM_CHANNEL_CAPACITY);
     let (thumb_sender, thumb_receiver) = mpsc::unbounded_channel();
     let mut format = base_format.clone();
     format.ext = meta.ext;
@@ -724,6 +746,12 @@ impl PollBytes for mpsc::UnboundedReceiver<Result<Bytes, io::Error>> {
     }
 }
 
+impl PollBytes for mpsc::Receiver<Result<Bytes, io::Error>> {
+    fn poll_bytes(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<Bytes, io::Error>>> {
+        self.poll_recv(cx)
+    }
+}
+
 struct ChannelByteStream<R: PollBytes> {
     inner: Mutex<R>,
 }
@@ -747,14 +775,19 @@ impl<R: PollBytes> Stream for ChannelByteStream<R> {
 async fn forward_download_stream(
     mut session: DownloadSession,
     progress_sender: Option<mpsc::UnboundedSender<DownloadProgressEvent>>,
-    media_sender: mpsc::UnboundedSender<Result<Bytes, io::Error>>,
+    media_sender: mpsc::Sender<Result<Bytes, io::Error>>,
     thumb_sender: Option<mpsc::UnboundedSender<Result<Bytes, io::Error>>>,
 ) {
     loop {
-        match session.next_event().await {
+        let event = tokio::select! {
+            biased;
+            () = media_sender.closed() => return,
+            event = session.next_event() => event,
+        };
+        match event {
             Ok(Some(event)) => {
-                if let Err(err) = handle_download_event(event, progress_sender.as_ref(), &media_sender, thumb_sender.as_ref()) {
-                    let _ = media_sender.send(Err(err));
+                if let Err(err) = handle_download_event(event, progress_sender.as_ref(), &media_sender, thumb_sender.as_ref()).await {
+                    let _ = media_sender.send(Err(err)).await;
                     return;
                 }
             }
@@ -765,17 +798,17 @@ async fn forward_download_stream(
                 return;
             }
             Err(err) => {
-                let _ = media_sender.send(Err(io::Error::other(err)));
+                let _ = media_sender.send(Err(io::Error::other(err))).await;
                 return;
             }
         }
     }
 }
 
-fn handle_download_event(
+async fn handle_download_event(
     event: DownloadEvent,
     progress_sender: Option<&mpsc::UnboundedSender<DownloadProgressEvent>>,
-    media_sender: &mpsc::UnboundedSender<Result<Bytes, io::Error>>,
+    media_sender: &mpsc::Sender<Result<Bytes, io::Error>>,
     thumb_sender: Option<&mpsc::UnboundedSender<Result<Bytes, io::Error>>>,
 ) -> Result<(), io::Error> {
     match event {
@@ -787,6 +820,7 @@ fn handle_download_event(
         }
         DownloadEvent::Data(data) => media_sender
             .send(Ok(data))
+            .await
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "Media stream closed")),
         DownloadEvent::ThumbnailData(data) => thumb_sender
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Unexpected thumbnail stream"))?

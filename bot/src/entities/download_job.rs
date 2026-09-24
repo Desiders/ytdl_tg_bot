@@ -23,6 +23,9 @@ pub struct DownloadJob {
     pub chat_cfg: ChatConfig,
     pub link_is_visible: bool,
     pub target: JobTarget,
+    /// Number of retry-budget slots consumed by this logical job. A reclaimed
+    /// uncertain delivery consumes one conservatively because it may have run;
+    /// Redis delivery/reclaim counts are otherwise not used for this policy.
     #[serde(default)]
     pub attempts: u32,
     #[serde(default)]

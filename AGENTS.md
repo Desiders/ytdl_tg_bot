@@ -134,11 +134,13 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 ### Bot Queue Rules
 
 - Handlers never download. They inject `EnqueueCommandDownload` or `EnqueueInlineDownload` and return.
-- `bot/src/services/queue.rs` owns the stream protocol: `XADD` on enqueue, `XREADGROUP` per worker consumer, `XACK` + `XDEL` on ack, `XAUTOCLAIM` to recover jobs from crashed workers, a per-`job_id` done marker with TTL for best-effort dedup, and a dead-letter stream after `max_attempts`.
-- `bot/src/worker.rs` owns job execution: each job runs in a fresh request-scoped DI container under `[timeouts].job` seconds, dispatches on `JobTarget` (`Command` or `Inline`) and `auto` / `media_type`, clears the acknowledgment reaction, then acks, requeues, or dead-letters.
+- `bot/src/services/queue.rs` owns the stream protocol: `XADD` on enqueue, `XREADGROUP` per worker consumer, an ownership-checked atomic Redis-7 `XACK` + `XDEL` transition on completion, `XAUTOCLAIM` to recover uncertain/crashed work, a per-`job_id` done marker with TTL for best-effort dedup, and a dead-letter stream after `max_attempts`.
+- Redis Streams own durable at-least-once delivery. A terminal retry atomically replaces its entry only while the current consumer owns it, so a lost Redis reply cannot create two replacements. `DownloadJob.attempts` starts at zero and counts retry-budget slots consumed; `max_attempts` is the total execution-opportunity limit. Terminal failure or uncertain reclaim consumes one slot, while pre-admission capacity rejection does not. When all nodes are full, the worker retries after one second without consuming an attempt. Ambiguous execution stays pending; `XAUTOCLAIM` only recovers unresolved work after a conservative idle interval. Without periodic PEL heartbeats, `claim_min_idle_ms` must cover the configured job timeout, the downloader's 600-second hard limit, and 60 seconds of cleanup slack (1,560 seconds for the default 900-second job timeout). This bounds ordinary retry overlap; Redis ownership does not atomically fence a remote gRPC call. The TTL done marker remains best-effort protection for a crash after sending to Telegram but before acknowledgment.
+- Completion acknowledgement/deletion and terminal retry are atomic and ownership-gated. Dead-letter publication is ownership-checked and happens before acknowledgement, but those two stream keys may be in different Valkey Cluster hash slots; the transfer is at-least-once and a lost Redis reply can leave a duplicate dead-letter record. Making it atomic requires a deliberate shared-hash-tag key migration.
+- `bot/src/worker.rs` owns job execution: each job runs in a fresh request-scoped DI container under `[timeouts].job` seconds, dispatches on `JobTarget` (`Command` or `Inline`) and `auto` / `media_type`, clears the acknowledgment reaction, then acknowledges success, atomically retries terminal failures, dead-letters permanent/exhausted work, or leaves uncertain work pending for stream recovery. `[timeouts].job` must be at least 840 seconds (180-second media-info limit + 600-second downloader task limit + 60 seconds slack); the default is 900 seconds. A `DownloadMedia` transport/deadline failure remains typed as uncertain through format selection and the post-`Meta` stream forwarder; the worker does not acknowledge even if a higher-level interactor converts that failure into a user-facing result.
 - `DownloadJob` is serialized as JSON. New fields must be `#[serde(default)]` so jobs written by an older bot version still deserialize after a rollout.
-- Shutdown cancels the workers and waits for in-flight jobs; anything still pending stays in the stream's pending list and is reclaimed on the next start.
-- `/stats` reports queue waiting, in-progress, and dead-letter counts alongside node and cache stats.
+- Shutdown stops workers from reading further jobs, waits up to 20 seconds for in-flight work, then cancels remaining workers. Any unfinished work stays pending until the conservative reclaim interval elapses.
+- `/stats` reports queue waiting, pending/unacknowledged, and dead-letter counts alongside node and cache stats. Pending is delivery state, not node load; node status reports actual admitted downloads.
 
 ### Bot Messenger Boundary
 
@@ -226,6 +228,7 @@ New messenger bots should be separate applications, not modes inside the Telegra
 
 - exposes `Downloader`, `NodeCapabilities`, `NodeCookieManager`, `MusicResolver`, and `SongRecognizer` gRPC services on `[server].address`
 - limits concurrent downloads with a semaphore of `[server].max_concurrent`; a full node answers `RESOURCE_EXHAUSTED` with `Node is at capacity`
+- owns capacity admission through its semaphore; a guard holds the permit through task cleanup, and status derives active downloads from the semaphore's available permits. Bot status polling is only a routing and observability hint, and `RESOURCE_EXHAUSTED` makes the client try another node
 - maps retryable `yt-dlp` failures (login required, geo restriction, anti-bot) to `ABORTED` so clients can retry on another node
 - stores assigned cookies only in `/tmp/cookies`, one file per domain (`/tmp/cookies/<domain>.txt`, `www.` stripped)
 - clears `/tmp/cookies` on startup
@@ -240,6 +243,7 @@ New messenger bots should be separate applications, not modes inside the Telegra
 - applies `[[replace_domains.<video|audio|photo>]]` regex rules only when the node has no cookie for the domain
 - applies the first matching `[[user_agents]]` rule (subdomains match) to `yt-dlp` and direct fetches
 - formats: video prefers `bv+ba` with combined fallback, audio prefers `ba` with `wa` and `b*` fallbacks; non-fragmentable single formats are piped from `yt-dlp` stdout straight into the stream without an intermediate file
+- media bytes pass through bounded chunk channels on both downloader and bot sides, so a slow Telegram upload backpressures file streaming instead of buffering the whole media in memory; do not replace these channels with unbounded media queues
 - honors `max_file_size` from the request, capped by the node's own `[yt_dlp].max_file_size`
 
 ## Current Download Flow
@@ -283,7 +287,7 @@ Proto file: [proto/proto/downloader.proto](proto/proto/downloader.proto)
 3. zero or more `thumbnail_data` (only when `has_thumbnail` is true)
 4. one or more `data`
 
-`meta` is deliberately sent late: after the download succeeded and the output file was validated, or, for piped streaming, at the first media byte. The client (`downloader_client::download_media`) forwards pre-`meta` progress through a callback and returns a `DownloadSession` at `meta`, so a download failure surfaces as an error the bot can fail over or retry with another format instead of corrupting an upload already in progress. Do not emit `meta` early.
+`meta` is deliberately sent late: after the download succeeded and the output file was validated, or, for piped streaming, at the first media byte. The client (`downloader_client::download_media`) forwards pre-`meta` progress through a callback and returns a `DownloadSession` at `meta`, so a known-terminal download failure surfaces before an upload starts and can try another format. Transport loss is instead an uncertain execution outcome and is quarantined through the queue. Do not emit `meta` early.
 
 `GetMediaInfo` responses may be large; the client decoding limit is 30 MiB. `RecognizeSong` requests are capped at 25 MiB on the client and `[songrec].max_audio_size` on the node.
 
@@ -305,10 +309,10 @@ Important behavior:
 
 - node input comes from DNS, not static config
 - prefer nodes with cookies for the target domain, then fall back to any node
-- skip nodes that are unavailable or already at capacity
+- skip nodes that are unavailable; cached capacity is only a ranking hint, because only node-side semaphore admission can determine whether a node is full at dispatch time
 - among candidates pick the lowest projected utilization `(active + 1) / max_concurrent`; ties break by fewer active downloads, then larger capacity, then address
-- a slot is reserved locally for the duration of each attempt so concurrent picks do not all land on the same node
-- retry other nodes on `RESOURCE_EXHAUSTED` and `UNAVAILABLE`
+- node status is a polling hint for selection and `/stats`; concurrent admission is enforced only by the downloader node semaphore
+- retry another node on initial `RESOURCE_EXHAUSTED`; an `UNAVAILABLE`, cancellation, or transport failure for `DownloadMedia` is an uncertain execution outcome and must remain pending for recovery rather than start a duplicate on another node
 - treat `UNAUTHENTICATED` as a configuration error and surface it as node unavailability to users
 - treat retryable `ABORTED` downloader responses as node-context failures and retry other nodes first; if every node fails that way, report the source-site rejection rather than "nodes busy"
 
@@ -391,7 +395,8 @@ These are accepted for now. Do not "fix" them in passing without discussing the 
 - Downloader cookie storage is one file per domain in `/tmp/cookies/<domain>.txt`, which is what enforces "at most one cookie per domain per node".
 - Interactor input DTOs and `DownloadJob` carry Telegram-shaped identifiers (`chat_id`, `message_id`, `inline_message_id`).
 - Inbound transport extraction is handler-side; there is no separate inbound adapter layer.
-- Job dedup is best-effort: a worker that crashes after the Telegram send but before the done marker is written can deliver a job twice.
+- Telegram delivery is at-least-once, not exactly-once. The configured-TTL done marker suppresses queue replay only after it is written; a crash or ambiguous Telegram-send response before that point can duplicate delivery, and replay after the marker expires can also duplicate it.
+- The dead-letter stream has no automatic retention limit, and UUID-based consumer names can leave inactive Redis consumer records after process restarts. Monitor Valkey storage; consumer cleanup must not remove consumers that still own pending entries.
 - When snapsave is enabled but unreachable, Instagram/Facebook links without a cookie fail fast with `NOT_FOUND`; only a disabled snapsave falls back to the domain-replace rule.
 
 ## Change Rules

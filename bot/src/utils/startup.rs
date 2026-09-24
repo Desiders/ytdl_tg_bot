@@ -89,6 +89,8 @@ pub async fn on_startup(bot: Bot, node_router: Arc<NodeRouter>, cfg: Arc<Config>
         info!(interval_sec = %5, "Starting node status refresh task");
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(5));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            interval.tick().await;
             loop {
                 interval.tick().await;
                 router.refresh_status().await;
@@ -105,6 +107,8 @@ pub async fn on_startup(bot: Bot, node_router: Arc<NodeRouter>, cfg: Arc<Config>
         );
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(cfg.download.capabilities_refresh_interval));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            interval.tick().await;
             loop {
                 interval.tick().await;
                 router.refresh_capabilities().await;

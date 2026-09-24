@@ -1,7 +1,7 @@
 use crate::{
     config::YtDlpConfig,
     entities::{language::Language, Playlist, Range, Sections},
-    utils::process_exit_error,
+    utils::{process_exit_error, ProcessGroup},
 };
 
 use serde::de::DeserializeOwned;
@@ -298,7 +298,9 @@ pub async fn get_media_info(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
+        .process_group(0)
         .spawn()?;
+    let _process_group = ProcessGroup::new(&child);
 
     match time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
         Ok(Ok(Output { status, stdout, stderr })) => {
@@ -430,52 +432,59 @@ pub async fn download_media(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
+        .process_group(0)
         .spawn()?;
+    let _process_group = ProcessGroup::new(&child);
 
     let stdout = child.stdout.take().unwrap();
     let mut reader = BufReader::new(stdout).lines();
 
-    let ((), res) = tokio::join!(
-        async {
-            let Some(progress_sender) = progress_sender else {
-                return;
-            };
-            while let Ok(Some(line)) = reader.next_line().await {
-                if !line.starts_with("download-progress") {
-                    debug!("{line}");
-                    continue;
-                }
-                let Some((_, progress)) = line.split_once(':') else {
-                    continue;
-                };
-                if let Err(err) = progress_sender.send(progress.to_owned()) {
-                    error!(%err, "Send progress error");
+    let run = async {
+        tokio::join!(
+            async {
+                let Some(progress_sender) = progress_sender else {
                     return;
-                }
-            }
-        },
-        async {
-            match time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
-                Ok(Ok(Output { status, stderr, .. })) => {
-                    let stderr = String::from_utf8_lossy(&stderr);
-                    if status.success() {
-                        if !stderr.is_empty() {
-                            warn!("{stderr}");
-                        }
-                        Ok(())
-                    } else {
-                        error!("{stderr}");
-                        if let Some(kind) = classify_retryable_error(&stderr) {
-                            return Err(DownloadErrorKind::Retryable(kind));
-                        }
-                        Err(process_exit_error("Ytdlp", status, &stderr).into())
+                };
+                while let Ok(Some(line)) = reader.next_line().await {
+                    if !line.starts_with("download-progress") {
+                        debug!("{line}");
+                        continue;
+                    }
+                    let Some((_, progress)) = line.split_once(':') else {
+                        continue;
+                    };
+                    if let Err(err) = progress_sender.send(progress.to_owned()) {
+                        error!(%err, "Send progress error");
+                        return;
                     }
                 }
-                Ok(Err(err)) => Err(err.into()),
-                Err(_) => Err(io::Error::new(io::ErrorKind::TimedOut, "Ytdlp timed out").into()),
+            },
+            async {
+                match time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
+                    Ok(Ok(Output { status, stderr, .. })) => {
+                        let stderr = String::from_utf8_lossy(&stderr);
+                        if status.success() {
+                            if !stderr.is_empty() {
+                                warn!("{stderr}");
+                            }
+                            Ok(())
+                        } else {
+                            error!("{stderr}");
+                            if let Some(kind) = classify_retryable_error(&stderr) {
+                                return Err(DownloadErrorKind::Retryable(kind));
+                            }
+                            Err(process_exit_error("Ytdlp", status, &stderr).into())
+                        }
+                    }
+                    Ok(Err(err)) => Err(err.into()),
+                    Err(_) => Err(io::Error::new(io::ErrorKind::TimedOut, "Ytdlp timed out").into()),
+                }
             }
-        }
-    );
+        )
+    };
+    let ((), res) = time::timeout(Duration::from_secs(timeout), run)
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "Ytdlp timed out"))?;
     res
 }
 
@@ -490,7 +499,7 @@ pub async fn stream_media(
     timeout: u64,
     cookie_path: Option<&Path>,
     user_agent: Option<&str>,
-    item_sender: mpsc::UnboundedSender<StreamItem>,
+    item_sender: mpsc::Sender<StreamItem>,
 ) -> Result<(), DownloadErrorKind> {
     use tokio::{
         io::{AsyncReadExt as _, BufReader},
@@ -556,7 +565,9 @@ pub async fn stream_media(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
+        .process_group(0)
         .spawn()?;
+    let _process_group = ProcessGroup::new(&child);
 
     let mut stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
@@ -570,7 +581,7 @@ pub async fn stream_media(
             match stdout.read(&mut buffer).await {
                 Ok(0) => break Ok::<(), io::Error>(()),
                 Ok(read) => {
-                    if stdout_sender.send(StreamItem::Data(buffer[..read].to_vec())).is_err() {
+                    if stdout_sender.send(StreamItem::Data(buffer[..read].to_vec())).await.is_err() {
                         break Ok(());
                     }
                 }
@@ -584,7 +595,7 @@ pub async fn stream_media(
         while let Ok(Some(line)) = lines.next_line().await {
             if line.starts_with("download-progress") {
                 if let Some((_, progress)) = line.split_once(':') {
-                    let _ = stderr_sender.send(StreamItem::Progress(progress.to_owned()));
+                    let _ = stderr_sender.send(StreamItem::Progress(progress.to_owned())).await;
                 }
             } else {
                 collected.push_str(&line);

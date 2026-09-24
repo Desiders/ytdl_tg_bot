@@ -3,11 +3,10 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use proto::downloader::{node_capabilities_client::NodeCapabilitiesClient, Empty};
-use tracing::{error, info, warn};
+use futures_util::{stream, StreamExt as _};
+use tracing::{info, warn};
 
 use crate::{
-    authenticated_request,
     client::{DownloaderServiceTarget, DownloaderTlsConfig, NodeClient},
     handle::NodeHandle,
     selection::{select_best_index, NodeSnapshot},
@@ -21,7 +20,8 @@ pub struct DownloaderClusterConfig {
 
 pub struct NodeRouter {
     nodes: RwLock<Vec<Arc<NodeHandle>>>,
-    domain_cookie_map: RwLock<HashMap<String, Vec<usize>>>,
+    domain_cookie_map: RwLock<HashMap<String, Vec<String>>>,
+    topology_refresh: tokio::sync::Mutex<()>,
     max_file_size: u64,
     client: NodeClient,
     service_target: Arc<DownloaderServiceTarget>,
@@ -36,6 +36,7 @@ impl NodeRouter {
         Self {
             nodes: RwLock::new(Vec::new()),
             domain_cookie_map: RwLock::new(HashMap::new()),
+            topology_refresh: tokio::sync::Mutex::new(()),
             max_file_size,
             client,
             service_target,
@@ -61,7 +62,13 @@ impl NodeRouter {
             .and_then(|value| self.domain_cookie_map.read().ok().and_then(|map| map.get(value).cloned()))
             .unwrap_or_default();
 
-        if let Some(index) = Self::select_best_index(&nodes, domain_candidates, excluded) {
+        let indices = nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, node)| domain_candidates.iter().any(|address| address == node.address.as_ref()))
+            .map(|(index, _)| index)
+            .collect();
+        if let Some(index) = Self::select_best_index(&nodes, indices, excluded) {
             return nodes.get(index).cloned();
         }
 
@@ -70,44 +77,40 @@ impl NodeRouter {
 
     pub async fn refresh_status(&self) {
         self.refresh_nodes().await;
-
-        for node in self.nodes() {
-            let mut client = NodeCapabilitiesClient::new(node.channel.clone());
-            let request = match authenticated_request(Empty {}, &node.token) {
-                Ok(request) => request,
-                Err(err) => {
-                    error!(node = %node.address, error = %err, "Failed to build node status request");
-                    continue;
+        stream::iter(self.nodes())
+            .for_each_concurrent(Some(16), |node| async move {
+                match node.fetch_status().await {
+                    Ok((active, maximum)) => {
+                        node.update_remote_status(active, maximum);
+                    }
+                    Err(err) => {
+                        node.mark_unavailable();
+                        warn!(node = %node.address, error = %err, "Failed to refresh node status");
+                    }
                 }
-            };
-
-            match client.get_status(request).await {
-                Ok(response) => {
-                    let status = response.into_inner();
-                    node.update_remote_status(status.active_downloads, status.max_concurrent);
-                }
-                Err(err) => {
-                    node.mark_unavailable();
-                    warn!(node = %node.address, error = %err, "Failed to refresh node status");
-                }
-            }
-        }
+            })
+            .await;
     }
 
     pub async fn refresh_capabilities(&self) {
         self.refresh_nodes().await;
-
-        let mut domain_cookie_map = HashMap::new();
-        for (index, node) in self.nodes().into_iter().enumerate() {
-            match node.fetch_supported_domains().await {
-                Ok(domains) => {
-                    for domain in domains {
-                        domain_cookie_map.entry(domain).or_insert_with(Vec::new).push(index);
+        let domains = stream::iter(self.nodes())
+            .map(|node| async move {
+                match node.fetch_supported_domains().await {
+                    Ok(domains) => Some((node.address.to_string(), domains)),
+                    Err(err) => {
+                        warn!(node = %node.address, error = %err, "Failed to refresh node capabilities");
+                        None
                     }
                 }
-                Err(err) => {
-                    warn!(node = %node.address, error = %err, "Failed to refresh node capabilities");
-                }
+            })
+            .buffer_unordered(16)
+            .collect::<Vec<_>>()
+            .await;
+        let mut domain_cookie_map = HashMap::new();
+        for (address, domains) in domains.into_iter().flatten() {
+            for domain in domains {
+                domain_cookie_map.entry(domain).or_insert_with(Vec::new).push(address.clone());
             }
         }
 
@@ -117,6 +120,7 @@ impl NodeRouter {
     }
 
     async fn refresh_nodes(&self) {
+        let _refresh = self.topology_refresh.lock().await;
         let node_addresses = match self.service_target.resolve_nodes().await {
             Ok(nodes) => nodes,
             Err(err) => {
@@ -127,6 +131,7 @@ impl NodeRouter {
 
         if node_addresses.is_empty() {
             warn!(dns = %self.service_target.authority(), "DNS lookup returned no downloader endpoints");
+            self.replace_nodes(Vec::new(), HashMap::new());
             return;
         }
 
@@ -141,7 +146,7 @@ impl NodeRouter {
         }
 
         let mut nodes = Vec::with_capacity(node_addresses.len());
-        let mut domain_cookie_map = HashMap::new();
+        let previous: HashMap<_, _> = self.nodes().into_iter().map(|node| (node.address.to_string(), node)).collect();
 
         for (index, address) in node_addresses.into_iter().enumerate() {
             let address = format!("https://{address}");
@@ -153,30 +158,14 @@ impl NodeRouter {
                 }
             };
 
-            let node = Arc::new(NodeHandle::new(
-                format!("downloader-{}", index + 1).into_boxed_str(),
-                address.into_boxed_str(),
-                self.node_token.clone(),
-                channel,
-            ));
-
-            if let Ok((active_downloads, max_concurrent)) = node.fetch_status().await {
-                node.update_remote_status(active_downloads, max_concurrent);
-            } else {
-                node.mark_unavailable();
-                warn!(node = %node.address, "Node marked unavailable during refresh_nodes bootstrap");
-            }
-
-            match node.fetch_supported_domains().await {
-                Ok(domains) => {
-                    for domain in domains {
-                        domain_cookie_map.entry(domain).or_insert_with(Vec::new).push(nodes.len());
-                    }
-                }
-                Err(err) => {
-                    warn!(node = %node.address, error = %err, "Failed to fetch node capabilities");
-                }
-            }
+            let node = previous.get(&address).cloned().unwrap_or_else(|| {
+                Arc::new(NodeHandle::new(
+                    format!("downloader-{}", index + 1).into_boxed_str(),
+                    address.into_boxed_str(),
+                    self.node_token.clone(),
+                    channel,
+                ))
+            });
 
             nodes.push(node);
         }
@@ -187,10 +176,10 @@ impl NodeRouter {
         }
 
         info!(dns = %self.service_target.authority(), node_count = nodes.len(), "Refreshed downloader nodes from DNS");
-        self.replace_nodes(nodes, domain_cookie_map);
+        self.replace_nodes(nodes, HashMap::new());
     }
 
-    fn replace_nodes(&self, nodes: Vec<Arc<NodeHandle>>, domain_cookie_map: HashMap<String, Vec<usize>>) {
+    fn replace_nodes(&self, nodes: Vec<Arc<NodeHandle>>, domain_cookie_map: HashMap<String, Vec<String>>) {
         if let Ok(mut lock) = self.nodes.write() {
             *lock = nodes;
         }
@@ -208,12 +197,12 @@ impl NodeRouter {
             .into_iter()
             .filter_map(|index| nodes.get(index).map(|node| (index, node)))
             .filter(|(_, node)| !excluded.contains(node.address.as_ref()))
-            .filter(|(_, node)| node.has_capacity())
+            .filter(|(_, node)| node.is_available())
             .map(|(index, node)| NodeSnapshot {
                 index,
                 address: node.address.as_ref(),
                 max_concurrent: node.max_concurrent(),
-                estimated_active_downloads: node.estimated_active_downloads(),
+                estimated_active_downloads: node.active_downloads(),
             })
             .collect()
     }
@@ -248,5 +237,19 @@ mod tests {
             make_snapshot(2, "c", 1, 0),
         ]);
         assert_eq!(selected, Some(2));
+    }
+
+    #[tokio::test]
+    async fn cached_full_load_is_ranked_but_not_excluded_from_admission() {
+        let node = Arc::new(NodeHandle::new(
+            "test".into(),
+            "http://127.0.0.1:1".into(),
+            "test".into(),
+            tonic::transport::Endpoint::from_static("http://127.0.0.1:1").connect_lazy(),
+        ));
+        node.update_remote_status(1, 1);
+        let nodes = [node];
+        let candidates = NodeRouter::select_candidates(&nodes, vec![0], &HashSet::new());
+        assert_eq!(candidates.len(), 1);
     }
 }

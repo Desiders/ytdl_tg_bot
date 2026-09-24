@@ -77,7 +77,7 @@ body = """
 - Ноди:
 %{nodes}- Черга (воркерів: %{workers}):
   - В очікуванні: %{queue_waiting}
-  - В обробці: %{queue_in_progress}
+  - Очікують підтвердження: %{queue_pending}
   - З помилкою: %{queue_dead_letter}
 - Найпопулярніші домени:
 %{top_domains}\
@@ -90,6 +90,7 @@ chat_type_channel = "Канали"
 chat_type_unknown = "Невідомо"
 node_line = "%{name}. (%{active}/%{max})"
 node_unavailable = "%{name}. Недоступний (навантаження невідоме)"
+queue_unavailable = "Недоступна"
 top_domain_line = "%{index}. %{domain} (%{count} шт.)"
 get_error = "Не вдалося отримати статистику"
 

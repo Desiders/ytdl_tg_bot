@@ -1,8 +1,12 @@
+use std::time::Duration;
+
 use snapsave_parser::SnapSave;
 use tracing::warn;
 use url::Url;
 
 use crate::{config::SnapsaveConfig, services::domain_replacer::MediaKind};
+
+const RESOLVE_TIMEOUT_SECS: u64 = 30;
 
 pub struct ResolvedMedia {
     pub url: Url,
@@ -46,7 +50,8 @@ impl SnapsaveResolver {
 
         let resolved = tokio::task::spawn_blocking(move || {
             let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().ok()?;
-            runtime.block_on(async move {
+            let timeout_target = target.clone();
+            let result = runtime.block_on(tokio::time::timeout(Duration::from_secs(RESOLVE_TIMEOUT_SECS), async move {
                 let snap = match proxy.as_deref() {
                     Some(proxy) => SnapSave::with_proxy(proxy),
                     None => SnapSave::new(),
@@ -62,24 +67,31 @@ impl SnapsaveResolver {
                 };
                 let preview = data.preview.as_deref().and_then(|preview| Url::parse(preview).ok());
                 let items: Vec<ResolvedMedia> = data
-                    .media
-                    .into_iter()
-                    // Render-gated entries (Facebook hi-res variants) need a server-side render, not a
-                    // direct URL, so skip them.
-                    .filter(|media| media.should_render != Some(true))
-                    .filter(|media| media.r#type.as_deref() == Some(wanted_type))
-                    .filter_map(|media| {
-                        let url = Url::parse(media.url.as_deref()?).ok()?;
-                        let thumbnail = media
-                            .thumbnail
-                            .as_deref()
-                            .and_then(|thumbnail| Url::parse(thumbnail).ok())
-                            .or_else(|| preview.clone());
-                        Some(ResolvedMedia { url, thumbnail })
-                    })
-                    .collect();
+                        .media
+                        .into_iter()
+                        // Render-gated entries (Facebook hi-res variants) need a server-side render, not a
+                        // direct URL, so skip them.
+                        .filter(|media| media.should_render != Some(true))
+                        .filter(|media| media.r#type.as_deref() == Some(wanted_type))
+                        .filter_map(|media| {
+                            let url = Url::parse(media.url.as_deref()?).ok()?;
+                            let thumbnail = media
+                                .thumbnail
+                                .as_deref()
+                                .and_then(|thumbnail| Url::parse(thumbnail).ok())
+                                .or_else(|| preview.clone());
+                            Some(ResolvedMedia { url, thumbnail })
+                        })
+                        .collect();
                 Some(items)
-            })
+            }));
+            match result {
+                Ok(result) => result,
+                Err(_) => {
+                    warn!(url = %timeout_target, "Snapsave resolve timed out");
+                    None
+                }
+            }
         })
         .await;
 

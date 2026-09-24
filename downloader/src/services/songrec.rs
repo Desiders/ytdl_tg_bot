@@ -11,7 +11,10 @@ use tempfile::TempDir;
 use tokio::time;
 use tracing::{info, instrument, warn};
 
-use crate::{config::SongrecConfig, utils::process_exit_error};
+use crate::{
+    config::SongrecConfig,
+    utils::{process_exit_error, ProcessGroup},
+};
 
 const RECOGNIZE_TIMEOUT_SECS: u64 = 45;
 const FFMPEG_PATH: &str = "/usr/bin/ffmpeg";
@@ -97,8 +100,10 @@ impl SongRecognizer {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
+            .process_group(0)
             .kill_on_drop(true)
             .spawn()?;
+        let _process_group = ProcessGroup::new(&child);
 
         let Output { status, stderr, .. } = time::timeout(Duration::from_secs(RECOGNIZE_TIMEOUT_SECS), child.wait_with_output())
             .await
@@ -120,8 +125,10 @@ impl SongRecognizer {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .process_group(0)
             .kill_on_drop(true)
             .spawn()?;
+        let _process_group = ProcessGroup::new(&child);
 
         let Output { status, stdout, stderr } = time::timeout(Duration::from_secs(RECOGNIZE_TIMEOUT_SECS), child.wait_with_output())
             .await

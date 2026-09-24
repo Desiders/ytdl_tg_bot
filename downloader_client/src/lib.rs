@@ -5,6 +5,7 @@ mod download;
 mod errors;
 mod handle;
 mod media_info;
+pub mod outcome;
 mod recognize;
 mod resolve;
 mod retry;

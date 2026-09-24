@@ -1,3 +1,4 @@
+use crate::utils::ProcessGroup;
 use serde::Deserialize;
 use std::{
     io,
@@ -60,10 +61,12 @@ pub async fn probe_video(file_path: &Path, executable_path: &str, timeout: u64) 
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true)
+        .process_group(0)
         .spawn()
     else {
         return ProbedVideo::default();
     };
+    let _process_group = ProcessGroup::new(&child);
     match time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
         Ok(Ok(output)) if output.status.success() => parse_probe(&output.stdout),
         _ => ProbedVideo::default(),
@@ -152,7 +155,9 @@ async fn run_ffmpeg(args: &[&str], executable_path: &str, timeout: u64) -> Resul
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
+        .process_group(0)
         .spawn()?;
+    let _process_group = ProcessGroup::new(&child);
 
     match time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
         Ok(Ok(Output { status, stderr, .. })) => {
