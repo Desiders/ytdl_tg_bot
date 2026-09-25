@@ -8,7 +8,7 @@ resolver = "2"
 async-trait = "0.1"
 backoff = { version = "0.4", features = ["tokio"], default-features = false }
 bytes = { version = "1", default-features = false }
-clear-urls = { git = "https://github.com/Desiders/clear-urls", features = ["std", "embedded-rules"], default-features = false }
+clear-urls = { version = "1.0.0", features = ["std", "embedded-rules"], default-features = false }
 downloader_client = { path = "../downloader_client" }
 froodi = { version = "1.0.0-beta.17", features = ["async", "thread_safe", "telers"], default-features = false }
 futures-util = { version = "0.3", default-features = false }
@@ -24,7 +24,7 @@ sea-orm = { version = "2.0.0-rc.40", features = ["macros", "sqlx-postgres", "run
 serde = { version = "1.0", default-features = false }
 serde_json = { version = "1.0", default-features = false }
 takecell = "=0.1.1"
-telers = { version = "1.0.0-beta.8", features = ["default-signal", "rustls-tls"], default-features = false }
+telers = { version = "1.0.0-beta.9", features = ["default-signal", "rustls-tls"], default-features = false }
 tempfile = { version = "3.9", default-features = false }
 thiserror = { version = "2.0", default-features = false }
 time = { version = ">=0.3, <0.3.48", features = ["serde-human-readable"], default-features = false }
