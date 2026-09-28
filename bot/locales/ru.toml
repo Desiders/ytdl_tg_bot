@@ -75,10 +75,9 @@ body = """
 %{chat_types}\
 - Скачано за 1/7/30 дней / всего: %{d1}/%{d7}/%{d30}/%{total}
 - Ноды:
-%{nodes}- Очередь (воркеров: %{workers}):
+%{nodes}- Очередь:
   - В ожидании: %{queue_waiting}
-  - В обработке: %{queue_in_progress}
-  - С ошибкой: %{queue_dead_letter}
+  - Ожидают подтверждения: %{queue_pending}
 - Самые популярные домены:
 %{top_domains}\
 """
@@ -89,6 +88,8 @@ chat_type_supergroup = "Супергруппы"
 chat_type_channel = "Каналы"
 chat_type_unknown = "Неизвестно"
 node_line = "%{name}. (%{active}/%{max})"
+node_unavailable = "%{name}. Недоступен (нагрузка неизвестна)"
+queue_unavailable = "Недоступна"
 top_domain_line = "%{index}. %{domain} (%{count} шт.)"
 get_error = "Не удалось получить статистику"
 
@@ -103,6 +104,7 @@ download_retries = "Попыток загрузки: %{count}"
 media_download_retries = "%{n} файл(ов) (попыток загрузки: %{count}):"
 
 [download]
+execution_unknown = "Загрузка остановилась или её результат неизвестен. Автоматического повтора не будет. Вы можете отправить ссылку снова."
 error_queue = "Не удалось поставить загрузку в очередь. Попробуйте позже."
 preparing = "Подготовка к скачиванию..."
 playlist_empty = "Плейлист пуст"

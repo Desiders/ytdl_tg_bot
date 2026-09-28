@@ -1,7 +1,7 @@
 use crate::{
     config::GalleryDlConfig,
     entities::{GalleryDlEntry, Playlist, Range, RawPhotoInfo},
-    utils::process_exit_error,
+    utils::{process_exit_error, ProcessGroup},
 };
 
 use serde_json::{Map, Value};
@@ -264,7 +264,9 @@ async fn run_gallery_dl_json(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
+        .process_group(0)
         .spawn()?;
+    let _process_group = ProcessGroup::new(&child);
 
     match time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
         Ok(Ok(Output { status, stdout, stderr })) => {
@@ -340,7 +342,9 @@ pub async fn download_media(
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
+        .process_group(0)
         .spawn()?;
+    let _process_group = ProcessGroup::new(&child);
 
     match time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
         Ok(Ok(Output { status, stderr, .. })) => {

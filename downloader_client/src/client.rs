@@ -44,15 +44,19 @@ impl DownloaderServiceTarget {
     ///
     /// Returns an I/O error if DNS resolution fails.
     pub async fn resolve_nodes(&self) -> io::Result<Vec<SocketAddr>> {
-        Ok(tokio::net::lookup_host(self.authority())
-            .await?
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect())
+        Ok(
+            tokio::time::timeout(Duration::from_secs(10), tokio::net::lookup_host(self.authority()))
+                .await
+                .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "Downloader DNS lookup timed out"))??
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect(),
+        )
     }
 }
 
 #[derive(Clone)]
+#[cfg_attr(test, derive(Default))]
 pub(crate) struct NodeClient {
     ca_cert_pem: Box<[u8]>,
     cert_pem: Box<[u8]>,

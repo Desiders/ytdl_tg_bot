@@ -28,6 +28,7 @@ use crate::{
         downloaded_media, file_download, get_media,
         messenger::telegram::TelegramMessenger,
         node_router::{self, DownloaderServiceTarget, NodeRouter},
+        progress_throttle::ProgressThrottle,
         queue::RedisJobQueue,
         send_media,
     },
@@ -58,17 +59,22 @@ pub(super) fn cfg_registry(cfg: Config) -> Registry {
     }
 }
 
-pub(super) fn tg_messenger_registry(bot: Bot, api_server: APIServer, cfg_registry: Registry) -> Registry {
-    registry! {
-        scope(App) [
-            provide(instance(bot)),
-            provide(instance(api_server)),
-            provide(|Inject(cfg): Inject<BotConfig>| Ok(ErrorFormatter::new(cfg.token.clone()))),
-            provide(|Inject(bot): Inject<Bot>, Inject(error_formatter): Inject<ErrorFormatter>, Inject(cfg): Inject<TimeoutsConfig>| {
-                Ok(TelegramMessenger::new(bot, error_formatter, cfg))
-            }),
-        ],
-        extend(cfg_registry),
+pub(super) fn tg_messenger_registry(bot: Bot, api_server: APIServer, cfg_registry: Registry) -> RegistryWithSync {
+    async_registry! {
+        provide(
+            App,
+            |Inject(bot): Inject<Bot>, Inject(error_formatter): Inject<ErrorFormatter>, Inject(cfg): Inject<TimeoutsConfig>, Inject(progress_throttle): Inject<ProgressThrottle>| async move {
+                Ok(TelegramMessenger::new(bot, error_formatter, cfg, progress_throttle))
+            },
+        ),
+        extend(registry! {
+            scope(App) [
+                provide(instance(bot)),
+                provide(instance(api_server)),
+                provide(|Inject(cfg): Inject<BotConfig>| Ok(ErrorFormatter::new(cfg.token.clone()))),
+            ],
+            extend(cfg_registry),
+        }),
     }
 }
 
@@ -163,6 +169,10 @@ pub(super) fn queue_registry(cfg_registry: Registry) -> RegistryWithSync {
             App,
             |Inject(conn): Inject<ConnectionManager>, Inject(cfg)| async move { Ok(RedisJobQueue::new((*conn).clone(), cfg)) },
         ),
+        provide(
+            App,
+            |Inject(conn): Inject<ConnectionManager>| async move { Ok(ProgressThrottle::new((*conn).clone())) },
+        ),
         extend(cfg_registry),
     }
 }
@@ -170,7 +180,7 @@ pub(super) fn queue_registry(cfg_registry: Registry) -> RegistryWithSync {
 #[allow(clippy::too_many_lines)]
 pub(super) fn interactors_registry<Messenger>(
     cfg_registry: Registry,
-    tg_messenger_registry: Registry,
+    tg_messenger_registry: RegistryWithSync,
     node_router_registry: Registry,
 ) -> RegistryWithSync
 where
@@ -547,4 +557,41 @@ pub(super) fn init(
         extend(interactors_registry, database_registry, queue_registry),
     };
     Container::new(registry)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::queue::test_support::Fixture;
+    use std::borrow::Cow;
+    use telers::client::{telegram::BareFilesPathWrapper, Reqwest};
+
+    #[tokio::test]
+    async fn telegram_messenger_resolves_with_async_progress_throttle() {
+        let fixture = Fixture::new().await;
+        let api_server = APIServer::new(
+            "http://127.0.0.1/bot{token}/{method_name}",
+            "http://127.0.0.1/file/bot{token}/{path}",
+            true,
+            BareFilesPathWrapper,
+        );
+        let bot = Bot::with_client("123:synthetic", Reqwest::default().with_api_server(Cow::Owned(api_server.clone())));
+        let cfg_registry = registry! {
+            scope(App) [
+                provide(instance(BotConfig { token: "123:synthetic".into(), src_url: "https://example.test".into() })),
+                provide(instance(TimeoutsConfig::default())),
+            ]
+        };
+        let telegram = tg_messenger_registry(bot, api_server, cfg_registry);
+        let conn = fixture.connection();
+        let throttle = async_registry! {
+            provide(App, move || {
+                let conn = conn.clone();
+                async move { Ok(ProgressThrottle::new(conn)) }
+            }),
+        };
+        let container = Container::new(async_registry! { extend(telegram, throttle) });
+
+        container.get::<TelegramMessenger>().await.unwrap();
+    }
 }

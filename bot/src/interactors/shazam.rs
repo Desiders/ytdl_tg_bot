@@ -113,6 +113,7 @@ where
         if let Err(err) = self
             .messenger
             .edit_text(EditTextRequest {
+                is_progress: false,
                 target: EditTarget::ChatMessage {
                     chat_id,
                     message_id: placeholder_id,

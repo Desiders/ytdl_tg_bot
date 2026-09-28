@@ -12,7 +12,7 @@ use telers::{
 use tracing::error;
 use url::Url;
 
-static REACTIONS: [&str; 2] = ["👌", "👍"];
+const REACTIONS: [&str; 2] = ["👌", "👍"];
 
 #[derive(Clone)]
 pub struct ReactionMiddleware;

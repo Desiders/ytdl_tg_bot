@@ -75,10 +75,9 @@ body = """
 %{chat_types}\
 - Downloads over 1/7/30 days / all time: %{d1}/%{d7}/%{d30}/%{total}
 - Nodes:
-%{nodes}- Queue (workers: %{workers}):
+%{nodes}- Queue:
   - Waiting: %{queue_waiting}
-  - In progress: %{queue_in_progress}
-  - Failed: %{queue_dead_letter}
+  - Pending (unacknowledged): %{queue_pending}
 - Most popular domains:
 %{top_domains}\
 """
@@ -89,6 +88,8 @@ chat_type_supergroup = "Supergroup"
 chat_type_channel = "Channel"
 chat_type_unknown = "Unknown"
 node_line = "%{name}. (%{active}/%{max})"
+node_unavailable = "%{name}. Unavailable (load unknown)"
+queue_unavailable = "Unavailable"
 top_domain_line = "%{index}. %{domain} (%{count})"
 get_error = "Failed to fetch statistics"
 
@@ -103,6 +104,7 @@ download_retries = "Download retries: %{count}"
 media_download_retries = "%{n} file(s) (retries: %{count}):"
 
 [download]
+execution_unknown = "The download stopped or its final state is unknown. It will not be retried automatically. You can send the link again."
 error_queue = "Couldn't queue your download. Please try again later."
 preparing = "Preparing download..."
 playlist_empty = "Playlist is empty"

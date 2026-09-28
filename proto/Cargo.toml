@@ -13,15 +13,3 @@ tonic-prost = { version = "0.14", default-features = false }
 protoc-bin-vendored = "3"
 tonic-build = { version = "0.14", default-features = false }
 tonic-prost-build = { version = "0.14", default-features = false }
-
-[profile.release]
-lto = "thin"
-codegen-units = 1
-
-[profile.k8s-dev]
-inherits = "dev"
-opt-level = 1
-incremental = true
-codegen-units = 256
-debug = 0
-lto = "off"

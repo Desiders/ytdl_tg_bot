@@ -1,10 +1,11 @@
-pub(crate) mod chat;
-pub(crate) mod download;
-pub(crate) mod downloaded_media;
-pub(crate) mod file_download;
-pub(crate) mod get_media;
+pub mod chat;
+pub mod download;
+pub mod downloaded_media;
+pub mod file_download;
+pub mod get_media;
 pub mod messenger;
 pub mod node_router;
+pub mod progress_throttle;
 pub mod queue;
-pub(crate) mod send_media;
+pub mod send_media;
 pub mod yt_toolkit;

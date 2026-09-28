@@ -1,9 +1,11 @@
+use std::collections::HashSet;
+
 use proto::downloader::{music_resolver_client::MusicResolverClient, ResolveSourceRequest, ResolveSourceResponse};
 use tonic::Code;
 use tracing::{info, instrument};
 use url::Url;
 
-use crate::{authenticated_request, with_node_failover, NodeAttemptErrorKind, NodeRouter, ResolveSourceErrorKind};
+use crate::{authenticated_request, with_node_failover, NodeAttemptErrorKind, NodeFailoverError, NodeRouter, ResolveSourceErrorKind};
 
 /// Spotify links must be resolved to a DRM-free source before yt-dlp can download;
 /// the spotdl resolver on the node does not accept other platforms.
@@ -58,21 +60,37 @@ pub async fn resolve_drm_free_source(
     domain: Option<&str>,
     request: ResolveSourceRequest,
 ) -> Result<ResolveSourceResponse, ResolveSourceErrorKind> {
-    with_node_failover(
-        router,
-        domain,
-        |node| {
-            let request = request.clone();
-            async move {
-                let mut client = MusicResolverClient::new(node.channel.clone());
-                let response = client.resolve_drm_free_source(authenticated_request(request, &node.token)?).await?;
-                Ok::<_, ResolveSourceErrorKind>(response.into_inner())
-            }
-        },
-        classify_resolve_source_error,
-    )
-    .await
-    .map_err(ResolveSourceErrorKind::from)
+    let mut capacity = router.subscribe_capacity();
+    let mut waiting_for_node = false;
+    loop {
+        capacity.borrow_and_update();
+        let result = with_node_failover(
+            router,
+            domain,
+            |node| {
+                let request = request.clone();
+                async move {
+                    let mut client = MusicResolverClient::new(node.channel.clone());
+                    let response = client.resolve_drm_free_source(authenticated_request(request, &node.token)?).await?;
+                    Ok::<_, ResolveSourceErrorKind>(response.into_inner())
+                }
+            },
+            classify_resolve_source_error,
+        )
+        .await;
+        match result {
+            Err(NodeFailoverError::AllNodesBusy) => {}
+            Err(NodeFailoverError::NodeUnavailable) if router.pick_node(domain, &HashSet::new()).is_none() => {}
+            other => return other.map_err(ResolveSourceErrorKind::from),
+        }
+        if !waiting_for_node {
+            info!("No node can resolve media source; waiting for a status change");
+            waiting_for_node = true;
+        }
+        if !NodeRouter::wait_for_status_change(&mut capacity).await {
+            return Err(ResolveSourceErrorKind::NodeUnavailable);
+        }
+    }
 }
 
 fn classify_resolve_source_error(err: &ResolveSourceErrorKind) -> NodeAttemptErrorKind {

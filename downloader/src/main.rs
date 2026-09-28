@@ -9,7 +9,7 @@ use proto::downloader::{
     downloader_server::DownloaderServer, music_resolver_server::MusicResolverServer, node_capabilities_server::NodeCapabilitiesServer,
     node_cookie_manager_server::NodeCookieManagerServer, song_recognizer_server::SongRecognizerServer,
 };
-use std::sync::{atomic::AtomicU32, Arc};
+use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tonic::{service::interceptor::InterceptedService, transport::Server};
 use tracing::info;
@@ -24,6 +24,8 @@ use crate::{
     },
     services::{DomainReplacer, SnapsaveResolver, SongRecognizer, SpotdlResolver, UserAgentResolver},
 };
+
+const MAX_DOWNLOAD_REQUEST_SIZE: usize = 30 * 1024 * 1024;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
@@ -47,7 +49,6 @@ async fn main() {
     cookies.clear_on_startup().unwrap();
     info!(cookie_dir = COOKIE_TMP_DIR, "Cookie storage prepared");
 
-    let active_downloads = Arc::new(AtomicU32::new(0));
     let semaphore = Arc::new(Semaphore::new(config.server.max_concurrent as usize));
     let tls_config = config.load_server_tls_cfg().unwrap();
     assert!(
@@ -57,7 +58,7 @@ async fn main() {
 
     let capabilities_service = CapabilitiesService {
         cookies: cookies.clone(),
-        active_downloads: active_downloads.clone(),
+        semaphore: semaphore.clone(),
         max_concurrent: config.server.max_concurrent,
     };
     let downloader_service = DownloaderService {
@@ -68,7 +69,7 @@ async fn main() {
         user_agents: Arc::new(UserAgentResolver::new(&config.user_agents)),
         snapsave: Arc::new(SnapsaveResolver::new(&config.snapsave)),
         cookies: cookies.clone(),
-        active_downloads: active_downloads.clone(),
+        max_concurrent: config.server.max_concurrent,
         semaphore,
     };
     let cookie_manager_service = CookieManagerService { cookies };
@@ -92,7 +93,10 @@ async fn main() {
 
     let mut server = Server::builder().tls_config(tls_config).unwrap();
     server
-        .add_service(DownloaderServer::with_interceptor(downloader_service, node_auth))
+        .add_service(InterceptedService::new(
+            DownloaderServer::new(downloader_service).max_decoding_message_size(MAX_DOWNLOAD_REQUEST_SIZE),
+            node_auth,
+        ))
         .add_service(NodeCapabilitiesServer::with_interceptor(capabilities_service, capabilities_auth))
         .add_service(NodeCookieManagerServer::with_interceptor(
             cookie_manager_service,

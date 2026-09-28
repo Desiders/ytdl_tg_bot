@@ -138,6 +138,7 @@ where
             let _ = self
                 .messenger
                 .edit_text(EditTextRequest {
+                    is_progress: false,
                     target: EditTarget::InlineMessage {
                         inline_message_id: input.inline_message_id,
                     },

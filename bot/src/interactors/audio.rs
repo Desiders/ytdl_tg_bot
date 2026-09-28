@@ -11,6 +11,7 @@ use telers::{
     errors::HandlerError,
     utils::text::{html_expandable_blockquote, html_quote},
 };
+use tokio::sync::watch;
 use tracing::{debug, error, instrument, warn};
 use url::Url;
 
@@ -73,6 +74,7 @@ impl<Messenger> Download<Messenger> {
 }
 
 pub struct DownloadInput<'a> {
+    pub current_message: &'a watch::Sender<Option<(i64, i64)>>,
     pub message_id: i64,
     pub chat_id: i64,
     pub params: &'a Params,
@@ -118,6 +120,8 @@ where
                 }
             },
         };
+
+        input.current_message.send_replace(Some((input.chat_id, progress_message_id)));
 
         let playlist_range = match input.params.0.get("items") {
             Some(raw_value) => match Range::from_str(raw_value) {

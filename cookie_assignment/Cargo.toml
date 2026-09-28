@@ -12,15 +12,3 @@ tokio = { version = "1.36", features = ["rt-multi-thread", "macros", "time", "ne
 toml = { version = "1.0.6", features = ["parse", "serde"], default-features = false }
 tracing = { version = "0.1", default-features = false }
 tracing-subscriber = { version = "0.3", features = ["registry", "fmt", "ansi", "env-filter"], default-features = false }
-
-[profile.release]
-lto = "thin"
-codegen-units = 1
-
-[profile.k8s-dev]
-inherits = "dev"
-opt-level = 1
-incremental = true
-codegen-units = 256
-debug = 0
-lto = "off"

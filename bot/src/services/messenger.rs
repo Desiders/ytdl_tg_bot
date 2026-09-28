@@ -47,6 +47,8 @@ pub enum EditTarget<'a> {
 }
 
 pub struct EditTextRequest<'a> {
+    /// Transient download progress may be skipped when Telegram is busy.
+    pub is_progress: bool,
     pub target: EditTarget<'a>,
     pub text: &'a str,
     pub format: Option<TextFormat>,

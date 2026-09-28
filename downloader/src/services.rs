@@ -13,5 +13,5 @@ pub use ffmpeg::{download_and_convert, extract_audio, probe_video, remux_copy};
 pub use snapsave::SnapsaveResolver;
 pub use songrec::SongRecognizer;
 pub use spotdl::SpotdlResolver;
-pub use thumbnail::embed_thumbnail;
+pub(crate) use thumbnail::embed_thumbnail;
 pub use user_agent::UserAgentResolver;

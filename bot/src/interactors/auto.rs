@@ -1,6 +1,7 @@
 use std::{str::FromStr as _, sync::Arc};
 
 use telers::errors::HandlerError;
+use tokio::sync::watch;
 use tracing::{debug, error, instrument, warn};
 use url::Url;
 
@@ -600,6 +601,7 @@ impl<Messenger> Auto<Messenger> {
 }
 
 pub struct AutoInput<'a> {
+    pub current_message: &'a watch::Sender<Option<(i64, i64)>>,
     pub message_id: i64,
     pub chat_id: i64,
     pub url: &'a Url,
@@ -649,6 +651,7 @@ where
             MediaType::Video => {
                 self.video
                     .execute(super::video::DownloadInput {
+                        current_message: input.current_message,
                         message_id: input.message_id,
                         chat_id: input.chat_id,
                         params: input.params,
@@ -662,6 +665,7 @@ where
             MediaType::Audio => {
                 self.audio
                     .execute(super::audio::DownloadInput {
+                        current_message: input.current_message,
                         message_id: input.message_id,
                         chat_id: input.chat_id,
                         params: input.params,
@@ -677,6 +681,7 @@ where
             MediaType::Photo => {
                 self.photo
                     .execute(super::photo::DownloadInput {
+                        current_message: input.current_message,
                         message_id: input.message_id,
                         chat_id: input.chat_id,
                         params: input.params,

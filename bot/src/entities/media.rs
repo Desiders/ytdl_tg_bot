@@ -11,6 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use tempfile::TempDir;
+use tokio::time::Instant;
 use url::Url;
 
 use crate::utils::{AspectKind, UrlCleaner};
@@ -303,6 +304,7 @@ pub struct MediaForUpload {
     pub thumb_stream: Option<MediaByteStream>,
     pub temp_dir: TempDir,
     pub stream: MediaByteStream,
+    pub deadline: Instant,
 }
 
 impl From<MediaWithFormat> for Media {

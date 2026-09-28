@@ -205,9 +205,11 @@ mod tests {
         async fn with_rows(rows: Vec<DownloadedMedia>) -> Self {
             let container = Postgres::default().with_tag("18-alpine").start().await.unwrap();
             let port = container.get_host_port_ipv4(5432).await.unwrap();
-            let conn = Database::connect(ConnectOptions::new(format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres")))
-                .await
-                .unwrap();
+            let conn = Database::connect(ConnectOptions::new(format!(
+                "postgres://postgres:postgres@127.0.0.1:{port}/postgres"
+            )))
+            .await
+            .unwrap();
             Migrator::up(&conn, None).await.unwrap();
             let repo = SeaOrmDownloadedMediaRepo::new(&conn);
             for row in rows {
@@ -315,7 +317,10 @@ mod tests {
         let domain = Some(CDN_DOMAIN);
 
         assert_eq!(db.find(&format!("https://{CDN_DOMAIN}/[Part-9] (x)"), domain).await, None);
-        assert_eq!(db.find(&format!("https://{CDN_DOMAIN}/{id}"), domain).await.as_deref(), Some("long"));
+        assert_eq!(
+            db.find(&format!("https://{CDN_DOMAIN}/{id}"), domain).await.as_deref(),
+            Some("long")
+        );
         assert_eq!(db.find(&id, domain).await.as_deref(), Some("long"));
     }
 
@@ -482,7 +487,14 @@ mod tests {
         ] {
             assert_eq!(db.find(url, Some(host)).await.as_deref(), Some("yt"), "{host}");
         }
-        for host in ["notyoutube.com", "youtubeXcom", "youtube.com.evil", "youtube.co", "youtu.be", "127.0.0.1"] {
+        for host in [
+            "notyoutube.com",
+            "youtubeXcom",
+            "youtube.com.evil",
+            "youtube.co",
+            "youtu.be",
+            "127.0.0.1",
+        ] {
             assert_eq!(db.find(url, Some(host)).await, None, "{host}");
         }
         assert_eq!(db.find(url, None).await.as_deref(), Some("nodomain"));

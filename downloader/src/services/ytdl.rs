@@ -1,7 +1,7 @@
 use crate::{
     config::YtDlpConfig,
     entities::{language::Language, Playlist, Range, Sections},
-    utils::process_exit_error,
+    utils::{process_exit_error, ProcessGroup},
 };
 
 use serde::de::DeserializeOwned;
@@ -12,7 +12,7 @@ use std::{
     process::{Output, Stdio},
     time::Duration,
 };
-use tokio::{io::AsyncBufReadExt as _, sync::mpsc};
+use tokio::{io::AsyncBufReadExt as _, sync::mpsc, time};
 use tonic::Status;
 use tracing::{debug, error, instrument, trace, warn};
 
@@ -298,7 +298,9 @@ pub async fn get_media_info(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
+        .process_group(0)
         .spawn()?;
+    let _process_group = ProcessGroup::new(&child);
 
     match time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
         Ok(Ok(Output { status, stdout, stderr })) => {
@@ -340,7 +342,7 @@ pub async fn download_media(
     user_agent: Option<&str>,
     progress_sender: Option<&mpsc::UnboundedSender<String>>,
 ) -> Result<(), DownloadErrorKind> {
-    use tokio::{io::BufReader, time};
+    use tokio::io::BufReader;
 
     let max_filesize = max_filesize.to_string();
     let output_dir_path = output_dir_path.to_string_lossy();
@@ -430,52 +432,55 @@ pub async fn download_media(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
+        .process_group(0)
         .spawn()?;
+    let _process_group = ProcessGroup::new(&child);
 
     let stdout = child.stdout.take().unwrap();
     let mut reader = BufReader::new(stdout).lines();
+    let mut position = None;
 
-    let ((), res) = tokio::join!(
-        async {
-            let Some(progress_sender) = progress_sender else {
-                return;
-            };
-            while let Ok(Some(line)) = reader.next_line().await {
-                if !line.starts_with("download-progress") {
-                    debug!("{line}");
-                    continue;
-                }
-                let Some((_, progress)) = line.split_once(':') else {
-                    continue;
-                };
-                if let Err(err) = progress_sender.send(progress.to_owned()) {
-                    error!(%err, "Send progress error");
-                    return;
-                }
-            }
-        },
-        async {
-            match time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
-                Ok(Ok(Output { status, stderr, .. })) => {
-                    let stderr = String::from_utf8_lossy(&stderr);
-                    if status.success() {
-                        if !stderr.is_empty() {
-                            warn!("{stderr}");
-                        }
-                        Ok(())
-                    } else {
-                        error!("{stderr}");
-                        if let Some(kind) = classify_retryable_error(&stderr) {
-                            return Err(DownloadErrorKind::Retryable(kind));
-                        }
-                        Err(process_exit_error("Ytdlp", status, &stderr).into())
+    let run = async {
+        tokio::join!(
+            async {
+                while let Ok(Some(line)) = reader.next_line().await {
+                    if !line.starts_with("download-progress") {
+                        debug!("{line}");
+                        continue;
+                    }
+                    let Some(progress) = advanced_progress(&line, &mut position) else {
+                        continue;
+                    };
+                    if let Some(progress_sender) = progress_sender {
+                        let _ = progress_sender.send(progress.to_owned());
                     }
                 }
-                Ok(Err(err)) => Err(err.into()),
-                Err(_) => Err(io::Error::new(io::ErrorKind::TimedOut, "Ytdlp timed out").into()),
+            },
+            async {
+                match child.wait_with_output().await {
+                    Ok(Output { status, stderr, .. }) => {
+                        let stderr = String::from_utf8_lossy(&stderr);
+                        if status.success() {
+                            if !stderr.is_empty() {
+                                warn!("{stderr}");
+                            }
+                            Ok(())
+                        } else {
+                            error!("{stderr}");
+                            if let Some(kind) = classify_retryable_error(&stderr) {
+                                return Err(DownloadErrorKind::Retryable(kind));
+                            }
+                            Err(process_exit_error("Ytdlp", status, &stderr).into())
+                        }
+                    }
+                    Err(err) => Err(err.into()),
+                }
             }
-        }
-    );
+        )
+    };
+    let ((), res) = time::timeout(Duration::from_secs(timeout), run)
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "Ytdlp exceeded the media execution limit"))?;
     res
 }
 
@@ -490,12 +495,9 @@ pub async fn stream_media(
     timeout: u64,
     cookie_path: Option<&Path>,
     user_agent: Option<&str>,
-    item_sender: mpsc::UnboundedSender<StreamItem>,
+    item_sender: mpsc::Sender<StreamItem>,
 ) -> Result<(), DownloadErrorKind> {
-    use tokio::{
-        io::{AsyncReadExt as _, BufReader},
-        time,
-    };
+    use tokio::io::{AsyncReadExt as _, BufReader};
 
     let max_filesize = max_filesize.to_string();
     let info_file_path = info_file_path.to_string_lossy();
@@ -556,7 +558,9 @@ pub async fn stream_media(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
+        .process_group(0)
         .spawn()?;
+    let _process_group = ProcessGroup::new(&child);
 
     let mut stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
@@ -570,7 +574,7 @@ pub async fn stream_media(
             match stdout.read(&mut buffer).await {
                 Ok(0) => break Ok::<(), io::Error>(()),
                 Ok(read) => {
-                    if stdout_sender.send(StreamItem::Data(buffer[..read].to_vec())).is_err() {
+                    if stdout_sender.send(StreamItem::Data(buffer[..read].to_vec())).await.is_err() {
                         break Ok(());
                     }
                 }
@@ -581,10 +585,11 @@ pub async fn stream_media(
     let stderr_task = async move {
         let mut lines = BufReader::new(stderr).lines();
         let mut collected = String::new();
+        let mut position = None;
         while let Ok(Some(line)) = lines.next_line().await {
             if line.starts_with("download-progress") {
-                if let Some((_, progress)) = line.split_once(':') {
-                    let _ = stderr_sender.send(StreamItem::Progress(progress.to_owned()));
+                if let Some(progress) = advanced_progress(&line, &mut position) {
+                    let _ = stderr_sender.send(StreamItem::Progress(progress.to_owned())).await;
                 }
             } else {
                 collected.push_str(&line);
@@ -603,8 +608,20 @@ pub async fn stream_media(
     match time::timeout(Duration::from_secs(timeout), run).await {
         Ok(Ok((stdout_res, stderr_text, status))) => finish_ytdlp(status, stdout_res, &stderr_text),
         Ok(Err(err)) => Err(err.into()),
-        Err(_) => Err(io::Error::new(io::ErrorKind::TimedOut, "Ytdlp timed out").into()),
+        Err(_) => Err(io::Error::new(io::ErrorKind::TimedOut, "Ytdlp exceeded the media execution limit").into()),
     }
+}
+
+fn advanced_progress<'a>(line: &'a str, last_position: &mut Option<String>) -> Option<&'a str> {
+    let text = line.strip_prefix("download-progress:")?;
+    // The default template puts position before speed/ETA. Their changes alone
+    // do not indicate that another byte or fragment was downloaded.
+    let position = text.split_once(" at ").map_or(text, |(position, _)| position).trim();
+    if last_position.as_deref() == Some(position) {
+        return None;
+    }
+    *last_position = Some(position.to_owned());
+    Some(text)
 }
 
 fn finish_ytdlp(status: std::process::ExitStatus, stdout_res: Result<(), io::Error>, stderr_text: &str) -> Result<(), DownloadErrorKind> {
@@ -633,6 +650,88 @@ fn create_ytdlp_command(yt_dlp_cfg: &YtDlpConfig) -> tokio::process::Command {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::time::Instant;
+
+    #[test]
+    fn speed_or_eta_changes_are_not_reported_as_new_progress() {
+        let mut last = None;
+        assert!(advanced_progress("download-progress:10% of 1MiB at 1MiB/s ETA 00:10", &mut last).is_some());
+        assert_eq!(
+            advanced_progress("download-progress:10% of 1MiB at 2MiB/s ETA 00:20", &mut last),
+            None
+        );
+        assert!(advanced_progress("download-progress:20% of 1MiB at 2MiB/s ETA 00:20", &mut last).is_some());
+    }
+
+    fn fake_config(script: &str) -> YtDlpConfig {
+        YtDlpConfig {
+            command: ["sh", "-c", script, "synthetic"].into_iter().map(Into::into).collect(),
+            ..YtDlpConfig::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn progressing_media_still_hits_the_hard_limit() {
+        let config = fake_config("for i in 1 2 3 4 5 6 7 8; do printf x; sleep 0.2; done");
+        let (sender, mut receiver) = mpsc::channel(4);
+        let started = Instant::now();
+        let run = stream_media("synthetic", 1024, Path::new("unused"), &config, "unused", 1, None, None, sender);
+        let (result, bytes) = tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::join!(run, async {
+                let mut bytes = Vec::new();
+                while let Some(item) = receiver.recv().await {
+                    if let StreamItem::Data(data) = item {
+                        bytes.extend(data);
+                    }
+                }
+                bytes
+            })
+        })
+        .await
+        .unwrap();
+        assert!(matches!(result, Err(DownloadErrorKind::Io(ref err)) if err.kind() == io::ErrorKind::TimedOut));
+        assert!(!bytes.is_empty());
+        assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[tokio::test]
+    async fn hard_limit_terminates_the_process_leader_and_descendant() {
+        let config = fake_config("sleep 60 & echo $$ $!; wait");
+        let (sender, mut receiver) = mpsc::channel(4);
+        let run = stream_media("synthetic", 1024, Path::new("unused"), &config, "unused", 1, None, None, sender);
+        let (result, bytes) = tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::join!(run, async {
+                let mut bytes = Vec::new();
+                while let Some(item) = receiver.recv().await {
+                    if let StreamItem::Data(data) = item {
+                        bytes.extend(data);
+                    }
+                }
+                bytes
+            })
+        })
+        .await
+        .unwrap();
+        assert!(matches!(result, Err(DownloadErrorKind::Io(ref err)) if err.kind() == io::ErrorKind::TimedOut));
+        let pids: Vec<u32> = std::str::from_utf8(&bytes)
+            .unwrap()
+            .split_whitespace()
+            .map(|pid| pid.parse().unwrap())
+            .collect();
+        assert_eq!(pids.len(), 2);
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if pids.iter().all(|pid| {
+                    std::fs::read_to_string(format!("/proc/{pid}/stat")).map_or(true, |stat| stat.split_whitespace().nth(2) == Some("Z"))
+                }) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+    }
 
     #[test]
     fn video_and_audio_builds_formats_for_each_height() {

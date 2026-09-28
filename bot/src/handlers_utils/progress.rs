@@ -39,6 +39,7 @@ pub async fn is_preparing(
     let text = prefixed(base, &t!("download.preparing", locale = locale));
     messenger
         .edit_text(EditTextRequest {
+            is_progress: false,
             target: EditTarget::ChatMessage { chat_id, message_id },
             text: &text,
             format: Some(TextFormat::Html),
@@ -58,6 +59,7 @@ pub async fn is_sending(
     let text = prefixed(base, &t!("progress.sending", locale = locale));
     messenger
         .edit_text(EditTextRequest {
+            is_progress: false,
             target: EditTarget::ChatMessage { chat_id, message_id },
             text: &text,
             format: Some(TextFormat::Html),
@@ -116,6 +118,7 @@ pub async fn is_errors_if_exist(
 
     messenger
         .edit_text(EditTextRequest {
+            is_progress: false,
             target: EditTarget::ChatMessage { chat_id, message_id },
             text: &text,
             format: Some(TextFormat::Html),
@@ -133,6 +136,7 @@ pub async fn is_sending_in_chosen_inline(
     let text = t!("progress.sending", locale = locale).into_owned();
     messenger
         .edit_text(EditTextRequest {
+            is_progress: false,
             target: EditTarget::InlineMessage { inline_message_id },
             text: &text,
             format: None,
@@ -169,6 +173,7 @@ pub async fn is_downloading_with_progress(
     let text = prefixed(base, &format!("{header}\n\n{progress_line}"));
     messenger
         .edit_text(EditTextRequest {
+            is_progress: true,
             target: EditTarget::ChatMessage { chat_id, message_id },
             text: &text,
             format: if base.is_some() { Some(TextFormat::Html) } else { None },
@@ -189,6 +194,7 @@ pub async fn is_downloading_with_progress_in_chosen_inline(
     let text = format!("{header}\n\n{progress_line}");
     messenger
         .edit_text(EditTextRequest {
+            is_progress: true,
             target: EditTarget::InlineMessage { inline_message_id },
             text: &text,
             format: None,
@@ -207,6 +213,7 @@ pub async fn is_error_in_progress(
 ) -> Result<(), MessengerError> {
     messenger
         .edit_text(EditTextRequest {
+            is_progress: false,
             target: EditTarget::ChatMessage { chat_id, message_id },
             text,
             format,
@@ -224,6 +231,7 @@ pub async fn is_error_in_chosen_inline(
 ) -> Result<(), MessengerError> {
     messenger
         .edit_text(EditTextRequest {
+            is_progress: false,
             target: EditTarget::InlineMessage { inline_message_id },
             text,
             format,

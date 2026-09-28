@@ -19,7 +19,9 @@ pub enum GetMediaInfoErrorKind {
 impl From<NodeFailoverError<GetMediaInfoErrorKind>> for GetMediaInfoErrorKind {
     fn from(err: NodeFailoverError<GetMediaInfoErrorKind>) -> Self {
         match err {
-            NodeFailoverError::NodeUnavailable => Self::NodeUnavailable,
+            NodeFailoverError::AllNodesBusy | NodeFailoverError::NodeUnavailable | NodeFailoverError::ExecutionUncertain => {
+                Self::NodeUnavailable
+            }
             NodeFailoverError::NodeContextUnavailable => Self::NodeContextUnavailable,
             NodeFailoverError::Operation(err) => err,
         }
@@ -43,7 +45,9 @@ pub enum ResolveSourceErrorKind {
 impl From<NodeFailoverError<ResolveSourceErrorKind>> for ResolveSourceErrorKind {
     fn from(err: NodeFailoverError<ResolveSourceErrorKind>) -> Self {
         match err {
-            NodeFailoverError::NodeUnavailable => Self::NodeUnavailable,
+            NodeFailoverError::AllNodesBusy | NodeFailoverError::NodeUnavailable | NodeFailoverError::ExecutionUncertain => {
+                Self::NodeUnavailable
+            }
             NodeFailoverError::NodeContextUnavailable => Self::NodeContextUnavailable,
             NodeFailoverError::Operation(err) => err,
         }
@@ -74,7 +78,9 @@ impl RecognizeSongErrorKind {
 impl From<NodeFailoverError<RecognizeSongErrorKind>> for RecognizeSongErrorKind {
     fn from(err: NodeFailoverError<RecognizeSongErrorKind>) -> Self {
         match err {
-            NodeFailoverError::NodeUnavailable => Self::NodeUnavailable,
+            NodeFailoverError::AllNodesBusy | NodeFailoverError::NodeUnavailable | NodeFailoverError::ExecutionUncertain => {
+                Self::NodeUnavailable
+            }
             NodeFailoverError::NodeContextUnavailable => Self::NodeContextUnavailable,
             NodeFailoverError::Operation(err) => err,
         }
@@ -91,6 +97,8 @@ pub enum DownloadErrorKind {
     Metadata(#[from] tonic::metadata::errors::InvalidMetadataValue),
     #[error("Invalid download stream")]
     InvalidStream,
+    #[error("The downloader connection was lost after execution may have started.")]
+    ExecutionUncertain,
     #[error("All download nodes are busy. Try again later.")]
     NodeUnavailable,
     #[error(
@@ -102,9 +110,17 @@ pub enum DownloadErrorKind {
 impl From<NodeFailoverError<DownloadErrorKind>> for DownloadErrorKind {
     fn from(err: NodeFailoverError<DownloadErrorKind>) -> Self {
         match err {
-            NodeFailoverError::NodeUnavailable => Self::NodeUnavailable,
+            NodeFailoverError::AllNodesBusy | NodeFailoverError::NodeUnavailable => Self::NodeUnavailable,
             NodeFailoverError::NodeContextUnavailable => Self::NodeContextUnavailable,
+            NodeFailoverError::ExecutionUncertain => Self::ExecutionUncertain,
             NodeFailoverError::Operation(err) => err,
         }
+    }
+}
+
+impl DownloadErrorKind {
+    #[must_use]
+    pub const fn is_execution_uncertain(&self) -> bool {
+        matches!(self, Self::ExecutionUncertain)
     }
 }

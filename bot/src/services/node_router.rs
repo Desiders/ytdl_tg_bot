@@ -31,8 +31,9 @@ impl Interactor<GetStatsInput> for &GetStats {
         for node in nodes {
             let node_stats = NodeStats {
                 name: node.name.clone(),
-                active_downloads: node.estimated_active_downloads(),
+                active_downloads: node.active_downloads(),
                 max_concurrent: node.max_concurrent(),
+                available: node.is_available(),
             };
             info!(?node_stats, "Got nodes stats");
 

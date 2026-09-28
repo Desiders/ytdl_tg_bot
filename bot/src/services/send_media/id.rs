@@ -238,6 +238,9 @@ where
     type Err = MessengerError;
 
     async fn execute(self, input: SendPlaylistInput) -> Result<Self::Output, Self::Err> {
+        if input.playlist.is_empty() {
+            return Ok(());
+        }
         self.messenger
             .send_video_group(SendMediaGroupRequest {
                 chat_id: input.chat_id,
@@ -287,6 +290,9 @@ where
     type Err = MessengerError;
 
     async fn execute(self, input: SendPlaylistInput) -> Result<Self::Output, Self::Err> {
+        if input.playlist.is_empty() {
+            return Ok(());
+        }
         self.messenger
             .send_audio_group(SendMediaGroupRequest {
                 chat_id: input.chat_id,
@@ -314,6 +320,9 @@ where
     type Err = MessengerError;
 
     async fn execute(self, input: SendPlaylistInput) -> Result<Self::Output, Self::Err> {
+        if input.playlist.is_empty() {
+            return Ok(());
+        }
         self.messenger
             .send_photo_group(SendMediaGroupRequest {
                 chat_id: input.chat_id,

@@ -219,7 +219,7 @@ async fn main() {
         .build();
 
     let shutdown = CancellationToken::new();
-    let worker_handles = worker::spawn_pool(container.clone(), shutdown.clone(), cfg.redis.queue.workers).await;
+    let download_dispatcher = worker::spawn_dispatcher(container.clone(), shutdown.clone()).await;
 
     match dispatcher.run_polling().await {
         Ok(()) => {
@@ -230,12 +230,9 @@ async fn main() {
         }
     }
 
-    // Stop accepting new work and let in-flight jobs finish; anything still pending stays in the
-    // Redis stream's pending list and is reclaimed on the next start.
+    // Stop accepting new work, then bound the time spent draining in-flight jobs.
     shutdown.cancel();
-    for handle in worker_handles {
-        let _ = handle.await;
-    }
+    let _ = download_dispatcher.await;
 
     container.close().await;
 }

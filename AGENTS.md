@@ -4,7 +4,7 @@
 
 This workspace contains a Telegram bot, a shared downloader-client crate, a gRPC downloader service, a separate cookie-assignment controller, and the database migration crate.
 
-- `bot`: accepts Telegram updates, enqueues download jobs into a durable Valkey/Redis stream, runs a worker pool that drains that queue, caches Telegram `file_id`s in PostgreSQL, routes downloads to downloader nodes, and uploads media to Telegram
+- `bot`: accepts Telegram updates, enqueues download jobs into a durable Valkey/Redis stream, runs a dynamic dispatcher that drains that queue, caches Telegram `file_id`s in PostgreSQL, routes downloads to downloader nodes, and uploads media to Telegram
 - `downloader_client`: shared downloader-node discovery, mTLS client setup, routing, downloader failover, and RPC adapters for every downloader-node service
 - `downloader`: runs `yt-dlp` and `gallery-dl`, resolves DRM music links through `spotdl`, resolves Instagram/Facebook links through snapsave, recognizes songs through `SongRec`, fetches and embeds thumbnails, and streams results back over gRPC
 - `cookie_assignment`: discovers downloader nodes and pushes cookie files to them over gRPC
@@ -60,7 +60,7 @@ The bot chart uses the current CloudNativePG plugin-based backup path.
 
 - `charts/bot` creates a `valkey.io/v1alpha1` `ValkeyCluster` named `valkey` with AOF persistence and `maxmemory-policy: noeviction`.
 - The `admin` user password comes from the `valkey` Secret; bot config `[redis]` must use user `admin` and the same password.
-- The queue is the only Valkey consumer. Do not put caches that may be evicted into the same instance without changing the eviction policy.
+- Valkey stores the durable queue and short-lived Telegram progress-throttle keys. Do not put caches that may be evicted into the same instance without changing the eviction policy.
 
 ### Local Telegram Bot API
 
@@ -121,7 +121,7 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - filters links: `[blacklisted].domains`, per-chat excluded domains, `yv2t_bot=false`-style skip params, and messages sent via the bot itself
 - sets an acknowledgment reaction for `[domains_with_reactions]` on receipt; the worker clears it when the job finishes
 - enqueues every download (command, bare link, chosen inline result) as a `DownloadJob` into the Valkey stream
-- runs `[redis.queue].workers` worker tasks that pull jobs and run the download interactors
+- runs one Redis dispatcher that starts concurrent download tasks using fresh downloader capacity/load samples
 - fetches media metadata through downloader nodes, with a PostgreSQL `file_id` cache in front (`downloaded_media`)
 - resolves Spotify links to DRM-free sources through the node `MusicResolver` before metadata lookup
 - uses yt-toolkit for YouTube inline info and inline text search
@@ -134,16 +134,24 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 ### Bot Queue Rules
 
 - Handlers never download. They inject `EnqueueCommandDownload` or `EnqueueInlineDownload` and return.
-- `bot/src/services/queue.rs` owns the stream protocol: `XADD` on enqueue, `XREADGROUP` per worker consumer, `XACK` + `XDEL` on ack, `XAUTOCLAIM` to recover jobs from crashed workers, a per-`job_id` done marker with TTL for best-effort dedup, and a dead-letter stream after `max_attempts`.
-- `bot/src/worker.rs` owns job execution: each job runs in a fresh request-scoped DI container under `[timeouts].job` seconds, dispatches on `JobTarget` (`Command` or `Inline`) and `auto` / `media_type`, clears the acknowledgment reaction, then acks, requeues, or dead-letters.
-- `DownloadJob` is serialized as JSON. New fields must be `#[serde(default)]` so jobs written by an older bot version still deserialize after a rollout.
-- Shutdown cancels the workers and waits for in-flight jobs; anything still pending stays in the stream's pending list and is reclaimed on the next start.
-- `/stats` reports queue waiting, in-progress, and dead-letter counts alongside node and cache stats.
+- `bot/src/services/queue.rs` owns `XADD`, `XREADGROUP`, `XAUTOCLAIM` for stale cleanup only, ownership-gated atomic ACK/delete, progress-driven idle refresh, and TTL done markers. There are no application attempt counters, replacement-entry retries, or dead-letter writes.
+- One dispatcher consumer owns many concurrent deliveries through a `JoinSet`. Each fresh status sample provides at most the advertised free-slot budget, additionally bounded by total healthy node capacity minus locally running tasks. Credits are spent once per sample; completion alone does not refill a stale sample. Waiting backlog remains in Redis. These are backpressure hints, not node reservations; the downloader semaphore decides admission.
+- Success, known failure, caught interactor panic, and ambiguous RPC all finish the queue entry when the worker can ACK. Interactors retain their user-facing error handling. If no node can admit the request, the downloader client waits for a fresh status sample and reroutes before execution starts. An already-claimed job waiting for admission keeps its PEL entry alive and does not spend its media-execution deadline; this is distinct from media progress. Forced abort or process crash leaves an entry pending; `XAUTOCLAIM` later discards it without media execution. This intentionally prefers losing an in-progress job over automatically duplicating an expensive download.
+- A fresh request-scoped execution context retains remote uncertainty and actual progress across erased errors and spawned stream forwarding. Ambiguity stops local node/format fallback but does not schedule Redis re-execution.
+- Each media item has a fixed 360-second execution deadline shared by format fallbacks, downloader streaming, and Telegram upload. Progress never extends it. A new playlist item gets a fresh deadline; waiting for node admission does not spend it. `[timeouts].send_by_id` remains a separate 360-second absolute request limit.
+- There is no fixed whole-playlist timeout. Actual work progress or confirmed pre-admission waiting may refresh PEL idle at most once per minute, atomically and only while the same consumer owns the entry. This prevents stale cleanup of a long playlist; it does not extend a media deadline. Stale cleanup never re-executes. `claim_min_idle_ms` covers the media limit, refresh interval, and cleanup slack: 540,000 ms by default. Redis does not atomically fence remote gRPC admission.
+- Done markers suppress duplicate handling of a job ID, best-effort, for 24 hours by default. Abandoned PEL entries are discarded rather than replayed. Telegram sends can still have ambiguous outcomes.
+- Format fallbacks after a known-finished candidate failure share the same 360-second deadline for that media item; uncertain execution stops fallback.
+- `DownloadJob` remains JSON and accepts previously queued payloads with obsolete fields. New fields must use `#[serde(default)]`.
+- Shutdown stops Redis reading, drains owned tasks for up to 20 seconds, then aborts and joins the remainder. Unfinished entries remain pending for later cleanup, not execution; no job tasks are detached.
+- `/stats` reports waiting and pending/unacknowledged delivery counts, separately from node active/capacity. Pending does not mean an active remote download.
 
 ### Bot Messenger Boundary
 
 - Outbound messenger operations should go through `MessengerPort` (`bot/src/services/messenger.rs`).
 - `TelegramMessenger` (`bot/src/services/messenger/telegram.rs`) is the adapter that owns Telegram API calls, retries, parse modes, inline answer wiring, and Telegram media send/edit method construction.
+- Transient progress edits use atomic Redis `SET NX PX` throttle keys: one update per chat every 5 seconds, or per inline message every 15 seconds. Intermediate updates are skipped; final/error edits are not throttled this way. Redis failures skip optional progress updates. Downloader liveness is independent of Telegram presentation.
+- Adapter requests share an in-process Telegram retry-after cooldown, including media sends and cleanup. Requests are spaced after cooldown expiry; existing in-flight requests cannot be recalled. Consumed upload streams are not automatically replayed. Other bot processes and the direct-Bot exceptions below do not share this cooldown.
 - Bot handlers, top-level bot interactors, and `send_media` interactors should depend on the messenger port layer, not construct Telegram methods directly.
 - Keep Telegram SDK/API types isolated to the Telegram adapter. Utility string helpers such as HTML escaping may still live elsewhere, but Telegram request construction should have one source of truth.
 - Current known exceptions that use `telers::Bot` directly: `ReactionMiddleware`, `worker::clear_reaction`, startup `SetMyCommands`, and `TelegramFileDownloader` (`getFile`). Do not add new ones.
@@ -169,6 +177,7 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
   - `get_media`
   - `messenger`
   - `node_router`
+  - `progress_throttle`
   - `queue`
   - `send_media`
   - `yt_toolkit`
@@ -226,7 +235,8 @@ New messenger bots should be separate applications, not modes inside the Telegra
 
 - exposes `Downloader`, `NodeCapabilities`, `NodeCookieManager`, `MusicResolver`, and `SongRecognizer` gRPC services on `[server].address`
 - limits concurrent downloads with a semaphore of `[server].max_concurrent`; a full node answers `RESOURCE_EXHAUSTED` with `Node is at capacity`
-- maps retryable `yt-dlp` failures (login required, geo restriction, anti-bot) to `ABORTED` so clients can retry on another node
+- owns capacity admission through its semaphore; the execution task holds its owned permit through cleanup, and status derives active downloads from the semaphore's available permits. Bot status polling is only a routing and observability hint, and `RESOURCE_EXHAUSTED` makes the client try another node
+- maps known-ended `yt-dlp` source-context failures (login required, geo restriction, anti-bot) to `ABORTED` so the client may try another node within the same job
 - stores assigned cookies only in `/tmp/cookies`, one file per domain (`/tmp/cookies/<domain>.txt`, `www.` stripped)
 - clears `/tmp/cookies` on startup
 - reports supported domains from currently assigned in-memory cookie state
@@ -240,6 +250,10 @@ New messenger bots should be separate applications, not modes inside the Telegra
 - applies `[[replace_domains.<video|audio|photo>]]` regex rules only when the node has no cookie for the domain
 - applies the first matching `[[user_agents]]` rule (subdomains match) to `yt-dlp` and direct fetches
 - formats: video prefers `bv+ba` with combined fallback, audio prefers `ba` with `wa` and `b*` fallbacks; non-fragmentable single formats are piped from `yt-dlp` stdout straight into the stream without an intermediate file
+- media bytes pass through bounded chunk channels on both downloader and bot sides, so a slow Telegram upload backpressures file streaming instead of buffering the whole media in memory; do not replace these channels with unbounded media queues
+- Every admitted downloader RPC has a hard 360-second total bound across external execution, postprocessing, and streaming. Progress and direct-download file growth are reported to the bot but never reset this bound. Process groups are terminated on timeout or cancellation. A playlist may exceed six minutes because each item has its own deadline.
+- Thumbnail embedding uses the existing Lofty blocking task. It cannot be cancelled once started, so it retains the semaphore permit until it exits, even after RPC cancellation. The remote process lifetime bound applies to external media processes, not a stuck blocking filesystem/tag rewrite.
+- Bot download progress ends when `Meta` makes the upload session available, not when all bytes have streamed. Inline uploads must be able to consume the bounded media channel before byte forwarding finishes. Thumbnail streams close before media-byte forwarding can block.
 - honors `max_file_size` from the request, capped by the node's own `[yt_dlp].max_file_size`
 
 ## Current Download Flow
@@ -283,9 +297,11 @@ Proto file: [proto/proto/downloader.proto](proto/proto/downloader.proto)
 3. zero or more `thumbnail_data` (only when `has_thumbnail` is true)
 4. one or more `data`
 
-`meta` is deliberately sent late: after the download succeeded and the output file was validated, or, for piped streaming, at the first media byte. The client (`downloader_client::download_media`) forwards pre-`meta` progress through a callback and returns a `DownloadSession` at `meta`, so a download failure surfaces as an error the bot can fail over or retry with another format instead of corrupting an upload already in progress. Do not emit `meta` early.
+`meta` is deliberately sent late: after the download succeeded and the output file was validated, or, for piped streaming, at the first media byte. The client (`downloader_client::download_media`) forwards pre-`meta` progress through a callback and returns a `DownloadSession` at `meta`, so a known-terminal candidate failure surfaces before an upload starts and can try another format. Ambiguous transport stops fallback and does not cause later Redis re-execution. Do not emit `meta` early.
 
-`GetMediaInfo` responses may be large; the client decoding limit is 30 MiB. `RecognizeSong` requests are capped at 25 MiB on the client and `[songrec].max_audio_size` on the node.
+A stream error is known-terminal only when the downloader attaches `x-download-terminal: true` after its execution future has ended. A bare gRPC status code is insufficient: Tonic can report an HTTP/2 transport failure as `INTERNAL`. Unmarked stream errors stop node and format fallback.
+
+`GetMediaInfo` responses may be large; the client decoding limit is 30 MiB. The downloader accepts requests up to 30 MiB because `DownloadMedia` sends raw metadata back to the node. `RecognizeSong` requests are capped at 25 MiB on the client and `[songrec].max_audio_size` on the node.
 
 Do not change any of this casually. If you change it, update bot, `downloader_client`, and downloader together.
 
@@ -305,12 +321,12 @@ Important behavior:
 
 - node input comes from DNS, not static config
 - prefer nodes with cookies for the target domain, then fall back to any node
-- skip nodes that are unavailable or already at capacity
+- skip nodes that are unavailable; cached capacity is only a ranking hint, because only node-side semaphore admission can determine whether a node is full at dispatch time
 - among candidates pick the lowest projected utilization `(active + 1) / max_concurrent`; ties break by fewer active downloads, then larger capacity, then address
-- a slot is reserved locally for the duration of each attempt so concurrent picks do not all land on the same node
-- retry other nodes on `RESOURCE_EXHAUSTED` and `UNAVAILABLE`
+- node status is a polling hint for selection and `/stats`; concurrent admission is enforced only by the downloader node semaphore
+- retry another node on initial `RESOURCE_EXHAUSTED`; an `UNAVAILABLE`, cancellation, or transport failure for `DownloadMedia` is an uncertain execution outcome and must stop failover rather than start a duplicate on another node
 - treat `UNAUTHENTICATED` as a configuration error and surface it as node unavailability to users
-- treat retryable `ABORTED` downloader responses as node-context failures and retry other nodes first; if every node fails that way, report the source-site rejection rather than "nodes busy"
+- treat known-ended `ABORTED` downloader responses as node-context failures and try other nodes within the same job; if every node fails that way, report the source-site rejection rather than "nodes busy"
 
 Keep download node selection, downloader-node failover, and downloader RPC adapter logic centralized in:
 
@@ -391,7 +407,8 @@ These are accepted for now. Do not "fix" them in passing without discussing the 
 - Downloader cookie storage is one file per domain in `/tmp/cookies/<domain>.txt`, which is what enforces "at most one cookie per domain per node".
 - Interactor input DTOs and `DownloadJob` carry Telegram-shaped identifiers (`chat_id`, `message_id`, `inline_message_id`).
 - Inbound transport extraction is handler-side; there is no separate inbound adapter layer.
-- Job dedup is best-effort: a worker that crashes after the Telegram send but before the done marker is written can deliver a job twice.
+- Telegram delivery is at-least-once, not exactly-once. The configured-TTL done marker suppresses queue replay only after it is written; a crash or ambiguous Telegram-send response before that point can duplicate delivery, and replay after the marker expires can also duplicate it.
+- UUID-based dispatcher consumer names can leave inactive Redis consumer records after process restarts. Monitor Valkey storage; consumer cleanup must not remove consumers that still own pending entries.
 - When snapsave is enabled but unreachable, Instagram/Facebook links without a cookie fail fast with `NOT_FOUND`; only a disabled snapsave falls back to the domain-replace rule.
 
 ## Change Rules

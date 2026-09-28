@@ -1,8 +1,15 @@
 use bytes::Bytes;
 use proto::downloader::{download_chunk::Payload, downloader_client::DownloaderClient, DownloadChunk, DownloadMeta, DownloadRequest};
+use tokio::time::Instant;
 use tonic::Code;
+use tracing::{debug, info};
 
-use crate::{authenticated_request, with_node_failover, DownloadErrorKind, NodeAttemptErrorKind, NodeRouter};
+use crate::{
+    authenticated_request,
+    outcome::{current_execution_outcome, mark_execution_uncertain, record_execution_progress, ExecutionOutcome},
+    retry::{with_node_failover, NodeFailoverError},
+    DownloadErrorKind, NodeAttemptErrorKind, NodeRouter,
+};
 
 pub enum DownloadEvent {
     Progress(String),
@@ -13,6 +20,7 @@ pub enum DownloadEvent {
 pub struct DownloadSession {
     meta: DownloadMeta,
     stream: tonic::Streaming<DownloadChunk>,
+    outcome: Option<ExecutionOutcome>,
 }
 
 impl DownloadSession {
@@ -28,15 +36,42 @@ impl DownloadSession {
     /// Returns an error if the stream RPC fails or the downloader sends an
     /// invalid chunk sequence.
     pub async fn next_event(&mut self) -> Result<Option<DownloadEvent>, DownloadErrorKind> {
-        let Some(chunk) = self.stream.message().await.map_err(DownloadErrorKind::from)? else {
-            return Ok(None);
+        let chunk = match self.stream.message().await {
+            Ok(Some(chunk)) => chunk,
+            Ok(None) => return Ok(None),
+            Err(status) => {
+                let error = stream_error(status);
+                if error.is_execution_uncertain() {
+                    if let Some(outcome) = &self.outcome {
+                        outcome.mark_uncertain();
+                    }
+                }
+                return Err(error);
+            }
         };
 
         match chunk.payload {
-            Some(Payload::Progress(progress)) => Ok(Some(DownloadEvent::Progress(progress))),
-            Some(Payload::Data(data)) => Ok(Some(DownloadEvent::Data(Bytes::from(data)))),
+            Some(Payload::Progress(progress)) => {
+                if let Some(outcome) = &self.outcome {
+                    outcome.record_progress();
+                }
+                Ok(Some(DownloadEvent::Progress(progress)))
+            }
+            Some(Payload::Data(data)) => {
+                if !data.is_empty() {
+                    if let Some(outcome) = &self.outcome {
+                        outcome.record_progress();
+                    }
+                }
+                Ok(Some(DownloadEvent::Data(Bytes::from(data))))
+            }
             Some(Payload::ThumbnailData(data)) => Ok(Some(DownloadEvent::ThumbnailData(Bytes::from(data)))),
-            Some(Payload::Meta(_)) | None => Err(DownloadErrorKind::InvalidStream),
+            Some(Payload::Meta(_)) | None => {
+                if let Some(outcome) = &self.outcome {
+                    outcome.mark_uncertain();
+                }
+                Err(DownloadErrorKind::ExecutionUncertain)
+            }
         }
     }
 }
@@ -58,36 +93,116 @@ pub async fn download_media(
     domain: Option<&str>,
     request: DownloadRequest,
     on_progress: impl Fn(String) + Sync,
+    deadline: &mut Instant,
 ) -> Result<DownloadSession, DownloadErrorKind> {
     let on_progress = &on_progress;
-    with_node_failover(
-        router,
-        domain,
-        |node| {
-            let request = request.clone();
-            async move {
-                let mut client = DownloaderClient::new(node.channel.clone());
-                let response = client.download_media(authenticated_request(request, &node.token)?).await?;
-                let mut stream = response.into_inner();
+    let mut capacity = router.subscribe_capacity();
+    let mut waiting_for_capacity = false;
+    loop {
+        capacity.borrow_and_update();
+        let attempt_deadline = *deadline;
+        let result = tokio::time::timeout_at(
+            attempt_deadline,
+            with_node_failover(
+                router,
+                domain,
+                |node| {
+                    let request = request.clone();
+                    async move {
+                        let mut client = DownloaderClient::new(node.channel.clone());
+                        let response = client
+                            .download_media(authenticated_request(request, &node.token)?)
+                            .await
+                            .map_err(start_error)?;
+                        let mut stream = response.into_inner();
 
-                loop {
-                    let chunk = stream
-                        .message()
-                        .await
-                        .map_err(DownloadErrorKind::from)?
-                        .ok_or(DownloadErrorKind::InvalidStream)?;
-                    match chunk.payload.ok_or(DownloadErrorKind::InvalidStream)? {
-                        Payload::Progress(progress) => on_progress(progress),
-                        Payload::Meta(meta) => return Ok::<_, DownloadErrorKind>(DownloadSession { meta, stream }),
-                        Payload::Data(_) | Payload::ThumbnailData(_) => return Err(DownloadErrorKind::InvalidStream),
+                        loop {
+                            let chunk = stream.message().await.map_err(stream_error)?;
+                            let Some(chunk) = chunk else {
+                                mark_execution_uncertain();
+                                return Err(DownloadErrorKind::ExecutionUncertain);
+                            };
+                            let Some(payload) = chunk.payload else {
+                                mark_execution_uncertain();
+                                return Err(DownloadErrorKind::ExecutionUncertain);
+                            };
+                            match payload {
+                                Payload::Progress(progress) => {
+                                    record_execution_progress();
+                                    on_progress(progress);
+                                }
+                                Payload::Meta(meta) => {
+                                    record_execution_progress();
+                                    return Ok::<_, DownloadErrorKind>(DownloadSession {
+                                        meta,
+                                        stream,
+                                        outcome: current_execution_outcome(),
+                                    });
+                                }
+                                Payload::Data(_) | Payload::ThumbnailData(_) => {
+                                    mark_execution_uncertain();
+                                    return Err(DownloadErrorKind::ExecutionUncertain);
+                                }
+                            }
+                        }
                     }
-                }
+                },
+                classify_download_error,
+            ),
+        )
+        .await;
+        let result = match result {
+            Ok(result) => result,
+            Err(_) => {
+                mark_execution_uncertain();
+                return Err(DownloadErrorKind::ExecutionUncertain);
             }
-        },
-        classify_download_error,
-    )
-    .await
-    .map_err(DownloadErrorKind::from)
+        };
+        if matches!(result, Err(NodeFailoverError::AllNodesBusy | NodeFailoverError::NodeUnavailable)) {
+            // No node admitted this request. Keep the same operation/delivery and
+            // reroute only after another status sample, rather than reporting a failure.
+            if !waiting_for_capacity {
+                info!("No downloader node admitted media; waiting for a status change");
+                waiting_for_capacity = true;
+            }
+            let waiting_since = Instant::now();
+            if !NodeRouter::wait_for_status_change(&mut capacity).await {
+                return Err(DownloadErrorKind::NodeUnavailable);
+            }
+            *deadline += waiting_since.elapsed();
+            continue;
+        }
+        if waiting_for_capacity {
+            debug!("Downloader admission wait ended");
+        }
+        return result.map_err(DownloadErrorKind::from);
+    }
+}
+
+fn start_error(status: tonic::Status) -> DownloadErrorKind {
+    match status.code() {
+        // The request may have reached the node before the connection failed.
+        Code::Unavailable | Code::Unknown | Code::Cancelled | Code::DeadlineExceeded | Code::Internal => {
+            mark_execution_uncertain();
+            DownloadErrorKind::ExecutionUncertain
+        }
+        _ => DownloadErrorKind::Rpc(status),
+    }
+}
+
+fn stream_error(status: tonic::Status) -> DownloadErrorKind {
+    if status
+        .metadata()
+        .get(proto::TERMINAL_DOWNLOAD_STATUS_HEADER)
+        .is_some_and(|value| value == "true")
+    {
+        DownloadErrorKind::Rpc(status)
+    } else {
+        // Tonic can also produce INTERNAL for an HTTP/2 failure; the code alone
+        // does not prove that a prior remote execution has ended.
+        mark_execution_uncertain();
+        DownloadErrorKind::ExecutionUncertain
+    }
 }
 
 fn classify_download_error(err: &DownloadErrorKind) -> NodeAttemptErrorKind {
@@ -95,7 +210,303 @@ fn classify_download_error(err: &DownloadErrorKind) -> NodeAttemptErrorKind {
         DownloadErrorKind::Rpc(status) if status.code() == Code::ResourceExhausted => NodeAttemptErrorKind::ResourceExhausted,
         DownloadErrorKind::Rpc(status) if status.code() == Code::Aborted => NodeAttemptErrorKind::ContextUnavailable,
         DownloadErrorKind::Rpc(status) if status.code() == Code::Unavailable => NodeAttemptErrorKind::Unavailable,
-        DownloadErrorKind::Rpc(status) if status.code() == Code::Unauthenticated => NodeAttemptErrorKind::Unauthenticated,
+        DownloadErrorKind::ExecutionUncertain => NodeAttemptErrorKind::ExecutionUncertain,
         _ => NodeAttemptErrorKind::Fatal,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::outcome::track_execution;
+    use futures_util::{stream, Stream};
+    use proto::downloader::{
+        downloader_server::{Downloader, DownloaderServer},
+        MediaInfoRequest, MediaInfoResponse,
+    };
+    use std::{
+        pin::Pin,
+        sync::{
+            atomic::{AtomicBool, AtomicUsize, Ordering},
+            Arc,
+        },
+        time::Duration,
+    };
+    use tonic::{metadata::MetadataValue, Request, Response, Status};
+
+    #[derive(Clone, Default)]
+    struct FakeDownloader {
+        busy: Arc<AtomicBool>,
+        calls: Arc<AtomicUsize>,
+        unavailable: bool,
+        aborted: bool,
+        stream_status: Option<Status>,
+    }
+
+    #[tonic::async_trait]
+    impl Downloader for FakeDownloader {
+        type DownloadMediaStream = Pin<Box<dyn Stream<Item = Result<DownloadChunk, Status>> + Send>>;
+
+        async fn get_media_info(&self, _: Request<MediaInfoRequest>) -> Result<Response<MediaInfoResponse>, Status> {
+            Err(Status::unimplemented("Synthetic metadata"))
+        }
+
+        async fn download_media(&self, _: Request<DownloadRequest>) -> Result<Response<Self::DownloadMediaStream>, Status> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            if self.unavailable {
+                return Err(Status::unavailable("Synthetic lost transport"));
+            }
+            if self.aborted {
+                return Err(Status::aborted("Synthetic completed source rejection"));
+            }
+            if self.busy.load(Ordering::Relaxed) {
+                return Err(Status::resource_exhausted("Node is at capacity"));
+            }
+            if let Some(status) = &self.stream_status {
+                return Ok(Response::new(Box::pin(stream::iter([Err(status.clone())]))));
+            }
+            let chunks = [
+                Ok(DownloadChunk {
+                    payload: Some(Payload::Meta(DownloadMeta::default())),
+                }),
+                Ok(DownloadChunk {
+                    payload: Some(Payload::Data(vec![42])),
+                }),
+            ];
+            Ok(Response::new(Box::pin(stream::iter(chunks))))
+        }
+    }
+
+    async fn fake_node(service: FakeDownloader) -> (Arc<crate::NodeHandle>, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = format!("http://{}", listener.local_addr().unwrap());
+        let incoming = Box::pin(stream::unfold(listener, |listener| async {
+            Some((listener.accept().await.map(|(socket, _)| socket), listener))
+        }));
+        let task = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(DownloaderServer::new(service))
+                .serve_with_incoming(incoming)
+                .await
+                .unwrap();
+        });
+        let node = Arc::new(crate::NodeHandle::new(
+            "test".into(),
+            address.clone().into(),
+            "test".into(),
+            tonic::transport::Endpoint::from_shared(address).unwrap().connect_lazy(),
+        ));
+        node.update_remote_status(0, 1);
+        (node, task)
+    }
+
+    #[tokio::test]
+    async fn all_busy_nodes_wait_for_a_fresh_status_before_rerouting_the_same_request() {
+        let service = FakeDownloader::default();
+        service.busy.store(true, Ordering::Relaxed);
+        let (first, first_task) = fake_node(service.clone()).await;
+        let (second, second_task) = fake_node(service.clone()).await;
+        let (router, capacity) = NodeRouter::with_test_nodes(vec![first, second]);
+        let ((), outcome) = track_execution(async {
+            let mut deadline = Instant::now() + Duration::from_secs(5);
+            let download = download_media(&router, None, DownloadRequest::default(), |_| {}, &mut deadline);
+            tokio::pin!(download);
+            assert!(tokio::time::timeout(Duration::from_secs(1), &mut download).await.is_err());
+            assert_eq!(service.calls.load(Ordering::Relaxed), 2);
+            service.busy.store(false, Ordering::Relaxed);
+            capacity.send_replace(crate::Capacity { available: 2, total: 2 });
+            let mut session = tokio::time::timeout(Duration::from_secs(3), download).await.unwrap().unwrap();
+            assert!(matches!(session.next_event().await.unwrap(), Some(DownloadEvent::Data(data)) if data == [42][..]));
+            assert_eq!(service.calls.load(Ordering::Relaxed), 3);
+        })
+        .await;
+        assert!(!outcome.is_uncertain());
+        first_task.abort();
+        second_task.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn unavailable_node_waits_without_spending_the_execution_deadline() {
+        let service = FakeDownloader::default();
+        let (node, server) = fake_node(service.clone()).await;
+        node.mark_unavailable();
+        let (router, capacity) = NodeRouter::with_test_nodes(vec![node.clone()]);
+        let mut deadline = Instant::now() + Duration::from_secs(1);
+        let download = download_media(&router, None, DownloadRequest::default(), |_| {}, &mut deadline);
+        tokio::pin!(download);
+        tokio::select! {
+            _ = &mut download => panic!("Unavailable node unexpectedly completed"),
+            () = tokio::time::sleep(Duration::from_millis(1)) => {}
+        }
+        assert_eq!(service.calls.load(Ordering::Relaxed), 0);
+
+        tokio::time::advance(Duration::from_secs(3)).await;
+        node.update_remote_status(0, 1);
+        capacity.send_replace(crate::Capacity { available: 1, total: 1 });
+        let mut session = download.await.unwrap();
+        assert!(matches!(session.next_event().await.unwrap(), Some(DownloadEvent::Data(_))));
+        assert_eq!(service.calls.load(Ordering::Relaxed), 1);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn ambiguous_dispatch_never_calls_a_second_node() {
+        let service = FakeDownloader {
+            unavailable: true,
+            ..FakeDownloader::default()
+        };
+        let (first, first_task) = fake_node(service.clone()).await;
+        let (second, second_task) = fake_node(service.clone()).await;
+        let (router, _) = NodeRouter::with_test_nodes(vec![first, second]);
+        let mut deadline = Instant::now() + Duration::from_secs(5);
+        let (result, outcome) = track_execution(download_media(&router, None, DownloadRequest::default(), |_| {}, &mut deadline)).await;
+        assert!(matches!(result, Err(DownloadErrorKind::ExecutionUncertain)));
+        assert!(outcome.is_uncertain());
+        assert_eq!(service.calls.load(Ordering::Relaxed), 1);
+        first_task.abort();
+        second_task.abort();
+    }
+
+    #[tokio::test]
+    async fn known_ended_source_failure_can_try_another_node() {
+        let rejected = FakeDownloader {
+            aborted: true,
+            ..FakeDownloader::default()
+        };
+        let accepted = FakeDownloader::default();
+        let (first, first_task) = fake_node(rejected.clone()).await;
+        let (second, second_task) = fake_node(accepted.clone()).await;
+        // The larger advertised capacity makes the rejecting node the deterministic first choice.
+        first.update_remote_status(0, 2);
+        let (router, _) = NodeRouter::with_test_nodes(vec![first, second]);
+        let mut deadline = Instant::now() + Duration::from_secs(5);
+        let session = download_media(&router, None, DownloadRequest::default(), |_| {}, &mut deadline)
+            .await
+            .unwrap();
+        assert_eq!(session.meta(), &DownloadMeta::default());
+        assert_eq!(rejected.calls.load(Ordering::Relaxed), 1);
+        assert_eq!(accepted.calls.load(Ordering::Relaxed), 1);
+        first_task.abort();
+        second_task.abort();
+    }
+
+    #[tokio::test]
+    async fn unmarked_internal_stream_error_stops_before_another_node() {
+        let failed = FakeDownloader {
+            stream_status: Some(Status::internal("Synthetic transport error")),
+            ..FakeDownloader::default()
+        };
+        let other = FakeDownloader::default();
+        let (first, first_task) = fake_node(failed.clone()).await;
+        let (second, second_task) = fake_node(other.clone()).await;
+        first.update_remote_status(0, 2);
+        let (router, _) = NodeRouter::with_test_nodes(vec![first, second]);
+        let mut deadline = Instant::now() + Duration::from_secs(5);
+        let (result, outcome) = track_execution(download_media(&router, None, DownloadRequest::default(), |_| {}, &mut deadline)).await;
+        assert!(matches!(result, Err(DownloadErrorKind::ExecutionUncertain)));
+        assert!(outcome.is_uncertain());
+        assert_eq!(failed.calls.load(Ordering::Relaxed), 1);
+        assert_eq!(other.calls.load(Ordering::Relaxed), 0);
+        first_task.abort();
+        second_task.abort();
+    }
+
+    #[tokio::test]
+    async fn marked_terminal_stream_error_remains_a_known_candidate_failure() {
+        let mut status = Status::internal("Synthetic finished candidate");
+        status
+            .metadata_mut()
+            .insert(proto::TERMINAL_DOWNLOAD_STATUS_HEADER, MetadataValue::from_static("true"));
+        let failed = FakeDownloader {
+            stream_status: Some(status),
+            ..FakeDownloader::default()
+        };
+        let other = FakeDownloader::default();
+        let (first, first_task) = fake_node(failed.clone()).await;
+        let (second, second_task) = fake_node(other.clone()).await;
+        first.update_remote_status(0, 2);
+        let (router, _) = NodeRouter::with_test_nodes(vec![first, second]);
+        let mut deadline = Instant::now() + Duration::from_secs(5);
+        let result = download_media(&router, None, DownloadRequest::default(), |_| {}, &mut deadline).await;
+        assert!(matches!(result, Err(DownloadErrorKind::Rpc(ref status)) if status.code() == Code::Internal));
+        assert_eq!(failed.calls.load(Ordering::Relaxed), 1);
+        assert_eq!(other.calls.load(Ordering::Relaxed), 0);
+        first_task.abort();
+        second_task.abort();
+    }
+
+    #[tokio::test]
+    async fn established_stream_capacity_error_is_not_an_admission_rejection() {
+        let (error, outcome) =
+            track_execution(async { stream_error(tonic::Status::resource_exhausted("Synthetic stream exhaustion")) }).await;
+        assert_eq!(classify_download_error(&error), NodeAttemptErrorKind::ExecutionUncertain);
+        assert!(outcome.is_uncertain());
+    }
+
+    #[tokio::test]
+    async fn transport_codes_are_uncertain_in_both_rpc_phases() {
+        for code in [
+            Code::Unavailable,
+            Code::Unknown,
+            Code::Cancelled,
+            Code::DeadlineExceeded,
+            Code::Internal,
+        ] {
+            for classify in [start_error, stream_error] {
+                let (error, outcome) = track_execution(async { classify(tonic::Status::new(code, "Synthetic transport failure")) }).await;
+                assert!(error.is_execution_uncertain(), "{code:?}");
+                assert!(outcome.is_uncertain(), "{code:?}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn confirmed_terminal_stream_errors_do_not_mark_execution_uncertain() {
+        for code in [Code::Aborted, Code::Internal, Code::InvalidArgument, Code::NotFound] {
+            let (error, outcome) = track_execution(async {
+                let mut status = tonic::Status::new(code, "Synthetic terminal failure");
+                status
+                    .metadata_mut()
+                    .insert(proto::TERMINAL_DOWNLOAD_STATUS_HEADER, MetadataValue::from_static("true"));
+                stream_error(status)
+            })
+            .await;
+            assert!(matches!(error, DownloadErrorKind::Rpc(ref status) if status.code() == code));
+            assert!(!outcome.is_uncertain(), "{code:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn admission_rejection_does_not_mark_execution_uncertain() {
+        let (error, outcome) = track_execution(async { start_error(tonic::Status::resource_exhausted("Synthetic full node")) }).await;
+        assert_eq!(classify_download_error(&error), NodeAttemptErrorKind::ResourceExhausted);
+        assert!(!outcome.is_uncertain());
+    }
+
+    #[test]
+    fn transport_failure_does_not_permit_cross_node_execution() {
+        let error = start_error(tonic::Status::unavailable("synthetic transport loss"));
+        assert!(matches!(error, DownloadErrorKind::ExecutionUncertain));
+        assert_eq!(classify_download_error(&error), NodeAttemptErrorKind::ExecutionUncertain);
+    }
+
+    #[tokio::test]
+    async fn uncertain_start_result_is_retained_by_the_worker_outcome() {
+        let (error, outcome) = track_execution(async { start_error(tonic::Status::unavailable("synthetic transport loss")) }).await;
+        assert!(error.is_execution_uncertain());
+        assert!(outcome.is_uncertain());
+    }
+
+    #[test]
+    fn initial_capacity_rejection_remains_safe_to_fail_over() {
+        let error = start_error(tonic::Status::resource_exhausted("synthetic full node"));
+        assert_eq!(classify_download_error(&error), NodeAttemptErrorKind::ResourceExhausted);
+    }
+
+    #[test]
+    fn deadline_after_stream_start_is_an_uncertain_execution() {
+        let error = stream_error(tonic::Status::deadline_exceeded("synthetic timeout"));
+        assert!(error.is_execution_uncertain());
+        assert_eq!(classify_download_error(&error), NodeAttemptErrorKind::ExecutionUncertain);
     }
 }

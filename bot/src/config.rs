@@ -5,8 +5,14 @@ use std::{
     env::{self, VarError},
     fs, io,
     path::Path,
+    time::Duration,
 };
 use thiserror::Error;
+
+const QUEUE_CLEANUP_MARGIN_SECS: u64 = 120;
+pub(crate) const PROGRESS_REFRESH_INTERVAL_SECS: u64 = 60;
+const DEFAULT_QUEUE_CLAIM_MIN_IDLE_MS: u64 =
+    (proto::MEDIA_EXECUTION_LIMIT_SECS + PROGRESS_REFRESH_INTERVAL_SECS + QUEUE_CLEANUP_MARGIN_SECS) * 1_000;
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct BotConfig {
@@ -21,23 +27,24 @@ pub struct ChatConfig {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct TimeoutsConfig {
-    pub send_by_upload: f32,
     pub send_by_id: f32,
-    #[serde(default = "default_job_timeout")]
-    pub job: f32,
 }
 
-fn default_job_timeout() -> f32 {
-    480.0
+impl TimeoutsConfig {
+    fn validate(&self) -> Result<(), ParseError> {
+        if !self.send_by_id.is_finite() || self.send_by_id <= 0.0 || Duration::try_from_secs_f32(self.send_by_id).is_err() {
+            return Err(ParseError::InvalidTimeout {
+                field: "send_by_id",
+                configured: self.send_by_id,
+            });
+        }
+        Ok(())
+    }
 }
 
 impl Default for TimeoutsConfig {
     fn default() -> Self {
-        Self {
-            send_by_upload: 210.0,
-            send_by_id: 360.0,
-            job: default_job_timeout(),
-        }
+        Self { send_by_id: 360.0 }
     }
 }
 
@@ -182,16 +189,10 @@ impl RedisConfig {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct QueueConfig {
-    #[serde(default = "default_queue_workers")]
-    pub workers: usize,
     #[serde(default = "default_queue_stream_key")]
     pub stream_key: Box<str>,
     #[serde(default = "default_queue_group")]
     pub group: Box<str>,
-    #[serde(default = "default_queue_dead_letter_key")]
-    pub dead_letter_key: Box<str>,
-    #[serde(default = "default_queue_max_attempts")]
-    pub max_attempts: u32,
     #[serde(default = "default_queue_block_ms")]
     pub block_ms: u64,
     #[serde(default = "default_queue_claim_min_idle_ms")]
@@ -200,23 +201,31 @@ pub struct QueueConfig {
     pub dedup_ttl_secs: u64,
 }
 
+impl QueueConfig {
+    fn validate(&self) -> Result<(), ParseError> {
+        let minimum = proto::MEDIA_EXECUTION_LIMIT_SECS
+            .saturating_add(QUEUE_CLEANUP_MARGIN_SECS + PROGRESS_REFRESH_INTERVAL_SECS)
+            .saturating_mul(1_000);
+        if self.claim_min_idle_ms < minimum {
+            return Err(ParseError::ClaimMinIdleTooShort {
+                configured: self.claim_min_idle_ms,
+                minimum,
+            });
+        }
+        Ok(())
+    }
+}
+
 impl Default for QueueConfig {
     fn default() -> Self {
         Self {
-            workers: default_queue_workers(),
             stream_key: default_queue_stream_key(),
             group: default_queue_group(),
-            dead_letter_key: default_queue_dead_letter_key(),
-            max_attempts: default_queue_max_attempts(),
             block_ms: default_queue_block_ms(),
             claim_min_idle_ms: default_queue_claim_min_idle_ms(),
             dedup_ttl_secs: default_queue_dedup_ttl_secs(),
         }
     }
-}
-
-const fn default_queue_workers() -> usize {
-    4
 }
 
 fn default_queue_stream_key() -> Box<str> {
@@ -227,24 +236,16 @@ fn default_queue_group() -> Box<str> {
     "workers".into()
 }
 
-fn default_queue_dead_letter_key() -> Box<str> {
-    "ytdl:downloads:dead".into()
-}
-
-const fn default_queue_max_attempts() -> u32 {
-    3
-}
-
 const fn default_queue_block_ms() -> u64 {
     5_000
 }
 
 const fn default_queue_claim_min_idle_ms() -> u64 {
-    60_000
+    DEFAULT_QUEUE_CLAIM_MIN_IDLE_MS
 }
 
 const fn default_queue_dedup_ttl_secs() -> u64 {
-    3_600
+    86_400
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -278,6 +279,12 @@ pub enum ParseError {
     IO(#[from] io::Error),
     #[error(transparent)]
     Toml(#[from] toml::de::Error),
+    #[error(
+        "`[redis.queue].claim_min_idle_ms` must be at least {minimum} ms to avoid discarding active work (configured: {configured} ms)"
+    )]
+    ClaimMinIdleTooShort { configured: u64, minimum: u64 },
+    #[error("`[timeouts].{field}` must be a positive finite duration (configured: {configured} seconds)")]
+    InvalidTimeout { field: &'static str, configured: f32 },
 }
 
 /// # Panics
@@ -303,7 +310,9 @@ pub fn get_path() -> Box<str> {
 /// Returns an error if the file cannot be read or the TOML cannot be parsed.
 pub fn parse_from_fs(path: impl AsRef<Path>) -> Result<Config, ParseError> {
     let raw = fs::read_to_string(path)?;
-    let cfg = toml::from_str(&raw)?;
+    let cfg: Config = toml::from_str(&raw)?;
+    cfg.timeouts.validate()?;
+    cfg.redis.queue.validate()?;
     Ok(cfg)
 }
 
@@ -323,5 +332,35 @@ impl From<DownloadConfig> for downloader_client::DownloaderClusterConfig {
             node_token: value.node_token,
             tls: value.tls.into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn queue_cleanup_covers_media_limit_and_refresh_interval() {
+        let mut queue = QueueConfig::default();
+        assert!(queue.validate().is_ok());
+
+        queue.claim_min_idle_ms = DEFAULT_QUEUE_CLAIM_MIN_IDLE_MS - 1;
+        assert!(matches!(queue.validate(), Err(ParseError::ClaimMinIdleTooShort { .. })));
+        queue.claim_min_idle_ms = DEFAULT_QUEUE_CLAIM_MIN_IDLE_MS;
+        assert!(queue.validate().is_ok());
+    }
+
+    #[test]
+    fn send_by_id_timeout_is_a_positive_finite_duration() {
+        let defaults = TimeoutsConfig::default();
+        assert_eq!(Duration::from_secs_f32(defaults.send_by_id), Duration::from_secs(360));
+        assert!(defaults.validate().is_ok());
+
+        let mut too_short = defaults;
+        too_short.send_by_id = 0.0;
+        assert!(matches!(too_short.validate(), Err(ParseError::InvalidTimeout { .. })));
+
+        too_short.send_by_id = f32::NAN;
+        assert!(matches!(too_short.validate(), Err(ParseError::InvalidTimeout { .. })));
     }
 }

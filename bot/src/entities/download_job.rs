@@ -24,8 +24,6 @@ pub struct DownloadJob {
     pub link_is_visible: bool,
     pub target: JobTarget,
     #[serde(default)]
-    pub attempts: u32,
-    #[serde(default)]
     pub progress_message_id: Option<i64>,
     #[serde(default)]
     pub base_text: Option<String>,
@@ -39,7 +37,7 @@ pub struct DownloadJob {
 }
 
 impl DownloadJob {
-    /// Builds a fresh job — new `job_id`, zero attempts — for the given target.
+    /// Builds a fresh job with a new `job_id` for the given target.
     #[must_use]
     pub fn new(
         media_type: MediaType,
@@ -57,7 +55,6 @@ impl DownloadJob {
             chat_cfg,
             link_is_visible,
             target,
-            attempts: 0,
             progress_message_id: None,
             base_text: None,
             auto: false,
@@ -85,4 +82,27 @@ impl DownloadJob {
 pub enum JobTarget {
     Command { chat_id: i64, message_id: i64 },
     Inline { inline_message_id: String, result_id: String },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn previous_attempt_metadata_does_not_prevent_delivery() {
+        let job = DownloadJob::new(
+            MediaType::Video,
+            Some(Url::parse("https://example.com/media").unwrap()),
+            Params::default(),
+            ChatConfig::new(1, false, "en".into()),
+            true,
+            JobTarget::Command { chat_id: 1, message_id: 2 },
+        );
+        let mut payload = serde_json::to_value(&job).unwrap();
+        payload["attempts"] = 2.into();
+        let decoded: DownloadJob = serde_json::from_value(payload).unwrap();
+        assert_eq!(decoded.job_id, job.job_id);
+        assert_eq!(decoded.url, job.url);
+        assert!(serde_json::to_value(decoded).unwrap().get("attempts").is_none());
+    }
 }
