@@ -7,6 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use futures_util::{stream, StreamExt as _};
 use proto::downloader::{
     download_chunk::Payload, downloader_server::Downloader, DownloadChunk, DownloadMeta, DownloadRequest, MediaEntry, MediaFormatEntry,
     MediaInfoRequest, MediaInfoResponse, Section,
@@ -17,7 +18,7 @@ use tokio::{
     io::AsyncReadExt as _,
     sync::{
         mpsc::{self, Sender},
-        OwnedSemaphorePermit, Semaphore,
+        oneshot, OwnedSemaphorePermit, Semaphore,
     },
     time,
 };
@@ -257,7 +258,7 @@ impl DownloaderService {
                 media_type = %request_media_type,
                 "Rejected download request because node is at capacity"
             );
-            Status::resource_exhausted("Node is at capacity")
+            Status::resource_exhausted(proto::NODE_CAPACITY_REJECTION_MESSAGE)
         })?;
         let active_downloads = active_downloads(&self.semaphore, self.max_concurrent);
         info!(
@@ -277,25 +278,32 @@ impl DownloaderService {
         let cookies = self.cookies.clone();
 
         let (tx, rx) = mpsc::channel(STREAM_BUFFER_CHUNKS);
+        let (terminal_tx, terminal_rx) = oneshot::channel();
         let error_tx = tx.clone();
         tokio::spawn(async move {
             let started_at = Instant::now();
-            let stream = stream_download(
-                request,
-                yt_dlp_cfg,
-                gallery_dl_cfg,
-                yt_pot_provider_cfg,
-                domain_replacer,
-                user_agents,
-                cookies,
-                tx,
-                guard.clone(),
-            );
+            let deadline = started_at + Duration::from_secs(DOWNLOAD_TASK_TIMEOUT_SECS);
+            let stream = async {
+                let result = stream_download(
+                    request,
+                    yt_dlp_cfg,
+                    gallery_dl_cfg,
+                    yt_pot_provider_cfg,
+                    domain_replacer,
+                    user_agents,
+                    cookies,
+                    tx,
+                    guard.clone(),
+                )
+                .await;
+                drop(guard);
+                result
+            };
             // Watch cancellation around ALL stages, including thumbnail fetch, postprocessing,
             // photo/direct downloads, and file streaming, not just yt-dlp progress reads.
-            let result = run_download(stream, &error_tx, Duration::from_secs(DOWNLOAD_TASK_TIMEOUT_SECS)).await;
-            drop(guard);
-            match result {
+            let result = run_download(stream, &error_tx, deadline).await;
+            drop(error_tx);
+            let terminal = match result {
                 Err(status) if status.code() == Code::Cancelled => {
                     info!(
                         url = %request_url,
@@ -304,6 +312,7 @@ impl DownloaderService {
                         elapsed_ms = started_at.elapsed().as_millis(),
                         "Download stream cancelled by client"
                     );
+                    Err(status)
                 }
                 Err(status) => {
                     error!(
@@ -314,7 +323,7 @@ impl DownloaderService {
                         %status,
                         "Download stream failed"
                     );
-                    let _ = send_status(&error_tx, status).await;
+                    Err(terminal_status(status))
                 }
                 Ok(()) => {
                     info!(
@@ -324,23 +333,39 @@ impl DownloaderService {
                         elapsed_ms = started_at.elapsed().as_millis(),
                         "Download stream finished"
                     );
+                    Ok(DownloadChunk {
+                        payload: Some(Payload::Complete(true)),
+                    })
                 }
-            }
+            };
+            let _ = terminal_tx.send(terminal);
         });
 
-        Ok(Response::new(Box::pin(ReceiverStream::new(rx)) as DownloadStream))
+        Ok(Response::new(terminal_stream(rx, terminal_rx)))
     }
+}
+
+// A full media buffer must not block the task from publishing its final result.
+fn terminal_stream(
+    rx: mpsc::Receiver<Result<DownloadChunk, Status>>,
+    terminal_rx: oneshot::Receiver<Result<DownloadChunk, Status>>,
+) -> DownloadStream {
+    Box::pin(ReceiverStream::new(rx).chain(stream::once(async move {
+        terminal_rx
+            .await
+            .unwrap_or_else(|_| Err(Status::internal("Download task ended without a final result")))
+    })))
 }
 
 async fn run_download(
     run: impl Future<Output = Result<(), Status>>,
     tx: &Sender<Result<DownloadChunk, Status>>,
-    emergency_limit: Duration,
+    deadline: Instant,
 ) -> Result<(), Status> {
     tokio::select! {
         biased;
         () = tx.closed() => Err(Status::cancelled("Client disconnected")),
-        result = time::timeout(emergency_limit, run) => {
+        result = time::timeout_at(deadline.into(), run) => {
             result.unwrap_or_else(|_| Err(Status::internal("Download exceeded emergency execution limit")))
         }
     }
@@ -1321,11 +1346,11 @@ async fn send_chunk(tx: &Sender<Result<DownloadChunk, Status>>, chunk: DownloadC
 }
 
 #[allow(clippy::result_large_err)]
-async fn send_status(tx: &Sender<Result<DownloadChunk, Status>>, mut status: Status) -> Result<(), Status> {
+fn terminal_status(mut status: Status) -> Status {
     status
         .metadata_mut()
         .insert(proto::TERMINAL_DOWNLOAD_STATUS_HEADER, MetadataValue::from_static("true"));
-    tx.send(Err(status)).await.map_err(|_| Status::cancelled("Client disconnected"))
+    status
 }
 
 #[allow(clippy::cast_possible_truncation)]
@@ -1362,7 +1387,7 @@ mod tests {
         future::pending,
         time::{Duration, Instant},
     };
-    use tokio::sync::mpsc;
+    use tokio::sync::{mpsc, oneshot};
     use tonic::Code;
     use url::Url;
 
@@ -1396,18 +1421,56 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn terminal_status_is_preserved_when_the_media_channel_is_full() {
-        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+    async fn timeout_status_is_preserved_when_the_media_channel_is_full() {
+        use tokio_stream::StreamExt as _;
+
+        let (tx, rx) = mpsc::channel(1);
         tx.send(Ok(DownloadChunk::default())).await.unwrap();
-        let mut status = tokio::spawn(async move { super::send_status(&tx, tonic::Status::internal("Synthetic terminal failure")).await });
-        assert!(tokio::time::timeout(std::time::Duration::from_millis(20), &mut status)
+        let (terminal_tx, terminal_rx) = oneshot::channel();
+        let mut stream = super::terminal_stream(rx, terminal_rx);
+        let timeout = super::run_download(pending(), &tx, Instant::now() + Duration::from_millis(100))
             .await
-            .is_err());
-        assert!(rx.recv().await.unwrap().is_ok());
-        let terminal = rx.recv().await.unwrap().unwrap_err();
+            .unwrap_err();
+        terminal_tx.send(Err(super::terminal_status(timeout))).unwrap();
+        drop(tx);
+
+        assert!(stream.next().await.unwrap().is_ok());
+        let terminal = stream.next().await.unwrap().unwrap_err();
         assert_eq!(terminal.code(), Code::Internal);
+        assert!(terminal.message().contains("emergency execution limit"));
         assert_eq!(terminal.metadata().get(proto::TERMINAL_DOWNLOAD_STATUS_HEADER).unwrap(), "true");
-        status.await.unwrap().unwrap();
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn completion_does_not_wait_for_a_full_media_channel() {
+        use tokio_stream::StreamExt as _;
+
+        let (tx, rx) = mpsc::channel(1);
+        tx.send(Ok(DownloadChunk::default())).await.unwrap();
+        let (terminal_tx, terminal_rx) = oneshot::channel();
+        let mut stream = super::terminal_stream(rx, terminal_rx);
+
+        let result = tokio::time::timeout(
+            Duration::from_millis(100),
+            super::run_download(async { Ok(()) }, &tx, Instant::now() + Duration::from_secs(1)),
+        )
+        .await
+        .unwrap();
+        result.unwrap();
+        terminal_tx
+            .send(Ok(DownloadChunk {
+                payload: Some(Payload::Complete(true)),
+            }))
+            .unwrap();
+        drop(tx);
+
+        assert!(stream.next().await.unwrap().is_ok());
+        assert!(matches!(
+            stream.next().await.unwrap().unwrap().payload,
+            Some(Payload::Complete(true))
+        ));
+        assert!(stream.next().await.is_none());
     }
 
     #[tokio::test]
@@ -1433,7 +1496,7 @@ mod tests {
                 .await
                 .map_err(|err| tonic::Status::internal(err.to_string()))
             };
-            let result = super::run_download(run, &tx, std::time::Duration::from_secs(1)).await;
+            let result = super::run_download(run, &tx, Instant::now() + Duration::from_secs(1)).await;
             drop(permit);
             result
         });
@@ -1574,12 +1637,19 @@ mod tests {
         .yt_dlp_cfg;
         let mut stream = service.download_media(download_request()).await.unwrap().into_inner();
         let mut received = Vec::new();
+        let mut completed = false;
         while let Some(chunk) = stream.next().await {
-            if let Some(proto::downloader::download_chunk::Payload::Data(data)) = chunk.unwrap().payload {
-                received.extend(data);
+            match chunk.unwrap().payload {
+                Some(Payload::Data(data)) => {
+                    assert!(!completed);
+                    received.extend(data);
+                }
+                Some(Payload::Complete(true)) => completed = true,
+                _ => {}
             }
         }
         assert_eq!(received, b"synthetic");
+        assert!(completed);
         wait_for_idle(&service, 1).await;
     }
 

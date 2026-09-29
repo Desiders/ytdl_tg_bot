@@ -18,7 +18,7 @@ pub enum NodeFailoverError<E> {
     AllNodesBusy,
     NodeUnavailable,
     NodeContextUnavailable,
-    ExecutionUncertain,
+    ExecutionUncertain(E),
     Operation(E),
 }
 
@@ -77,7 +77,7 @@ where
                 NodeAttemptErrorKind::ExecutionUncertain => {
                     node.mark_unavailable();
                     warn!(node = %node.address, error = %err, "Download execution outcome is uncertain");
-                    return Err(NodeFailoverError::ExecutionUncertain);
+                    return Err(NodeFailoverError::ExecutionUncertain(err));
                 }
                 NodeAttemptErrorKind::Unauthenticated => {
                     error!(node = %node.address, error = %err, "Download node authentication failed");

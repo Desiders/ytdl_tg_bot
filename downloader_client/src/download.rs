@@ -21,6 +21,7 @@ pub struct DownloadSession {
     meta: DownloadMeta,
     stream: tonic::Streaming<DownloadChunk>,
     outcome: Option<ExecutionOutcome>,
+    complete: bool,
 }
 
 impl DownloadSession {
@@ -36,43 +37,53 @@ impl DownloadSession {
     /// Returns an error if the stream RPC fails or the downloader sends an
     /// invalid chunk sequence.
     pub async fn next_event(&mut self) -> Result<Option<DownloadEvent>, DownloadErrorKind> {
-        let chunk = match self.stream.message().await {
-            Ok(Some(chunk)) => chunk,
-            Ok(None) => return Ok(None),
-            Err(status) => {
-                let error = stream_error(status);
-                if error.is_execution_uncertain() {
-                    if let Some(outcome) = &self.outcome {
-                        outcome.mark_uncertain();
+        if self.complete {
+            return Ok(None);
+        }
+        loop {
+            let chunk = match self.stream.message().await {
+                Ok(Some(chunk)) => chunk,
+                Ok(None) => return Err(self.invalid_stream()),
+                Err(status) => {
+                    let error = stream_error(status);
+                    if error.is_execution_uncertain() {
+                        if let Some(outcome) = &self.outcome {
+                            outcome.mark_uncertain();
+                        }
                     }
+                    return Err(error);
                 }
-                return Err(error);
-            }
-        };
-
-        match chunk.payload {
-            Some(Payload::Progress(progress)) => {
-                if let Some(outcome) = &self.outcome {
-                    outcome.record_progress();
-                }
-                Ok(Some(DownloadEvent::Progress(progress)))
-            }
-            Some(Payload::Data(data)) => {
-                if !data.is_empty() {
+            };
+            match chunk.payload {
+                Some(Payload::Progress(progress)) => {
                     if let Some(outcome) = &self.outcome {
                         outcome.record_progress();
                     }
+                    return Ok(Some(DownloadEvent::Progress(progress)));
                 }
-                Ok(Some(DownloadEvent::Data(Bytes::from(data))))
-            }
-            Some(Payload::ThumbnailData(data)) => Ok(Some(DownloadEvent::ThumbnailData(Bytes::from(data)))),
-            Some(Payload::Meta(_)) | None => {
-                if let Some(outcome) = &self.outcome {
-                    outcome.mark_uncertain();
+                Some(Payload::Data(data)) => {
+                    if !data.is_empty() {
+                        if let Some(outcome) = &self.outcome {
+                            outcome.record_progress();
+                        }
+                    }
+                    return Ok(Some(DownloadEvent::Data(Bytes::from(data))));
                 }
-                Err(DownloadErrorKind::ExecutionUncertain)
+                Some(Payload::ThumbnailData(data)) => return Ok(Some(DownloadEvent::ThumbnailData(Bytes::from(data)))),
+                Some(Payload::Complete(true)) => {
+                    self.complete = true;
+                    return Ok(None);
+                }
+                Some(Payload::Complete(false) | Payload::Meta(_)) | None => return Err(self.invalid_stream()),
             }
         }
+    }
+
+    fn invalid_stream(&self) -> DownloadErrorKind {
+        if let Some(outcome) = &self.outcome {
+            outcome.mark_uncertain();
+        }
+        DownloadErrorKind::InvalidStream
     }
 }
 
@@ -120,11 +131,11 @@ pub async fn download_media(
                             let chunk = stream.message().await.map_err(stream_error)?;
                             let Some(chunk) = chunk else {
                                 mark_execution_uncertain();
-                                return Err(DownloadErrorKind::ExecutionUncertain);
+                                return Err(DownloadErrorKind::InvalidStream);
                             };
                             let Some(payload) = chunk.payload else {
                                 mark_execution_uncertain();
-                                return Err(DownloadErrorKind::ExecutionUncertain);
+                                return Err(DownloadErrorKind::InvalidStream);
                             };
                             match payload {
                                 Payload::Progress(progress) => {
@@ -137,11 +148,12 @@ pub async fn download_media(
                                         meta,
                                         stream,
                                         outcome: current_execution_outcome(),
+                                        complete: false,
                                     });
                                 }
-                                Payload::Data(_) | Payload::ThumbnailData(_) => {
+                                Payload::Data(_) | Payload::ThumbnailData(_) | Payload::Complete(_) => {
                                     mark_execution_uncertain();
-                                    return Err(DownloadErrorKind::ExecutionUncertain);
+                                    return Err(DownloadErrorKind::InvalidStream);
                                 }
                             }
                         }
@@ -155,7 +167,7 @@ pub async fn download_media(
             Ok(result) => result,
             Err(_) => {
                 mark_execution_uncertain();
-                return Err(DownloadErrorKind::ExecutionUncertain);
+                return Err(DownloadErrorKind::MediaTimeout);
             }
         };
         if matches!(result, Err(NodeFailoverError::AllNodesBusy | NodeFailoverError::NodeUnavailable)) {
@@ -186,6 +198,10 @@ fn start_error(status: tonic::Status) -> DownloadErrorKind {
             mark_execution_uncertain();
             DownloadErrorKind::ExecutionUncertain
         }
+        Code::ResourceExhausted if status.message() != proto::NODE_CAPACITY_REJECTION_MESSAGE => {
+            mark_execution_uncertain();
+            DownloadErrorKind::ExecutionUncertain
+        }
         _ => DownloadErrorKind::Rpc(status),
     }
 }
@@ -207,10 +223,18 @@ fn stream_error(status: tonic::Status) -> DownloadErrorKind {
 
 fn classify_download_error(err: &DownloadErrorKind) -> NodeAttemptErrorKind {
     match err {
-        DownloadErrorKind::Rpc(status) if status.code() == Code::ResourceExhausted => NodeAttemptErrorKind::ResourceExhausted,
+        DownloadErrorKind::Rpc(status)
+            if status.code() == Code::ResourceExhausted
+                && status.message() == proto::NODE_CAPACITY_REJECTION_MESSAGE
+                && !status.metadata().contains_key(proto::TERMINAL_DOWNLOAD_STATUS_HEADER) =>
+        {
+            NodeAttemptErrorKind::ResourceExhausted
+        }
         DownloadErrorKind::Rpc(status) if status.code() == Code::Aborted => NodeAttemptErrorKind::ContextUnavailable,
         DownloadErrorKind::Rpc(status) if status.code() == Code::Unavailable => NodeAttemptErrorKind::Unavailable,
-        DownloadErrorKind::ExecutionUncertain => NodeAttemptErrorKind::ExecutionUncertain,
+        DownloadErrorKind::ExecutionUncertain | DownloadErrorKind::InvalidStream | DownloadErrorKind::MediaTimeout => {
+            NodeAttemptErrorKind::ExecutionUncertain
+        }
         _ => NodeAttemptErrorKind::Fatal,
     }
 }
@@ -241,6 +265,10 @@ mod tests {
         unavailable: bool,
         aborted: bool,
         stream_status: Option<Status>,
+        missing_completion: bool,
+        error_after_completion: bool,
+        stall_before_meta: bool,
+        invalid_first_chunk: bool,
     }
 
     #[tonic::async_trait]
@@ -265,7 +293,15 @@ mod tests {
             if let Some(status) = &self.stream_status {
                 return Ok(Response::new(Box::pin(stream::iter([Err(status.clone())]))));
             }
-            let chunks = [
+            if self.stall_before_meta {
+                return Ok(Response::new(Box::pin(stream::pending::<Result<DownloadChunk, Status>>())));
+            }
+            if self.invalid_first_chunk {
+                return Ok(Response::new(Box::pin(stream::iter([Ok(DownloadChunk {
+                    payload: Some(Payload::Data(vec![42])),
+                })]))));
+            }
+            let mut chunks = vec![
                 Ok(DownloadChunk {
                     payload: Some(Payload::Meta(DownloadMeta::default())),
                 }),
@@ -273,6 +309,14 @@ mod tests {
                     payload: Some(Payload::Data(vec![42])),
                 }),
             ];
+            if !self.missing_completion {
+                chunks.push(Ok(DownloadChunk {
+                    payload: Some(Payload::Complete(true)),
+                }));
+            }
+            if self.error_after_completion {
+                chunks.push(Err(Status::internal("Synthetic connection error after completion")));
+            }
             Ok(Response::new(Box::pin(stream::iter(chunks))))
         }
     }
@@ -391,6 +435,100 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn local_media_deadline_reports_timeout_and_stops_node_failover() {
+        let stalled = FakeDownloader {
+            stall_before_meta: true,
+            ..FakeDownloader::default()
+        };
+        let other = FakeDownloader::default();
+        let (first, first_task) = fake_node(stalled.clone()).await;
+        let (second, second_task) = fake_node(other.clone()).await;
+        first.update_remote_status(0, 2);
+        let (router, _) = NodeRouter::with_test_nodes(vec![first, second]);
+        let mut deadline = Instant::now() + Duration::from_secs(2);
+        let (result, outcome) = track_execution(download_media(&router, None, DownloadRequest::default(), |_| {}, &mut deadline)).await;
+        assert!(matches!(result, Err(DownloadErrorKind::MediaTimeout)));
+        assert!(outcome.is_uncertain());
+        assert_eq!(stalled.calls.load(Ordering::Relaxed), 1);
+        assert_eq!(other.calls.load(Ordering::Relaxed), 0);
+        first_task.abort();
+        second_task.abort();
+    }
+
+    #[tokio::test]
+    async fn invalid_pre_meta_chunk_keeps_its_diagnostic_and_stops_failover() {
+        let invalid = FakeDownloader {
+            invalid_first_chunk: true,
+            ..FakeDownloader::default()
+        };
+        let other = FakeDownloader::default();
+        let (first, first_task) = fake_node(invalid.clone()).await;
+        let (second, second_task) = fake_node(other.clone()).await;
+        first.update_remote_status(0, 2);
+        let (router, _) = NodeRouter::with_test_nodes(vec![first, second]);
+        let mut deadline = Instant::now() + Duration::from_secs(2);
+        let (result, outcome) = track_execution(download_media(&router, None, DownloadRequest::default(), |_| {}, &mut deadline)).await;
+        assert!(matches!(result, Err(DownloadErrorKind::InvalidStream)));
+        assert!(outcome.is_uncertain());
+        assert_eq!(invalid.calls.load(Ordering::Relaxed), 1);
+        assert_eq!(other.calls.load(Ordering::Relaxed), 0);
+        first_task.abort();
+        second_task.abort();
+    }
+
+    #[tokio::test]
+    async fn stream_requires_completion_after_media_bytes() {
+        for missing_completion in [false, true] {
+            let service = FakeDownloader {
+                missing_completion,
+                ..FakeDownloader::default()
+            };
+            let (node, server) = fake_node(service).await;
+            let (router, _) = NodeRouter::with_test_nodes(vec![node]);
+            let mut deadline = Instant::now() + Duration::from_secs(2);
+            let (result, outcome) = track_execution(async {
+                let mut session = download_media(&router, None, DownloadRequest::default(), |_| {}, &mut deadline)
+                    .await
+                    .unwrap();
+                assert!(matches!(session.next_event().await.unwrap(), Some(DownloadEvent::Data(_))));
+                session.next_event().await
+            })
+            .await;
+            if missing_completion {
+                assert!(matches!(result, Err(DownloadErrorKind::InvalidStream)));
+                assert!(outcome.is_uncertain());
+            } else {
+                assert!(matches!(result, Ok(None)));
+                assert!(!outcome.is_uncertain());
+            }
+            server.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn completion_marker_is_final_even_if_transport_fails_afterwards() {
+        let service = FakeDownloader {
+            error_after_completion: true,
+            ..FakeDownloader::default()
+        };
+        let (node, server) = fake_node(service).await;
+        let (router, _) = NodeRouter::with_test_nodes(vec![node]);
+        let mut deadline = Instant::now() + Duration::from_secs(2);
+        let (result, outcome) = track_execution(async {
+            let mut session = download_media(&router, None, DownloadRequest::default(), |_| {}, &mut deadline)
+                .await
+                .unwrap();
+            assert!(matches!(session.next_event().await.unwrap(), Some(DownloadEvent::Data(_))));
+            assert!(session.next_event().await.unwrap().is_none());
+            session.next_event().await
+        })
+        .await;
+        assert!(matches!(result, Ok(None)));
+        assert!(!outcome.is_uncertain());
+        server.abort();
+    }
+
+    #[tokio::test]
     async fn unmarked_internal_stream_error_stops_before_another_node() {
         let failed = FakeDownloader {
             stream_status: Some(Status::internal("Synthetic transport error")),
@@ -478,7 +616,8 @@ mod tests {
 
     #[tokio::test]
     async fn admission_rejection_does_not_mark_execution_uncertain() {
-        let (error, outcome) = track_execution(async { start_error(tonic::Status::resource_exhausted("Synthetic full node")) }).await;
+        let (error, outcome) =
+            track_execution(async { start_error(tonic::Status::resource_exhausted(proto::NODE_CAPACITY_REJECTION_MESSAGE)) }).await;
         assert_eq!(classify_download_error(&error), NodeAttemptErrorKind::ResourceExhausted);
         assert!(!outcome.is_uncertain());
     }
@@ -500,7 +639,20 @@ mod tests {
     #[test]
     fn initial_capacity_rejection_remains_safe_to_fail_over() {
         let error = start_error(tonic::Status::resource_exhausted("synthetic full node"));
+        assert!(error.is_execution_uncertain());
+        assert_eq!(classify_download_error(&error), NodeAttemptErrorKind::ExecutionUncertain);
+    }
+
+    #[test]
+    fn only_the_downloader_admission_response_allows_capacity_failover() {
+        let error = start_error(tonic::Status::resource_exhausted(proto::NODE_CAPACITY_REJECTION_MESSAGE));
         assert_eq!(classify_download_error(&error), NodeAttemptErrorKind::ResourceExhausted);
+
+        let mut later_error = tonic::Status::resource_exhausted(proto::NODE_CAPACITY_REJECTION_MESSAGE);
+        later_error
+            .metadata_mut()
+            .insert(proto::TERMINAL_DOWNLOAD_STATUS_HEADER, MetadataValue::from_static("true"));
+        assert_eq!(classify_download_error(&stream_error(later_error)), NodeAttemptErrorKind::Fatal);
     }
 
     #[test]

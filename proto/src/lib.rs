@@ -9,6 +9,8 @@
 pub const MEDIA_EXECUTION_LIMIT_SECS: u64 = 360;
 /// Set only on a downloader stream error after its execution future has ended.
 pub const TERMINAL_DOWNLOAD_STATUS_HEADER: &str = "x-download-terminal";
+/// The only pre-admission `RESOURCE_EXHAUSTED` response that permits node failover.
+pub const NODE_CAPACITY_REJECTION_MESSAGE: &str = "Node is at capacity";
 
 pub mod downloader {
     #[allow(clippy::all)]

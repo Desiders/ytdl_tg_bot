@@ -339,7 +339,7 @@ async fn prepare_download(
 ) -> Result<PreparedDownload, DownloadErrorKind> {
     if Instant::now() >= *deadline {
         // Earlier format attempts have ended; no new RPC may begin after the budget.
-        return Err(io::Error::new(io::ErrorKind::TimedOut, "Media execution limit exceeded").into());
+        return Err(DownloadErrorKind::MediaTimeout);
     }
     // The node streams progress while downloading and only sends `Meta` once the download
     // succeeds, so this resolves only after a usable file exists. Forward the pre-`Meta`

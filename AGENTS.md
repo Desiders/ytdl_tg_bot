@@ -290,6 +290,7 @@ Proto file: [proto/proto/downloader.proto](proto/proto/downloader.proto)
 - `progress`
 - `data`
 - `thumbnail_data`
+- `complete`
 
 `DownloadMedia` stream order is currently:
 
@@ -297,10 +298,13 @@ Proto file: [proto/proto/downloader.proto](proto/proto/downloader.proto)
 2. one `meta`
 3. zero or more `thumbnail_data` (only when `has_thumbnail` is true)
 4. one or more `data`
+5. one `complete` after successful downloader execution and streaming
 
 `meta` is deliberately sent late: after the download succeeded and the output file was validated, or, for piped streaming, at the first media byte. The client (`downloader_client::download_media`) forwards pre-`meta` progress through a callback and returns a `DownloadSession` at `meta`, so a known-terminal candidate failure surfaces before an upload starts and can try another format. Ambiguous transport stops fallback and does not cause later Redis re-execution. Do not emit `meta` early.
 
 A stream error is known-terminal only when the downloader attaches `x-download-terminal: true` after its execution future has ended. A bare gRPC status code is insufficient: Tonic can report an HTTP/2 transport failure as `INTERNAL`. Unmarked stream errors stop node and format fallback.
+
+The client treats `complete` itself as the terminal success signal; premature EOF or a malformed chunk is reported as an invalid stream and stops fallback. The downloader appends the terminal success/error item after its bounded media channel, so a client that pauses reading cannot block the execution task or hide a terminal timeout. The bot's own per-media deadline reports a timeout, while retaining the same no-fallback policy because cancellation does not confirm remote cleanup. Only the downloader's exact pre-admission `RESOURCE_EXHAUSTED` response permits capacity failover.
 
 `GetMediaInfo` responses may be large; the client decoding limit is 30 MiB. The downloader accepts requests up to 30 MiB because `DownloadMedia` sends raw metadata back to the node. `RecognizeSong` requests are capped at 25 MiB on the client and `[songrec].max_audio_size` on the node.
 

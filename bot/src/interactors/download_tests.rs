@@ -99,6 +99,7 @@ impl Downloader for FakeNode {
                         })
                     }
                     2..=9 => Payload::Data(vec![1; 1024]),
+                    10 => Payload::Complete(true),
                     _ => return None,
                 };
                 Some((Ok(DownloadChunk { payload: Some(payload) }), index + 1))

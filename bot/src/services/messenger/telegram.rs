@@ -11,7 +11,7 @@ use downloader_client::outcome::{current_execution_outcome, record_execution_pro
 use futures_util::{Stream, StreamExt as _};
 use std::{
     future::Future,
-    io, mem,
+    io,
     sync::{
         atomic::{AtomicU8, Ordering::Relaxed},
         Arc,
@@ -513,6 +513,18 @@ impl MessengerPort for TelegramMessenger {
     }
 
     async fn send_video_group(&self, request: SendMediaGroupRequest) -> Result<(), MessengerError> {
+        if let [item] = request.items.as_slice() {
+            return self
+                .send_video_by_id(SendMediaByIdRequest {
+                    chat_id: request.chat_id,
+                    reply_to_message_id: request.reply_to_message_id,
+                    remote_id: &item.remote_id,
+                    webpage_url: item.webpage_url.as_ref(),
+                    link_is_visible: request.link_is_visible,
+                    caption: request.caption.as_deref(),
+                })
+                .await;
+        }
         media_groups(
             self,
             request.chat_id,
@@ -546,6 +558,18 @@ impl MessengerPort for TelegramMessenger {
             caption,
         }: SendMediaGroupRequest,
     ) -> Result<(), MessengerError> {
+        if let [item] = items.as_slice() {
+            return self
+                .send_audio_by_id(SendMediaByIdRequest {
+                    chat_id,
+                    reply_to_message_id,
+                    remote_id: &item.remote_id,
+                    webpage_url: item.webpage_url.as_ref(),
+                    link_is_visible,
+                    caption: caption.as_deref(),
+                })
+                .await;
+        }
         media_groups(
             self,
             chat_id,
@@ -566,6 +590,18 @@ impl MessengerPort for TelegramMessenger {
     }
 
     async fn send_photo_group(&self, request: SendMediaGroupRequest) -> Result<(), MessengerError> {
+        if let [item] = request.items.as_slice() {
+            return self
+                .send_photo_by_id(SendMediaByIdRequest {
+                    chat_id: request.chat_id,
+                    reply_to_message_id: request.reply_to_message_id,
+                    remote_id: &item.remote_id,
+                    webpage_url: item.webpage_url.as_ref(),
+                    link_is_visible: request.link_is_visible,
+                    caption: request.caption.as_deref(),
+                })
+                .await;
+        }
         media_groups(
             self,
             request.chat_id,
@@ -766,15 +802,15 @@ where
     .await
 }
 
-/// Telegram media groups are limited to 10 items; this splits a longer list
-/// into 10-sized batches and tolerates per-batch failures.
+/// Telegram media groups are limited to 10 items; continue past failed batches,
+/// but report a partial send to the caller after processing the list.
 async fn media_groups(
     messenger: &TelegramMessenger,
     chat_id: impl Into<ChatIdKind>,
     input_media_list: Vec<impl Into<InputMedia>>,
     reply_to_message_id: Option<i64>,
     request_timeout: Option<f32>,
-) -> Result<Box<[Message]>, SessionErrorKind> {
+) -> Result<Box<[Message]>, MessengerError> {
     const MAX_MEDIA_GROUP: usize = 10;
 
     let chat_id = chat_id.into();
@@ -785,33 +821,20 @@ async fn media_groups(
     }
 
     let mut messages = Vec::with_capacity(input_media_len);
-    let mut cur_media_group = Vec::with_capacity(input_media_len.min(MAX_MEDIA_GROUP));
+    let mut remaining = input_media_list.into_iter().map(Into::into).collect::<Vec<InputMedia>>();
     let mut last_error = None;
 
-    for input_media in input_media_list {
-        cur_media_group.push(input_media.into());
-
-        if cur_media_group.len() == MAX_MEDIA_GROUP {
-            if let Err(err) = send_media_group(
-                messenger,
-                &chat_id,
-                mem::take(&mut cur_media_group),
-                reply_to_message_id,
-                request_timeout,
-                &mut messages,
-            )
-            .await
-            {
-                last_error = Some(err);
-            }
-        }
-    }
-
-    if !cur_media_group.is_empty() {
+    while !remaining.is_empty() {
+        // Keep two items for the last group instead of sending an invalid singleton.
+        let group_len = if remaining.len() == MAX_MEDIA_GROUP + 1 {
+            MAX_MEDIA_GROUP - 1
+        } else {
+            remaining.len().min(MAX_MEDIA_GROUP)
+        };
         if let Err(err) = send_media_group(
             messenger,
             &chat_id,
-            cur_media_group,
+            remaining.drain(..group_len).collect(),
             reply_to_message_id,
             request_timeout,
             &mut messages,
@@ -822,15 +845,18 @@ async fn media_groups(
         }
     }
 
-    // Tolerate partial failures (some batches sent), but if nothing went through, surface the
-    // error so the caller reports it instead of silently deleting the progress message.
-    if messages.is_empty() {
-        if let Some(err) = last_error {
-            return Err(err);
-        }
-    }
+    ensure_all_media_sent(messages.len(), input_media_len, last_error)?;
 
     Ok(messages.into())
+}
+
+fn ensure_all_media_sent(sent: usize, total: usize, last_error: Option<SessionErrorKind>) -> Result<(), MessengerError> {
+    if let Some(err) = last_error {
+        return Err(MessengerError::new(format!(
+            "Sent {sent} of {total} media items; last error: {err}"
+        )));
+    }
+    Ok(())
 }
 
 async fn send_media_group(
@@ -919,9 +945,9 @@ mod upload_deadline_tests {
 #[cfg(test)]
 mod rate_limit_tests {
     use super::*;
-    use crate::services::queue::test_support::Fixture;
+    use crate::services::{messenger::MediaGroupItem, queue::test_support::Fixture};
     use futures_util::stream;
-    use std::borrow::Cow;
+    use std::{borrow::Cow, net::SocketAddr};
     use telers::client::{
         telegram::{APIServer, BareFilesPathWrapper},
         Reqwest,
@@ -929,9 +955,141 @@ mod rate_limit_tests {
     use tempfile::TempDir;
     use tokio::{
         io::{AsyncReadExt as _, AsyncWriteExt as _},
-        net::TcpListener,
+        net::{TcpListener, TcpStream},
     };
     use url::Url;
+
+    #[test]
+    fn partial_media_group_failure_is_reported() {
+        let failure = SessionErrorKind::Telegram(TelegramErrorKind::BadRequest {
+            message: "Synthetic rejection".into(),
+        });
+        let error = ensure_all_media_sent(10, 12, Some(failure)).unwrap_err();
+        assert!(error.to_string().contains("Sent 10 of 12 media items"));
+        assert!(error.to_string().contains("Synthetic rejection"));
+        ensure_all_media_sent(12, 12, None).unwrap();
+    }
+
+    #[tokio::test]
+    async fn media_groups_report_a_failed_batch_without_sending_a_singleton_group() {
+        let fixture = Fixture::new().await;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let mut group_sizes = Vec::new();
+            for index in 0..2 {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let request = read_http_request(&mut socket).await;
+                let media_start = request
+                    .windows(b"name=\"media\"\r\n\r\n".len())
+                    .position(|bytes| bytes == b"name=\"media\"\r\n\r\n")
+                    .unwrap()
+                    + b"name=\"media\"\r\n\r\n".len();
+                let media_end = request[media_start..].windows(4).position(|bytes| bytes == b"\r\n--").unwrap() + media_start;
+                let media: Vec<serde_json::Value> = serde_json::from_slice(&request[media_start..media_end]).unwrap();
+                let size = media.len();
+                group_sizes.push(size);
+                let (status, body) = if index == 0 {
+                    let messages = (0..size)
+                        .map(|id| serde_json::json!({"message_id": id + 1, "date": 1, "chat": {"id": 1, "type": "private"}}))
+                        .collect::<Vec<_>>();
+                    ("200 OK", serde_json::json!({"ok": true, "result": messages}).to_string())
+                } else {
+                    (
+                        "400 Bad Request",
+                        serde_json::json!({"ok": false, "error_code": 400, "description": "Synthetic group rejection"}).to_string(),
+                    )
+                };
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                socket.write_all(response.as_bytes()).await.unwrap();
+            }
+            group_sizes
+        });
+        let messenger = test_messenger(address, &fixture);
+        let items = (0..11)
+            .map(|index| InputMediaPhoto::new(InputFile::id(format!("synthetic-{index}"))))
+            .collect();
+        let error = media_groups(&messenger, 1, items, None, Some(5.0)).await.unwrap_err();
+        assert!(error.to_string().contains("Sent 9 of 11 media items"));
+        assert_eq!(server.await.unwrap(), vec![9, 2]);
+    }
+
+    #[tokio::test]
+    async fn one_item_playlist_uses_the_existing_file_id_send() {
+        let fixture = Fixture::new().await;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut socket).await;
+            let first_line = String::from_utf8_lossy(&request).lines().next().unwrap().to_owned();
+            let body = r#"{"ok":true,"result":{"message_id":1,"date":1,"chat":{"id":1,"type":"private"}}}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+            first_line
+        });
+        let messenger = test_messenger(address, &fixture);
+        messenger
+            .send_photo_group(SendMediaGroupRequest {
+                chat_id: 1,
+                reply_to_message_id: None,
+                items: vec![MediaGroupItem {
+                    remote_id: "synthetic-photo".into(),
+                    webpage_url: None,
+                }],
+                link_is_visible: false,
+                caption: None,
+            })
+            .await
+            .unwrap();
+        assert!(server.await.unwrap().contains("/sendPhoto "));
+    }
+
+    async fn read_http_request(socket: &mut TcpStream) -> Vec<u8> {
+        let mut request = Vec::new();
+        let mut buffer = [0; 4096];
+        loop {
+            let count = socket.read(&mut buffer).await.unwrap();
+            assert_ne!(count, 0);
+            request.extend_from_slice(&buffer[..count]);
+            if let Some(end) = request.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
+                let headers = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+                let length: usize = headers
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length: "))
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                if request.len() >= end + 4 + length {
+                    return request;
+                }
+            }
+        }
+    }
+
+    fn test_messenger(address: SocketAddr, fixture: &Fixture) -> TelegramMessenger {
+        let api = APIServer::new(
+            &format!("http://{address}/bot{{token}}/{{method_name}}"),
+            &format!("http://{address}/files/{{path}}"),
+            true,
+            BareFilesPathWrapper,
+        );
+        TelegramMessenger::new(
+            Arc::new(Bot::with_client(
+                "123:synthetic",
+                Reqwest::default().with_api_server(Cow::Owned(api)),
+            )),
+            Arc::new(ErrorFormatter::new("synthetic")),
+            Arc::new(TimeoutsConfig::default()),
+            Arc::new(ProgressThrottle::new(fixture.connection())),
+        )
+    }
 
     #[tokio::test]
     async fn telegram_cooldown_is_shared_and_final_error_edits_are_not_dropped() {
@@ -959,25 +1117,7 @@ mod rate_limit_tests {
             let mut received = Vec::new();
             for index in 0..3 {
                 let (mut socket, _) = listener.accept().await.unwrap();
-                let mut request = Vec::new();
-                let mut buffer = [0; 4096];
-                loop {
-                    let count = socket.read(&mut buffer).await.unwrap();
-                    assert_ne!(count, 0);
-                    request.extend_from_slice(&buffer[..count]);
-                    if let Some(end) = request.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
-                        let headers = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
-                        let length: usize = headers
-                            .lines()
-                            .find_map(|line| line.strip_prefix("content-length: "))
-                            .unwrap()
-                            .parse()
-                            .unwrap();
-                        if request.len() >= end + 4 + length {
-                            break;
-                        }
-                    }
-                }
+                let _request = read_http_request(&mut socket).await;
                 received.push(Instant::now());
                 let (status, body) = if index == 0 {
                     (error_status, error_body)
@@ -992,21 +1132,7 @@ mod rate_limit_tests {
             }
             received
         });
-        let api = APIServer::new(
-            &format!("http://{address}/bot{{token}}/{{method_name}}"),
-            &format!("http://{address}/files/{{path}}"),
-            true,
-            BareFilesPathWrapper,
-        );
-        let messenger = TelegramMessenger::new(
-            Arc::new(Bot::with_client(
-                "123:synthetic",
-                Reqwest::default().with_api_server(Cow::Owned(api)),
-            )),
-            Arc::new(ErrorFormatter::new("synthetic")),
-            Arc::new(TimeoutsConfig::default()),
-            Arc::new(ProgressThrottle::new(fixture.connection())),
-        );
+        let messenger = test_messenger(address, &fixture);
         messenger
             .edit_text(EditTextRequest {
                 is_progress: true,

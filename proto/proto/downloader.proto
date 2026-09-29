@@ -88,6 +88,7 @@ message DownloadChunk {
     string progress = 2;
     bytes data = 3;
     bytes thumbnail_data = 4;
+    bool complete = 5;
   }
 }
 
