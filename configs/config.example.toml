@@ -81,7 +81,8 @@ db = 0
 stream_key = "ytdl:downloads"
 group = "workers"
 block_ms = 5000
-# Actual media progress refreshes idle time at most once per minute.
+# Work progress or intentional capacity/Telegram cooldown waiting refreshes idle
+# time at most once per minute, without extending the media execution deadline.
 # Covers the hard per-media limit, progress-refresh interval, and cleanup slack.
 claim_min_idle_ms = 540000
 dedup_ttl_secs = 86400

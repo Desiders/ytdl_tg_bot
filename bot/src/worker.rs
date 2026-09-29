@@ -209,7 +209,7 @@ async fn run_with_queue_liveness(
             () = &mut running => return true,
             changed = progress.changed() => {
                 if changed.is_err() { return false; }
-                if !outcome.is_uncertain() && refreshed_at.elapsed() >= refresh_interval {
+                if refreshed_at.elapsed() >= refresh_interval {
                     match tokio::time::timeout(Duration::from_secs(5), queue.refresh_liveness(entry_id, consumer)).await {
                         Ok(Ok(true)) => refreshed_at = Instant::now(),
                         _ => return false,
@@ -463,6 +463,44 @@ mod tests {
         .await
         .unwrap();
         assert!(!fixture.queue.ack(&queued.entry_id, "first").await.unwrap());
+        assert_eq!(fixture.queue.stats().await.unwrap().pending, 0);
+    }
+
+    #[tokio::test]
+    async fn intentional_wait_after_uncertainty_protects_delivery_until_waiter_stops() {
+        let fixture = Fixture::with_config(700).await;
+        let queued = fixture.enqueue().await;
+        let outcome = ExecutionOutcome::default();
+        outcome.mark_uncertain();
+        let wait = async {
+            for _ in 0..12 {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                outcome.record_progress();
+                assert_eq!(fixture.queue.cleanup_stale("cleanup", &mut "0-0".into()).await.unwrap(), 0);
+            }
+        };
+        assert!(
+            run_with_queue_liveness(
+                wait,
+                &fixture.queue,
+                "first",
+                &queued.entry_id,
+                &outcome,
+                Duration::from_millis(100),
+            )
+            .await
+        );
+        assert_eq!(fixture.queue.stats().await.unwrap().pending, 1);
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if fixture.queue.cleanup_stale("cleanup", &mut "0-0".into()).await.unwrap() == 1 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .unwrap();
         assert_eq!(fixture.queue.stats().await.unwrap().pending, 0);
     }
 

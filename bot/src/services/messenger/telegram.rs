@@ -34,6 +34,7 @@ use tracing::{error, warn};
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(proto::MEDIA_EXECUTION_LIMIT_SECS);
 const PROGRESS_EDIT_INTERVAL: Duration = Duration::from_secs(5);
 const INLINE_PROGRESS_EDIT_INTERVAL: Duration = Duration::from_secs(15);
+const WAIT_LIVENESS_INTERVAL: Duration = Duration::from_secs(30);
 const REQUEST_INTERVAL: Duration = Duration::from_millis(100);
 
 use super::{
@@ -168,7 +169,7 @@ impl MessengerPort for TelegramMessenger {
         };
         if request.is_progress {
             let result = perform_request(self, method, None).await;
-            if !matches!(&result, Err(SessionErrorKind::Telegram(TelegramErrorKind::RetryAfter { .. }))) {
+            if !result.as_ref().err().is_some_and(|err| telegram_retry_after(err).is_some()) {
                 result?;
             }
         } else {
@@ -667,7 +668,9 @@ async fn wait_for_request(limits: &Mutex<RequestLimits>) {
             break;
         }
         drop(limits);
-        tokio::time::sleep_until(ready).await;
+        // Intentional Telegram waiting keeps the queue delivery alive, not its media deadline.
+        record_execution_progress();
+        tokio::time::sleep_until(ready.min(Instant::now() + WAIT_LIVENESS_INTERVAL)).await;
     }
 }
 
@@ -681,8 +684,7 @@ where
     } else {
         messenger.bot.send(method).await
     };
-    if let Err(SessionErrorKind::Telegram(TelegramErrorKind::RetryAfter { retry_after, .. })) = &result {
-        let delay = Duration::from_secs(u64::try_from(*retry_after).unwrap_or_default());
+    if let Some(delay) = result.as_ref().err().and_then(telegram_retry_after) {
         let mut limits = messenger.limits.lock().await;
         limits.cooldown_until = limits.cooldown_until.max(Instant::now() + delay);
     }
@@ -690,6 +692,20 @@ where
         record_execution_progress();
     }
     result
+}
+
+fn telegram_retry_after(error: &SessionErrorKind) -> Option<Duration> {
+    let seconds = match error {
+        SessionErrorKind::Telegram(TelegramErrorKind::RetryAfter { retry_after, .. }) => u32::try_from(*retry_after).ok()?,
+        SessionErrorKind::Telegram(TelegramErrorKind::BadRequest { message }) => {
+            // The local Bot API can return a flood wait as HTTP 400 without response parameters.
+            let message = message.trim().to_ascii_lowercase();
+            let message = message.strip_prefix("bad request: ").unwrap_or(&message);
+            message.strip_prefix("too many requests: retry after ")?.parse::<u32>().ok()?
+        }
+        _ => return None,
+    };
+    (seconds > 0).then(|| Duration::from_secs(u64::from(seconds)))
 }
 
 fn upload_stream(stream: MediaByteStream) -> impl Stream<Item = Result<Bytes, io::Error>> + Send + Sync + Unpin {
@@ -729,11 +745,12 @@ where
     backoff::future::retry(ExponentialBackoff::default(), || async {
         match once(messenger, method.clone(), request_timeout).await {
             Ok(res) => Ok(res),
+            Err(err) if telegram_retry_after(&err).is_some() => {
+                warn!(error = %err, "Waiting for Telegram cooldown");
+                // The shared request gate owns this wait and records queue liveness.
+                Err(backoff::Error::retry_after(err, Duration::ZERO))
+            }
             Err(err) => Err(match err {
-                SessionErrorKind::Telegram(TelegramErrorKind::RetryAfter { retry_after, .. }) => {
-                    warn!("Sleeping for {retry_after:?} seconds");
-                    backoff::Error::retry_after(err, Duration::from_secs(retry_after.try_into().unwrap()))
-                }
                 SessionErrorKind::Telegram(TelegramErrorKind::ServerError { .. } | TelegramErrorKind::MigrateToChat { .. }) => {
                     cur_retry_count.fetch_add(1, Relaxed);
                     if cur_retry_count.load(Relaxed) > max_retries {
@@ -903,18 +920,38 @@ mod upload_deadline_tests {
 mod rate_limit_tests {
     use super::*;
     use crate::services::queue::test_support::Fixture;
+    use futures_util::stream;
     use std::borrow::Cow;
     use telers::client::{
         telegram::{APIServer, BareFilesPathWrapper},
         Reqwest,
     };
+    use tempfile::TempDir;
     use tokio::{
         io::{AsyncReadExt as _, AsyncWriteExt as _},
         net::TcpListener,
     };
+    use url::Url;
 
     #[tokio::test]
     async fn telegram_cooldown_is_shared_and_final_error_edits_are_not_dropped() {
+        assert_shared_cooldown(
+            "429 Too Many Requests",
+            r#"{"ok":false,"error_code":429,"description":"Too Many Requests","parameters":{"retry_after":2}}"#,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn text_form_flood_wait_also_sets_the_shared_cooldown() {
+        assert_shared_cooldown(
+            "400 Bad Request",
+            r#"{"ok":false,"error_code":400,"description":"Bad Request: too Many Requests: retry after 2"}"#,
+        )
+        .await;
+    }
+
+    async fn assert_shared_cooldown(error_status: &'static str, error_body: &'static str) {
         let fixture = Fixture::new().await;
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -943,10 +980,7 @@ mod rate_limit_tests {
                 }
                 received.push(Instant::now());
                 let (status, body) = if index == 0 {
-                    (
-                        "429 Too Many Requests",
-                        r#"{"ok":false,"error_code":429,"description":"Too Many Requests","parameters":{"retry_after":2}}"#,
-                    )
+                    (error_status, error_body)
                 } else {
                     ("200 OK", r#"{"ok":true,"result":true}"#)
                 };
@@ -1020,20 +1054,168 @@ mod rate_limit_tests {
         assert!(received[2].duration_since(received[1]) >= REQUEST_INTERVAL / 2);
     }
 
+    #[test]
+    fn flood_wait_parser_accepts_only_explicit_positive_delays() {
+        for (message, seconds) in [
+            ("Bad Request: too Many Requests: retry after 2", Some(2)),
+            ("Too Many Requests: retry after 17", Some(17)),
+            ("Bad Request: MESSAGE_ID_INVALID", None),
+            ("Bad Request: retry after 2", None),
+            ("Bad Request: too many requests: retry after -1", None),
+            ("Bad Request: too many requests: retry after 0", None),
+            ("Bad Request: too many requests: retry after 2 garbage", None),
+            ("Bad Request: too many requests: retry after 99999999999999999999", None),
+        ] {
+            let error = SessionErrorKind::Telegram(TelegramErrorKind::BadRequest { message: message.into() });
+            assert_eq!(telegram_retry_after(&error), seconds.map(Duration::from_secs), "{message}");
+        }
+    }
+
+    #[tokio::test]
+    async fn stream_upload_flood_wait_returns_error_without_replaying_consumed_bytes() {
+        let fixture = Fixture::new().await;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let mut received = Vec::new();
+            for index in 0..2 {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                let mut buffer = [0; 4096];
+                loop {
+                    let count = socket.read(&mut buffer).await.unwrap();
+                    assert_ne!(count, 0);
+                    request.extend_from_slice(&buffer[..count]);
+                    if let Some(end) = request.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
+                        let headers = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+                        let length = headers
+                            .lines()
+                            .find_map(|line| line.strip_prefix("content-length: "))
+                            .map(|value| value.parse::<usize>().unwrap());
+                        let complete = if let Some(length) = length {
+                            request.len() >= end + 4 + length
+                        } else {
+                            headers.contains("transfer-encoding: chunked") && request.ends_with(b"0\r\n\r\n")
+                        };
+                        if complete {
+                            break;
+                        }
+                    }
+                }
+                let path = String::from_utf8_lossy(&request).lines().next().unwrap().to_owned();
+                received.push((path, Instant::now()));
+                let (status, body) = if index == 0 {
+                    (
+                        "400 Bad Request",
+                        r#"{"ok":false,"error_code":400,"description":"Bad Request: too Many Requests: retry after 2"}"#,
+                    )
+                } else {
+                    ("200 OK", r#"{"ok":true,"result":true}"#)
+                };
+                socket
+                    .write_all(
+                        format!(
+                            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                            body.len(),
+                        )
+                        .as_bytes(),
+                    )
+                    .await
+                    .unwrap();
+            }
+            received
+        });
+        let api = APIServer::new(
+            &format!("http://{address}/bot{{token}}/{{method_name}}"),
+            &format!("http://{address}/files/{{path}}"),
+            true,
+            BareFilesPathWrapper,
+        );
+        let messenger = TelegramMessenger::new(
+            Arc::new(Bot::with_client(
+                "123:synthetic",
+                Reqwest::default().with_api_server(Cow::Owned(api)),
+            )),
+            Arc::new(ErrorFormatter::new("synthetic")),
+            Arc::new(TimeoutsConfig::default()),
+            Arc::new(ProgressThrottle::new(fixture.connection())),
+        );
+        let temp_dir = TempDir::new().unwrap();
+        let url = Url::parse("https://example.test/media").unwrap();
+        let error = tokio::time::timeout(
+            Duration::from_secs(3),
+            messenger.upload_video(UploadVideoRequest {
+                chat_id: 1,
+                reply_to_message_id: None,
+                media_for_upload: MediaForUpload {
+                    path: temp_dir.path().join("media.mp4"),
+                    thumb_stream: None,
+                    temp_dir,
+                    stream: MediaByteStream::new(stream::iter([Ok(Bytes::from_static(b"synthetic media"))])),
+                    deadline: Instant::now() + Duration::from_secs(10),
+                },
+                name: "Synthetic media",
+                width: None,
+                height: None,
+                duration: None,
+                with_delete: false,
+                webpage_url: &url,
+                link_is_visible: false,
+            }),
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+        assert!(error.to_string().contains("retry after 2"));
+        assert!(messenger.limits.lock().await.cooldown_until > Instant::now());
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            messenger.delete_message(DeleteMessageRequest { chat_id: 1, message_id: 1 }),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let received = tokio::time::timeout(Duration::from_secs(1), server).await.unwrap().unwrap();
+        assert!(received[0].0.contains("/sendVideo"));
+        assert!(received[1].0.contains("/deleteMessage"));
+        assert!(received[1].1.duration_since(received[0].1) >= Duration::from_secs(2));
+    }
+
     #[tokio::test(start_paused = true)]
-    async fn cooldown_blocks_requests_and_drops_progress_without_refreshing_liveness() {
+    async fn cooldown_wait_refreshes_queue_liveness_without_extending_upload_deadline() {
         let limits = Mutex::new(RequestLimits::default());
-        limits.lock().await.cooldown_until = Instant::now() + Duration::from_secs(20);
+        limits.lock().await.cooldown_until = Instant::now() + Duration::from_secs(1_200);
         let outcome = downloader_client::outcome::ExecutionOutcome::default();
         let progress = outcome.subscribe_progress();
-        let last_progress = *progress.borrow();
-        assert!(limits.lock().await.cooldown_until > Instant::now());
-        assert!(tokio::time::timeout(Duration::from_secs(19), wait_for_request(&limits))
-            .await
-            .is_err());
-        tokio::time::advance(Duration::from_secs(1)).await;
-        wait_for_request(&limits).await;
-        assert_eq!(*progress.borrow(), last_progress);
+        let start = Instant::now();
+        let deadline = start + Duration::from_secs(360);
+        let result = outcome
+            .scope(until_upload_deadline(
+                async {
+                    wait_for_request(&limits).await;
+                    Ok(())
+                },
+                deadline,
+            ))
+            .await;
+        assert!(result.is_err());
+        assert_eq!(Instant::now(), deadline);
+        assert!(progress.borrow().duration_since(start) >= Duration::from_secs(300));
+        assert!(limits.lock().await.cooldown_until > deadline);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn final_error_cooldown_wait_stays_live_even_after_uncertain_execution() {
+        let limits = Mutex::new(RequestLimits::default());
+        let start = Instant::now();
+        limits.lock().await.cooldown_until = start + Duration::from_secs(1_200);
+        let outcome = downloader_client::outcome::ExecutionOutcome::default();
+        outcome.mark_uncertain();
+        let progress = outcome.subscribe_progress();
+        outcome.scope(wait_for_request(&limits)).await;
+        assert_eq!(Instant::now(), start + Duration::from_secs(1_200));
+        assert!(Instant::now().duration_since(*progress.borrow()) <= WAIT_LIVENESS_INTERVAL);
+        assert!(outcome.is_uncertain());
     }
 
     #[tokio::test(start_paused = true)]

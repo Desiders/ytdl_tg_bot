@@ -1,5 +1,6 @@
 use std::{str::FromStr as _, sync::Arc};
 
+use downloader_client::outcome::current_execution_outcome;
 use telers::errors::HandlerError;
 use tokio::sync::watch;
 use tracing::{debug, error, instrument, warn};
@@ -38,7 +39,7 @@ pub struct FulfillCtx<'a> {
 pub struct AudioFulfiller<Messenger> {
     cfg: Arc<Config>,
     error_formatter: Arc<ErrorFormatter>,
-    playlist_downloader: Arc<media::DownloadAudioPlaylist>,
+    media_downloader: Arc<media::DownloadAudio>,
     upload_media: Arc<send_media::upload::SendAudio<Messenger>>,
     send_media_by_id: Arc<send_media::id::SendAudio<Messenger>>,
     send_playlist: Arc<send_media::id::SendAudioPlaylist<Messenger>>,
@@ -50,7 +51,7 @@ impl<Messenger> AudioFulfiller<Messenger> {
     pub const fn new(
         cfg: Arc<Config>,
         error_formatter: Arc<ErrorFormatter>,
-        playlist_downloader: Arc<media::DownloadAudioPlaylist>,
+        media_downloader: Arc<media::DownloadAudio>,
         upload_media: Arc<send_media::upload::SendAudio<Messenger>>,
         send_media_by_id: Arc<send_media::id::SendAudio<Messenger>>,
         send_playlist: Arc<send_media::id::SendAudioPlaylist<Messenger>>,
@@ -59,7 +60,7 @@ impl<Messenger> AudioFulfiller<Messenger> {
         Self {
             cfg,
             error_formatter,
-            playlist_downloader,
+            media_downloader,
             upload_media,
             send_media_by_id,
             send_playlist,
@@ -93,63 +94,69 @@ where
             Playlist { cached, uncached } => {
                 let mut downloaded_playlist = Vec::with_capacity(cached.len() + uncached.len());
                 downloaded_playlist.extend(cached);
-                let (download_input, mut media_receiver) = media::DownloadMediaPlaylistInput::new(ctx.url, uncached, ctx.sections);
-
-                tokio::join!(
-                    async {
-                        while let Some((media_for_upload, media, _format, duration)) = media_receiver.recv().await {
-                            let file_id = match self
-                                .upload_media
-                                .execute(send_media::upload::SendAudioInput {
-                                    chat_id: self.cfg.chat.receiver_chat_id,
-                                    reply_to_message_id: Some(ctx.message_id),
-                                    media_for_upload,
-                                    name: media.title.as_deref().unwrap_or(media.id.as_ref()),
-                                    title: media.title.as_deref(),
-                                    performer: media.uploader.as_deref(),
-                                    duration,
-                                    with_delete: true,
-                                    webpage_url: &media.webpage_url,
-                                    link_is_visible: true,
-                                })
-                                .await
-                            {
-                                Ok(val) => val,
-                                Err(err) => {
-                                    error!(err = %self.error_formatter.format(&err), "Send error");
-                                    continue;
-                                }
-                            };
-
-                            downloaded_playlist.push(MediaInPlaylist {
-                                file_id: file_id.clone(),
-                                playlist_index: media.playlist_index,
-                                webpage_url: Some(media.webpage_url.clone()),
-                            });
-
-                            if let Err(err) = self
-                                .add_downloaded_media
-                                .execute(downloaded_media::AddMediaInput {
-                                    file_id,
-                                    id: media.id.clone(),
-                                    display_id: media.display_id.clone(),
-                                    domain: media.webpage_url.host_str().map(ToOwned::to_owned),
-                                    audio_language: ctx.audio_language.clone(),
-                                    sections: ctx.sections.cloned(),
-                                    overwrite_cache: ctx.overwrite_cache,
-                                })
-                                .await
-                            {
-                                error!(%err, "Add error");
-                            }
-                        }
-                    },
-                    async {
-                        if let Err(err) = self.playlist_downloader.execute(download_input).await {
-                            error!(%err, "Download error");
-                        }
+                for (media, formats) in uncached {
+                    let (download_input, mut err_receiver, _) =
+                        media::DownloadMediaInput::new_with_progress(ctx.url, &media, ctx.sections, formats);
+                    let result = self.media_downloader.execute(download_input).await;
+                    while let Some(err) = err_receiver.recv().await {
+                        error!(%err, "Download candidate error");
                     }
-                );
+                    let (media_for_upload, _format, duration) = match result {
+                        Ok(Some(prepared)) => prepared,
+                        Ok(None) => continue,
+                        Err(err) => {
+                            error!(%err, "Download error");
+                            break;
+                        }
+                    };
+                    let file_id = match self
+                        .upload_media
+                        .execute(send_media::upload::SendAudioInput {
+                            chat_id: self.cfg.chat.receiver_chat_id,
+                            reply_to_message_id: Some(ctx.message_id),
+                            media_for_upload,
+                            name: media.title.as_deref().unwrap_or(media.id.as_ref()),
+                            title: media.title.as_deref(),
+                            performer: media.uploader.as_deref(),
+                            duration,
+                            with_delete: true,
+                            webpage_url: &media.webpage_url,
+                            link_is_visible: true,
+                        })
+                        .await
+                    {
+                        Ok(val) => val,
+                        Err(err) => {
+                            error!(err = %self.error_formatter.format(&err), "Send error");
+                            if current_execution_outcome().is_some_and(|outcome| outcome.is_uncertain()) {
+                                break;
+                            }
+                            continue;
+                        }
+                    };
+
+                    downloaded_playlist.push(MediaInPlaylist {
+                        file_id: file_id.clone(),
+                        playlist_index: media.playlist_index,
+                        webpage_url: Some(media.webpage_url.clone()),
+                    });
+
+                    if let Err(err) = self
+                        .add_downloaded_media
+                        .execute(downloaded_media::AddMediaInput {
+                            file_id,
+                            id: media.id.clone(),
+                            display_id: media.display_id.clone(),
+                            domain: media.webpage_url.host_str().map(ToOwned::to_owned),
+                            audio_language: ctx.audio_language.clone(),
+                            sections: ctx.sections.cloned(),
+                            overwrite_cache: ctx.overwrite_cache,
+                        })
+                        .await
+                    {
+                        error!(%err, "Add error");
+                    }
+                }
 
                 downloaded_playlist.sort_by_key(|val| val.playlist_index);
                 if let Err(err) = self

@@ -32,31 +32,13 @@ pub enum DownloadMediaErrorKind {
     Download(#[from] DownloadErrorKind),
 }
 
-#[derive(thiserror::Error, Debug)]
-#[allow(clippy::large_enum_variant)]
-pub enum DownloadMediaPlaylistErrorKind {
-    #[error("Temp dir error: {0}")]
-    TempDir(io::Error),
-    #[error(transparent)]
-    Download(#[from] DownloadErrorKind),
-    #[error("Channel error: {0}")]
-    ErrChannel(#[from] mpsc::error::SendError<Vec<DownloadErrorKind>>),
-    #[error("Channel error: {0}")]
-    MediaChannel(#[from] mpsc::error::SendError<(MediaForUpload, Media, MediaFormat, Option<i64>)>),
-}
-
-pub enum DownloadProgressEvent {
-    Progress(String),
-    Finished,
-}
-
 pub struct DownloadMediaInput<'a> {
     url: &'a Url,
     media: &'a Media,
     sections: Option<&'a Sections>,
     formats: Vec<(MediaFormat, RawMediaWithFormat)>,
     err_sender: mpsc::UnboundedSender<DownloadErrorKind>,
-    progress_sender: Option<mpsc::UnboundedSender<DownloadProgressEvent>>,
+    progress_sender: Option<mpsc::UnboundedSender<String>>,
 }
 
 impl<'a> DownloadMediaInput<'a> {
@@ -65,11 +47,7 @@ impl<'a> DownloadMediaInput<'a> {
         media: &'a Media,
         sections: Option<&'a Sections>,
         formats: Vec<(MediaFormat, RawMediaWithFormat)>,
-    ) -> (
-        Self,
-        mpsc::UnboundedReceiver<DownloadErrorKind>,
-        mpsc::UnboundedReceiver<DownloadProgressEvent>,
-    ) {
+    ) -> (Self, mpsc::UnboundedReceiver<DownloadErrorKind>, mpsc::UnboundedReceiver<String>) {
         let (err_sender, err_receiver) = mpsc::unbounded_channel();
         let (progress_sender, progress_receiver) = mpsc::unbounded_channel();
         (
@@ -83,66 +61,6 @@ impl<'a> DownloadMediaInput<'a> {
             },
             err_receiver,
             progress_receiver,
-        )
-    }
-}
-
-pub struct DownloadMediaPlaylistInput<'a> {
-    url: &'a Url,
-    playlist: Vec<(Media, Vec<(MediaFormat, RawMediaWithFormat)>)>,
-    sections: Option<&'a Sections>,
-    media_sender: mpsc::UnboundedSender<(MediaForUpload, Media, MediaFormat, Option<i64>)>,
-    errs_sender: Option<mpsc::UnboundedSender<Vec<DownloadErrorKind>>>,
-    progress_sender: Option<mpsc::UnboundedSender<DownloadProgressEvent>>,
-}
-
-impl<'a> DownloadMediaPlaylistInput<'a> {
-    #[allow(clippy::type_complexity)]
-    pub fn new_with_progress(
-        url: &'a Url,
-        playlist: Vec<(Media, Vec<(MediaFormat, RawMediaWithFormat)>)>,
-        sections: Option<&'a Sections>,
-    ) -> (
-        Self,
-        mpsc::UnboundedReceiver<(MediaForUpload, Media, MediaFormat, Option<i64>)>,
-        mpsc::UnboundedReceiver<Vec<DownloadErrorKind>>,
-        mpsc::UnboundedReceiver<DownloadProgressEvent>,
-    ) {
-        let (media_sender, media_receiver) = mpsc::unbounded_channel();
-        let (errs_sender, errs_receiver) = mpsc::unbounded_channel();
-        let (progress_sender, progress_receiver) = mpsc::unbounded_channel();
-        (
-            Self {
-                url,
-                playlist,
-                sections,
-                media_sender,
-                errs_sender: Some(errs_sender),
-                progress_sender: Some(progress_sender),
-            },
-            media_receiver,
-            errs_receiver,
-            progress_receiver,
-        )
-    }
-
-    #[allow(clippy::type_complexity)]
-    pub fn new(
-        url: &'a Url,
-        playlist: Vec<(Media, Vec<(MediaFormat, RawMediaWithFormat)>)>,
-        sections: Option<&'a Sections>,
-    ) -> (Self, mpsc::UnboundedReceiver<(MediaForUpload, Media, MediaFormat, Option<i64>)>) {
-        let (media_sender, media_receiver) = mpsc::unbounded_channel();
-        (
-            Self {
-                url,
-                playlist,
-                sections,
-                media_sender,
-                errs_sender: None,
-                progress_sender: None,
-            },
-            media_receiver,
         )
     }
 }
@@ -402,294 +320,6 @@ impl Interactor<DownloadMediaInput<'_>> for &DownloadPhoto {
     }
 }
 
-pub struct DownloadVideoPlaylist {
-    node_router: Arc<NodeRouter>,
-}
-
-impl DownloadVideoPlaylist {
-    #[must_use]
-    pub const fn new(node_router: Arc<NodeRouter>) -> Self {
-        Self { node_router }
-    }
-}
-
-impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadVideoPlaylist {
-    type Output = ();
-    type Err = DownloadMediaPlaylistErrorKind;
-
-    #[instrument(skip_all)]
-    async fn execute(
-        self,
-        DownloadMediaPlaylistInput {
-            url,
-            playlist,
-            sections,
-            media_sender,
-            errs_sender,
-            progress_sender,
-        }: DownloadMediaPlaylistInput<'_>,
-    ) -> Result<Self::Output, Self::Err> {
-        for (media, formats) in playlist {
-            let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(Self::Err::TempDir)?;
-            let mut errs = vec![];
-            let mut media_is_downloaded = false;
-
-            let mut deadline = Instant::now() + Duration::from_secs(proto::MEDIA_EXECUTION_LIMIT_SECS);
-            for (format, raw) in formats {
-                let request = DownloadRequest {
-                    url: url.as_str().to_owned(),
-                    format_id: format.format_id.clone(),
-                    raw_info_json: raw,
-                    media_type: "video".to_owned(),
-                    audio_ext: String::new(),
-                    section: sections.map(|sections| Section {
-                        start: sections.start,
-                        end: sections.end,
-                    }),
-                    max_file_size: self.node_router.max_file_size(),
-                };
-
-                match prepare_download(
-                    self.node_router.as_ref(),
-                    url.domain(),
-                    request,
-                    temp_dir.path(),
-                    &format,
-                    progress_sender.as_ref(),
-                    &mut deadline,
-                )
-                .await
-                {
-                    Ok(PreparedDownload {
-                        path,
-                        thumb_stream,
-                        format,
-                        duration,
-                        stream,
-                    }) => {
-                        let media_for_upload = MediaForUpload {
-                            path,
-                            thumb_stream,
-                            temp_dir,
-                            stream,
-                            deadline,
-                        };
-                        media_sender.send((media_for_upload, media, format, duration))?;
-                        media_is_downloaded = true;
-                        break;
-                    }
-                    Err(err) => {
-                        if err.is_execution_uncertain() {
-                            return Err(err.into());
-                        }
-                        errs.push(err);
-                    }
-                }
-            }
-
-            if let Some(ref sender) = errs_sender {
-                if !media_is_downloaded {
-                    sender.send(errs)?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-}
-
-pub struct DownloadAudioPlaylist {
-    node_router: Arc<NodeRouter>,
-}
-
-impl DownloadAudioPlaylist {
-    #[must_use]
-    pub const fn new(node_router: Arc<NodeRouter>) -> Self {
-        Self { node_router }
-    }
-}
-
-impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadAudioPlaylist {
-    type Output = ();
-    type Err = DownloadMediaPlaylistErrorKind;
-
-    #[instrument(skip_all)]
-    async fn execute(
-        self,
-        DownloadMediaPlaylistInput {
-            url,
-            playlist,
-            sections,
-            media_sender,
-            errs_sender,
-            progress_sender,
-        }: DownloadMediaPlaylistInput<'_>,
-    ) -> Result<Self::Output, Self::Err> {
-        for (media, formats) in playlist {
-            let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(Self::Err::TempDir)?;
-            let mut errs = vec![];
-            let mut media_is_downloaded = false;
-
-            let mut deadline = Instant::now() + Duration::from_secs(proto::MEDIA_EXECUTION_LIMIT_SECS);
-            for (format, raw) in formats {
-                let request = DownloadRequest {
-                    url: url.as_str().to_owned(),
-                    format_id: format.format_id.clone(),
-                    raw_info_json: raw,
-                    media_type: "audio".to_owned(),
-                    audio_ext: "m4a".to_owned(),
-                    section: sections.map(|sections| Section {
-                        start: sections.start,
-                        end: sections.end,
-                    }),
-                    max_file_size: self.node_router.max_file_size(),
-                };
-
-                match prepare_download(
-                    self.node_router.as_ref(),
-                    url.domain(),
-                    request,
-                    temp_dir.path(),
-                    &format,
-                    progress_sender.as_ref(),
-                    &mut deadline,
-                )
-                .await
-                {
-                    Ok(PreparedDownload {
-                        path,
-                        thumb_stream,
-                        format,
-                        duration,
-                        stream,
-                    }) => {
-                        let media_for_upload = MediaForUpload {
-                            path,
-                            thumb_stream,
-                            temp_dir,
-                            stream,
-                            deadline,
-                        };
-                        media_sender.send((media_for_upload, media, format, duration))?;
-                        media_is_downloaded = true;
-                        break;
-                    }
-                    Err(err) => {
-                        if err.is_execution_uncertain() {
-                            return Err(err.into());
-                        }
-                        errs.push(err);
-                    }
-                }
-            }
-
-            if let Some(ref sender) = errs_sender {
-                if !media_is_downloaded {
-                    sender.send(errs)?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-}
-
-pub struct DownloadPhotoPlaylist {
-    node_router: Arc<NodeRouter>,
-}
-
-impl DownloadPhotoPlaylist {
-    #[must_use]
-    pub const fn new(node_router: Arc<NodeRouter>) -> Self {
-        Self { node_router }
-    }
-}
-
-impl Interactor<DownloadMediaPlaylistInput<'_>> for &DownloadPhotoPlaylist {
-    type Output = ();
-    type Err = DownloadMediaPlaylistErrorKind;
-
-    #[instrument(skip_all)]
-    async fn execute(
-        self,
-        DownloadMediaPlaylistInput {
-            url,
-            playlist,
-            sections,
-            media_sender,
-            errs_sender,
-            progress_sender,
-        }: DownloadMediaPlaylistInput<'_>,
-    ) -> Result<Self::Output, Self::Err> {
-        for (media, formats) in playlist {
-            let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(Self::Err::TempDir)?;
-            let mut errs = vec![];
-            let mut media_is_downloaded = false;
-
-            let mut deadline = Instant::now() + Duration::from_secs(proto::MEDIA_EXECUTION_LIMIT_SECS);
-            for (format, raw) in formats {
-                let request = DownloadRequest {
-                    url: url.as_str().to_owned(),
-                    format_id: format.format_id.clone(),
-                    raw_info_json: raw,
-                    media_type: "photo".to_owned(),
-                    audio_ext: String::new(),
-                    section: sections.map(|sections| Section {
-                        start: sections.start,
-                        end: sections.end,
-                    }),
-                    max_file_size: self.node_router.max_file_size(),
-                };
-
-                match prepare_download(
-                    self.node_router.as_ref(),
-                    url.domain(),
-                    request,
-                    temp_dir.path(),
-                    &format,
-                    progress_sender.as_ref(),
-                    &mut deadline,
-                )
-                .await
-                {
-                    Ok(PreparedDownload {
-                        path,
-                        thumb_stream,
-                        format,
-                        duration,
-                        stream,
-                    }) => {
-                        let media_for_upload = MediaForUpload {
-                            path,
-                            thumb_stream,
-                            temp_dir,
-                            stream,
-                            deadline,
-                        };
-                        media_sender.send((media_for_upload, media, format, duration))?;
-                        media_is_downloaded = true;
-                        break;
-                    }
-                    Err(err) => {
-                        if err.is_execution_uncertain() {
-                            return Err(err.into());
-                        }
-                        errs.push(err);
-                    }
-                }
-            }
-
-            if let Some(ref sender) = errs_sender {
-                if !media_is_downloaded {
-                    sender.send(errs)?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-}
-
 struct PreparedDownload {
     path: PathBuf,
     thumb_stream: Option<MediaByteStream>,
@@ -704,7 +334,7 @@ async fn prepare_download(
     request: DownloadRequest,
     output_dir: &Path,
     base_format: &MediaFormat,
-    progress_sender: Option<&mpsc::UnboundedSender<DownloadProgressEvent>>,
+    progress_sender: Option<&mpsc::UnboundedSender<String>>,
     deadline: &mut Instant,
 ) -> Result<PreparedDownload, DownloadErrorKind> {
     if Instant::now() >= *deadline {
@@ -717,19 +347,14 @@ async fn prepare_download(
     // the upload that would otherwise have already started.
     let on_progress = |progress: String| {
         if let Some(sender) = progress_sender {
-            let _ = sender.send(DownloadProgressEvent::Progress(progress));
+            let _ = sender.send(progress);
         }
     };
     let session = download_media(node_router, domain, request, on_progress, deadline).await?;
-    Ok(build_downloaded_media(session, output_dir, base_format, progress_sender))
+    Ok(build_downloaded_media(session, output_dir, base_format))
 }
 
-fn build_downloaded_media(
-    session: DownloadSession,
-    output_dir: &Path,
-    base_format: &MediaFormat,
-    progress_sender: Option<&mpsc::UnboundedSender<DownloadProgressEvent>>,
-) -> PreparedDownload {
+fn build_downloaded_media(session: DownloadSession, output_dir: &Path, base_format: &MediaFormat) -> PreparedDownload {
     let meta = session.meta().clone();
     let path = output_dir.join(format!("media.{}", meta.ext));
     let (media_sender, media_receiver) = mpsc::channel(MEDIA_STREAM_CHANNEL_CAPACITY);
@@ -744,11 +369,6 @@ fn build_downloaded_media(
         media_sender,
         meta.has_thumbnail.then_some(thumb_sender),
     ));
-    // The upload starts after progress collection finishes. Do not keep its sender
-    // alive in the byte forwarder, which can block until that upload consumes bytes.
-    if let Some(sender) = progress_sender {
-        let _ = sender.send(DownloadProgressEvent::Finished);
-    }
 
     let stream = MediaByteStream::new(ChannelByteStream::new(media_receiver));
     let thumb_stream = meta

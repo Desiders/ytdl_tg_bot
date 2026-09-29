@@ -85,12 +85,6 @@ impl FormatErrorToMessage for media::DownloadMediaErrorKind {
     }
 }
 
-impl FormatErrorToMessage for media::DownloadMediaPlaylistErrorKind {
-    fn format(&self, _token: &str) -> Cow<'static, str> {
-        Cow::Owned(self.to_string())
-    }
-}
-
 impl FormatErrorToMessage for node_router::DownloadErrorKind {
     fn format(&self, _token: &str) -> Cow<'static, str> {
         Cow::Owned(self.to_string())

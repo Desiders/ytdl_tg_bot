@@ -104,6 +104,7 @@ download_retries = "Download retries: %{count}"
 media_download_retries = "%{n} file(s) (retries: %{count}):"
 
 [download]
+upload_failed_resend = "The upload was not retried. Please resend the link manually after any indicated cooldown."
 execution_unknown = "The download stopped or its final state is unknown. It will not be retried automatically. You can send the link again."
 error_queue = "Couldn't queue your download. Please try again later."
 preparing = "Preparing download..."

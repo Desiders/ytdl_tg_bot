@@ -1,4 +1,4 @@
-use std::fmt::Write as _;
+use std::{fmt::Write as _, future::Future};
 
 use rust_i18n::t;
 use telers::utils::text::{html_expandable_blockquote, html_quote};
@@ -10,6 +10,43 @@ use crate::{
     },
     utils::prefixed,
 };
+
+/// Optional edits cannot delay the operation or outlive its final result.
+pub async fn with_optional_updates<T>(operation: impl Future<Output = T>, updates: impl Future<Output = ()>) -> T {
+    tokio::pin!(operation);
+    tokio::select! {
+        biased;
+        result = &mut operation => result,
+        () = updates => operation.await,
+    }
+}
+
+pub async fn while_sending<T>(
+    upload: impl Future<Output = T>,
+    messenger: &(impl MessengerPort + ?Sized),
+    target: EditTarget<'_>,
+    locale: &str,
+    base: Option<&str>,
+) -> T {
+    let text = prefixed(base, &t!("progress.sending", locale = locale));
+    with_optional_updates(upload, async {
+        let _ = messenger
+            .edit_text(EditTextRequest {
+                is_progress: false,
+                target,
+                text: &text,
+                format: Some(TextFormat::Html),
+                disable_link_preview: true,
+                clear_inline_keyboard: false,
+            })
+            .await;
+    })
+    .await
+}
+
+pub fn upload_error(message: &str, locale: &str) -> String {
+    format!("{}\n{}", html_quote(message), t!("download.upload_failed_resend", locale = locale))
+}
 
 pub async fn new(
     messenger: &(impl MessengerPort + ?Sized),
@@ -124,24 +161,6 @@ pub async fn is_errors_if_exist(
             format: Some(TextFormat::Html),
             disable_link_preview: true,
             clear_inline_keyboard: false,
-        })
-        .await
-}
-
-pub async fn is_sending_in_chosen_inline(
-    messenger: &(impl MessengerPort + ?Sized),
-    inline_message_id: &str,
-    locale: &str,
-) -> Result<(), MessengerError> {
-    let text = t!("progress.sending", locale = locale).into_owned();
-    messenger
-        .edit_text(EditTextRequest {
-            is_progress: false,
-            target: EditTarget::InlineMessage { inline_message_id },
-            text: &text,
-            format: None,
-            disable_link_preview: true,
-            clear_inline_keyboard: true,
         })
         .await
 }

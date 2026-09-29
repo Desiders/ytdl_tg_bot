@@ -20,7 +20,7 @@ use crate::{
             self,
             GetMediaByURLKind::{self, Empty, Playlist, SingleCached},
         },
-        messenger::{MessengerPort, TextFormat},
+        messenger::{EditTarget, MessengerPort, TextFormat},
         send_media,
     },
     utils::ErrorFormatter,
@@ -302,41 +302,25 @@ where
             let (download_input, mut err_receiver, mut progress_receiver) =
                 media::DownloadMediaInput::new_with_progress(&url, &media, sections.as_ref(), formats);
 
-            let ((), (), download_res) = tokio::join!(
-                async {
-                    while let Some(event) = progress_receiver.recv().await {
-                        match event {
-                            media::DownloadProgressEvent::Progress(progress_str) => {
-                                if progress::is_downloading_with_progress_in_chosen_inline(
-                                    interactor.messenger.as_ref(),
-                                    input.inline_message_id,
-                                    progress_str,
-                                    input.chat_cfg.locale().as_str(),
-                                )
-                                .await
-                                .is_err()
-                                {
-                                    break;
-                                }
-                            }
-                            media::DownloadProgressEvent::Finished => {
-                                let _ = progress::is_sending_in_chosen_inline(
-                                    interactor.messenger.as_ref(),
-                                    input.inline_message_id,
-                                    input.chat_cfg.locale().as_str(),
-                                )
-                                .await;
-                            }
-                        }
+            let download_res = progress::with_optional_updates(interactor.download_media.execute(download_input), async {
+                while let Some(progress_str) = progress_receiver.recv().await {
+                    if progress::is_downloading_with_progress_in_chosen_inline(
+                        interactor.messenger.as_ref(),
+                        input.inline_message_id,
+                        progress_str,
+                        input.chat_cfg.locale().as_str(),
+                    )
+                    .await
+                    .is_err()
+                    {
+                        break;
                     }
-                },
-                async {
-                    while let Some(err) = err_receiver.recv().await {
-                        errs.push(html_quote(interactor.error_formatter.format(&err).as_ref()));
-                    }
-                },
-                async { interactor.download_media.execute(download_input).await }
-            );
+                }
+            })
+            .await;
+            while let Some(err) = err_receiver.recv().await {
+                errs.push(html_quote(interactor.error_formatter.format(&err).as_ref()));
+            }
 
             let (media_for_upload, format, duration) = match download_res {
                 Ok(Some(val)) => val,
@@ -364,9 +348,8 @@ where
                 }
             };
 
-            let file_id = match interactor
-                .upload_media
-                .execute(send_media::upload::SendVideoInput {
+            let file_id = match progress::while_sending(
+                interactor.upload_media.execute(send_media::upload::SendVideoInput {
                     chat_id: interactor.cfg.chat.receiver_chat_id,
                     reply_to_message_id: None,
                     media_for_upload,
@@ -377,8 +360,15 @@ where
                     with_delete: true,
                     webpage_url: &media.webpage_url,
                     link_is_visible: true,
-                })
-                .await
+                }),
+                interactor.messenger.as_ref(),
+                EditTarget::InlineMessage {
+                    inline_message_id: input.inline_message_id,
+                },
+                input.chat_cfg.locale().as_str(),
+                None,
+            )
+            .await
             {
                 Ok(val) => val,
                 Err(err) => {
@@ -387,7 +377,7 @@ where
                     let _ = progress::is_error_in_chosen_inline(
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
-                        &html_quote(err.as_ref()),
+                        &progress::upload_error(err.as_ref(), input.chat_cfg.locale().as_str()),
                         Some(TextFormat::Html),
                     )
                     .await;
@@ -588,41 +578,25 @@ where
             let (download_input, mut err_receiver, mut progress_receiver) =
                 media::DownloadMediaInput::new_with_progress(&url, &media, sections.as_ref(), formats);
 
-            let ((), (), download_res) = tokio::join!(
-                async {
-                    while let Some(event) = progress_receiver.recv().await {
-                        match event {
-                            media::DownloadProgressEvent::Progress(progress_str) => {
-                                if progress::is_downloading_with_progress_in_chosen_inline(
-                                    interactor.messenger.as_ref(),
-                                    input.inline_message_id,
-                                    progress_str,
-                                    input.chat_cfg.locale().as_str(),
-                                )
-                                .await
-                                .is_err()
-                                {
-                                    break;
-                                }
-                            }
-                            media::DownloadProgressEvent::Finished => {
-                                let _ = progress::is_sending_in_chosen_inline(
-                                    interactor.messenger.as_ref(),
-                                    input.inline_message_id,
-                                    input.chat_cfg.locale().as_str(),
-                                )
-                                .await;
-                            }
-                        }
+            let download_res = progress::with_optional_updates(interactor.download_media.execute(download_input), async {
+                while let Some(progress_str) = progress_receiver.recv().await {
+                    if progress::is_downloading_with_progress_in_chosen_inline(
+                        interactor.messenger.as_ref(),
+                        input.inline_message_id,
+                        progress_str,
+                        input.chat_cfg.locale().as_str(),
+                    )
+                    .await
+                    .is_err()
+                    {
+                        break;
                     }
-                },
-                async {
-                    while let Some(err) = err_receiver.recv().await {
-                        download_errs.push(html_quote(interactor.error_formatter.format(&err).as_ref()));
-                    }
-                },
-                async { interactor.download_media.execute(download_input).await }
-            );
+                }
+            })
+            .await;
+            while let Some(err) = err_receiver.recv().await {
+                download_errs.push(html_quote(interactor.error_formatter.format(&err).as_ref()));
+            }
 
             let (media_for_upload, _format, duration) = match download_res {
                 Ok(Some(val)) => val,
@@ -650,9 +624,8 @@ where
                 }
             };
 
-            let file_id = match interactor
-                .upload_media
-                .execute(send_media::upload::SendAudioInput {
+            let file_id = match progress::while_sending(
+                interactor.upload_media.execute(send_media::upload::SendAudioInput {
                     chat_id: interactor.cfg.chat.receiver_chat_id,
                     reply_to_message_id: None,
                     media_for_upload,
@@ -663,8 +636,15 @@ where
                     with_delete: true,
                     webpage_url: &media.webpage_url,
                     link_is_visible: true,
-                })
-                .await
+                }),
+                interactor.messenger.as_ref(),
+                EditTarget::InlineMessage {
+                    inline_message_id: input.inline_message_id,
+                },
+                input.chat_cfg.locale().as_str(),
+                None,
+            )
+            .await
             {
                 Ok(val) => val,
                 Err(err) => {
@@ -673,7 +653,7 @@ where
                     let _ = progress::is_error_in_chosen_inline(
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
-                        &html_quote(err.as_ref()),
+                        &progress::upload_error(err.as_ref(), input.chat_cfg.locale().as_str()),
                         Some(TextFormat::Html),
                     )
                     .await;
@@ -872,7 +852,7 @@ where
                     let _ = progress::is_error_in_chosen_inline(
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
-                        &html_quote(err.as_ref()),
+                        &progress::upload_error(err.as_ref(), input.chat_cfg.locale().as_str()),
                         Some(TextFormat::Html),
                     )
                     .await;

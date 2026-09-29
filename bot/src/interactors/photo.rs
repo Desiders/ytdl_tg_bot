@@ -212,7 +212,7 @@ where
                         Err(err) => {
                             let err = self.error_formatter.format(&err);
                             error!(%err, "Send error");
-                            send_err = Some(html_quote(err.as_ref()));
+                            send_err = Some(progress::upload_error(err.as_ref(), input.chat_cfg.locale().as_str()));
                             continue;
                         }
                     };

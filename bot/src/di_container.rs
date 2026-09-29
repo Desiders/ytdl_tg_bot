@@ -244,9 +244,6 @@ where
             provide(|Inject(node_router)| async move { Ok(media::DownloadVideo::new(node_router)) }),
             provide(|Inject(node_router)| async move { Ok(media::DownloadAudio::new(node_router)) }),
             provide(|Inject(node_router)| async move { Ok(media::DownloadPhoto::new(node_router)) }),
-            provide(|Inject(node_router)| async move { Ok(media::DownloadVideoPlaylist::new(node_router)) }),
-            provide(|Inject(node_router)| async move { Ok(media::DownloadAudioPlaylist::new(node_router)) }),
-            provide(|Inject(node_router)| async move { Ok(media::DownloadPhotoPlaylist::new(node_router)) }),
 
             provide(|
                 Inject(messenger): Inject<Messenger>,
@@ -365,14 +362,14 @@ where
                 Inject(error_formatter),
                 Inject(messenger): Inject<Messenger>,
                 Inject(get_media),
-                Inject(download_playlist),
+                Inject(media_downloader),
                 Inject(upload_media): Inject<send_media::upload::SendVideo<Messenger>>,
                 Inject(send_media_by_id): Inject<send_media::id::SendVideo<Messenger>>,
                 Inject(send_playlist): Inject<send_media::id::SendVideoPlaylist<Messenger>>,
                 Inject(add_downloaded_media)| async move {
                     Ok(video::Download::new(
                         cfg, error_formatter, messenger, get_media,
-                        download_playlist,
+                        media_downloader,
                         upload_media, send_media_by_id, send_playlist, add_downloaded_media,
                     ))
                 }
@@ -381,14 +378,14 @@ where
                 Inject(cfg),
                 Inject(error_formatter),
                 Inject(get_media),
-                Inject(download_playlist),
+                Inject(media_downloader),
                 Inject(upload_media): Inject<send_media::upload::SendVideo<Messenger>>,
                 Inject(send_media_by_id): Inject<send_media::id::SendVideo<Messenger>>,
                 Inject(send_playlist): Inject<send_media::id::SendVideoPlaylist<Messenger>>,
                 Inject(add_downloaded_media)| async move {
                     Ok(video::DownloadQuiet::new(
                         cfg, error_formatter, get_media,
-                        download_playlist,
+                        media_downloader,
                         upload_media, send_media_by_id, send_playlist, add_downloaded_media,
                     ))
                 }
@@ -405,14 +402,14 @@ where
                 Inject(error_formatter),
                 Inject(messenger): Inject<Messenger>,
                 Inject(get_media),
-                Inject(download_playlist),
+                Inject(media_downloader),
                 Inject(upload_media): Inject<send_media::upload::SendAudio<Messenger>>,
                 Inject(send_media_by_id): Inject<send_media::id::SendAudio<Messenger>>,
                 Inject(send_playlist): Inject<send_media::id::SendAudioPlaylist<Messenger>>,
                 Inject(add_downloaded_media)| async move {
                     Ok(audio::Download::new(
                         cfg, error_formatter, messenger, get_media,
-                        download_playlist,
+                        media_downloader,
                         upload_media, send_media_by_id, send_playlist, add_downloaded_media,
                     ))
                 }
@@ -442,13 +439,13 @@ where
             provide(|
                 Inject(cfg),
                 Inject(error_formatter),
-                Inject(playlist_downloader),
+                Inject(media_downloader),
                 Inject(upload_media): Inject<send_media::upload::SendAudio<Messenger>>,
                 Inject(send_media_by_id): Inject<send_media::id::SendAudio<Messenger>>,
                 Inject(send_playlist): Inject<send_media::id::SendAudioPlaylist<Messenger>>,
                 Inject(add_downloaded_media)| async move {
                     Ok(auto::AudioFulfiller::new(
-                        cfg, error_formatter, playlist_downloader,
+                        cfg, error_formatter, media_downloader,
                         upload_media, send_media_by_id, send_playlist, add_downloaded_media,
                     ))
                 }
