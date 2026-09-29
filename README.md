@@ -453,6 +453,43 @@ If you no longer need the restored cluster:
 kubectl delete cluster postgres-restore -n "${NAMESPACE}"
 ```
 
+### Check a backup on a schedule
+
+The manual restore above is useful when you need to inspect or export data. For
+a repeatable check, the optional [cnpg-drill Helm chart](https://github.com/danielgaskins/cnpg-drill)
+restores a completed Barman plugin backup into a temporary Cluster, runs SQL in
+the recovered database, and removes the Cluster and PVCs. The included
+[values file](charts/bot/examples/cnpg-drill-values.yaml) checks for the
+`downloaded_media` table in `api`, so run the bot migration before using it.
+Replace that query with a data check whose expected result is known from the
+backup when you need stronger assurance.
+
+Create a separate `ObjectStore` named `postgres-recovery-readonly` in the bot
+namespace. It must point to the same backup destination and endpoint as
+`postgres-backup-store`, with credentials limited to listing and reading the
+backup and WAL objects. The [first-run guide](https://github.com/danielgaskins/cnpg-drill/blob/v0.1.1/docs/FIRST-RUN.md)
+describes this setup. The drill rejects a selected backup older than eight days
+by default. With a recent completed backup, install the chart suspended and run
+a first Job:
+
+```bash
+helm install postgres-drill oci://ghcr.io/danielgaskins/charts/cnpg-drill \
+  --version 0.1.2 -n "${NAMESPACE}" -f charts/bot/examples/cnpg-drill-values.yaml
+kubectl -n "${NAMESPACE}" create job postgres-drill-first \
+  --from=cronjob/postgres-drill-cnpg-drill
+kubectl -n "${NAMESPACE}" wait --for=condition=complete \
+  job/postgres-drill-first --timeout=1800s
+kubectl -n "${NAMESPACE}" logs job/postgres-drill-first
+```
+
+Check the JSON result for `"status": "passed"` and
+`"cleanup": "cluster-and-pvcs-deleted"`. The example stays suspended until you
+enable the weekly schedule with `helm upgrade` and `--set suspended=false`.
+Job logs hold the result; configure your own log retention and failure alerting
+if you run it unattended. With the bundled single-node RustFS, this tests
+recovery from that store; it does not test losing the store or the Kubernetes
+cluster.
+
 ### Restore from an external SQL dump
 
 This is a different flow from Barman recovery.

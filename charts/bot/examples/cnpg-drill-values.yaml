@@ -1,0 +1,10 @@
+# Install in the same namespace as the bot chart after its database migration runs.
+cluster: postgres
+recoveryObjectStore: postgres-recovery-readonly
+schedule: "0 4 * * 0"
+suspended: true
+checks:
+  - name: downloaded-media-schema
+    database: api
+    query: "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'downloaded_media')"
+    expected: "t"
