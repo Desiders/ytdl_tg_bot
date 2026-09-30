@@ -13,7 +13,6 @@ use crate::{
     },
     locale::Locale,
     services::messenger::MessengerPort,
-    value_objects::MediaType,
 };
 
 pub async fn download<Messenger: MessengerPort>(
@@ -26,15 +25,7 @@ pub async fn download<Messenger: MessengerPort>(
     };
     let url = message_url(message).or_else(|| message.reply_to_message().and_then(message_url));
     let locale = Locale::from_code(message.from().and_then(|user| user.language_code.as_deref()));
-    let media_type = requested_media_type(message.text().or(message.caption()).unwrap_or_default());
-    interactor
-        .execute(GuestInput {
-            query_id,
-            url,
-            locale,
-            media_type,
-        })
-        .await?;
+    interactor.execute(GuestInput { query_id, url, locale }).await?;
     Ok(EventReturn::Finish)
 }
 
@@ -60,15 +51,6 @@ fn message_url(message: &Message) -> Option<Url> {
             })
     };
     entity_url().or_else(|| text.and_then(get_url_from_text))
-}
-
-fn requested_media_type(text: &str) -> Option<MediaType> {
-    text.split_whitespace().find_map(|word| match word {
-        "/vd" | "/video" | "/video_download" => Some(MediaType::Video),
-        "/ad" | "/audio" | "/audio_download" => Some(MediaType::Audio),
-        "/pd" | "/photo" | "/photo_download" => Some(MediaType::Photo),
-        _ => None,
-    })
 }
 
 #[cfg(test)]
@@ -110,14 +92,5 @@ mod tests {
         }}));
         let url = message_url(&message).or_else(|| message.reply_to_message().and_then(message_url));
         assert_eq!(url.unwrap().as_str(), "https://example.test/media");
-    }
-
-    #[test]
-    fn guest_commands_work_after_the_mention() {
-        assert!(matches!(
-            requested_media_type("@synthetic_bot /ad https://example.test/media"),
-            Some(MediaType::Audio)
-        ));
-        assert!(requested_media_type("@synthetic_bot https://example.test/media").is_none());
     }
 }

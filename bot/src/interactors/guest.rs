@@ -56,8 +56,6 @@ pub struct GuestInput<'a> {
     pub query_id: &'a str,
     pub url: Option<Url>,
     pub locale: Locale,
-    /// No explicit command means automatic media classification.
-    pub media_type: Option<MediaType>,
 }
 
 impl<Messenger: MessengerPort, Queue: GuestQueuePort> Interactor<GuestInput<'_>> for &EnqueueGuestDownload<Messenger, Queue> {
@@ -99,7 +97,7 @@ impl<Messenger: MessengerPort, Queue: GuestQueuePort> Interactor<GuestInput<'_>>
         let Some(url) = url else {
             return Ok(());
         };
-        let job = guest_job(url, &inline_message_id, input.locale, input.media_type);
+        let job = guest_job(url, &inline_message_id, input.locale);
         if self.queue.enqueue_guest(&job).await.is_err() {
             // XADD can also have an ambiguous outcome: no local retry or replacement job.
             let text = t!("guest.queue_unknown", locale = input.locale.as_str());
@@ -124,9 +122,9 @@ impl<Messenger: MessengerPort, Queue: GuestQueuePort> Interactor<GuestInput<'_>>
     }
 }
 
-fn guest_job(url: Url, inline_message_id: &str, locale: Locale, media_type: Option<MediaType>) -> DownloadJob {
+fn guest_job(url: Url, inline_message_id: &str, locale: Locale) -> DownloadJob {
     let mut job = DownloadJob::new(
-        media_type.unwrap_or(MediaType::Video),
+        MediaType::Video,
         Some(url),
         Params::default(),
         // Guest chats have no database record; download inputs still require a ChatConfig.
@@ -137,7 +135,7 @@ fn guest_job(url: Url, inline_message_id: &str, locale: Locale, media_type: Opti
             result_id: "guest".into(),
         },
     );
-    job.auto = media_type.is_none();
+    job.auto = true;
     job.guest = true;
     job
 }
