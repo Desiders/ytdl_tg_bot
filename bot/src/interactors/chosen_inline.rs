@@ -1,4 +1,4 @@
-use std::{str::FromStr as _, sync::Arc};
+use std::{borrow::Cow, str::FromStr as _, sync::Arc};
 
 use rust_i18n::t;
 use telers::{
@@ -23,7 +23,7 @@ use crate::{
         messenger::{EditTarget, MessengerPort, TextFormat},
         send_media,
     },
-    utils::ErrorFormatter,
+    utils::{ErrorFormatter, FormatErrorToMessage},
     value_objects::MediaType,
 };
 
@@ -135,6 +135,7 @@ impl<Messenger> DownloadPhoto<Messenger> {
 }
 
 pub struct DownloadInput<'a> {
+    pub guest: bool,
     pub params: &'a Params,
     pub url: Option<&'a Url>,
     pub chat_cfg: &'a ChatConfig,
@@ -142,6 +143,33 @@ pub struct DownloadInput<'a> {
     pub inline_message_id: &'a str,
     pub result_id: &'a str,
     pub prefetched: Option<GetMediaByURLKind>,
+}
+
+impl DownloadInput<'_> {
+    fn format_error(&self, formatter: &ErrorFormatter, err: &(impl FormatErrorToMessage + ?Sized)) -> Cow<'static, str> {
+        if self.guest {
+            Cow::Owned(t!("guest.error", locale = self.chat_cfg.locale().as_str()).into_owned())
+        } else {
+            formatter.format(err)
+        }
+    }
+
+    fn log_error(&self, formatter: &ErrorFormatter, err: &(impl FormatErrorToMessage + ?Sized)) -> Cow<'static, str> {
+        if self.guest {
+            Cow::Borrowed(err.category())
+        } else {
+            formatter.format(err)
+        }
+    }
+
+    fn select_media(&self, media: GetMediaByURLKind) -> GetMediaByURLKind {
+        if self.guest {
+            // Photo metadata may contain a whole album even for Range::default().
+            media.into_first()
+        } else {
+            media
+        }
+    }
 }
 
 impl<Messenger> Interactor<DownloadInput<'_>> for &DownloadVideo<Messenger>
@@ -183,7 +211,7 @@ where
     }
 }
 
-async fn execute_video<Messenger>(interactor: &DownloadVideo<Messenger>, input: DownloadInput<'_>) -> Result<(), HandlerError>
+async fn execute_video<Messenger>(interactor: &DownloadVideo<Messenger>, mut input: DownloadInput<'_>) -> Result<(), HandlerError>
 where
     Messenger: MessengerPort,
 {
@@ -196,11 +224,11 @@ where
         Some(raw_value) => Some(match Sections::from_str(raw_value) {
             Ok(val) => val,
             Err(err) => {
-                error!(%err, "Parse sections error");
+                error!(err = %input.log_error(&interactor.error_formatter, &err), "Parse sections error");
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_parse_sections", locale = locale.as_str()),
-                    html_expandable_blockquote(html_quote(interactor.error_formatter.format(&err).as_ref()))
+                    html_expandable_blockquote(html_quote(input.format_error(&interactor.error_formatter, &err).as_ref()))
                 );
                 let _ = progress::is_error_in_chosen_inline(
                     interactor.messenger.as_ref(),
@@ -220,7 +248,7 @@ where
     };
     let overwrite_cache = input.params.get_bool("overwrite");
 
-    let result = match input.prefetched {
+    let result = match input.prefetched.take() {
         Some(result) => Ok(result),
         None => {
             interactor
@@ -237,7 +265,7 @@ where
                 .await
         }
     };
-    match result {
+    match result.map(|media| input.select_media(media)) {
         Ok(SingleCached(file_id)) => {
             if let Err(err) = interactor
                 .edit_media_by_id
@@ -249,8 +277,8 @@ where
                 })
                 .await
             {
-                let err = interactor.error_formatter.format(&err);
-                error!(%err, "Edit error");
+                error!(err = %input.log_error(&interactor.error_formatter, &err), "Edit error");
+                let err = input.format_error(&interactor.error_formatter, &err);
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_edit_message", locale = locale.as_str()),
@@ -279,8 +307,8 @@ where
                 })
                 .await
             {
-                let err = interactor.error_formatter.format(&err);
-                error!(%err, "Edit error");
+                error!(err = %input.log_error(&interactor.error_formatter, &err), "Edit error");
+                let err = input.format_error(&interactor.error_formatter, &err);
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_edit_message", locale = locale.as_str()),
@@ -304,6 +332,9 @@ where
 
             let download_res = progress::with_optional_updates(interactor.download_media.execute(download_input), async {
                 while let Some(progress_str) = progress_receiver.recv().await {
+                    if input.guest {
+                        continue;
+                    }
                     if progress::is_downloading_with_progress_in_chosen_inline(
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
@@ -319,7 +350,10 @@ where
             })
             .await;
             while let Some(err) = err_receiver.recv().await {
-                errs.push(html_quote(interactor.error_formatter.format(&err).as_ref()));
+                if input.guest {
+                    warn!(category = err.category(), "Guest download candidate failed");
+                }
+                errs.push(html_quote(input.format_error(&interactor.error_formatter, &err).as_ref()));
             }
 
             let (media_for_upload, format, duration) = match download_res {
@@ -336,11 +370,11 @@ where
                     return Ok(());
                 }
                 Err(err) => {
-                    error!(%err, "Download error");
+                    error!(err = %input.log_error(&interactor.error_formatter, &err), "Download error");
                     let _ = progress::is_error_in_chosen_inline(
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
-                        &html_quote(interactor.error_formatter.format(&err).as_ref()),
+                        &html_quote(input.format_error(&interactor.error_formatter, &err).as_ref()),
                         Some(TextFormat::Html),
                     )
                     .await;
@@ -359,7 +393,7 @@ where
                     duration,
                     with_delete: true,
                     webpage_url: &media.webpage_url,
-                    link_is_visible: true,
+                    link_is_visible: !input.guest,
                 }),
                 interactor.messenger.as_ref(),
                 EditTarget::InlineMessage {
@@ -372,8 +406,8 @@ where
             {
                 Ok(val) => val,
                 Err(err) => {
-                    let err = interactor.error_formatter.format(&err);
-                    error!(%err, "Send error");
+                    error!(err = %input.log_error(&interactor.error_formatter, &err), "Send error");
+                    let err = input.format_error(&interactor.error_formatter, &err);
                     let _ = progress::is_error_in_chosen_inline(
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
@@ -395,8 +429,8 @@ where
                 })
                 .await
             {
-                let err = interactor.error_formatter.format(&err);
-                error!(%err, "Edit error");
+                error!(err = %input.log_error(&interactor.error_formatter, &err), "Edit error");
+                let err = input.format_error(&interactor.error_formatter, &err);
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_edit_message", locale = locale.as_str()),
@@ -425,7 +459,7 @@ where
                 })
                 .await
             {
-                error!(%err, "Add error");
+                error!(err = %input.log_error(&interactor.error_formatter, &err), "Add error");
             }
         }
         Ok(Empty) => {
@@ -439,11 +473,11 @@ where
             .await;
         }
         Err(err) => {
-            error!(err = %interactor.error_formatter.format(&err), "Get error");
+            error!(err = %input.log_error(&interactor.error_formatter, &err), "Get error");
             let text = format!(
                 "{}\n{}",
                 t!("download.error_get_info", locale = locale.as_str()),
-                html_expandable_blockquote(html_quote(interactor.error_formatter.format(&err).as_ref()))
+                html_expandable_blockquote(html_quote(input.format_error(&interactor.error_formatter, &err).as_ref()))
             );
             let _ = progress::is_error_in_chosen_inline(
                 interactor.messenger.as_ref(),
@@ -459,7 +493,7 @@ where
     Ok(())
 }
 
-async fn execute_audio<Messenger>(interactor: &DownloadAudio<Messenger>, input: DownloadInput<'_>) -> Result<(), HandlerError>
+async fn execute_audio<Messenger>(interactor: &DownloadAudio<Messenger>, mut input: DownloadInput<'_>) -> Result<(), HandlerError>
 where
     Messenger: MessengerPort,
 {
@@ -472,11 +506,11 @@ where
         Some(raw_value) => Some(match Sections::from_str(raw_value) {
             Ok(val) => val,
             Err(err) => {
-                error!(%err, "Parse sections error");
+                error!(err = %input.log_error(&interactor.error_formatter, &err), "Parse sections error");
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_parse_sections", locale = locale.as_str()),
-                    html_expandable_blockquote(html_quote(interactor.error_formatter.format(&err).as_ref()))
+                    html_expandable_blockquote(html_quote(input.format_error(&interactor.error_formatter, &err).as_ref()))
                 );
                 let _ = progress::is_error_in_chosen_inline(
                     interactor.messenger.as_ref(),
@@ -496,7 +530,7 @@ where
     };
     let overwrite_cache = input.params.get_bool("overwrite");
 
-    let result = match input.prefetched {
+    let result = match input.prefetched.take() {
         Some(result) => Ok(result),
         None => {
             interactor
@@ -513,7 +547,7 @@ where
                 .await
         }
     };
-    match result {
+    match result.map(|media| input.select_media(media)) {
         Ok(SingleCached(file_id)) => {
             if let Err(err) = interactor
                 .edit_media_by_id
@@ -525,8 +559,8 @@ where
                 })
                 .await
             {
-                let err = interactor.error_formatter.format(&err);
-                error!(%err, "Edit error");
+                error!(err = %input.log_error(&interactor.error_formatter, &err), "Edit error");
+                let err = input.format_error(&interactor.error_formatter, &err);
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_edit_message", locale = locale.as_str()),
@@ -555,8 +589,8 @@ where
                 })
                 .await
             {
-                let err = interactor.error_formatter.format(&err);
-                error!(%err, "Edit error");
+                error!(err = %input.log_error(&interactor.error_formatter, &err), "Edit error");
+                let err = input.format_error(&interactor.error_formatter, &err);
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_edit_message", locale = locale.as_str()),
@@ -580,6 +614,9 @@ where
 
             let download_res = progress::with_optional_updates(interactor.download_media.execute(download_input), async {
                 while let Some(progress_str) = progress_receiver.recv().await {
+                    if input.guest {
+                        continue;
+                    }
                     if progress::is_downloading_with_progress_in_chosen_inline(
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
@@ -595,7 +632,10 @@ where
             })
             .await;
             while let Some(err) = err_receiver.recv().await {
-                download_errs.push(html_quote(interactor.error_formatter.format(&err).as_ref()));
+                if input.guest {
+                    warn!(category = err.category(), "Guest download candidate failed");
+                }
+                download_errs.push(html_quote(input.format_error(&interactor.error_formatter, &err).as_ref()));
             }
 
             let (media_for_upload, _format, duration) = match download_res {
@@ -612,11 +652,11 @@ where
                     return Ok(());
                 }
                 Err(err) => {
-                    error!(%err, "Download error");
+                    error!(err = %input.log_error(&interactor.error_formatter, &err), "Download error");
                     let _ = progress::is_error_in_chosen_inline(
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
-                        &html_quote(interactor.error_formatter.format(&err).as_ref()),
+                        &html_quote(input.format_error(&interactor.error_formatter, &err).as_ref()),
                         Some(TextFormat::Html),
                     )
                     .await;
@@ -635,7 +675,7 @@ where
                     duration,
                     with_delete: true,
                     webpage_url: &media.webpage_url,
-                    link_is_visible: true,
+                    link_is_visible: !input.guest,
                 }),
                 interactor.messenger.as_ref(),
                 EditTarget::InlineMessage {
@@ -648,8 +688,8 @@ where
             {
                 Ok(val) => val,
                 Err(err) => {
-                    let err = interactor.error_formatter.format(&err);
-                    error!(%err, "Send error");
+                    error!(err = %input.log_error(&interactor.error_formatter, &err), "Send error");
+                    let err = input.format_error(&interactor.error_formatter, &err);
                     let _ = progress::is_error_in_chosen_inline(
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
@@ -671,8 +711,8 @@ where
                 })
                 .await
             {
-                let err = interactor.error_formatter.format(&err);
-                error!(%err, "Edit error");
+                error!(err = %input.log_error(&interactor.error_formatter, &err), "Edit error");
+                let err = input.format_error(&interactor.error_formatter, &err);
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_edit_message", locale = locale.as_str()),
@@ -701,7 +741,7 @@ where
                 })
                 .await
             {
-                error!(%err, "Add error");
+                error!(err = %input.log_error(&interactor.error_formatter, &err), "Add error");
             }
         }
         Ok(Empty) => {
@@ -715,11 +755,11 @@ where
             .await;
         }
         Err(err) => {
-            error!(err = %interactor.error_formatter.format(&err), "Get error");
+            error!(err = %input.log_error(&interactor.error_formatter, &err), "Get error");
             let text = format!(
                 "{}\n{}",
                 t!("download.error_get_info", locale = locale.as_str()),
-                html_expandable_blockquote(html_quote(interactor.error_formatter.format(&err).as_ref()))
+                html_expandable_blockquote(html_quote(input.format_error(&interactor.error_formatter, &err).as_ref()))
             );
             let _ = progress::is_error_in_chosen_inline(
                 interactor.messenger.as_ref(),
@@ -735,7 +775,7 @@ where
     Ok(())
 }
 
-async fn execute_photo<Messenger>(interactor: &DownloadPhoto<Messenger>, input: DownloadInput<'_>) -> Result<(), HandlerError>
+async fn execute_photo<Messenger>(interactor: &DownloadPhoto<Messenger>, mut input: DownloadInput<'_>) -> Result<(), HandlerError>
 where
     Messenger: MessengerPort,
 {
@@ -746,7 +786,7 @@ where
     let playlist_range = Range::default();
     let overwrite_cache = input.params.get_bool("overwrite");
 
-    let result = match input.prefetched {
+    let result = match input.prefetched.take() {
         Some(result) => Ok(result),
         None => {
             interactor
@@ -763,7 +803,7 @@ where
                 .await
         }
     };
-    match result {
+    match result.map(|media| input.select_media(media)) {
         Ok(SingleCached(file_id)) => {
             if let Err(err) = interactor
                 .edit_media_by_id
@@ -775,8 +815,8 @@ where
                 })
                 .await
             {
-                let err = interactor.error_formatter.format(&err);
-                error!(%err, "Edit error");
+                error!(err = %input.log_error(&interactor.error_formatter, &err), "Edit error");
+                let err = input.format_error(&interactor.error_formatter, &err);
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_edit_message", locale = locale.as_str()),
@@ -803,8 +843,8 @@ where
                 })
                 .await
             {
-                let err = interactor.error_formatter.format(&err);
-                error!(%err, "Edit error");
+                error!(err = %input.log_error(&interactor.error_formatter, &err), "Edit error");
+                let err = input.format_error(&interactor.error_formatter, &err);
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_edit_message", locale = locale.as_str()),
@@ -841,14 +881,14 @@ where
                     photo_url,
                     with_delete: true,
                     webpage_url: &media.webpage_url,
-                    link_is_visible: true,
+                    link_is_visible: !input.guest,
                 })
                 .await
             {
                 Ok(val) => val,
                 Err(err) => {
-                    let err = interactor.error_formatter.format(&err);
-                    error!(%err, "Send error");
+                    error!(err = %input.log_error(&interactor.error_formatter, &err), "Send error");
+                    let err = input.format_error(&interactor.error_formatter, &err);
                     let _ = progress::is_error_in_chosen_inline(
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
@@ -870,8 +910,8 @@ where
                 })
                 .await
             {
-                let err = interactor.error_formatter.format(&err);
-                error!(%err, "Edit error");
+                error!(err = %input.log_error(&interactor.error_formatter, &err), "Edit error");
+                let err = input.format_error(&interactor.error_formatter, &err);
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_edit_message", locale = locale.as_str()),
@@ -900,7 +940,7 @@ where
                 })
                 .await
             {
-                error!(%err, "Add error");
+                error!(err = %input.log_error(&interactor.error_formatter, &err), "Add error");
             }
         }
         Ok(Empty) => {
@@ -914,8 +954,8 @@ where
             .await;
         }
         Err(err) => {
-            let formatted = interactor.error_formatter.format(&err);
-            error!(err = %formatted, "Get error");
+            let formatted = input.format_error(&interactor.error_formatter, &err);
+            error!(err = %input.log_error(&interactor.error_formatter, &err), "Get error");
             let text = format!(
                 "{}\n{}",
                 t!("download.error_get_media", locale = locale.as_str()),
@@ -991,12 +1031,16 @@ where
         debug!("Got inline auto");
 
         let url = resolve_url(input.url, input.result_id);
-        let playlist_range = input
-            .params
-            .0
-            .get("items")
-            .and_then(|raw| Range::from_str(raw).ok())
-            .unwrap_or_default();
+        let playlist_range = if input.guest {
+            Range::default()
+        } else {
+            input
+                .params
+                .0
+                .get("items")
+                .and_then(|raw| Range::from_str(raw).ok())
+                .unwrap_or_default()
+        };
         let sections = input.params.0.get("crop").and_then(|raw| Sections::from_str(raw).ok());
         let audio_language = input
             .params
@@ -1025,5 +1069,41 @@ where
             MediaType::Audio => self.audio.execute(input).await,
             MediaType::Photo => self.photo.execute(input).await,
         }
+    }
+}
+
+#[cfg(test)]
+mod guest_tests {
+    use super::*;
+    use crate::services::messenger::MessengerError;
+
+    #[test]
+    fn guest_diagnostics_keep_categories_without_exposing_error_payloads() {
+        let params = Params::default();
+        let chat = ChatConfig::new(0, false, "en".into());
+        let input = DownloadInput {
+            guest: true,
+            params: &params,
+            url: None,
+            chat_cfg: &chat,
+            link_is_visible: false,
+            inline_message_id: "synthetic-inline",
+            result_id: "guest",
+            prefetched: None,
+        };
+        let formatter = ErrorFormatter::new("synthetic-token");
+        let error = MessengerError::with_category(
+            "Synthetic private URL https://example.test/private?secret=synthetic-token",
+            "telegram_forbidden",
+        );
+        assert_eq!(input.log_error(&formatter, &error), "telegram_forbidden");
+        let reply = input.format_error(&formatter, &error);
+        assert!(!reply.contains("telegram_forbidden"));
+        assert!(!reply.contains("secret"));
+        assert!(!reply.contains("example.test"));
+        let error = crate::services::node_router::DownloadErrorKind::MediaTimeout;
+        assert_eq!(input.log_error(&formatter, &error), "media_timeout");
+        let error = crate::services::node_router::DownloadErrorKind::ExecutionUncertain;
+        assert_eq!(input.log_error(&formatter, &error), "execution_uncertain");
     }
 }

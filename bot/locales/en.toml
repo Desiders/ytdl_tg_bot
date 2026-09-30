@@ -155,3 +155,8 @@ unknown = "Unknown language: <code>%{lang}</code>. Available: <code>en</code>, <
 changed = "Language changed to <b>%{lang}</b>."
 error = "Failed to change language"
 name = "English"
+
+[guest]
+help = "Mention me with a public media link, or reply to a message containing one. I return one file per request. Add /ad for audio, /vd for video or /pd for a photo."
+error = "Could not prepare this media. Please try another link or try again later."
+queue_unknown = "Couldn't confirm the request was queued. It may still finish; please wait before sending it again."

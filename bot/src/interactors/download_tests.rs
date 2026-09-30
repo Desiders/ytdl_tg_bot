@@ -59,6 +59,8 @@ struct State {
     optional_edit_started: Notify,
     block_optional_edits: bool,
     reject_upload: bool,
+    reject_guest_reply: bool,
+    staging_links: Mutex<Vec<bool>>,
 }
 
 impl State {
@@ -152,6 +154,15 @@ impl Drop for OptionalEdit<'_> {
 }
 
 impl MessengerPort for RecordingMessenger {
+    async fn answer_guest(&self, request: crate::services::messenger::AnswerGuestRequest<'_>) -> Result<String, MessengerError> {
+        self.0.event(format!("guest reply: {}", request.text));
+        if self.0.reject_guest_reply {
+            Err(MessengerError::new("Synthetic ambiguous reply"))
+        } else {
+            Ok("synthetic-guest-message".into())
+        }
+    }
+
     async fn username(&self) -> Result<String, MessengerError> {
         Ok("test_bot".into())
     }
@@ -177,9 +188,11 @@ impl MessengerPort for RecordingMessenger {
         Ok(())
     }
     async fn upload_video(&self, request: UploadVideoRequest<'_>) -> Result<Box<str>, MessengerError> {
+        self.0.staging_links.lock().unwrap().push(request.link_is_visible);
         self.upload(request.media_for_upload).await
     }
     async fn upload_audio(&self, request: UploadAudioRequest<'_>) -> Result<Box<str>, MessengerError> {
+        self.0.staging_links.lock().unwrap().push(request.link_is_visible);
         self.upload(request.media_for_upload).await
     }
     async fn send_video_by_id(&self, _: SendMediaByIdRequest<'_>) -> Result<(), MessengerError> {
@@ -211,14 +224,18 @@ impl MessengerPort for RecordingMessenger {
     async fn upload_photo(&self, _: UploadPhotoRequest<'_>) -> Result<Box<str>, MessengerError> {
         unreachable!()
     }
-    async fn upload_photo_url(&self, _: UploadPhotoUrlRequest<'_>) -> Result<Box<str>, MessengerError> {
-        unreachable!()
+    async fn upload_photo_url(&self, request: UploadPhotoUrlRequest<'_>) -> Result<Box<str>, MessengerError> {
+        self.0.staging_links.lock().unwrap().push(request.link_is_visible);
+        self.0.event(format!("photo upload {}", request.photo_url));
+        Ok("synthetic-photo-id".into())
     }
     async fn send_photo_by_id(&self, _: SendMediaByIdRequest<'_>) -> Result<(), MessengerError> {
         unreachable!()
     }
-    async fn edit_photo_by_id(&self, _: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
-        unreachable!()
+    async fn edit_photo_by_id(&self, request: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
+        assert!(!request.link_is_visible);
+        self.0.event(format!("photo edit {}", request.remote_id));
+        Ok(())
     }
     async fn send_photo_group(&self, _: SendMediaGroupRequest) -> Result<(), MessengerError> {
         unreachable!()
@@ -374,17 +391,22 @@ impl Fixture {
     }
 
     async fn inline(&self, audio: bool) {
+        self.inline_with_guest(audio, false).await;
+    }
+
+    async fn inline_with_guest(&self, audio: bool, guest: bool) {
         let url = Url::parse("https://example.test/playlist").unwrap();
         let params = Params::default();
         let chat = ChatConfig::new(1, false, "en".into());
         let input = chosen_inline::DownloadInput {
+            guest,
             params: &params,
             url: Some(&url),
             chat_cfg: &chat,
             link_is_visible: false,
             inline_message_id: "synthetic-inline",
             result_id: "synthetic-result",
-            prefetched: Some(playlist(1)),
+            prefetched: Some(playlist(if guest { 3 } else { 1 })),
         };
         if audio {
             chosen_inline::DownloadAudio::new(
@@ -679,5 +701,260 @@ async fn quiet_playlists_also_finish_each_upload_before_next_download() {
             ]
         );
         assert!(fixture.state.edits.lock().unwrap().is_empty());
+    }
+}
+
+#[derive(Default)]
+struct GuestQueue {
+    reserved: Mutex<std::collections::HashSet<String>>,
+    jobs: Mutex<Vec<crate::entities::DownloadJob>>,
+    fail_reservation: bool,
+    fail_enqueue: bool,
+}
+
+impl crate::services::queue::GuestQueuePort for GuestQueue {
+    async fn reserve_guest_query(&self, id: &str) -> Result<bool, crate::services::queue::QueueError> {
+        if self.fail_reservation {
+            return Err(redis::RedisError::from((redis::ErrorKind::IoError, "Synthetic reservation failure")).into());
+        }
+        Ok(self.reserved.lock().unwrap().insert(id.into()))
+    }
+
+    async fn enqueue_guest(&self, job: &crate::entities::DownloadJob) -> Result<(), crate::services::queue::QueueError> {
+        // Model an ambiguous write: Redis stored the job but its response was lost.
+        self.jobs.lock().unwrap().push(job.clone());
+        if self.fail_enqueue {
+            return Err(redis::RedisError::from((redis::ErrorKind::IoError, "Synthetic enqueue failure")).into());
+        }
+        Ok(())
+    }
+}
+
+fn guest_interactor(state: Arc<State>, queue: Arc<GuestQueue>) -> super::guest::EnqueueGuestDownload<RecordingMessenger, GuestQueue> {
+    let cfg: Config = serde_json::from_value(serde_json::json!({
+        "bot": {"token": "test", "src_url": "https://example.test"},
+        "chat": {"receiver_chat_id": 1}, "logging": {"dirs": "info"},
+        "database": {"host": "unused", "port": 5432, "user": "", "password": "", "database": ""},
+        "redis": {"host": "unused", "port": 6379},
+        "yt_dlp": {"max_file_size": 1_000_000}, "yt_toolkit": {"url": "https://example.test"},
+        "download": {"node_token": "test", "tls": {"ca_cert_path": "", "cert_path": "", "key_path": ""}},
+        "telegram_bot_api": {"url": "https://example.test"},
+        "tracking_params": {"params": ["tracking"]},
+        "blacklisted": {"domains": ["blocked.example.test"]}
+    }))
+    .unwrap();
+    let cleaner = Arc::new(UrlCleaner::from_embedded_rules(&cfg.tracking_params).unwrap());
+    super::guest::EnqueueGuestDownload::new(Arc::new(RecordingMessenger(state)), queue, cleaner, Arc::new(cfg))
+}
+
+fn guest_input(url: &str) -> super::guest::GuestInput<'static> {
+    super::guest::GuestInput {
+        query_id: "synthetic-guest-query",
+        url: Some(Url::parse(url).unwrap()),
+        locale: crate::locale::Locale::Uk,
+        media_type: None,
+    }
+}
+
+#[tokio::test]
+async fn guest_enqueues_once_without_chat_or_query_context() {
+    let state = Arc::new(State::default());
+    let queue = Arc::new(GuestQueue::default());
+    let interactor = guest_interactor(state.clone(), queue.clone());
+    for _ in 0..2 {
+        (&interactor)
+            .execute(guest_input("https://example.test/media?tracking=synthetic"))
+            .await
+            .unwrap();
+    }
+    let jobs = queue.jobs.lock().unwrap();
+    assert_eq!(jobs.len(), 1);
+    let job = &jobs[0];
+    assert!(job.auto && job.guest);
+    assert_eq!(job.chat_cfg.tg_id, 0);
+    assert_eq!(job.chat_cfg.language, "uk");
+    assert!(!job.link_is_visible && !job.chat_cfg.cmd_random_enabled);
+    assert_eq!(job.url.as_ref().unwrap().as_str(), "https://example.test/media");
+    assert!(job.params.0.is_empty());
+    let payload = serde_json::to_string(job).unwrap();
+    assert!(!payload.contains("synthetic-guest-query"));
+    let decoded: crate::entities::DownloadJob = serde_json::from_str(&payload).unwrap();
+    assert!(decoded.guest);
+    assert!(
+        matches!(&decoded.target, crate::entities::JobTarget::Inline { inline_message_id, .. } if inline_message_id == "synthetic-guest-message")
+    );
+    assert_eq!(state.events.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn guest_explicit_media_type_disables_auto() {
+    let state = Arc::new(State::default());
+    let queue = Arc::new(GuestQueue::default());
+    let interactor = guest_interactor(state, queue.clone());
+    let mut input = guest_input("https://example.test/media");
+    input.media_type = Some(crate::value_objects::MediaType::Audio);
+    (&interactor).execute(input).await.unwrap();
+    let jobs = queue.jobs.lock().unwrap();
+    assert!(!jobs[0].auto);
+    assert!(matches!(jobs[0].media_type, crate::value_objects::MediaType::Audio));
+}
+
+#[tokio::test]
+async fn guest_invalid_or_blocked_link_replies_without_download() {
+    for url in [
+        "file:///tmp/synthetic",
+        "https://user:secret@example.test/media",
+        "https://blocked.example.test/media",
+        "http://127.0.0.1/media",
+        "http://192.168.1.10/media",
+        "http://10/media",
+        "http://2130706433/media",
+        "http://0x7f.1/media",
+        "http://[::1]/media",
+    ] {
+        let state = Arc::new(State::default());
+        let queue = Arc::new(GuestQueue::default());
+        let interactor = guest_interactor(state.clone(), queue.clone());
+        (&interactor).execute(guest_input(url)).await.unwrap();
+        assert!(queue.jobs.lock().unwrap().is_empty());
+        let events = state.events.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        assert!(events[0].contains("Згадайте"));
+        assert!(!events[0].contains(url));
+    }
+}
+
+#[tokio::test]
+async fn guest_ambiguous_reply_is_not_replayed_or_downloaded() {
+    let state = Arc::new(State {
+        reject_guest_reply: true,
+        ..Default::default()
+    });
+    let queue = Arc::new(GuestQueue::default());
+    let interactor = guest_interactor(state.clone(), queue.clone());
+    for _ in 0..2 {
+        (&interactor).execute(guest_input("https://example.test/media")).await.unwrap();
+    }
+    assert!(queue.jobs.lock().unwrap().is_empty());
+    assert_eq!(state.events.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn guest_reservation_failure_sends_no_untracked_reply() {
+    let state = Arc::new(State::default());
+    let queue = Arc::new(GuestQueue {
+        fail_reservation: true,
+        ..Default::default()
+    });
+    let interactor = guest_interactor(state.clone(), queue.clone());
+    (&interactor).execute(guest_input("https://example.test/media")).await.unwrap();
+    assert!(state.events.lock().unwrap().is_empty());
+    assert!(queue.jobs.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn guest_ambiguous_enqueue_edits_placeholder_without_retry() {
+    let state = Arc::new(State::default());
+    let queue = Arc::new(GuestQueue {
+        fail_enqueue: true,
+        ..Default::default()
+    });
+    let interactor = guest_interactor(state.clone(), queue.clone());
+    for _ in 0..2 {
+        (&interactor).execute(guest_input("https://example.test/media")).await.unwrap();
+    }
+    assert_eq!(queue.jobs.lock().unwrap().len(), 1);
+    assert_eq!(state.events.lock().unwrap().len(), 1);
+    let edits = state.edits.lock().unwrap();
+    assert_eq!(edits.len(), 1);
+    assert!(edits[0].contains("підтвердити"));
+    assert!(!edits[0].contains("Synthetic"));
+}
+
+#[tokio::test]
+async fn guest_streams_media_and_hides_staging_link() {
+    for audio in [false, true] {
+        let fixture = Fixture::new(State::default()).await;
+        fixture.inline_with_guest(audio, true).await;
+        let events = fixture.state.events.lock().unwrap();
+        assert_eq!(*fixture.state.staging_links.lock().unwrap(), [false]);
+        assert!(events.iter().any(|event| event == "final inline edit"));
+        assert_eq!(events.iter().filter(|event| event.starts_with("download ")).count(), 1);
+    }
+}
+
+#[tokio::test]
+async fn guest_errors_do_not_publish_downloader_diagnostics() {
+    for audio in [false, true] {
+        let mut error = Status::internal("Synthetic private source URL https://example.test/private?secret=synthetic");
+        error.metadata_mut().insert("x-download-terminal", "true".parse().unwrap());
+        let fixture = Fixture::new(State {
+            replies: Mutex::new(VecDeque::from([Some(error)])),
+            ..Default::default()
+        })
+        .await;
+        fixture.inline_with_guest(audio, true).await;
+        let edits = fixture.state.edits.lock().unwrap();
+        assert!(!edits.is_empty());
+        assert!(edits.iter().all(|text| !text.contains("Synthetic") && !text.contains("secret=")));
+    }
+}
+
+#[tokio::test]
+async fn guest_photo_selects_first_item_across_cache_hits_and_misses() {
+    // Metadata can contain a full album. Cache state must never change which photo wins.
+    for cached_index in [None, Some(0), Some(1)] {
+        let fixture = Fixture::new(State::default()).await;
+        let GetMediaByURLKind::Playlist { mut uncached, .. } = playlist(3) else {
+            unreachable!()
+        };
+        for (media, _) in &mut uncached {
+            media.direct_url = Some(media.webpage_url.clone());
+        }
+        let cached = cached_index.map_or_else(Vec::new, |index| {
+            let (media, _) = uncached.remove(index);
+            vec![crate::entities::MediaInPlaylist {
+                file_id: format!("cached-photo-{index}"),
+                playlist_index: media.playlist_index,
+                webpage_url: Some(media.webpage_url),
+            }]
+        });
+        uncached.reverse(); // Selection must use playlist indices, not vector order.
+        let url = Url::parse("https://example.test/album").unwrap();
+        let params = Params::default();
+        let chat = ChatConfig::new(0, false, "en".into());
+        chosen_inline::DownloadPhoto::new(
+            fixture.cfg.clone(),
+            fixture.formatter.clone(),
+            fixture.messenger.clone(),
+            Arc::new(get_media::GetPhotoByURL::new(
+                fixture.router.clone(),
+                fixture.cleaner.clone(),
+                fixture.tx.clone(),
+            )),
+            Arc::new(send_media::upload::SendPhotoUrl::new(fixture.messenger.clone())),
+            Arc::new(send_media::id::EditPhoto::new(fixture.messenger.clone())),
+            Arc::new(downloaded_media::AddPhoto::new(fixture.tx.clone())),
+        )
+        .execute(chosen_inline::DownloadInput {
+            guest: true,
+            params: &params,
+            url: Some(&url),
+            chat_cfg: &chat,
+            link_is_visible: false,
+            inline_message_id: "synthetic-inline",
+            result_id: "guest",
+            prefetched: Some(GetMediaByURLKind::Playlist { cached, uncached }),
+        })
+        .await
+        .unwrap();
+        let events = fixture.state.events.lock().unwrap();
+        if cached_index == Some(0) {
+            assert_eq!(*events, ["photo edit cached-photo-0"]);
+            assert!(fixture.state.staging_links.lock().unwrap().is_empty());
+        } else {
+            assert_eq!(*events, ["photo upload https://example.test/0", "photo edit synthetic-photo-id"]);
+            assert_eq!(*fixture.state.staging_links.lock().unwrap(), [false]);
+        }
     }
 }

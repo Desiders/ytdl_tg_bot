@@ -2,7 +2,7 @@
 //!
 //! Known outcomes finish their entry. Abandoned deliveries are discarded, never re-executed.
 
-use std::sync::Arc;
+use std::{future::Future, sync::Arc};
 
 use redis::{
     aio::ConnectionManager,
@@ -58,6 +58,32 @@ pub struct QueueStats {
 pub struct RedisJobQueue {
     conn: ConnectionManager,
     cfg: Arc<QueueConfig>,
+}
+
+/// Guest queries allow a single reply. Reserve before contacting Telegram so a repeated update
+/// cannot start a second reply or download, including after an ambiguous request failure.
+pub trait GuestQueuePort: Send + Sync {
+    fn reserve_guest_query(&self, query_id: &str) -> impl Future<Output = Result<bool, QueueError>> + Send;
+    fn enqueue_guest(&self, job: &DownloadJob) -> impl Future<Output = Result<(), QueueError>> + Send;
+}
+
+impl GuestQueuePort for RedisJobQueue {
+    async fn reserve_guest_query(&self, query_id: &str) -> Result<bool, QueueError> {
+        let mut conn = self.conn.clone();
+        let reserved: Option<String> = redis::cmd("SET")
+            .arg(format!("{}:guest:{query_id}", self.cfg.stream_key))
+            .arg("1")
+            .arg("NX")
+            .arg("EX")
+            .arg(86_400)
+            .query_async(&mut conn)
+            .await?;
+        Ok(reserved.is_some())
+    }
+
+    async fn enqueue_guest(&self, job: &DownloadJob) -> Result<(), QueueError> {
+        self.enqueue(job).await
+    }
 }
 
 impl RedisJobQueue {
@@ -306,6 +332,22 @@ mod tests {
         entities::{ChatConfig, JobTarget, Params},
         value_objects::MediaType,
     };
+
+    #[tokio::test]
+    async fn guest_reservation_is_atomic_and_has_ttl() {
+        let fixture = Fixture::new().await;
+        let (first, second) = tokio::join!(
+            fixture.queue.reserve_guest_query("synthetic-query"),
+            fixture.queue.reserve_guest_query("synthetic-query"),
+        );
+        assert_ne!(first.unwrap(), second.unwrap());
+        let mut conn = fixture.queue.conn.clone();
+        let key = format!("{}:guest:synthetic-query", fixture.queue.cfg.stream_key);
+        let ttl: i64 = redis::cmd("TTL").arg(&key).query_async(&mut conn).await.unwrap();
+        assert!((1..=86_400).contains(&ttl));
+        let _: i64 = redis::cmd("DEL").arg(key).query_async(&mut conn).await.unwrap();
+        assert!(fixture.queue.reserve_guest_query("synthetic-query").await.unwrap());
+    }
 
     #[tokio::test]
     async fn abandoned_delivery_is_discarded_without_reexecution() {
