@@ -52,6 +52,11 @@ fn redact_token(message: impl Into<String>, token: &str) -> String {
 
 pub trait FormatErrorToMessage {
     fn format(&self, token: &str) -> Cow<'static, str>;
+
+    /// Diagnostics safe for logs: never include runtime error payloads.
+    fn category(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
 }
 
 #[derive(Clone)]
@@ -80,18 +85,51 @@ impl FormatErrorToMessage for SessionErrorKind {
 }
 
 impl FormatErrorToMessage for media::DownloadMediaErrorKind {
+    fn category(&self) -> &'static str {
+        match self {
+            Self::TempDir(_) => "temporary_storage",
+            Self::Channel(_) => "download_channel",
+            Self::Download(err) => err.category(),
+        }
+    }
+
     fn format(&self, _token: &str) -> Cow<'static, str> {
         Cow::Owned(self.to_string())
     }
 }
 
 impl FormatErrorToMessage for node_router::DownloadErrorKind {
+    fn category(&self) -> &'static str {
+        match self {
+            Self::Io(_) => "download_io",
+            Self::Rpc(status) => status.code().description(),
+            Self::Metadata(_) => "node_auth_metadata",
+            Self::InvalidStream => "invalid_download_stream",
+            Self::MediaTimeout => "media_timeout",
+            Self::ExecutionUncertain => "execution_uncertain",
+            Self::NodeUnavailable => "node_unavailable",
+            Self::NodeContextUnavailable => "source_rejected",
+        }
+    }
+
     fn format(&self, _token: &str) -> Cow<'static, str> {
         Cow::Owned(self.to_string())
     }
 }
 
 impl FormatErrorToMessage for get_media::GetInfoErrorKind {
+    fn category(&self) -> &'static str {
+        use node_router::GetMediaInfoErrorKind;
+        match self {
+            Self::Client(GetMediaInfoErrorKind::Rpc(status)) => status.code().description(),
+            Self::Client(GetMediaInfoErrorKind::Metadata(_)) => "node_auth_metadata",
+            Self::Client(GetMediaInfoErrorKind::NodeUnavailable) => "node_unavailable",
+            Self::Client(GetMediaInfoErrorKind::NodeContextUnavailable) => "source_rejected",
+            Self::Url(_) => "invalid_media_url",
+            Self::InvalidResponse(_) => "invalid_node_response",
+        }
+    }
+
     fn format(&self, _token: &str) -> Cow<'static, str> {
         Cow::Owned(self.to_string())
     }
@@ -122,6 +160,15 @@ impl FormatErrorToMessage for ParseSectionError {
 }
 
 impl FormatErrorToMessage for get_media::GetMediaByURLErrorKind {
+    fn category(&self) -> &'static str {
+        match self {
+            Self::GetInfo(err) => err.category(),
+            Self::Database(_) => "media_cache_database",
+            Self::NodeUnavailable => "node_unavailable",
+            Self::Resolve(_) => "source_resolution",
+        }
+    }
+
     fn format(&self, token: &str) -> Cow<'static, str> {
         match self {
             get_media::GetMediaByURLErrorKind::GetInfo(err) => err.format(token),
@@ -133,6 +180,10 @@ impl FormatErrorToMessage for get_media::GetMediaByURLErrorKind {
 }
 
 impl FormatErrorToMessage for MessengerError {
+    fn category(&self) -> &'static str {
+        self.category()
+    }
+
     fn format(&self, token: &str) -> Cow<'static, str> {
         Cow::Owned(redact_token(self.to_string(), token))
     }

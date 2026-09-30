@@ -66,6 +66,31 @@ pub enum GetMediaByURLKind {
     Empty,
 }
 
+impl GetMediaByURLKind {
+    /// Select by playlist order across both cache hits and misses.
+    #[must_use]
+    pub fn into_first(self) -> Self {
+        let Self::Playlist { cached, uncached } = self else { return self };
+        let cached = cached.into_iter().min_by_key(|media| media.playlist_index);
+        let uncached = uncached.into_iter().min_by_key(|(media, _)| media.playlist_index);
+        match (cached, uncached) {
+            (Some(cached), Some((media, formats))) if media.playlist_index < cached.playlist_index => Self::Playlist {
+                cached: vec![],
+                uncached: vec![(media, formats)],
+            },
+            (Some(cached), _) => Self::Playlist {
+                cached: vec![cached],
+                uncached: vec![],
+            },
+            (None, Some(uncached)) => Self::Playlist {
+                cached: vec![],
+                uncached: vec![uncached],
+            },
+            (None, None) => Self::Empty,
+        }
+    }
+}
+
 pub struct GetVideoByURL {
     node_router: Arc<NodeRouter>,
     url_cleaner: Arc<UrlCleaner>,

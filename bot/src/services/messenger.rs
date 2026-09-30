@@ -15,11 +15,24 @@ pub enum TextFormat {
 #[error("Messenger error: {message}")]
 pub struct MessengerError {
     message: Box<str>,
+    category: &'static str,
 }
 
 impl MessengerError {
     pub fn new(message: impl Into<Box<str>>) -> Self {
-        Self { message: message.into() }
+        Self::with_category(message, "messenger")
+    }
+
+    pub fn with_category(message: impl Into<Box<str>>, category: &'static str) -> Self {
+        Self {
+            message: message.into(),
+            category,
+        }
+    }
+
+    #[must_use]
+    pub const fn category(&self) -> &'static str {
+        self.category
     }
 }
 
@@ -102,6 +115,11 @@ pub struct DeleteMessageRequest {
 }
 
 pub struct AnswerInlineErrorRequest<'a> {
+    pub query_id: &'a str,
+    pub text: &'a str,
+}
+
+pub struct AnswerGuestRequest<'a> {
     pub query_id: &'a str,
     pub text: &'a str,
 }
@@ -199,6 +217,9 @@ pub struct SendMediaGroupRequest {
 }
 
 pub trait MessengerPort: Send + Sync {
+    /// Consumes a guest query once and returns the inline message to edit afterwards.
+    fn answer_guest(&self, request: AnswerGuestRequest<'_>) -> impl Future<Output = Result<String, MessengerError>> + Send;
+
     fn username(&self) -> impl Future<Output = Result<String, MessengerError>> + Send;
 
     fn send_text(&self, request: SendTextRequest<'_>) -> impl Future<Output = Result<SentMessage, MessengerError>> + Send;

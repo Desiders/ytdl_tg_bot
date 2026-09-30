@@ -451,6 +451,7 @@ async fn run_in_scope(child: &Container, job: &DownloadJob, current_message: &wa
                     let interactor = child.get::<$download>().await.unwrap();
                     interactor
                         .execute(chosen_inline::DownloadInput {
+                            guest: job.guest,
                             params: &job.params,
                             url,
                             chat_cfg: &job.chat_cfg,

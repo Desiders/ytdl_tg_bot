@@ -219,6 +219,15 @@ impl Drop for OptionalEdit<'_> {
 }
 
 impl MessengerPort for RecordingMessenger {
+    async fn answer_guest(&self, request: crate::services::messenger::AnswerGuestRequest<'_>) -> Result<String, MessengerError> {
+        self.0.event(format!("guest reply: {}", request.text));
+        if self.0.reject_guest_reply {
+            Err(MessengerError::new("Synthetic ambiguous reply"))
+        } else {
+            Ok("synthetic-guest-message".into())
+        }
+    }
+
     async fn username(&self) -> Result<String, MessengerError> {
         Ok("test_bot".into())
     }
@@ -272,9 +281,11 @@ impl MessengerPort for RecordingMessenger {
         Ok(())
     }
     async fn upload_video(&self, request: UploadVideoRequest<'_>) -> Result<Box<str>, MessengerError> {
+        self.0.staging_links.lock().unwrap().push(request.link_is_visible);
         self.upload(request.media_for_upload).await
     }
     async fn upload_audio(&self, request: UploadAudioRequest<'_>) -> Result<Box<str>, MessengerError> {
+        self.0.staging_links.lock().unwrap().push(request.link_is_visible);
         self.upload(request.media_for_upload).await
     }
     async fn send_video_by_id(&self, _: SendMediaByIdRequest<'_>) -> Result<SentMessage, MessengerError> {
@@ -514,13 +525,14 @@ impl Fixture {
         let params = Params::default();
         let chat = ChatConfig::new(1, false, "en".into());
         let input = chosen_inline::DownloadInput {
+            guest,
             params: &params,
             url: Some(&self.url),
             chat_cfg: &chat,
             link_is_visible: false,
             inline_message_id: "synthetic-inline",
             result_id: "synthetic-result",
-            prefetched: Some(playlist(1)),
+            prefetched: Some(playlist(if guest { 3 } else { 1 })),
         };
         if audio {
             chosen_inline::DownloadAudio::new(

@@ -11,6 +11,7 @@ pub mod auto;
 pub mod chosen_inline;
 pub mod config;
 pub mod enqueue_download;
+pub mod guest;
 pub mod inline_query;
 pub mod lang;
 pub mod menu;
