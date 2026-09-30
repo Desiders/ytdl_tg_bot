@@ -6,6 +6,7 @@ mod stats;
 pub mod audio;
 pub mod chosen_inline;
 pub mod config;
+pub mod guest;
 pub mod inline_query;
 pub mod photo;
 pub mod video;

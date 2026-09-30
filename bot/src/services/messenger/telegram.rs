@@ -38,9 +38,9 @@ const WAIT_LIVENESS_INTERVAL: Duration = Duration::from_secs(30);
 const REQUEST_INTERVAL: Duration = Duration::from_millis(100);
 
 use super::{
-    AnswerInlineErrorRequest, AnswerInlineQueryRequest, DeleteMessageRequest, EditMediaByIdRequest, EditTarget, EditTextRequest,
-    InlineQueryArticle, MessengerError, SendMediaByIdRequest, SendMediaGroupRequest, SendTextRequest, SentMessage, TextFormat,
-    UploadAudioRequest, UploadPhotoRequest, UploadPhotoUrlRequest, UploadVideoRequest,
+    AnswerGuestRequest, AnswerInlineErrorRequest, AnswerInlineQueryRequest, DeleteMessageRequest, EditMediaByIdRequest, EditTarget,
+    EditTextRequest, InlineQueryArticle, MessengerError, SendMediaByIdRequest, SendMediaGroupRequest, SendTextRequest, SentMessage,
+    TextFormat, UploadAudioRequest, UploadPhotoRequest, UploadPhotoUrlRequest, UploadVideoRequest,
 };
 
 #[derive(Clone)]
@@ -115,6 +115,20 @@ impl From<SessionErrorKind> for MessengerError {
 }
 
 impl MessengerPort for TelegramMessenger {
+    async fn answer_guest(&self, request: AnswerGuestRequest<'_>) -> Result<String, MessengerError> {
+        let result = InlineQueryResultArticle::new(
+            "guest",
+            request.text,
+            InputTextMessageContent::new(request.text).link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
+        );
+        // A transport error may mean the single reply was sent. Never replay that request.
+        // Explicit flood waits are handled by the shared cooldown as for other text requests.
+        with_retries(self, methods::AnswerGuestQuery::new(request.query_id, result), 0, Some(30.0))
+            .await
+            .map(|sent| sent.inline_message_id.into())
+            .map_err(|_| MessengerError::new("Could not answer guest query"))
+    }
+
     async fn username(&self) -> Result<String, MessengerError> {
         let me = with_retries(self, GetMe {}, 0, None).await?;
         Ok(me.username.expect("Bots always have a username").into())
@@ -958,6 +972,51 @@ mod rate_limit_tests {
         net::{TcpListener, TcpStream},
     };
     use url::Url;
+
+    #[tokio::test]
+    async fn guest_reply_errors_do_not_expose_payloads_or_retry() {
+        let fixture = Fixture::new().await;
+        for (code, description) in [
+            (400, "Bad Request: query is too old"),
+            (404, "Not Found"),
+            (403, "Forbidden"),
+            (500, "Internal Server Error"),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let request = read_http_request(&mut socket).await;
+                assert!(String::from_utf8_lossy(&request).contains("/answerGuestQuery "));
+                let body = serde_json::json!({
+                    "ok": false, "error_code": code,
+                    "description": format!("{description}: https://example.test/private?secret=synthetic"),
+                })
+                .to_string();
+                let response = format!(
+                    "HTTP/1.1 {code} Error\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len(),
+                );
+                socket.write_all(response.as_bytes()).await.unwrap();
+                assert!(tokio::time::timeout(Duration::from_millis(200), listener.accept()).await.is_err());
+            });
+            let messenger = test_messenger(address, &fixture);
+            let error = tokio::time::timeout(
+                Duration::from_secs(2),
+                messenger.answer_guest(AnswerGuestRequest {
+                    query_id: "synthetic-query",
+                    text: "Preparing",
+                }),
+            )
+            .await
+            .unwrap()
+            .unwrap_err();
+            let diagnostic = format!("{error:?}");
+            assert!(!diagnostic.contains("secret="));
+            assert!(!diagnostic.contains("example.test"));
+            server.await.unwrap();
+        }
+    }
 
     #[test]
     fn partial_media_group_failure_is_reported() {

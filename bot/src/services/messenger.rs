@@ -66,6 +66,11 @@ pub struct AnswerInlineErrorRequest<'a> {
     pub text: &'a str,
 }
 
+pub struct AnswerGuestRequest<'a> {
+    pub query_id: &'a str,
+    pub text: &'a str,
+}
+
 pub struct InlineQueryArticle {
     pub id: String,
     pub title: String,
@@ -158,6 +163,9 @@ pub struct SendMediaGroupRequest {
 }
 
 pub trait MessengerPort: Send + Sync {
+    /// Consumes a guest query once and returns the inline message to edit afterwards.
+    fn answer_guest(&self, request: AnswerGuestRequest<'_>) -> impl Future<Output = Result<String, MessengerError>> + Send;
+
     fn username(&self) -> impl Future<Output = Result<String, MessengerError>> + Send;
 
     fn send_text(&self, request: SendTextRequest<'_>) -> impl Future<Output = Result<SentMessage, MessengerError>> + Send;

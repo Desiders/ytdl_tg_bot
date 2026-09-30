@@ -91,6 +91,7 @@ async fn main() {
     let cfg = container.get::<config::Config>().await.unwrap();
 
     let download_router = Router::new("download")
+        .on_guest_message(|observer| observer.register(Handler::new(handlers::guest::download::<Messenger>)))
         .on_message(|observer| {
             observer
                 .register_inner_middleware(CleanUrlMiddleware)
