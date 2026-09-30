@@ -752,7 +752,6 @@ fn guest_input(url: &str) -> super::guest::GuestInput<'static> {
         query_id: "synthetic-guest-query",
         url: Some(Url::parse(url).unwrap()),
         locale: crate::locale::Locale::Uk,
-        media_type: None,
     }
 }
 
@@ -784,19 +783,6 @@ async fn guest_enqueues_once_without_chat_or_query_context() {
         matches!(&decoded.target, crate::entities::JobTarget::Inline { inline_message_id, .. } if inline_message_id == "synthetic-guest-message")
     );
     assert_eq!(state.events.lock().unwrap().len(), 1);
-}
-
-#[tokio::test]
-async fn guest_explicit_media_type_disables_auto() {
-    let state = Arc::new(State::default());
-    let queue = Arc::new(GuestQueue::default());
-    let interactor = guest_interactor(state, queue.clone());
-    let mut input = guest_input("https://example.test/media");
-    input.media_type = Some(crate::value_objects::MediaType::Audio);
-    (&interactor).execute(input).await.unwrap();
-    let jobs = queue.jobs.lock().unwrap();
-    assert!(!jobs[0].auto);
-    assert!(matches!(jobs[0].media_type, crate::value_objects::MediaType::Audio));
 }
 
 #[tokio::test]
