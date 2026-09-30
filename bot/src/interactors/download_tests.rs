@@ -704,33 +704,10 @@ async fn quiet_playlists_also_finish_each_upload_before_next_download() {
     }
 }
 
-#[derive(Default)]
-struct GuestQueue {
-    reserved: Mutex<std::collections::HashSet<String>>,
-    jobs: Mutex<Vec<crate::entities::DownloadJob>>,
-    fail_reservation: bool,
-    fail_enqueue: bool,
-}
-
-impl crate::services::queue::GuestQueuePort for GuestQueue {
-    async fn reserve_guest_query(&self, id: &str) -> Result<bool, crate::services::queue::QueueError> {
-        if self.fail_reservation {
-            return Err(redis::RedisError::from((redis::ErrorKind::IoError, "Synthetic reservation failure")).into());
-        }
-        Ok(self.reserved.lock().unwrap().insert(id.into()))
-    }
-
-    async fn enqueue_guest(&self, job: &crate::entities::DownloadJob) -> Result<(), crate::services::queue::QueueError> {
-        // Model an ambiguous write: Redis stored the job but its response was lost.
-        self.jobs.lock().unwrap().push(job.clone());
-        if self.fail_enqueue {
-            return Err(redis::RedisError::from((redis::ErrorKind::IoError, "Synthetic enqueue failure")).into());
-        }
-        Ok(())
-    }
-}
-
-fn guest_interactor(state: Arc<State>, queue: Arc<GuestQueue>) -> super::guest::EnqueueGuestDownload<RecordingMessenger, GuestQueue> {
+fn guest_interactor(
+    state: Arc<State>,
+    queue: Arc<crate::services::queue::RedisJobQueue>,
+) -> super::guest::EnqueueGuestDownload<RecordingMessenger> {
     let cfg: Config = serde_json::from_value(serde_json::json!({
         "bot": {"token": "test", "src_url": "https://example.test"},
         "chat": {"receiver_chat_id": 1}, "logging": {"dirs": "info"},
@@ -756,26 +733,24 @@ fn guest_input(url: &str) -> super::guest::GuestInput<'static> {
 }
 
 #[tokio::test]
-async fn guest_enqueues_once_without_chat_or_query_context() {
+async fn guest_enqueues_auto_without_chat_or_query_context() {
     let state = Arc::new(State::default());
-    let queue = Arc::new(GuestQueue::default());
+    let fixture = crate::services::queue::test_support::Fixture::new().await;
+    let queue = fixture.queue.clone();
     let interactor = guest_interactor(state.clone(), queue.clone());
-    for _ in 0..2 {
-        (&interactor)
-            .execute(guest_input("https://example.test/media?tracking=synthetic"))
-            .await
-            .unwrap();
-    }
-    let jobs = queue.jobs.lock().unwrap();
-    assert_eq!(jobs.len(), 1);
-    let job = &jobs[0];
+    (&interactor)
+        .execute(guest_input("https://example.test/media?tracking=synthetic"))
+        .await
+        .unwrap();
+    queue.ensure_group().await.unwrap();
+    let job = queue.read_next(&mut fixture.connection(), "guest-test").await.unwrap().unwrap().job;
     assert!(job.auto && job.guest);
     assert_eq!(job.chat_cfg.tg_id, 0);
     assert_eq!(job.chat_cfg.language, "uk");
     assert!(!job.link_is_visible && !job.chat_cfg.cmd_random_enabled);
     assert_eq!(job.url.as_ref().unwrap().as_str(), "https://example.test/media");
     assert!(job.params.0.is_empty());
-    let payload = serde_json::to_string(job).unwrap();
+    let payload = serde_json::to_string(&job).unwrap();
     assert!(!payload.contains("synthetic-guest-query"));
     let decoded: crate::entities::DownloadJob = serde_json::from_str(&payload).unwrap();
     assert!(decoded.guest);
@@ -787,6 +762,9 @@ async fn guest_enqueues_once_without_chat_or_query_context() {
 
 #[tokio::test]
 async fn guest_invalid_or_blocked_link_replies_without_download() {
+    let fixture = crate::services::queue::test_support::Fixture::new().await;
+    let queue = fixture.queue.clone();
+    queue.ensure_group().await.unwrap();
     for url in [
         "file:///tmp/synthetic",
         "https://user:secret@example.test/media",
@@ -799,10 +777,9 @@ async fn guest_invalid_or_blocked_link_replies_without_download() {
         "http://[::1]/media",
     ] {
         let state = Arc::new(State::default());
-        let queue = Arc::new(GuestQueue::default());
         let interactor = guest_interactor(state.clone(), queue.clone());
         (&interactor).execute(guest_input(url)).await.unwrap();
-        assert!(queue.jobs.lock().unwrap().is_empty());
+        assert_eq!(queue.stats().await.unwrap().waiting, 0);
         let events = state.events.lock().unwrap();
         assert_eq!(events.len(), 1);
         assert!(events[0].contains("Згадайте"));
@@ -816,45 +793,13 @@ async fn guest_ambiguous_reply_is_not_replayed_or_downloaded() {
         reject_guest_reply: true,
         ..Default::default()
     });
-    let queue = Arc::new(GuestQueue::default());
-    let interactor = guest_interactor(state.clone(), queue.clone());
-    for _ in 0..2 {
-        (&interactor).execute(guest_input("https://example.test/media")).await.unwrap();
-    }
-    assert!(queue.jobs.lock().unwrap().is_empty());
-    assert_eq!(state.events.lock().unwrap().len(), 1);
-}
-
-#[tokio::test]
-async fn guest_reservation_failure_sends_no_untracked_reply() {
-    let state = Arc::new(State::default());
-    let queue = Arc::new(GuestQueue {
-        fail_reservation: true,
-        ..Default::default()
-    });
+    let fixture = crate::services::queue::test_support::Fixture::new().await;
+    let queue = fixture.queue.clone();
+    queue.ensure_group().await.unwrap();
     let interactor = guest_interactor(state.clone(), queue.clone());
     (&interactor).execute(guest_input("https://example.test/media")).await.unwrap();
-    assert!(state.events.lock().unwrap().is_empty());
-    assert!(queue.jobs.lock().unwrap().is_empty());
-}
-
-#[tokio::test]
-async fn guest_ambiguous_enqueue_edits_placeholder_without_retry() {
-    let state = Arc::new(State::default());
-    let queue = Arc::new(GuestQueue {
-        fail_enqueue: true,
-        ..Default::default()
-    });
-    let interactor = guest_interactor(state.clone(), queue.clone());
-    for _ in 0..2 {
-        (&interactor).execute(guest_input("https://example.test/media")).await.unwrap();
-    }
-    assert_eq!(queue.jobs.lock().unwrap().len(), 1);
+    assert_eq!(queue.stats().await.unwrap().waiting, 0);
     assert_eq!(state.events.lock().unwrap().len(), 1);
-    let edits = state.edits.lock().unwrap();
-    assert_eq!(edits.len(), 1);
-    assert!(edits[0].contains("підтвердити"));
-    assert!(!edits[0].contains("Synthetic"));
 }
 
 #[tokio::test]

@@ -143,7 +143,7 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - Done markers suppress duplicate handling of a job ID, best-effort, for 24 hours by default. Abandoned PEL entries are discarded rather than replayed. Telegram sends can still have ambiguous outcomes.
 - Format fallbacks after a known-finished candidate failure share the same 360-second deadline for that media item; uncertain execution stops fallback.
 - `DownloadJob` remains JSON and accepts previously queued payloads with obsolete fields. New fields must use `#[serde(default)]`.
-- Guest downloads use the existing inline target with `guest: true` (default false for older jobs). Guest queries are reserved with Redis `SET NX EX` for 24 hours before replying; repeated updates and ambiguous reply/enqueue failures never trigger a local retry of the download.
+- Guest downloads use the existing inline target with `guest: true` (default false for older jobs). Guest query IDs are not stored or reserved in Redis. Enqueue only after a confirmed guest reply; do not retry ambiguous reply/enqueue failures locally.
 - Shutdown stops Redis reading, drains owned tasks for up to 20 seconds, then aborts and joins the remainder. Unfinished entries remain pending for later cleanup, not execution; no job tasks are detached.
 - `/stats` reports waiting and pending/unacknowledged delivery counts, separately from node active/capacity. Pending does not mean an active remote download.
 
@@ -189,12 +189,12 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 
 ### Telegram Guest Mode
 
-- Enable Guest Mode in BotFather and use a local Bot API server supporting Bot API 10.0 or later.
+- Enable Guest Mode in BotFather.
 - `guest_message` has its own thin handler and `guest::EnqueueGuestDownload` interactor. It bypasses `CreateChatMiddleware` entirely: never create or look up `chats`/`chat_configs` from guest chat IDs, which can overlap ordinary bot chats.
-- Use the sender's language and default settings. The queued `ChatConfig` is only a compatibility DTO with `tg_id: 0`; no actual guest chat/user ID or message context is stored in the job. The guest query ID is retained only in its expiring Redis reservation key.
+- Use the sender's language and default settings. The queued `ChatConfig` is only a compatibility DTO with `tg_id: 0`; no actual guest chat/user ID or message context is stored in the job. The guest query ID is used only to answer the incoming update.
 - Extract a URL from text/caption/entities or the directly replied-to message; clean URLs, reject IP-literal hosts, and enforce the domain blacklist. Guest mode always uses the shared `auto::classify` media detection and returns one file (the first playlist item). Commands and parameter blocks are not applied.
 - `MessengerPort::answer_guest` sends one text placeholder using `answerGuestQuery`. Only a confirmed `inline_message_id` permits enqueueing. The worker reuses inline uploads through the configured private receiver chat and edits that placeholder by `file_id`.
-- Guest playlist selection uses the earliest playlist index across cached and uncached items, including photo albums. Guest error logs use fixed diagnostic categories without runtime error payloads.
+- Guest playlist selection uses the earliest playlist index across cached and uncached items, including photo albums. Guest delivery errors use fixed messages without runtime error payloads; shared error formatting stays unchanged.
 - Guest delivery omits source-link captions from staging/result messages and raw downloader progress/diagnostics from guest replies. Media still passes through the existing receiver chat and upload cache; these are not new private storage guarantees.
 - Confirmed flood waits share the Telegram cooldown; ambiguous guest replies are not replayed. A crash after replying but before enqueueing can leave a placeholder with no job. Redis and Telegram are not atomic, so this path prefers losing a request over duplicating an expensive download.
 

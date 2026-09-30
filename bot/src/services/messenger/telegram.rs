@@ -110,35 +110,7 @@ impl TelegramMessenger {
 
 impl From<SessionErrorKind> for MessengerError {
     fn from(value: SessionErrorKind) -> Self {
-        Self::with_category(value.to_string(), telegram_error_category(&value))
-    }
-}
-
-fn telegram_error_category(error: &SessionErrorKind) -> &'static str {
-    match error {
-        SessionErrorKind::Client(_) => "telegram_transport",
-        SessionErrorKind::Parse(_) => "telegram_response_decode",
-        SessionErrorKind::Telegram(error) => match error {
-            TelegramErrorKind::NetworkError { .. } => "telegram_transport",
-            TelegramErrorKind::RetryAfter { .. } => "telegram_rate_limit",
-            TelegramErrorKind::MigrateToChat { .. } => "telegram_chat_migrated",
-            TelegramErrorKind::BadRequest { message } => {
-                let message = message.to_ascii_lowercase();
-                if message.contains("query is too old") || message.contains("query_id_invalid") || message.contains("query id is invalid") {
-                    "telegram_query_expired_or_invalid"
-                } else {
-                    "telegram_bad_request"
-                }
-            }
-            TelegramErrorKind::NotFound { .. } => "telegram_not_found",
-            TelegramErrorKind::ConflictError { .. } => "telegram_conflict",
-            TelegramErrorKind::Forbidden { .. } => "telegram_forbidden",
-            TelegramErrorKind::Unauthorized { .. } => "telegram_unauthorized",
-            TelegramErrorKind::ServerError { .. } => "telegram_server",
-            TelegramErrorKind::RestartingTelegram { .. } => "telegram_restarting",
-            TelegramErrorKind::EntityTooLarge { .. } => "telegram_entity_too_large",
-            TelegramErrorKind::UnknownError(_) => "telegram_unknown",
-        },
+        Self::new(value.to_string())
     }
 }
 
@@ -154,7 +126,7 @@ impl MessengerPort for TelegramMessenger {
         with_retries(self, methods::AnswerGuestQuery::new(request.query_id, result), 0, Some(30.0))
             .await
             .map(|sent| sent.inline_message_id.into())
-            .map_err(|err| MessengerError::with_category("Could not answer guest query", telegram_error_category(&err)))
+            .map_err(|_| MessengerError::new("Could not answer guest query"))
     }
 
     async fn username(&self) -> Result<String, MessengerError> {
@@ -803,7 +775,7 @@ async fn until_upload_deadline<T>(
 ) -> Result<T, MessengerError> {
     tokio::time::timeout_at(deadline, upload)
         .await
-        .map_err(|_| MessengerError::with_category("Media execution exceeded the per-media time limit", "media_timeout"))?
+        .map_err(|_| MessengerError::new("Media execution exceeded the per-media time limit"))?
         .map_err(Into::into)
 }
 
@@ -824,7 +796,7 @@ where
         match once(messenger, method.clone(), request_timeout).await {
             Ok(res) => Ok(res),
             Err(err) if telegram_retry_after(&err).is_some() => {
-                warn!(category = telegram_error_category(&err), "Waiting for Telegram cooldown");
+                warn!(error = %err, "Waiting for Telegram cooldown");
                 // The shared request gate owns this wait and records queue liveness.
                 Err(backoff::Error::retry_after(err, Duration::ZERO))
             }
@@ -1001,22 +973,14 @@ mod rate_limit_tests {
     };
     use url::Url;
 
-    #[test]
-    fn guest_error_categories_distinguish_transport_and_response_failures() {
-        let transport = SessionErrorKind::Client(io::Error::other("Synthetic private request URL").into());
-        let decoding = SessionErrorKind::Parse(serde_json::from_str::<()>("synthetic invalid JSON").unwrap_err());
-        assert_eq!(telegram_error_category(&transport), "telegram_transport");
-        assert_eq!(telegram_error_category(&decoding), "telegram_response_decode");
-    }
-
     #[tokio::test]
-    async fn guest_reply_errors_preserve_categories_without_private_payloads_or_retries() {
+    async fn guest_reply_errors_do_not_expose_payloads_or_retry() {
         let fixture = Fixture::new().await;
-        for (code, description, category) in [
-            (400, "Bad Request: query is too old", "telegram_query_expired_or_invalid"),
-            (404, "Not Found", "telegram_not_found"),
-            (403, "Forbidden", "telegram_forbidden"),
-            (500, "Internal Server Error", "telegram_server"),
+        for (code, description) in [
+            (400, "Bad Request: query is too old"),
+            (404, "Not Found"),
+            (403, "Forbidden"),
+            (500, "Internal Server Error"),
         ] {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let address = listener.local_addr().unwrap();
@@ -1047,7 +1011,6 @@ mod rate_limit_tests {
             .await
             .unwrap()
             .unwrap_err();
-            assert_eq!(error.category(), category);
             let diagnostic = format!("{error:?}");
             assert!(!diagnostic.contains("secret="));
             assert!(!diagnostic.contains("example.test"));

@@ -35,20 +35,9 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 
 ## Commands
 
-### Guest mode
-
-Enable **Guest Mode** in your bot's BotFather settings and run a local Telegram Bot API server supporting **Bot API 10.0+**. Check the running server version: the chart's `latest` image with `IfNotPresent` can retain an older cached image.
-
-Send `@your_bot https://example.com/media`, or mention the bot in a reply to a message containing a link. The bot automatically detects the media type using the same classification as ordinary links without a command. Each request returns one file, taking the first item of a playlist. Commands and parameter blocks are not applied in guest mode.
-
-The bot first posts a preparation message and then replaces it with the result. Guest interactions do not create database chat records or reuse chat settings; the sender's language determines the response language. Downloads use the existing queue, cache and receiver chat, so that receiver chat must remain private. Source links and raw error details are omitted from guest replies and staging captions.
-
-Repeated guest updates are suppressed for 24 hours. An interrupted request may leave its preparation message behind; unfinished downloads are not automatically replayed.
-
-### Regular commands
-
 | Command | Description |
 | --- | --- |
+| `@bot <url>` or a mention in a reply | Download one file in guest mode with automatic media-type detection |
 | `/vd`, `/video` | Download video with progress messages |
 | `/ad`, `/audio` | Download audio |
 | `/pd`, `/photo` | Download photo |
@@ -69,6 +58,8 @@ Arguments go in square brackets after the command, for example `/vd [lang=ru,ite
 This guide assumes Kubernetes, Helm, and a working image registry. If you are deploying from this repository instead of using already-published images, build and push dev images first.
 
 ### 1. Prerequisites
+
+Enable **Guest Mode** in BotFather to accept mentions in chats where the bot is not a member.
 
 Required local tools:
 
