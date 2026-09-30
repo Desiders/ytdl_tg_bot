@@ -12,22 +12,22 @@ use crate::{
     locale::Locale,
     services::{
         messenger::{AnswerGuestRequest, EditTarget, EditTextRequest, MessengerPort},
-        queue::{GuestQueuePort, RedisJobQueue},
+        queue::RedisJobQueue,
     },
     utils::UrlCleaner,
     value_objects::MediaType,
 };
 
-pub struct EnqueueGuestDownload<Messenger, Queue = RedisJobQueue> {
+pub struct EnqueueGuestDownload<Messenger> {
     messenger: Arc<Messenger>,
-    queue: Arc<Queue>,
+    queue: Arc<RedisJobQueue>,
     cleaner: Arc<UrlCleaner>,
     cfg: Arc<Config>,
 }
 
-impl<Messenger, Queue> EnqueueGuestDownload<Messenger, Queue> {
+impl<Messenger> EnqueueGuestDownload<Messenger> {
     #[must_use]
-    pub const fn new(messenger: Arc<Messenger>, queue: Arc<Queue>, cleaner: Arc<UrlCleaner>, cfg: Arc<Config>) -> Self {
+    pub const fn new(messenger: Arc<Messenger>, queue: Arc<RedisJobQueue>, cleaner: Arc<UrlCleaner>, cfg: Arc<Config>) -> Self {
         Self {
             messenger,
             queue,
@@ -58,21 +58,14 @@ pub struct GuestInput<'a> {
     pub locale: Locale,
 }
 
-impl<Messenger: MessengerPort, Queue: GuestQueuePort> Interactor<GuestInput<'_>> for &EnqueueGuestDownload<Messenger, Queue> {
+impl<Messenger> Interactor<GuestInput<'_>> for &EnqueueGuestDownload<Messenger>
+where
+    Messenger: MessengerPort,
+{
     type Output = ();
     type Err = HandlerError;
 
-    async fn execute(self, input: GuestInput<'_>) -> Result<(), HandlerError> {
-        // Fail closed if Redis cannot establish ownership. Do not send an untracked reply.
-        match self.queue.reserve_guest_query(input.query_id).await {
-            Ok(true) => {}
-            Ok(false) => return Ok(()),
-            Err(_) => {
-                warn!("Could not reserve guest query");
-                return Ok(());
-            }
-        }
-
+    async fn execute(self, input: GuestInput<'_>) -> Result<Self::Output, Self::Err> {
         let url = input.url.and_then(|url| self.prepare_url(url));
         let text = if url.is_some() {
             t!("download.preparing", locale = input.locale.as_str())
@@ -86,21 +79,17 @@ impl<Messenger: MessengerPort, Queue: GuestQueuePort> Interactor<GuestInput<'_>>
                 text: &text,
             })
             .await;
-        let inline_message_id = match reply {
-            Ok(id) => id,
-            Err(err) => {
-                // Keep the reservation: the reply may have been delivered.
-                warn!(category = err.category(), "Guest reply failed or its outcome is unknown");
-                return Ok(());
-            }
+        let Ok(inline_message_id) = reply else {
+            warn!("Guest reply failed or its outcome is unknown");
+            return Ok(());
         };
         let Some(url) = url else {
             return Ok(());
         };
         let job = guest_job(url, &inline_message_id, input.locale);
-        if self.queue.enqueue_guest(&job).await.is_err() {
+        if self.queue.enqueue(&job).await.is_err() {
             // XADD can also have an ambiguous outcome: no local retry or replacement job.
-            let text = t!("guest.queue_unknown", locale = input.locale.as_str());
+            let text = t!("download.error_queue", locale = input.locale.as_str());
             let _ = self
                 .messenger
                 .edit_text(EditTextRequest {
@@ -134,8 +123,8 @@ fn guest_job(url: Url, inline_message_id: &str, locale: Locale) -> DownloadJob {
             inline_message_id: inline_message_id.to_owned(),
             result_id: "guest".into(),
         },
-    );
-    job.auto = true;
+    )
+    .with_auto(false);
     job.guest = true;
     job
 }

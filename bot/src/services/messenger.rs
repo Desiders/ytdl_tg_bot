@@ -15,24 +15,11 @@ pub enum TextFormat {
 #[error("Messenger error: {message}")]
 pub struct MessengerError {
     message: Box<str>,
-    category: &'static str,
 }
 
 impl MessengerError {
     pub fn new(message: impl Into<Box<str>>) -> Self {
-        Self::with_category(message, "messenger")
-    }
-
-    pub fn with_category(message: impl Into<Box<str>>, category: &'static str) -> Self {
-        Self {
-            message: message.into(),
-            category,
-        }
-    }
-
-    #[must_use]
-    pub const fn category(&self) -> &'static str {
-        self.category
+        Self { message: message.into() }
     }
 }
 

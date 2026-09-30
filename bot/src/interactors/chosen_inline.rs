@@ -154,14 +154,6 @@ impl DownloadInput<'_> {
         }
     }
 
-    fn log_error(&self, formatter: &ErrorFormatter, err: &(impl FormatErrorToMessage + ?Sized)) -> Cow<'static, str> {
-        if self.guest {
-            Cow::Borrowed(err.category())
-        } else {
-            formatter.format(err)
-        }
-    }
-
     fn select_media(&self, media: GetMediaByURLKind) -> GetMediaByURLKind {
         if self.guest {
             // Photo metadata may contain a whole album even for Range::default().
@@ -224,7 +216,7 @@ where
         Some(raw_value) => Some(match Sections::from_str(raw_value) {
             Ok(val) => val,
             Err(err) => {
-                error!(err = %input.log_error(&interactor.error_formatter, &err), "Parse sections error");
+                error!(err = %input.format_error(&interactor.error_formatter, &err), "Parse sections error");
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_parse_sections", locale = locale.as_str()),
@@ -278,8 +270,8 @@ where
                 })
                 .await
             {
-                error!(err = %input.log_error(&interactor.error_formatter, &err), "Edit error");
                 let err = input.format_error(&interactor.error_formatter, &err);
+                error!(%err, "Edit error");
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_edit_message", locale = locale.as_str()),
@@ -311,8 +303,8 @@ where
                 })
                 .await
             {
-                error!(err = %input.log_error(&interactor.error_formatter, &err), "Edit error");
                 let err = input.format_error(&interactor.error_formatter, &err);
+                error!(%err, "Edit error");
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_edit_message", locale = locale.as_str()),
@@ -358,7 +350,7 @@ where
             .await;
             while let Some(err) = err_receiver.recv().await {
                 if input.guest {
-                    warn!(category = err.category(), "Guest download candidate failed");
+                    warn!("Guest download candidate failed");
                 }
                 errs.push(html_quote(input.format_error(&interactor.error_formatter, &err).as_ref()));
             }
@@ -378,7 +370,7 @@ where
                     return Ok(false);
                 }
                 Err(err) => {
-                    error!(err = %input.log_error(&interactor.error_formatter, &err), "Download error");
+                    error!(err = %input.format_error(&interactor.error_formatter, &err), "Download error");
                     let _ = progress::is_error_in_chosen_inline(
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
@@ -415,8 +407,8 @@ where
             {
                 Ok(val) => val,
                 Err(err) => {
-                    error!(err = %input.log_error(&interactor.error_formatter, &err), "Send error");
                     let err = input.format_error(&interactor.error_formatter, &err);
+                    error!(%err, "Send error");
                     let _ = progress::is_error_in_chosen_inline(
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
@@ -439,8 +431,8 @@ where
                 })
                 .await
             {
-                error!(err = %input.log_error(&interactor.error_formatter, &err), "Edit error");
                 let err = input.format_error(&interactor.error_formatter, &err);
+                error!(%err, "Edit error");
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_edit_message", locale = locale.as_str()),
@@ -470,7 +462,7 @@ where
                 })
                 .await
             {
-                error!(err = %input.log_error(&interactor.error_formatter, &err), "Add error");
+                error!(err = %input.format_error(&interactor.error_formatter, &err), "Add error");
             }
             return Ok(true);
         }
@@ -486,7 +478,7 @@ where
             .await;
         }
         Err(err) => {
-            error!(err = %input.log_error(&interactor.error_formatter, &err), "Get error");
+            error!(err = %input.format_error(&interactor.error_formatter, &err), "Get error");
             let text = format!(
                 "{}\n{}",
                 t!("download.error_get_info", locale = locale.as_str()),
@@ -520,7 +512,7 @@ where
         Some(raw_value) => Some(match Sections::from_str(raw_value) {
             Ok(val) => val,
             Err(err) => {
-                error!(err = %input.log_error(&interactor.error_formatter, &err), "Parse sections error");
+                error!(err = %input.format_error(&interactor.error_formatter, &err), "Parse sections error");
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_parse_sections", locale = locale.as_str()),
@@ -574,8 +566,8 @@ where
                 })
                 .await
             {
-                error!(err = %input.log_error(&interactor.error_formatter, &err), "Edit error");
                 let err = input.format_error(&interactor.error_formatter, &err);
+                error!(%err, "Edit error");
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_edit_message", locale = locale.as_str()),
@@ -607,8 +599,8 @@ where
                 })
                 .await
             {
-                error!(err = %input.log_error(&interactor.error_formatter, &err), "Edit error");
                 let err = input.format_error(&interactor.error_formatter, &err);
+                error!(%err, "Edit error");
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_edit_message", locale = locale.as_str()),
@@ -654,7 +646,7 @@ where
             .await;
             while let Some(err) = err_receiver.recv().await {
                 if input.guest {
-                    warn!(category = err.category(), "Guest download candidate failed");
+                    warn!("Guest download candidate failed");
                 }
                 download_errs.push(html_quote(input.format_error(&interactor.error_formatter, &err).as_ref()));
             }
@@ -674,7 +666,7 @@ where
                     return Ok(false);
                 }
                 Err(err) => {
-                    error!(err = %input.log_error(&interactor.error_formatter, &err), "Download error");
+                    error!(err = %input.format_error(&interactor.error_formatter, &err), "Download error");
                     let _ = progress::is_error_in_chosen_inline(
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
@@ -711,8 +703,8 @@ where
             {
                 Ok(val) => val,
                 Err(err) => {
-                    error!(err = %input.log_error(&interactor.error_formatter, &err), "Send error");
                     let err = input.format_error(&interactor.error_formatter, &err);
+                    error!(%err, "Send error");
                     let _ = progress::is_error_in_chosen_inline(
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
@@ -735,8 +727,8 @@ where
                 })
                 .await
             {
-                error!(err = %input.log_error(&interactor.error_formatter, &err), "Edit error");
                 let err = input.format_error(&interactor.error_formatter, &err);
+                error!(%err, "Edit error");
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_edit_message", locale = locale.as_str()),
@@ -766,7 +758,7 @@ where
                 })
                 .await
             {
-                error!(err = %input.log_error(&interactor.error_formatter, &err), "Add error");
+                error!(err = %input.format_error(&interactor.error_formatter, &err), "Add error");
             }
             return Ok(true);
         }
@@ -782,7 +774,7 @@ where
             .await;
         }
         Err(err) => {
-            error!(err = %input.log_error(&interactor.error_formatter, &err), "Get error");
+            error!(err = %input.format_error(&interactor.error_formatter, &err), "Get error");
             let text = format!(
                 "{}\n{}",
                 t!("download.error_get_info", locale = locale.as_str()),
@@ -843,8 +835,8 @@ where
                 })
                 .await
             {
-                error!(err = %input.log_error(&interactor.error_formatter, &err), "Edit error");
                 let err = input.format_error(&interactor.error_formatter, &err);
+                error!(%err, "Edit error");
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_edit_message", locale = locale.as_str()),
@@ -874,8 +866,8 @@ where
                 })
                 .await
             {
-                error!(err = %input.log_error(&interactor.error_formatter, &err), "Edit error");
                 let err = input.format_error(&interactor.error_formatter, &err);
+                error!(%err, "Edit error");
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_edit_message", locale = locale.as_str()),
@@ -922,8 +914,8 @@ where
             {
                 Ok(val) => val,
                 Err(err) => {
-                    error!(err = %input.log_error(&interactor.error_formatter, &err), "Send error");
                     let err = input.format_error(&interactor.error_formatter, &err);
+                    error!(%err, "Send error");
                     let _ = progress::is_error_in_chosen_inline(
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
@@ -946,8 +938,8 @@ where
                 })
                 .await
             {
-                error!(err = %input.log_error(&interactor.error_formatter, &err), "Edit error");
                 let err = input.format_error(&interactor.error_formatter, &err);
+                error!(%err, "Edit error");
                 let text = format!(
                     "{}\n{}",
                     t!("download.error_edit_message", locale = locale.as_str()),
@@ -977,7 +969,7 @@ where
                 })
                 .await
             {
-                error!(err = %input.log_error(&interactor.error_formatter, &err), "Add error");
+                error!(err = %input.format_error(&interactor.error_formatter, &err), "Add error");
             }
             return Ok(true);
         }
@@ -994,7 +986,7 @@ where
         }
         Err(err) => {
             let formatted = input.format_error(&interactor.error_formatter, &err);
-            error!(err = %input.log_error(&interactor.error_formatter, &err), "Get error");
+            error!(err = %formatted, "Get error");
             let text = format!(
                 "{}\n{}",
                 t!("download.error_get_media", locale = locale.as_str()),
@@ -1071,16 +1063,12 @@ where
         debug!("Got inline auto");
 
         let url = resolve_url(input.url, input.result_id);
-        let playlist_range = if input.guest {
-            Range::default()
-        } else {
-            input
-                .params
-                .0
-                .get("items")
-                .and_then(|raw| Range::from_str(raw).ok())
-                .unwrap_or_default()
-        };
+        let playlist_range = input
+            .params
+            .0
+            .get("items")
+            .and_then(|raw| Range::from_str(raw).ok())
+            .unwrap_or_default();
         let sections = input.params.0.get("crop").and_then(|raw| Sections::from_str(raw).ok());
         let audio_language = input
             .params
@@ -1118,41 +1106,5 @@ where
         } else {
             auto::AutoResult::Failed
         })
-    }
-}
-
-#[cfg(test)]
-mod guest_tests {
-    use super::*;
-    use crate::services::messenger::MessengerError;
-
-    #[test]
-    fn guest_diagnostics_keep_categories_without_exposing_error_payloads() {
-        let params = Params::default();
-        let chat = ChatConfig::new(0, false, "en".into());
-        let input = DownloadInput {
-            guest: true,
-            params: &params,
-            url: None,
-            chat_cfg: &chat,
-            link_is_visible: false,
-            inline_message_id: "synthetic-inline",
-            result_id: "guest",
-            prefetched: None,
-        };
-        let formatter = ErrorFormatter::new("synthetic-token");
-        let error = MessengerError::with_category(
-            "Synthetic private URL https://example.test/private?secret=synthetic-token",
-            "telegram_forbidden",
-        );
-        assert_eq!(input.log_error(&formatter, &error), "telegram_forbidden");
-        let reply = input.format_error(&formatter, &error);
-        assert!(!reply.contains("telegram_forbidden"));
-        assert!(!reply.contains("secret"));
-        assert!(!reply.contains("example.test"));
-        let error = crate::services::node_router::DownloadErrorKind::MediaTimeout;
-        assert_eq!(input.log_error(&formatter, &error), "media_timeout");
-        let error = crate::services::node_router::DownloadErrorKind::ExecutionUncertain;
-        assert_eq!(input.log_error(&formatter, &error), "execution_uncertain");
     }
 }

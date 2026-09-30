@@ -15,10 +15,10 @@ use crate::{
     services::messenger::MessengerPort,
 };
 
-pub async fn download<Messenger: MessengerPort>(
-    update: UpdateGuestMessage,
-    Inject(interactor): Inject<EnqueueGuestDownload<Messenger>>,
-) -> HandlerResult {
+pub async fn download<Messenger>(update: UpdateGuestMessage, Inject(interactor): Inject<EnqueueGuestDownload<Messenger>>) -> HandlerResult
+where
+    Messenger: MessengerPort,
+{
     let message = &update.guest_message;
     let Some(query_id) = message.guest_query_id().filter(|id| !id.is_empty()) else {
         return Ok(EventReturn::Finish);
