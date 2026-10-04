@@ -12,6 +12,6 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     steps:
-      - uses: MyAlbum/purge-cache@v2
+      - uses: MyAlbum/purge-cache@v3
         with:
           max-age: 172800
