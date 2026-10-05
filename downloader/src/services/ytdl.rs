@@ -134,6 +134,18 @@ fn classify_retryable_error(stderr: &str) -> Option<RetryableYtdlpError> {
     None
 }
 
+// `-f a,b,c` prints the whole info once per format, and YouTube auto captions alone are ~11 MiB
+//  per copy, so a response overflowed the client's `MAX_DECODING_MESSAGE_SIZE`. Downloads never request subtitles,
+//  and yt-dlp reads these fields with `.get()`, so they are safe to drop.
+//  https://github.com/yt-dlp/yt-dlp/blob/7fd74d10097833ebce0cb162e0ccf7825de9b768/yt_dlp/YoutubeDL.py#L2878-L2882
+const UNUSED_INFO_FIELDS: [&str; 5] = [
+    "automatic_captions",
+    "subtitles",
+    "requested_subtitles",
+    "automatic_captions_table",
+    "subtitles_table",
+];
+
 fn parse_ndjson<T: DeserializeOwned>(input: &[u8]) -> Result<Vec<(T, String)>, ParseJsonErrorKind> {
     let lines = BufReader::new(input).lines();
     let mut results = Vec::with_capacity(1);
@@ -142,8 +154,16 @@ fn parse_ndjson<T: DeserializeOwned>(input: &[u8]) -> Result<Vec<(T, String)>, P
         if line.trim().is_empty() {
             continue;
         }
-        let item = serde_json::from_str(&line)?;
-        results.push((item, line));
+
+        let mut raw: serde_json::Value = serde_json::from_str(&line)?;
+        if let Some(fields) = raw.as_object_mut() {
+            for field in UNUSED_INFO_FIELDS {
+                fields.remove(field);
+            }
+        }
+
+        let item = T::deserialize(&raw)?;
+        results.push((item, raw.to_string()));
     }
     Ok(results)
 }
@@ -651,6 +671,24 @@ fn create_ytdlp_command(yt_dlp_cfg: &YtDlpConfig) -> tokio::process::Command {
 mod tests {
     use super::*;
     use tokio::time::Instant;
+
+    #[test]
+    fn info_ndjson_drops_subtitle_fields() {
+        let input = br#"{"id":"synthetic","automatic_captions":{"en":[]},"subtitles":{},"requested_subtitles":null,"automatic_captions_table":"","subtitles_table":""}
+{"id":"synthetic-2"}"#;
+
+        let parsed: Vec<(serde_json::Value, String)> = parse_ndjson(input).unwrap();
+
+        let expected_first = serde_json::json!({"id": "synthetic"});
+        let expected_second = serde_json::json!({"id": "synthetic-2"});
+        assert_eq!(
+            parsed,
+            vec![
+                (expected_first.clone(), expected_first.to_string()),
+                (expected_second.clone(), expected_second.to_string()),
+            ]
+        );
+    }
 
     #[test]
     fn speed_or_eta_changes_are_not_reported_as_new_progress() {
