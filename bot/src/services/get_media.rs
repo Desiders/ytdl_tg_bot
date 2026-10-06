@@ -464,7 +464,15 @@ fn playlist_from_response(response: proto::downloader::MediaInfoResponse) -> Res
                 .formats
                 .into_iter()
                 .map(|format| {
-                    (
+                    // An older downloader sends the full info JSON per format and no shared keys.
+                    let raw = if entry.raw_info_json.is_empty() {
+                        format.raw_info_json
+                    } else {
+                        merge_info_json(&entry.raw_info_json, &format.raw_format_json)
+                            .map_err(|err| GetInfoErrorKind::InvalidResponse(format!("Invalid info JSON: {err}").into()))?
+                    };
+
+                    Ok((
                         MediaFormat {
                             format_id: format.format_id,
                             format_note: None,
@@ -474,13 +482,76 @@ fn playlist_from_response(response: proto::downloader::MediaInfoResponse) -> Res
                             aspect_ratio: format.aspect_ratio,
                             filesize_approx: format.filesize_approx,
                         },
-                        format.raw_info_json,
-                    )
+                        raw,
+                    ))
                 })
-                .collect();
+                .collect::<Result<_, GetInfoErrorKind>>()?;
             Ok::<_, GetInfoErrorKind>((media, formats))
         })
         .collect::<Result<_, _>>()?;
 
     Ok(Playlist { inner })
+}
+
+// `GetMediaInfo` sends the keys every format shares once per entry; `DownloadMedia` needs the full info JSON.
+fn merge_info_json(shared: &str, format: &str) -> Result<String, serde_json::Error> {
+    let mut merged: serde_json::Map<String, serde_json::Value> = serde_json::from_str(shared)?;
+    merged.extend(serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(format)?);
+
+    Ok(serde_json::Value::Object(merged).to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use proto::downloader::{MediaEntry, MediaFormatEntry, MediaInfoResponse};
+
+    use super::playlist_from_response;
+
+    #[test]
+    fn merges_shared_info_json_into_each_format() {
+        let format = MediaFormatEntry {
+            format_id: "1".to_owned(),
+            raw_format_json: r#"{"format_id":"1"}"#.to_owned(),
+            ..Default::default()
+        };
+        let response = MediaInfoResponse {
+            entries: vec![MediaEntry {
+                id: "id".to_owned(),
+                webpage_url: "https://media.example.test/test".to_owned(),
+                playlist_index: 1,
+                formats: vec![format],
+                raw_info_json: r#"{"id":"id","value":0.22668514563732178}"#.to_owned(),
+                ..Default::default()
+            }],
+        };
+
+        let playlist = playlist_from_response(response).unwrap();
+
+        assert_eq!(
+            playlist.inner[0].1[0].1,
+            r#"{"format_id":"1","id":"id","value":0.22668514563732178}"#
+        );
+    }
+
+    #[test]
+    fn keeps_full_info_json_from_older_downloader() {
+        let format = MediaFormatEntry {
+            format_id: "1".to_owned(),
+            raw_info_json: r#"{"id":"id", "format_id":"1"}"#.to_owned(),
+            ..Default::default()
+        };
+        let response = MediaInfoResponse {
+            entries: vec![MediaEntry {
+                id: "id".to_owned(),
+                webpage_url: "https://media.example.test/test".to_owned(),
+                playlist_index: 1,
+                formats: vec![format],
+                ..Default::default()
+            }],
+        };
+
+        let playlist = playlist_from_response(response).unwrap();
+
+        assert_eq!(playlist.inner[0].1[0].1, r#"{"id":"id", "format_id":"1"}"#);
+    }
 }
