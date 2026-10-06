@@ -60,7 +60,7 @@ The bot chart uses the current CloudNativePG plugin-based backup path.
 
 - `charts/bot` creates a `valkey.io/v1alpha1` `ValkeyCluster` named `valkey` with AOF persistence and `maxmemory-policy: noeviction`.
 - The `admin` user password comes from the `valkey` Secret; bot config `[redis]` must use user `admin` and the same password.
-- Valkey stores the durable queue and short-lived Telegram progress-throttle keys. Do not put caches that may be evicted into the same instance without changing the eviction policy.
+- Valkey stores the durable queue, short-lived Telegram progress-throttle keys, and private-menu input prompts (`menu:{chat_id}:domain_input`, 300-second TTL; the first message claims a prompt with an atomic `DEL`, invalid input re-arms it). Do not put caches that may be evicted into the same instance without changing the eviction policy.
 
 ### Local Telegram Bot API
 
@@ -130,6 +130,7 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - refreshes node status every 5 seconds and node cookie capabilities every `[download].capabilities_refresh_interval` seconds (0 disables)
 - recognizes songs for `/shazam` by downloading the Telegram file and calling the node `SongRecognizer`, then enqueues the found track as an audio download
 - serves `en`, `ru`, and `uk` locales; `/lang` switches a chat's locale
+- in private chats `/start`, `/help`, `/stats`, and `/lang` without an argument open an inline-button menu (main, settings, language, help pages, stats, excluded domains) that edits one message per button press; a bare link still downloads, except while the add-domain prompt waits for a typed domain. Groups keep the plain commands, and group `/start` prints all help pages
 
 ### Bot Queue Rules
 
@@ -155,6 +156,8 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - Optional download progress edits are scoped to preparation and cancelled when the media becomes ready. In video/audio flows, "Sending" runs alongside the upload and is cancelled when that upload ends, so it cannot block the media or leave a detached edit task behind final result rendering. Already-dispatched Telegram requests cannot be recalled. Fatal download errors join the final error aggregation rather than being shown only transiently.
 - Bot handlers, top-level bot interactors, and `send_media` interactors should depend on the messenger port layer, not construct Telegram methods directly.
 - Keep Telegram SDK/API types isolated to the Telegram adapter. Utility string helpers such as HTML escaping may still live elsewhere, but Telegram request construction should have one source of truth.
+- Menus go through `send_menu`, `edit_menu`, and `answer_callback` with the port's own `Keyboard` type. Callback data uses `#[derive(telers::CallbackData)]` structs in `bot/src/value_objects/menu.rs`; domain buttons carry a 64-bit FNV-1a fingerprint of the domain (`DomainKey`), not the domain, to stay under Telegram's 64-byte limit, and not a list position, which an old message would resolve to another domain after the list changes.
+- Menu callbacks are answered before the menu is edited, and are ignored outside private chats: `CreateChatMiddleware` loads a callback's config by the pressing user, which matches the chat only in a private one.
 - Current known exceptions that use `telers::Bot` directly: `ReactionMiddleware`, `worker::clear_reaction`, startup `SetMyCommands`, and `TelegramFileDownloader` (`getFile`). Do not add new ones.
 
 ### Bot Handler / Interactor Boundary
@@ -167,7 +170,7 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
   - return `EventReturn::Finish`
 - Do not let handlers orchestrate business flow across multiple top-level interactors or services again.
 - Handler-facing orchestration lives in `bot/src/interactors/`:
-  - `start`, `stats`, `config`, `lang`, `inline_query`, `shazam`
+  - `start`, `stats`, `config`, `lang`, `menu`, `inline_query`, `shazam`
   - `enqueue_download` (the only download interactors handlers call)
   - `video`, `audio`, `photo`, `auto`, `chosen_inline` (run by the worker, not by handlers)
 - Lower-level reusable building blocks live under `bot/src/services/`, not in the interactor namespace:
@@ -176,6 +179,8 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
   - `downloaded_media`
   - `file_download`
   - `get_media`
+  - `help`
+  - `menu_input`
   - `messenger`
   - `node_router`
   - `progress_throttle`

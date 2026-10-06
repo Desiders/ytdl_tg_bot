@@ -3,6 +3,8 @@ pub mod download;
 pub mod downloaded_media;
 pub mod file_download;
 pub mod get_media;
+pub mod help;
+pub mod menu_input;
 pub mod messenger;
 pub mod node_router;
 pub mod progress_throttle;

@@ -25,7 +25,7 @@ use telers::{
     },
     enums::{ChatType::Private, MessageType::Text},
     event::{simple::Handler as SimpleHandler, telegram::Handler},
-    filters::{ChatType, Command, Filter as _, MessageType},
+    filters::{CallbackData, ChatType, Command, Filter as _, MessageType},
     Bot, Dispatcher, Router,
 };
 use tokio_util::sync::CancellationToken;
@@ -34,14 +34,15 @@ use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt
 
 use crate::{
     filters::{
-        is_audio_inline_result, is_auto_inline_result, is_exclude_domain, is_via_bot, is_video_inline_result, random_cmd_is_enabled,
-        text_contains_host_with_reply, text_contains_url, text_contains_url_with_reply, text_empty, url_is_blacklisted,
-        url_is_skippable_by_param,
+        claims_domain_input, command_without_args, is_audio_inline_result, is_auto_inline_result, is_exclude_domain, is_private_callback,
+        is_via_bot, is_video_inline_result, random_cmd_is_enabled, text_contains_host_with_reply, text_contains_url,
+        text_contains_url_with_reply, text_empty, url_is_blacklisted, url_is_skippable_by_param,
     },
-    handlers::{audio, chosen_inline, inline_query, lang, photo, shazam, start, stats, video},
+    handlers::{audio, chosen_inline, inline_query, lang, menu, photo, shazam, start, stats, video},
     middlewares::{CleanUrlMiddleware, CreateChatMiddleware, ReactionMiddleware},
     services::messenger::telegram::TelegramMessenger,
     utils::{on_shutdown, on_startup},
+    value_objects::menu::{DeleteDomain, OpenScreen, SetLanguage, SetLinkVisibility},
 };
 
 type Messenger = TelegramMessenger;
@@ -203,10 +204,60 @@ async fn main() {
         .on_update(|observer| observer.register_outer_middleware(CreateChatMiddleware))
         .on_message(|observer| {
             observer
+                .register(
+                    Handler::new(menu::open_main::<Messenger>)
+                        .filter(ChatType::one(Private))
+                        .filter(Command::one("start")),
+                )
+                .register(
+                    Handler::new(menu::open_help::<Messenger>)
+                        .filter(ChatType::one(Private))
+                        .filter(Command::one("help")),
+                )
+                .register(
+                    Handler::new(menu::open_stats::<Messenger>)
+                        .filter(ChatType::one(Private))
+                        .filter(Command::one("stats")),
+                )
+                .register(
+                    Handler::new(menu::open_language::<Messenger>)
+                        .filter(ChatType::one(Private))
+                        .filter(Command::many(["lang", "language"]))
+                        .filter(command_without_args),
+                )
                 .register(Handler::new(start::<Messenger>).filter(Command::many(["start", "help"])))
                 .register(Handler::new(stats::<Messenger>).filter(Command::one("stats")))
                 .register(Handler::new(shazam::<Messenger>).filter(Command::many(["shazam", "sh"])))
                 .register(Handler::new(lang::<Messenger>).filter(Command::many(["lang", "language"])))
+                .register(
+                    Handler::new(menu::add_domain::<Messenger>)
+                        .filter(ChatType::one(Private))
+                        .filter(MessageType::one(Text))
+                        .filter(claims_domain_input),
+                )
+        })
+        .on_callback_query(|observer| {
+            observer
+                .register(
+                    Handler::new(menu::open_screen::<Messenger>)
+                        .filter(is_private_callback)
+                        .filter(CallbackData::<OpenScreen>::new()),
+                )
+                .register(
+                    Handler::new(menu::set_language::<Messenger>)
+                        .filter(is_private_callback)
+                        .filter(CallbackData::<SetLanguage>::new()),
+                )
+                .register(
+                    Handler::new(menu::set_link_visibility::<Messenger>)
+                        .filter(is_private_callback)
+                        .filter(CallbackData::<SetLinkVisibility>::new()),
+                )
+                .register(
+                    Handler::new(menu::remove_domain::<Messenger>)
+                        .filter(is_private_callback)
+                        .filter(CallbackData::<DeleteDomain>::new()),
+                )
         })
         .on_startup(|observer| observer.register(SimpleHandler::new(on_startup, (bot.clone(), node_router.clone(), cfg.clone()))))
         .on_shutdown(|observer| observer.register(SimpleHandler::new(on_shutdown, ())))

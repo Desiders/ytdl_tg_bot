@@ -21,11 +21,12 @@ use crate::{
         YtDlpConfig,
     },
     database::{SeaOrmTxManager, TxManager, TxManagerFactories},
-    interactors::{audio, auto, chosen_inline, config, enqueue_download, inline_query, lang, photo, shazam, start, stats, video},
+    interactors::{audio, auto, chosen_inline, config, enqueue_download, inline_query, lang, menu, photo, shazam, start, stats, video},
     services::{
         chat,
         download::media,
         downloaded_media, file_download, get_media,
+        menu_input::MenuInputState,
         messenger::telegram::TelegramMessenger,
         node_router::{self, DownloaderServiceTarget, NodeRouter},
         progress_throttle::ProgressThrottle,
@@ -173,6 +174,10 @@ pub(super) fn queue_registry(cfg_registry: Registry) -> RegistryWithSync {
             App,
             |Inject(conn): Inject<ConnectionManager>| async move { Ok(ProgressThrottle::new((*conn).clone())) },
         ),
+        provide(
+            App,
+            |Inject(conn): Inject<ConnectionManager>| async move { Ok(MenuInputState::new((*conn).clone())) },
+        ),
         extend(cfg_registry),
     }
 }
@@ -318,6 +323,43 @@ where
                 Inject(messenger): Inject<Messenger>,
                 Inject(update_chat_cfg)| async move {
                     Ok(lang::Lang::new(error_formatter, messenger, update_chat_cfg))
+                }
+            ),
+            provide(|
+                Inject(cfg),
+                Inject(error_formatter),
+                Inject(messenger): Inject<Messenger>,
+                Inject(input_state),
+                Inject(stats)| async move {
+                    Ok(menu::OpenMenu::new(cfg, error_formatter, messenger, input_state, stats))
+                }
+            ),
+            provide(|
+                Inject(error_formatter),
+                Inject(update_chat_cfg),
+                Inject(open_menu)| async move {
+                    Ok(menu::SetMenuLanguage::<Messenger>::new(error_formatter, update_chat_cfg, open_menu))
+                }
+            ),
+            provide(|
+                Inject(error_formatter),
+                Inject(update_chat_cfg),
+                Inject(open_menu)| async move {
+                    Ok(menu::SetMenuLinkVisibility::<Messenger>::new(error_formatter, update_chat_cfg, open_menu))
+                }
+            ),
+            provide(|
+                Inject(error_formatter),
+                Inject(add_domain),
+                Inject(open_menu)| async move {
+                    Ok(menu::AddMenuDomain::<Messenger>::new(error_formatter, add_domain, open_menu))
+                }
+            ),
+            provide(|
+                Inject(error_formatter),
+                Inject(remove_domain),
+                Inject(open_menu)| async move {
+                    Ok(menu::RemoveMenuDomain::<Messenger>::new(error_formatter, remove_domain, open_menu))
                 }
             ),
             provide(|

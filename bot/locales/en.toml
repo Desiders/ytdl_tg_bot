@@ -2,7 +2,9 @@ _version = 1
 
 [start]
 source_code_label = "source code"
-body = """
+
+[help]
+commands = """
 <b>Commands</b>
 - <code>/vd</code> — download video. Use this command to track download progress; \
 otherwise, downloading happens in silent mode.
@@ -14,12 +16,14 @@ otherwise, downloading happens in silent mode.
 - <code>/rm_ed</code> — re-include domain in downloads
 - <code>/change_link_visibility</code> — show or hide the link in media captions
 - <code>/stats</code> — usage statistics
-- <code>/lang</code> — switch interface language
-
+- <code>/lang</code> — switch interface language\
+"""
+inline = """
 <b>Inline Mode</b>
 - <code>@%{username} &lt;url&gt;</code> — download by link
-- <code>@%{username} &lt;title&gt;</code> — search on YouTube
-
+- <code>@%{username} &lt;title&gt;</code> — search on YouTube\
+"""
+arguments = """
 <b>Arguments</b>
 For <code>/vd</code> and <code>/ad</code>:
   - lang: preferred audio language, example: <code>/vd [lang=ru]</code>
@@ -155,3 +159,38 @@ unknown = "Unknown language: <code>%{lang}</code>. Available: <code>en</code>, <
 changed = "Language changed to <b>%{lang}</b>."
 error = "Failed to change language"
 name = "English"
+
+[menu]
+main = """
+Send me a link and I'll download it, up to %{max_file_size_in_mb} MB.
+Choose a section below.\
+"""
+settings = "<b>Settings</b>"
+language = "<b>Language</b>"
+help = "<b>Help</b>"
+domains = """
+<b>Excluded domains</b> (%{count}/%{limit})
+Links from these domains aren't downloaded without a command.\
+"""
+domain = "Domain %{domain} is excluded."
+domain_delete = "Remove %{domain} from the exclude list?"
+domain_add = "Send the domain or a link to exclude."
+domain_invalid = "No domain found in this message"
+domain_added = "Domain %{domain} added"
+domain_removed = "Domain %{domain} removed"
+btn_settings = "⚙️ Settings"
+btn_language = "🌐 Language"
+btn_help = "📖 Help"
+btn_stats = "📊 Statistics"
+btn_source = "💻 Source code"
+btn_back = "◀️ Back"
+btn_cancel = "❌ Cancel"
+btn_refresh = "🔄 Refresh"
+btn_link_visibility = "🔗 Link in captions"
+btn_domains = "🚫 Excluded domains"
+btn_add = "➕ Add"
+btn_delete = "🗑 Remove"
+btn_confirm_delete = "🗑 Yes, remove"
+btn_help_commands = "⌨️ Commands"
+btn_help_arguments = "🧩 Arguments"
+btn_help_inline = "🔎 Inline mode"

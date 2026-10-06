@@ -2,7 +2,9 @@ _version = 1
 
 [start]
 source_code_label = "вихідний код"
-body = """
+
+[help]
+commands = """
 <b>Команди</b>
 - <code>/vd</code> — завантажити відео. Використовуйте цю команду, щоб бачити прогрес \
 завантаження; без неї завантаження відбувається в «тихому» режимі.
@@ -14,12 +16,14 @@ body = """
 - <code>/rm_ed</code> — повернути домен до завантаження
 - <code>/change_link_visibility</code> — показувати або приховувати посилання в підписі до медіа
 - <code>/stats</code> — статистика використання
-- <code>/lang</code> — змінити мову інтерфейсу
-
+- <code>/lang</code> — змінити мову інтерфейсу\
+"""
+inline = """
 <b>Inline-режим</b>
 - <code>@%{username} &lt;посилання&gt;</code> — завантажити за посиланням
-- <code>@%{username} &lt;назва&gt;</code> — пошук на YouTube
-
+- <code>@%{username} &lt;назва&gt;</code> — пошук на YouTube\
+"""
+arguments = """
 <b>Аргументи</b>
 Для <code>/vd</code> і <code>/ad</code>:
   - lang: бажана мова аудіо, приклад: <code>/vd [lang=uk]</code>
@@ -155,3 +159,38 @@ unknown = "Невідома мова: <code>%{lang}</code>. Доступні: <c
 changed = "Мову змінено на <b>%{lang}</b>."
 error = "Не вдалося змінити мову"
 name = "Українська"
+
+[menu]
+main = """
+Надішліть посилання, і я завантажу медіа, до %{max_file_size_in_mb} МБ.
+Оберіть розділ нижче.\
+"""
+settings = "<b>Налаштування</b>"
+language = "<b>Мова</b>"
+help = "<b>Допомога</b>"
+domains = """
+<b>Виключені домени</b> (%{count}/%{limit})
+Посилання з цих доменів не завантажуються без команди.\
+"""
+domain = "Домен %{domain} виключено."
+domain_delete = "Видалити %{domain} зі списку виключень?"
+domain_add = "Надішліть домен або посилання, які потрібно виключити."
+domain_invalid = "У повідомленні не знайдено домен"
+domain_added = "Домен %{domain} додано"
+domain_removed = "Домен %{domain} видалено"
+btn_settings = "⚙️ Налаштування"
+btn_language = "🌐 Мова"
+btn_help = "📖 Допомога"
+btn_stats = "📊 Статистика"
+btn_source = "💻 Вихідний код"
+btn_back = "◀️ Назад"
+btn_cancel = "❌ Скасувати"
+btn_refresh = "🔄 Оновити"
+btn_link_visibility = "🔗 Посилання в підписі"
+btn_domains = "🚫 Виключені домени"
+btn_add = "➕ Додати"
+btn_delete = "🗑 Видалити"
+btn_confirm_delete = "🗑 Так, видалити"
+btn_help_commands = "⌨️ Команди"
+btn_help_arguments = "🧩 Аргументи"
+btn_help_inline = "🔎 Inline-режим"

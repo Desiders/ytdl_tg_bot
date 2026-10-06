@@ -1,17 +1,16 @@
 use std::sync::Arc;
 
-use rust_i18n::t;
-use telers::{
-    errors::HandlerError,
-    utils::text::{html_quote, html_text_link},
-};
+use telers::errors::HandlerError;
 
 use crate::{
     config::Config,
     entities::ChatConfig,
     interactors::Interactor,
     locale::Locale,
-    services::messenger::{MessengerPort, SendTextRequest, TextFormat},
+    services::{
+        help,
+        messenger::{MessengerPort, SendTextRequest, TextFormat},
+    },
     utils::ErrorFormatter,
 };
 use tracing::error;
@@ -57,17 +56,7 @@ where
 
         let locale = input.chat_cfg.map_or(Locale::En, ChatConfig::locale);
         let max_file_size_in_mb = self.cfg.yt_dlp.max_file_size / 1000 / 1000;
-        let source_label = t!("start.source_code_label", locale = locale.as_str()).into_owned();
-        let source_code = html_text_link(source_label.as_str(), html_quote(&self.cfg.bot.src_url));
-
-        let text = t!(
-            "start.body",
-            locale = locale.as_str(),
-            username = username.as_str(),
-            max_file_size_in_mb = max_file_size_in_mb,
-            source_code = source_code,
-        )
-        .into_owned();
+        let text = help::full(locale, &username, max_file_size_in_mb, &self.cfg.bot.src_url);
 
         if let Err(err) = self
             .messenger

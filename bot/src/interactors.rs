@@ -9,6 +9,7 @@ pub mod config;
 pub mod enqueue_download;
 pub mod inline_query;
 pub mod lang;
+pub mod menu;
 pub mod photo;
 pub mod shazam;
 pub mod start;
