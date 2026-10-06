@@ -208,7 +208,7 @@ where
                 if let Err(err) = progress::is_error_in_inline_query(
                     self.messenger.as_ref(),
                     input.query_id,
-                    t!("download.error_search_media", locale = input.locale).as_ref(),
+                    t!("inline.error_search_media", locale = input.locale).as_ref(),
                 )
                 .await
                 {
