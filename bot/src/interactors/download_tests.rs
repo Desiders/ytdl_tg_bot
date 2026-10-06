@@ -42,9 +42,9 @@ use crate::{
         downloaded_media,
         get_media::{self, GetMediaByURLKind},
         messenger::{
-            AnswerInlineErrorRequest, AnswerInlineQueryRequest, DeleteMessageRequest, EditMediaByIdRequest, EditTextRequest,
-            MessengerError, MessengerPort, SendMediaByIdRequest, SendMediaGroupRequest, SendTextRequest, SentMessage, UploadAudioRequest,
-            UploadPhotoRequest, UploadPhotoUrlRequest, UploadVideoRequest,
+            AnswerCallbackRequest, AnswerInlineErrorRequest, AnswerInlineQueryRequest, DeleteMessageRequest, EditMediaByIdRequest,
+            EditMenuRequest, EditTextRequest, MessengerError, MessengerPort, SendMediaByIdRequest, SendMediaGroupRequest, SendMenuRequest,
+            SendTextRequest, SentMessage, UploadAudioRequest, UploadPhotoRequest, UploadPhotoUrlRequest, UploadVideoRequest,
         },
         send_media,
     },
@@ -201,6 +201,15 @@ impl MessengerPort for RecordingMessenger {
     async fn edit_audio_by_id(&self, _: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
         self.0.event("final inline edit");
         Ok(())
+    }
+    async fn send_menu(&self, _: SendMenuRequest<'_>) -> Result<(), MessengerError> {
+        unreachable!()
+    }
+    async fn edit_menu(&self, _: EditMenuRequest<'_>) -> Result<(), MessengerError> {
+        unreachable!()
+    }
+    async fn answer_callback(&self, _: AnswerCallbackRequest<'_>) -> Result<(), MessengerError> {
+        unreachable!()
     }
     async fn answer_inline_error(&self, _: AnswerInlineErrorRequest<'_>) -> Result<(), MessengerError> {
         unreachable!()

@@ -56,6 +56,39 @@ pub struct EditTextRequest<'a> {
     pub clear_inline_keyboard: bool,
 }
 
+pub enum ButtonAction {
+    Callback(String),
+    Url(String),
+}
+
+pub struct Button {
+    pub text: String,
+    pub action: ButtonAction,
+}
+
+pub struct Keyboard {
+    pub rows: Vec<Vec<Button>>,
+}
+
+/// Menu text is always HTML without a link preview.
+pub struct SendMenuRequest<'a> {
+    pub chat_id: i64,
+    pub text: &'a str,
+    pub keyboard: &'a Keyboard,
+}
+
+pub struct EditMenuRequest<'a> {
+    pub chat_id: i64,
+    pub message_id: i64,
+    pub text: &'a str,
+    pub keyboard: &'a Keyboard,
+}
+
+pub struct AnswerCallbackRequest<'a> {
+    pub callback_id: &'a str,
+    pub text: Option<&'a str>,
+}
+
 pub struct DeleteMessageRequest {
     pub chat_id: i64,
     pub message_id: i64,
@@ -165,6 +198,13 @@ pub trait MessengerPort: Send + Sync {
     fn edit_text(&self, request: EditTextRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
 
     fn delete_message(&self, request: DeleteMessageRequest) -> impl Future<Output = Result<(), MessengerError>> + Send;
+
+    fn send_menu(&self, request: SendMenuRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
+
+    /// An edit to identical content succeeds without a change.
+    fn edit_menu(&self, request: EditMenuRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
+
+    fn answer_callback(&self, request: AnswerCallbackRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
 
     fn answer_inline_error(&self, request: AnswerInlineErrorRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
 
