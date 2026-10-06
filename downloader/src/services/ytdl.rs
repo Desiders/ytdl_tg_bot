@@ -690,6 +690,14 @@ mod tests {
         );
     }
 
+    // Without `float_roundtrip` this came back as `0.22668514563732176`.
+    #[test]
+    fn info_ndjson_keeps_every_float_digit() {
+        let parsed: Vec<(serde_json::Value, String)> = parse_ndjson(br#"{"value":0.22668514563732178}"#).unwrap();
+
+        assert_eq!(parsed[0].1, r#"{"value":0.22668514563732178}"#);
+    }
+
     #[test]
     fn speed_or_eta_changes_are_not_reported_as_new_progress() {
         let mut last = None;
