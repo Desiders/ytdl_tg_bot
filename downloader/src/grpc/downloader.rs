@@ -991,6 +991,10 @@ fn map_playlist_response(playlist: Playlist, max_file_size: u64) -> Result<Media
             return Err(Status::invalid_argument("No downloadable formats fit max file size"));
         }
 
+        let (formats, raws): (Vec<_>, Vec<_>) = formats.into_iter().unzip();
+        let (shared_info_json, format_info_jsons) =
+            split_info_json(&raws).map_err(|err| Status::internal(format!("Info JSON error: {err}")))?;
+
         entries.push(MediaEntry {
             id: media.id,
             display_id: media.display_id,
@@ -1004,16 +1008,19 @@ fn map_playlist_response(playlist: Playlist, max_file_size: u64) -> Result<Media
             audio_language: media.language,
             formats: formats
                 .into_iter()
-                .map(|(format, raw_info_json)| MediaFormatEntry {
+                .zip(format_info_jsons)
+                .map(|(format, raw_format_json)| MediaFormatEntry {
                     format_id: format.format_id,
                     ext: format.ext,
                     width: format.width,
                     height: format.height,
                     aspect_ratio: format.aspect_ratio,
                     filesize_approx: format.filesize_approx,
-                    raw_info_json,
+                    raw_info_json: String::new(),
+                    raw_format_json,
                 })
                 .collect(),
+            raw_info_json: shared_info_json,
         });
     }
 
@@ -1116,6 +1123,29 @@ fn patch_info_json(raw: &str, ext: &str, thumbnail: Option<&Url>) -> String {
         object.insert("thumbnail".to_owned(), serde_json::Value::String(thumbnail.to_string()));
     }
     serde_json::to_string(&value).unwrap_or_else(|_| raw.to_owned())
+}
+
+// yt-dlp prints a full info JSON copy per format, so the keys every copy shares are sent once per entry.
+fn split_info_json(raws: &[String]) -> Result<(String, Vec<String>), serde_json::Error> {
+    let mut objects = raws
+        .iter()
+        .map(|raw| serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(raw))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut shared = objects.first().cloned().unwrap_or_default();
+    shared.retain(|key, value| objects.iter().all(|object| object.get(key) == Some(value)));
+
+    for object in &mut objects {
+        object.retain(|key, _| !shared.contains_key(key));
+    }
+
+    Ok((
+        serde_json::Value::Object(shared).to_string(),
+        objects
+            .into_iter()
+            .map(|object| serde_json::Value::Object(object).to_string())
+            .collect(),
+    ))
 }
 
 // Selects snapsave carousel URLs by the `items` range (1-based start:count:step), mirroring playlist
@@ -1376,11 +1406,11 @@ fn resolve_download_duration(media_duration: Option<f32>, section: Option<&Secti
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_range, reject_active_livestreams, resolve_download_duration, stream_media_file, DownloadChunk, Payload, STREAM_BUFFER_CHUNKS,
-        STREAM_CHUNK_SIZE,
+        map_playlist_response, parse_range, reject_active_livestreams, resolve_download_duration, stream_media_file, DownloadChunk,
+        Payload, STREAM_BUFFER_CHUNKS, STREAM_CHUNK_SIZE,
     };
     use crate::{
-        entities::{Media, Playlist, Range, Sections},
+        entities::{Media, MediaFormat, Playlist, Range, Sections},
         services::ytdl::{self, StreamItem},
     };
     use std::{
@@ -1871,5 +1901,58 @@ mod tests {
         };
 
         assert!(reject_active_livestreams(&playlist).is_ok());
+    }
+
+    #[test]
+    fn sends_shared_info_json_once_per_entry() {
+        let format = MediaFormat {
+            format_id: "1".into(),
+            format_note: None,
+            ext: "mp4".into(),
+            width: None,
+            height: None,
+            aspect_ratio: None,
+            filesize_approx: None,
+        };
+        let playlist = Playlist {
+            inner: vec![(
+                Media {
+                    id: "id".into(),
+                    display_id: None,
+                    webpage_url: Url::parse("https://media.example.test/test").unwrap(),
+                    direct_url: None,
+                    title: None,
+                    language: None,
+                    uploader: None,
+                    duration: None,
+                    playlist_index: 1,
+                    thumbnail: None,
+                    thumbnails: vec![],
+                    live_status: None,
+                    is_live: false,
+                },
+                vec![
+                    (
+                        format.clone(),
+                        r#"{"id":"id","value":0.22668514563732178,"format_id":"1"}"#.to_owned(),
+                    ),
+                    (
+                        MediaFormat {
+                            format_id: "2".into(),
+                            ..format
+                        },
+                        r#"{"id":"id","value":0.22668514563732178,"format_id":"2"}"#.to_owned(),
+                    ),
+                ],
+            )],
+        };
+
+        let response = map_playlist_response(playlist, 1024).unwrap();
+
+        let entry = &response.entries[0];
+        assert_eq!(entry.raw_info_json, r#"{"id":"id","value":0.22668514563732178}"#);
+        assert_eq!(entry.formats[0].raw_format_json, r#"{"format_id":"1"}"#);
+        assert_eq!(entry.formats[1].raw_format_json, r#"{"format_id":"2"}"#);
+        assert!(entry.formats.iter().all(|format| format.raw_info_json.is_empty()));
     }
 }
