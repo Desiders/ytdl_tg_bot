@@ -19,6 +19,7 @@ pub async fn open_main<Messenger>(
     message: Message,
     Extension(chat_cfg): Extension<ChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
+    fsm: menu::Fsm,
     Inject(interactor): Inject<menu::OpenMenu<Messenger>>,
 ) -> HandlerResult
 where
@@ -33,6 +34,7 @@ where
             notice: None,
             chat_cfg: &chat_cfg,
             exclude_domains: &exclude_domains,
+            fsm: &fsm,
         })
         .await?;
     Ok(EventReturn::Finish)
@@ -43,6 +45,7 @@ pub async fn open_help<Messenger>(
     message: Message,
     Extension(chat_cfg): Extension<ChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
+    fsm: menu::Fsm,
     Inject(interactor): Inject<menu::OpenMenu<Messenger>>,
 ) -> HandlerResult
 where
@@ -57,6 +60,7 @@ where
             notice: None,
             chat_cfg: &chat_cfg,
             exclude_domains: &exclude_domains,
+            fsm: &fsm,
         })
         .await?;
     Ok(EventReturn::Finish)
@@ -67,6 +71,7 @@ pub async fn open_stats<Messenger>(
     message: Message,
     Extension(chat_cfg): Extension<ChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
+    fsm: menu::Fsm,
     Inject(interactor): Inject<menu::OpenMenu<Messenger>>,
 ) -> HandlerResult
 where
@@ -81,6 +86,7 @@ where
             notice: None,
             chat_cfg: &chat_cfg,
             exclude_domains: &exclude_domains,
+            fsm: &fsm,
         })
         .await?;
     Ok(EventReturn::Finish)
@@ -91,6 +97,7 @@ pub async fn open_language<Messenger>(
     message: Message,
     Extension(chat_cfg): Extension<ChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
+    fsm: menu::Fsm,
     Inject(interactor): Inject<menu::OpenMenu<Messenger>>,
 ) -> HandlerResult
 where
@@ -105,6 +112,7 @@ where
             notice: None,
             chat_cfg: &chat_cfg,
             exclude_domains: &exclude_domains,
+            fsm: &fsm,
         })
         .await?;
     Ok(EventReturn::Finish)
@@ -115,6 +123,7 @@ pub async fn add_domain<Messenger>(
     message: Message,
     Extension(chat_cfg): Extension<ChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
+    fsm: menu::Fsm,
     Inject(interactor): Inject<menu::AddMenuDomain<Messenger>>,
 ) -> HandlerResult
 where
@@ -127,6 +136,7 @@ where
             host: host.as_deref(),
             chat_cfg: &chat_cfg,
             exclude_domains: &exclude_domains,
+            fsm: &fsm,
         })
         .await?;
     Ok(EventReturn::Finish)
@@ -138,6 +148,7 @@ pub async fn open_screen<Messenger>(
     data: OpenScreen,
     Extension(chat_cfg): Extension<ChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
+    fsm: menu::Fsm,
     Inject(interactor): Inject<menu::OpenMenu<Messenger>>,
 ) -> HandlerResult
 where
@@ -157,6 +168,7 @@ where
             notice: None,
             chat_cfg: &chat_cfg,
             exclude_domains: &exclude_domains,
+            fsm: &fsm,
         })
         .await?;
     Ok(EventReturn::Finish)
@@ -168,6 +180,7 @@ pub async fn set_language<Messenger>(
     data: SetLanguage,
     Extension(chat_cfg): Extension<ChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
+    fsm: menu::Fsm,
     Inject(interactor): Inject<menu::SetMenuLanguage<Messenger>>,
 ) -> HandlerResult
 where
@@ -186,6 +199,7 @@ where
             locale: data.locale,
             chat_cfg: &chat_cfg,
             exclude_domains: &exclude_domains,
+            fsm: &fsm,
         })
         .await?;
     Ok(EventReturn::Finish)
@@ -197,6 +211,7 @@ pub async fn set_link_visibility<Messenger>(
     data: SetLinkVisibility,
     Extension(chat_cfg): Extension<ChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
+    fsm: menu::Fsm,
     Inject(interactor): Inject<menu::SetMenuLinkVisibility<Messenger>>,
 ) -> HandlerResult
 where
@@ -215,6 +230,7 @@ where
             link_is_visible: data.visible,
             chat_cfg: &chat_cfg,
             exclude_domains: &exclude_domains,
+            fsm: &fsm,
         })
         .await?;
     Ok(EventReturn::Finish)
@@ -226,6 +242,7 @@ pub async fn remove_domain<Messenger>(
     data: DeleteDomain,
     Extension(chat_cfg): Extension<ChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
+    fsm: menu::Fsm,
     Inject(interactor): Inject<menu::RemoveMenuDomain<Messenger>>,
 ) -> HandlerResult
 where
@@ -244,6 +261,7 @@ where
             domain: data.domain,
             chat_cfg: &chat_cfg,
             exclude_domains: &exclude_domains,
+            fsm: &fsm,
         })
         .await?;
     Ok(EventReturn::Finish)

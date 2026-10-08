@@ -19,6 +19,26 @@ pub enum Screen {
     DomainDelete { key: DomainKey },
 }
 
+/// A menu step that waits for the next message instead of a button press.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MenuState {
+    DomainInput,
+}
+
+impl AsRef<str> for MenuState {
+    fn as_ref(&self) -> &str {
+        match self {
+            Self::DomainInput => "menu_domain_input",
+        }
+    }
+}
+
+impl PartialEq<&str> for MenuState {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_ref() == *other
+    }
+}
+
 // Callback data is capped at 64 bytes, too short for a domain, so buttons name it by a fingerprint. A list position
 //  would point at another domain once the list changes under an old message.
 //  https://core.telegram.org/bots/api#inlinekeyboardbutton

@@ -4,6 +4,7 @@ use rust_i18n::t;
 use telers::{
     callback_data::CallbackData,
     errors::HandlerError,
+    fsm::{Context, MemoryStorage},
     utils::text::{html_code, html_expandable_blockquote, html_quote, html_text_link},
 };
 use tracing::error;
@@ -15,14 +16,15 @@ use crate::{
     locale::Locale,
     services::{
         chat,
-        menu_input::MenuInputState,
         messenger::{AnswerCallbackRequest, Button, ButtonAction, EditMenuRequest, Keyboard, MessengerPort, SendMenuRequest},
     },
     utils::ErrorFormatter,
-    value_objects::menu::{DeleteDomain, DomainKey, OpenScreen, Screen, SetLanguage, SetLinkVisibility},
+    value_objects::menu::{DeleteDomain, DomainKey, MenuState, OpenScreen, Screen, SetLanguage, SetLinkVisibility},
 };
 
 const LOCALES: [Locale; 3] = [Locale::En, Locale::Ru, Locale::Uk];
+
+pub type Fsm = Context<MemoryStorage>;
 
 pub enum MenuTarget<'a> {
     Send {
@@ -39,7 +41,6 @@ pub struct OpenMenu<Messenger> {
     cfg: Arc<Config>,
     error_formatter: Arc<ErrorFormatter>,
     messenger: Arc<Messenger>,
-    input_state: Arc<MenuInputState>,
     stats: Arc<stats::Stats<Messenger>>,
 }
 
@@ -49,14 +50,12 @@ impl<Messenger> OpenMenu<Messenger> {
         cfg: Arc<Config>,
         error_formatter: Arc<ErrorFormatter>,
         messenger: Arc<Messenger>,
-        input_state: Arc<MenuInputState>,
         stats: Arc<stats::Stats<Messenger>>,
     ) -> Self {
         Self {
             cfg,
             error_formatter,
             messenger,
-            input_state,
             stats,
         }
     }
@@ -80,6 +79,7 @@ pub struct OpenMenuInput<'a> {
     pub notice: Option<Notice>,
     pub chat_cfg: &'a ChatConfig,
     pub exclude_domains: &'a ChatConfigExcludeDomains,
+    pub fsm: &'a Fsm,
 }
 
 impl<Messenger> Interactor<OpenMenuInput<'_>> for &OpenMenu<Messenger>
@@ -92,7 +92,7 @@ where
     async fn execute(self, input: OpenMenuInput<'_>) -> Result<Self::Output, Self::Err> {
         let domains = &input.exclude_domains.0;
         let screen = existing_screen(input.screen, domains);
-        self.track_input(screen, input.chat_cfg.tg_id).await;
+        track_input(screen, input.fsm).await;
 
         let locale = input.chat_cfg.locale();
         let page = Page {
@@ -167,18 +167,6 @@ where
         }
     }
 
-    // Only the add-domain prompt waits for typed input; every other screen cancels it.
-    async fn track_input(&self, screen: Screen, chat_id: i64) {
-        let result = if screen == Screen::DomainAdd {
-            self.input_state.await_domain(chat_id).await
-        } else {
-            self.input_state.clear(chat_id).await
-        };
-        if let Err(err) = result {
-            error!(%err, "Menu input state error");
-        }
-    }
-
     async fn username(&self, screen: Screen) -> String {
         if screen != Screen::HelpInline {
             return String::new();
@@ -227,6 +215,7 @@ pub struct SetMenuLanguageInput<'a> {
     pub locale: Locale,
     pub chat_cfg: &'a ChatConfig,
     pub exclude_domains: &'a ChatConfigExcludeDomains,
+    pub fsm: &'a Fsm,
 }
 
 impl<Messenger> Interactor<SetMenuLanguageInput<'_>> for &SetMenuLanguage<Messenger>
@@ -260,6 +249,7 @@ where
                 notice,
                 chat_cfg: &chat_cfg,
                 exclude_domains: input.exclude_domains,
+                fsm: input.fsm,
             })
             .await
     }
@@ -291,6 +281,7 @@ pub struct SetMenuLinkVisibilityInput<'a> {
     pub link_is_visible: bool,
     pub chat_cfg: &'a ChatConfig,
     pub exclude_domains: &'a ChatConfigExcludeDomains,
+    pub fsm: &'a Fsm,
 }
 
 impl<Messenger> Interactor<SetMenuLinkVisibilityInput<'_>> for &SetMenuLinkVisibility<Messenger>
@@ -324,6 +315,7 @@ where
                 notice,
                 chat_cfg: &chat_cfg,
                 exclude_domains: input.exclude_domains,
+                fsm: input.fsm,
             })
             .await
     }
@@ -355,6 +347,7 @@ pub struct AddMenuDomainInput<'a> {
     pub host: Option<&'a str>,
     pub chat_cfg: &'a ChatConfig,
     pub exclude_domains: &'a ChatConfigExcludeDomains,
+    pub fsm: &'a Fsm,
 }
 
 impl<Messenger> Interactor<AddMenuDomainInput<'_>> for &AddMenuDomain<Messenger>
@@ -391,6 +384,7 @@ where
                 notice: Some(notice),
                 chat_cfg: input.chat_cfg,
                 exclude_domains: &ChatConfigExcludeDomains(domains),
+                fsm: input.fsm,
             })
             .await
     }
@@ -448,6 +442,7 @@ pub struct RemoveMenuDomainInput<'a> {
     pub domain: DomainKey,
     pub chat_cfg: &'a ChatConfig,
     pub exclude_domains: &'a ChatConfigExcludeDomains,
+    pub fsm: &'a Fsm,
 }
 
 impl<Messenger> Interactor<RemoveMenuDomainInput<'_>> for &RemoveMenuDomain<Messenger>
@@ -469,6 +464,7 @@ where
                 notice,
                 chat_cfg: input.chat_cfg,
                 exclude_domains: &ChatConfigExcludeDomains(domains),
+                fsm: input.fsm,
             })
             .await
     }
@@ -497,6 +493,19 @@ impl<Messenger> RemoveMenuDomain<Messenger> {
                 Some(Notice::new(t!("exclude_domain.remove_error", locale = locale).into_owned()))
             }
         }
+    }
+}
+
+// Only the add-domain prompt waits for typed input; every other screen cancels it. Finishing first keeps the state
+//  stack at one entry, since `set_state` pushes onto it.
+//  https://github.com/Desiders/telers/blob/a14a34520eaeffccd1ebdbb4fffe8e44ead81bb9/telers/src/fsm/storage/memory.rs#L47-L57
+async fn track_input(screen: Screen, fsm: &Fsm) {
+    let result = match fsm.finish().await {
+        Ok(()) if screen == Screen::DomainAdd => fsm.set_state(MenuState::DomainInput).await,
+        result => result,
+    };
+    if let Err(err) = result {
+        error!(%err, "Menu state error");
     }
 }
 
@@ -822,5 +831,17 @@ mod tests {
             "Added\n\nMenu"
         );
         assert_eq!(with_notice(None, "Menu".to_owned()), "Menu");
+    }
+
+    #[tokio::test]
+    async fn only_the_add_screen_waits_for_a_domain() {
+        let fsm = Fsm::new(MemoryStorage::new(), telers::fsm::StorageKey::new(1, 2, 2, None, None));
+
+        track_input(Screen::DomainAdd, &fsm).await;
+        track_input(Screen::DomainAdd, &fsm).await;
+        assert_eq!(fsm.get_states().await.unwrap().as_ref(), [MenuState::DomainInput.as_ref().into()]);
+
+        track_input(Screen::Domains, &fsm).await;
+        assert_eq!(fsm.get_state().await.unwrap(), None);
     }
 }

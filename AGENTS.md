@@ -60,7 +60,7 @@ The bot chart uses the current CloudNativePG plugin-based backup path.
 
 - `charts/bot` creates a `valkey.io/v1alpha1` `ValkeyCluster` named `valkey` with AOF persistence and `maxmemory-policy: noeviction`.
 - The `admin` user password comes from the `valkey` Secret; bot config `[redis]` must use user `admin` and the same password.
-- Valkey stores the durable queue, short-lived Telegram progress-throttle keys, and private-menu input prompts (`menu:{chat_id}:domain_input`, 300-second TTL; the first message claims a prompt with an atomic `DEL`, invalid input re-arms it). Do not put caches that may be evicted into the same instance without changing the eviction policy.
+- Valkey stores the durable queue and short-lived Telegram progress-throttle keys. Do not put caches that may be evicted into the same instance without changing the eviction policy.
 
 ### Local Telegram Bot API
 
@@ -158,6 +158,7 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - Keep Telegram SDK/API types isolated to the Telegram adapter. Utility string helpers such as HTML escaping may still live elsewhere, but Telegram request construction should have one source of truth.
 - Menus go through `send_menu`, `edit_menu`, and `answer_callback` with the port's own `Keyboard` type. Callback data uses `#[derive(telers::CallbackData)]` structs in `bot/src/value_objects/menu.rs`; domain buttons carry a 64-bit FNV-1a fingerprint of the domain (`DomainKey`), not the domain, to stay under Telegram's 64-byte limit, and not a list position, which an old message would resolve to another domain after the list changes.
 - Menu callbacks are answered before the menu is edited.
+- The add-domain prompt is `telers` FSM state (`MenuState::DomainInput`) in `MemoryStorage`, armed by the add screen and cleared by every other menu screen. It has no TTL and does not survive a restart; a command typed while it waits still runs as a command.
 - Current known exceptions that use `telers::Bot` directly: `ReactionMiddleware`, `worker::clear_reaction`, startup `SetMyCommands`, and `TelegramFileDownloader` (`getFile`). Do not add new ones.
 
 ### Bot Handler / Interactor Boundary
@@ -179,7 +180,6 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
   - `downloaded_media`
   - `file_download`
   - `get_media`
-  - `menu_input`
   - `messenger`
   - `node_router`
   - `progress_throttle`

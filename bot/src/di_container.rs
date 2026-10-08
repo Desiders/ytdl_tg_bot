@@ -26,7 +26,6 @@ use crate::{
         chat,
         download::media,
         downloaded_media, file_download, get_media,
-        menu_input::MenuInputState,
         messenger::telegram::TelegramMessenger,
         node_router::{self, DownloaderServiceTarget, NodeRouter},
         progress_throttle::ProgressThrottle,
@@ -173,10 +172,6 @@ pub(super) fn queue_registry(cfg_registry: Registry) -> RegistryWithSync {
         provide(
             App,
             |Inject(conn): Inject<ConnectionManager>| async move { Ok(ProgressThrottle::new((*conn).clone())) },
-        ),
-        provide(
-            App,
-            |Inject(conn): Inject<ConnectionManager>| async move { Ok(MenuInputState::new((*conn).clone())) },
         ),
         extend(cfg_registry),
     }
@@ -329,9 +324,8 @@ where
                 Inject(cfg),
                 Inject(error_formatter),
                 Inject(messenger): Inject<Messenger>,
-                Inject(input_state),
                 Inject(stats)| async move {
-                    Ok(menu::OpenMenu::new(cfg, error_formatter, messenger, input_state, stats))
+                    Ok(menu::OpenMenu::new(cfg, error_formatter, messenger, stats))
                 }
             ),
             provide(|

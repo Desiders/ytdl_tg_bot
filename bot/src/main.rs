@@ -25,7 +25,9 @@ use telers::{
     },
     enums::{ChatType::Private, MessageType::Text},
     event::{simple::Handler as SimpleHandler, telegram::Handler},
-    filters::{CallbackData, ChatType, Command, Filter as _, MessageType},
+    filters::{CallbackData, ChatType, Command, Filter as _, MessageType, State},
+    fsm::MemoryStorage,
+    middlewares::outer::FSMContext,
     Bot, Dispatcher, Router,
 };
 use tokio_util::sync::CancellationToken;
@@ -34,7 +36,7 @@ use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt
 
 use crate::{
     filters::{
-        claims_domain_input, command_without_args, is_audio_inline_result, is_auto_inline_result, is_exclude_domain, is_via_bot,
+        command_without_args, is_audio_inline_result, is_auto_inline_result, is_command, is_exclude_domain, is_via_bot,
         is_video_inline_result, random_cmd_is_enabled, text_contains_host_with_reply, text_contains_url, text_contains_url_with_reply,
         text_empty, url_is_blacklisted, url_is_skippable_by_param,
     },
@@ -42,7 +44,7 @@ use crate::{
     middlewares::{CleanUrlMiddleware, CreateChatMiddleware, ReactionMiddleware},
     services::messenger::telegram::TelegramMessenger,
     utils::{on_shutdown, on_startup},
-    value_objects::menu::{DeleteDomain, OpenScreen, SetLanguage, SetLinkVisibility},
+    value_objects::menu::{DeleteDomain, MenuState, OpenScreen, SetLanguage, SetLinkVisibility},
 };
 
 type Messenger = TelegramMessenger;
@@ -200,10 +202,12 @@ async fn main() {
                 )
         });
 
+    let fsm_storage = MemoryStorage::new();
     let router = setup_async_default(Router::new("main"), container.clone())
         .on_update(|observer| observer.register_outer_middleware(CreateChatMiddleware))
         .on_message(|observer| {
             observer
+                .register_outer_middleware(FSMContext::new(fsm_storage.clone()))
                 .register(
                     Handler::new(menu::open_main::<Messenger>)
                         .filter(ChatType::one(Private))
@@ -233,11 +237,14 @@ async fn main() {
                     Handler::new(menu::add_domain::<Messenger>)
                         .filter(ChatType::one(Private))
                         .filter(MessageType::one(Text))
-                        .filter(claims_domain_input),
+                        .filter(State::one(MenuState::DomainInput))
+                        // Download commands are handled by `download_router`, tried after this one.
+                        .filter(is_command.invert()),
                 )
         })
         .on_callback_query(|observer| {
             observer
+                .register_outer_middleware(FSMContext::new(fsm_storage))
                 .register(Handler::new(menu::open_screen::<Messenger>).filter(CallbackData::<OpenScreen>::new()))
                 .register(Handler::new(menu::set_language::<Messenger>).filter(CallbackData::<SetLanguage>::new()))
                 .register(Handler::new(menu::set_link_visibility::<Messenger>).filter(CallbackData::<SetLinkVisibility>::new()))

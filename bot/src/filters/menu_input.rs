@@ -1,35 +1,14 @@
-use crate::services::menu_input::MenuInputState;
-
-use froodi::async_impl::Container;
 use std::{convert::Infallible, future::Future};
-use telers::{filters::CommandObject, types::Chat, FilterResult, Request};
-use tracing::error;
+use telers::{filters::CommandObject, FilterResult, Request};
 
-// A command typed while the prompt is open still runs as a command. Filters stop at the first `false`, so register this
-//  one last: it consumes the prompt, and invalid input re-arms it by reopening the add screen.
-//  https://github.com/Desiders/telers/blob/a14a34520eaeffccd1ebdbb4fffe8e44ead81bb9/telers/src/event/telegram/handler.rs#L101-L107
-pub fn claims_domain_input(request: &mut Request) -> impl Future<Output = FilterResult<Infallible>> {
-    let is_command = request.update.text().is_some_and(is_command);
-    let container_option = request.extensions.get::<Container>().cloned();
-    let chat_id = request.update.chat().map(Chat::id);
-    async move {
-        let (false, Some(container), Some(chat_id)) = (is_command, container_option, chat_id) else {
-            return Ok(false);
-        };
-        let state = container.get::<MenuInputState>().await.unwrap();
-        match state.claim_domain_input(chat_id).await {
-            Ok(claimed) => Ok(claimed),
-            Err(err) => {
-                error!(%err, "Menu input state error");
-                Ok(false)
-            }
-        }
-    }
+pub fn is_command(request: &mut Request) -> impl Future<Output = FilterResult<Infallible>> {
+    let result = request.update.text().is_some_and(text_is_command);
+    async move { Ok(result) }
 }
 
 // `Command` trims leading whitespace, so a bare `starts_with('/')` let ` /vd <url>` fill the prompt instead of running.
 //  https://github.com/Desiders/telers/blob/a14a34520eaeffccd1ebdbb4fffe8e44ead81bb9/telers/src/filters/command.rs#L744-L795
-fn is_command(text: &str) -> bool {
+fn text_is_command(text: &str) -> bool {
     CommandObject::extract(text).is_some_and(|command| command.prefix == '/')
 }
 
@@ -55,10 +34,10 @@ mod tests {
             "\t/rm_ed example.com",
             "\n/add_ed example.com",
         ] {
-            assert!(is_command(text), "{text:?}");
+            assert!(text_is_command(text), "{text:?}");
         }
         for text in ["example.com", "https://example.com/video", "/"] {
-            assert!(!is_command(text), "{text:?}");
+            assert!(!text_is_command(text), "{text:?}");
         }
     }
 }
