@@ -18,6 +18,7 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 - Photo download
 - Playlist download
 - Inline mode (auto / video / audio)
+- Guest mode — mention the bot in a chat where it is not a member to download one media file
 - Song recognition (`/shazam`) — identify a track from an audio, voice, video or video note, then download it
 - Cookie-free Instagram / Facebook downloads (via [`snapsave-parser`](https://github.com/Desiders/snapsave-parser))
 - Spotify tracks, albums and playlists — resolved to DRM-free sources via [`spotdl`](https://github.com/spotDL/spotify-downloader)
@@ -36,6 +37,7 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 
 | Command | Description |
 | --- | --- |
+| `@bot <url>` or a mention in a reply | Download one file in guest mode with automatic media-type detection |
 | `/vd`, `/video` | Download video with progress messages |
 | `/ad`, `/audio` | Download audio |
 | `/pd`, `/photo` | Download photo |
@@ -56,6 +58,8 @@ Arguments go in square brackets after the command, for example `/vd [lang=ru,ite
 This guide assumes Kubernetes, Helm, and a working image registry. If you are deploying from this repository instead of using already-published images, build and push dev images first.
 
 ### 1. Prerequisites
+
+Enable **Guest Mode** in BotFather to accept mentions in chats where the bot is not a member.
 
 Required local tools:
 

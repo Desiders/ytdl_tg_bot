@@ -155,3 +155,7 @@ unknown = "Unknown language: <code>%{lang}</code>. Available: <code>en</code>, <
 changed = "Language changed to <b>%{lang}</b>."
 error = "Failed to change language"
 name = "English"
+
+[guest]
+help = "Mention me with a public media link, or reply to a message containing one. I detect the media type automatically and return one file per request."
+error = "Could not prepare this media. Please try another link or try again later."

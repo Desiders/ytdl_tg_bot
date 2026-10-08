@@ -21,7 +21,7 @@ use crate::{
         YtDlpConfig,
     },
     database::{SeaOrmTxManager, TxManager, TxManagerFactories},
-    interactors::{audio, auto, chosen_inline, config, enqueue_download, inline_query, lang, photo, shazam, start, stats, video},
+    interactors::{audio, auto, chosen_inline, config, enqueue_download, guest, inline_query, lang, photo, shazam, start, stats, video},
     services::{
         chat,
         download::media,
@@ -244,6 +244,15 @@ where
             provide(|Inject(node_router)| async move { Ok(media::DownloadVideo::new(node_router)) }),
             provide(|Inject(node_router)| async move { Ok(media::DownloadAudio::new(node_router)) }),
             provide(|Inject(node_router)| async move { Ok(media::DownloadPhoto::new(node_router)) }),
+
+            provide(|
+                Inject(messenger): Inject<Messenger>,
+                Inject(queue): Inject<RedisJobQueue>,
+                Inject(cleaner),
+                Inject(cfg): Inject<Config>| async move {
+                    Ok(guest::EnqueueGuestDownload::new(messenger, queue, cleaner, cfg))
+                }
+            ),
 
             provide(|
                 Inject(messenger): Inject<Messenger>,

@@ -14,6 +14,10 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Keep independent flags compatible with existing queued JSON payloads"
+)]
 pub struct DownloadJob {
     pub job_id: Uuid,
     pub media_type: MediaType,
@@ -34,6 +38,9 @@ pub struct DownloadJob {
     /// For auto jobs: run silently (no progress message). Set for group chats.
     #[serde(default)]
     pub quiet: bool,
+    /// Guest replies use inline delivery with default settings and no diagnostic details.
+    #[serde(default)]
+    pub guest: bool,
 }
 
 impl DownloadJob {
@@ -59,6 +66,7 @@ impl DownloadJob {
             base_text: None,
             auto: false,
             quiet: false,
+            guest: false,
         }
     }
 
@@ -100,7 +108,9 @@ mod tests {
         );
         let mut payload = serde_json::to_value(&job).unwrap();
         payload["attempts"] = 2.into();
+        payload.as_object_mut().unwrap().remove("guest");
         let decoded: DownloadJob = serde_json::from_value(payload).unwrap();
+        assert!(!decoded.guest);
         assert_eq!(decoded.job_id, job.job_id);
         assert_eq!(decoded.url, job.url);
         assert!(serde_json::to_value(decoded).unwrap().get("attempts").is_none());

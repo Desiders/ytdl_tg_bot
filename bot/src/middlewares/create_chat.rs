@@ -23,6 +23,10 @@ pub struct CreateChatMiddleware;
 impl Middleware for CreateChatMiddleware {
     #[instrument(skip_all)]
     async fn call(&mut self, mut request: Request) -> Result<MiddlewareResponse, EventErrorKind> {
+        // Guest chat IDs live in a separate namespace. Do not look up or persist their settings.
+        if request.update.guest_message().is_some() {
+            return Ok((request, EventReturn::Finish));
+        }
         let (chat_id, cmd_random_enabled, username, chat_type) = match (request.update.chat(), request.update.from()) {
             (Some(chat), _) => {
                 let chat_type = match ChatType::try_from(enums::ChatType::from(chat)) {
@@ -76,5 +80,36 @@ impl Middleware for CreateChatMiddleware {
         }
 
         Ok((request, EventReturn::Finish))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn guest_bypasses_chat_registration_even_for_unknown_chat_types() {
+        let update = serde_json::from_value(serde_json::json!({
+            "update_id": 1,
+            "guest_message": {
+                "message_id": 1, "date": 1,
+                "chat": {"id": 7, "type": "synthetic_unknown"},
+                "from": {"id": 8, "is_bot": false, "first_name": "Synthetic", "language_code": "ru"},
+                "guest_query_id": "synthetic-query", "text": "@synthetic_bot"
+            }
+        }))
+        .unwrap();
+        let request = Request {
+            bot: telers::Bot::new("123456:synthetic-token"),
+            update: Arc::new(update),
+            context: telers::Context::default(),
+            extensions: telers::Extensions::default(),
+        };
+        // No database/container is installed. Guest processing must not need either.
+        let (request, action) = CreateChatMiddleware.call(request).await.unwrap();
+        assert!(matches!(action, EventReturn::Finish));
+        assert!(request.extensions.get::<ChatConfig>().is_none());
+        assert!(request.extensions.get::<OwnChatConfig>().is_none());
     }
 }
