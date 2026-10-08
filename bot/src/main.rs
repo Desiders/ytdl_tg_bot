@@ -34,9 +34,9 @@ use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt
 
 use crate::{
     filters::{
-        claims_domain_input, command_without_args, is_audio_inline_result, is_auto_inline_result, is_exclude_domain, is_private_callback,
-        is_via_bot, is_video_inline_result, random_cmd_is_enabled, text_contains_host_with_reply, text_contains_url,
-        text_contains_url_with_reply, text_empty, url_is_blacklisted, url_is_skippable_by_param,
+        claims_domain_input, command_without_args, is_audio_inline_result, is_auto_inline_result, is_exclude_domain, is_via_bot,
+        is_video_inline_result, random_cmd_is_enabled, text_contains_host_with_reply, text_contains_url, text_contains_url_with_reply,
+        text_empty, url_is_blacklisted, url_is_skippable_by_param,
     },
     handlers::{audio, chosen_inline, inline_query, lang, menu, photo, shazam, start, stats, video},
     middlewares::{CleanUrlMiddleware, CreateChatMiddleware, ReactionMiddleware},
@@ -238,26 +238,10 @@ async fn main() {
         })
         .on_callback_query(|observer| {
             observer
-                .register(
-                    Handler::new(menu::open_screen::<Messenger>)
-                        .filter(is_private_callback)
-                        .filter(CallbackData::<OpenScreen>::new()),
-                )
-                .register(
-                    Handler::new(menu::set_language::<Messenger>)
-                        .filter(is_private_callback)
-                        .filter(CallbackData::<SetLanguage>::new()),
-                )
-                .register(
-                    Handler::new(menu::set_link_visibility::<Messenger>)
-                        .filter(is_private_callback)
-                        .filter(CallbackData::<SetLinkVisibility>::new()),
-                )
-                .register(
-                    Handler::new(menu::remove_domain::<Messenger>)
-                        .filter(is_private_callback)
-                        .filter(CallbackData::<DeleteDomain>::new()),
-                )
+                .register(Handler::new(menu::open_screen::<Messenger>).filter(CallbackData::<OpenScreen>::new()))
+                .register(Handler::new(menu::set_language::<Messenger>).filter(CallbackData::<SetLanguage>::new()))
+                .register(Handler::new(menu::set_link_visibility::<Messenger>).filter(CallbackData::<SetLinkVisibility>::new()))
+                .register(Handler::new(menu::remove_domain::<Messenger>).filter(CallbackData::<DeleteDomain>::new()))
         })
         .on_startup(|observer| observer.register(SimpleHandler::new(on_startup, (bot.clone(), node_router.clone(), cfg.clone()))))
         .on_shutdown(|observer| observer.register(SimpleHandler::new(on_shutdown, ())))

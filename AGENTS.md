@@ -157,7 +157,7 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - Bot handlers, top-level bot interactors, and `send_media` interactors should depend on the messenger port layer, not construct Telegram methods directly.
 - Keep Telegram SDK/API types isolated to the Telegram adapter. Utility string helpers such as HTML escaping may still live elsewhere, but Telegram request construction should have one source of truth.
 - Menus go through `send_menu`, `edit_menu`, and `answer_callback` with the port's own `Keyboard` type. Callback data uses `#[derive(telers::CallbackData)]` structs in `bot/src/value_objects/menu.rs`; domain buttons carry a 64-bit FNV-1a fingerprint of the domain (`DomainKey`), not the domain, to stay under Telegram's 64-byte limit, and not a list position, which an old message would resolve to another domain after the list changes.
-- Menu callbacks are answered before the menu is edited, and are ignored outside private chats: `CreateChatMiddleware` loads a callback's config by the pressing user, which matches the chat only in a private one.
+- Menu callbacks are answered before the menu is edited.
 - Current known exceptions that use `telers::Bot` directly: `ReactionMiddleware`, `worker::clear_reaction`, startup `SetMyCommands`, and `TelegramFileDownloader` (`getFile`). Do not add new ones.
 
 ### Bot Handler / Interactor Boundary

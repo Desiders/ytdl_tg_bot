@@ -43,16 +43,6 @@ pub fn command_without_args(request: &mut Request) -> impl Future<Output = Filte
     async move { Ok(result) }
 }
 
-// `CreateChatMiddleware` loads a callback's config by the pressing user, which matches the chat only in a private one.
-pub fn is_private_callback(request: &mut Request) -> impl Future<Output = FilterResult<Infallible>> {
-    let result = request
-        .update
-        .callback_query()
-        .and_then(|query| query.message.as_deref())
-        .is_some_and(|message| matches!(message.chat(), Chat::Private(_)));
-    async move { Ok(result) }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
