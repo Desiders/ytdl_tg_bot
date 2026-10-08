@@ -4,7 +4,7 @@ use rust_i18n::t;
 use telers::{
     callback_data::CallbackData,
     errors::HandlerError,
-    utils::text::{html_code, html_expandable_blockquote, html_quote},
+    utils::text::{html_code, html_expandable_blockquote, html_quote, html_text_link},
 };
 use tracing::error;
 
@@ -14,7 +14,7 @@ use crate::{
     interactors::{config::MAX_EXCLUDE_DOMAINS, stats, Interactor},
     locale::Locale,
     services::{
-        chat, help,
+        chat,
         menu_input::MenuInputState,
         messenger::{AnswerCallbackRequest, Button, ButtonAction, EditMenuRequest, Keyboard, MessengerPort, SendMenuRequest},
     },
@@ -590,12 +590,22 @@ fn render(screen: Screen, page: &Page<'_>) -> View {
                 back(Screen::Main),
             ],
         ),
-        Screen::HelpCommands => (help::commands(page.locale), vec![back(Screen::Help)]),
-        Screen::HelpArguments => (
-            help::arguments(page.locale, page.max_file_size_in_mb, page.src_url),
+        Screen::HelpCommands => (label("help.commands"), vec![back(Screen::Help)]),
+        Screen::HelpArguments => {
+            let source_code = html_text_link(label("start.source_code_label"), html_quote(page.src_url));
+            let text = t!(
+                "help.arguments",
+                locale = locale,
+                max_file_size_in_mb = page.max_file_size_in_mb,
+                source_code = source_code,
+            )
+            .into_owned();
+            (text, vec![back(Screen::Help)])
+        }
+        Screen::HelpInline => (
+            t!("help.inline", locale = locale, username = page.username).into_owned(),
             vec![back(Screen::Help)],
         ),
-        Screen::HelpInline => (help::inline(page.locale, &page.username), vec![back(Screen::Help)]),
         Screen::Stats => (
             page.stats.clone(),
             vec![open(label("menu.btn_refresh"), Screen::Stats), back(Screen::Main)],

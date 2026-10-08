@@ -179,7 +179,6 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
   - `downloaded_media`
   - `file_download`
   - `get_media`
-  - `help`
   - `menu_input`
   - `messenger`
   - `node_router`
