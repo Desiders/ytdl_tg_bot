@@ -46,23 +46,8 @@ impl<Messenger> Stats<Messenger> {
             queue,
         }
     }
-}
 
-pub struct StatsInput<'a> {
-    pub chat_id: i64,
-    pub reply_to_message_id: Option<i64>,
-    pub chat_cfg: Option<&'a ChatConfig>,
-}
-
-impl<Messenger> Interactor<StatsInput<'_>> for &Stats<Messenger>
-where
-    Messenger: MessengerPort,
-{
-    type Output = ();
-    type Err = HandlerError;
-
-    async fn execute(self, input: StatsInput<'_>) -> Result<Self::Output, Self::Err> {
-        let locale = input.chat_cfg.map_or(Locale::En, ChatConfig::locale).as_str();
+    pub async fn text(&self, locale: &str) -> String {
         let media_stats = self.media.execute(downloaded_media::GetStatsInput { top_domains_limit: 5 }).await;
         let nodes_stats = self.nodes.execute(node_router::GetStatsInput {}).await.unwrap_or_default();
         let queue_stats = match self.queue.stats().await {
@@ -81,7 +66,7 @@ where
             |stats| stats.pending.to_string(),
         );
 
-        let text = match media_stats {
+        match media_stats {
             Ok((media_stats, chat_stats)) => {
                 let mut chat_types = String::new();
                 for chat_type_count in &chat_stats.by_type {
@@ -166,7 +151,26 @@ where
                     html_expandable_blockquote(html_quote(self.error_formatter.format(&err).as_ref()))
                 )
             }
-        };
+        }
+    }
+}
+
+pub struct StatsInput<'a> {
+    pub chat_id: i64,
+    pub reply_to_message_id: Option<i64>,
+    pub chat_cfg: Option<&'a ChatConfig>,
+}
+
+impl<Messenger> Interactor<StatsInput<'_>> for &Stats<Messenger>
+where
+    Messenger: MessengerPort,
+{
+    type Output = ();
+    type Err = HandlerError;
+
+    async fn execute(self, input: StatsInput<'_>) -> Result<Self::Output, Self::Err> {
+        let locale = input.chat_cfg.map_or(Locale::En, ChatConfig::locale).as_str();
+        let text = self.text(locale).await;
 
         if let Err(err) = self
             .messenger

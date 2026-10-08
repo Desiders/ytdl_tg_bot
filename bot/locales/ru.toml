@@ -2,7 +2,9 @@ _version = 1
 
 [start]
 source_code_label = "исходный код"
-body = """
+
+[help]
+commands = """
 <b>Команды</b>
 - <code>/vd</code> — скачать видео. Используйте эту команду, чтобы видеть прогресс \
 загрузки; без неё скачивание происходит в «тихом» режиме.
@@ -14,12 +16,14 @@ body = """
 - <code>/rm_ed</code> — вернуть домен в скачивание
 - <code>/change_link_visibility</code> — показывать или скрывать ссылку в подписи к медиа
 - <code>/stats</code> — статистика использования
-- <code>/lang</code> — сменить язык интерфейса
-
+- <code>/lang</code> — сменить язык интерфейса\
+"""
+inline = """
 <b>Inline-режим</b>
 - <code>@%{username} &lt;ссылка&gt;</code> — скачать по ссылке
-- <code>@%{username} &lt;название&gt;</code> — поиск на YouTube
-
+- <code>@%{username} &lt;название&gt;</code> — поиск на YouTube\
+"""
+arguments = """
 <b>Аргументы</b>
 Для <code>/vd</code> и <code>/ad</code>:
   - lang: предпочитаемый язык аудио, пример: <code>/vd [lang=ru]</code>
@@ -155,3 +159,38 @@ unknown = "Неизвестный язык: <code>%{lang}</code>. Доступн
 changed = "Язык изменён на <b>%{lang}</b>."
 error = "Не удалось сменить язык"
 name = "Русский"
+
+[menu]
+main = """
+Пришлите ссылку, и я скачаю медиа, до %{max_file_size_in_mb} МБ.
+Выберите раздел ниже.\
+"""
+settings = "<b>Настройки</b>"
+language = "<b>Язык</b>"
+help = "<b>Помощь</b>"
+domains = """
+<b>Исключённые домены</b> (%{count}/%{limit})
+Ссылки с этих доменов не скачиваются без команды.\
+"""
+domain = "Домен %{domain} исключён."
+domain_delete = "Удалить %{domain} из списка исключений?"
+domain_add = "Пришлите домен или ссылку, которые нужно исключить."
+domain_invalid = "В сообщении не найден домен"
+domain_added = "Домен %{domain} добавлен"
+domain_removed = "Домен %{domain} удалён"
+btn_settings = "⚙️ Настройки"
+btn_language = "🌐 Язык"
+btn_help = "📖 Помощь"
+btn_stats = "📊 Статистика"
+btn_source = "💻 Исходный код"
+btn_back = "◀️ Назад"
+btn_cancel = "❌ Отмена"
+btn_refresh = "🔄 Обновить"
+btn_link_visibility = "🔗 Ссылка в подписи"
+btn_domains = "🚫 Исключённые домены"
+btn_add = "➕ Добавить"
+btn_delete = "🗑 Удалить"
+btn_confirm_delete = "🗑 Да, удалить"
+btn_help_commands = "⌨️ Команды"
+btn_help_arguments = "🧩 Аргументы"
+btn_help_inline = "🔎 Inline-режим"

@@ -45,7 +45,7 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 | `/change_link_visibility` | Show or hide the source link in captions (private chats) |
 | `/stats` | Cache, node, queue and chat statistics |
 | `/lang` | Switch interface language |
-| `/start`, `/help` | Help text with all arguments |
+| `/start`, `/help` | In a private chat, a button menu for settings, language, excluded domains, help and stats; in groups, help text with all arguments |
 
 A bare link in a private chat is downloaded automatically with media-type detection; in groups the same happens silently. Append `yv2t_bot=false` to a link to make the bot ignore it.
 

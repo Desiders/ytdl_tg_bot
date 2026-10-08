@@ -18,6 +18,8 @@ use crate::{
     utils::ErrorFormatter,
 };
 
+pub const MAX_EXCLUDE_DOMAINS: usize = 15;
+
 pub struct ChangeLinkVisibility<Messenger> {
     error_formatter: Arc<ErrorFormatter>,
     messenger: Arc<Messenger>,
@@ -142,7 +144,7 @@ where
             }
             return Ok(());
         }
-        if input.exclude_domains.0.len() >= 15 {
+        if input.exclude_domains.0.len() >= MAX_EXCLUDE_DOMAINS {
             if let Err(err) = progress::new(
                 self.messenger.as_ref(),
                 &t!("exclude_domain.limit_reached", locale = locale),

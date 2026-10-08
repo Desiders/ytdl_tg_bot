@@ -55,19 +55,23 @@ where
             }
         };
 
-        let locale = input.chat_cfg.map_or(Locale::En, ChatConfig::locale);
+        let locale = input.chat_cfg.map_or(Locale::En, ChatConfig::locale).as_str();
         let max_file_size_in_mb = self.cfg.yt_dlp.max_file_size / 1000 / 1000;
-        let source_label = t!("start.source_code_label", locale = locale.as_str()).into_owned();
-        let source_code = html_text_link(source_label.as_str(), html_quote(&self.cfg.bot.src_url));
+        let source_label = t!("start.source_code_label", locale = locale);
+        let source_code = html_text_link(source_label.as_ref(), html_quote(&self.cfg.bot.src_url));
 
-        let text = t!(
-            "start.body",
-            locale = locale.as_str(),
-            username = username.as_str(),
-            max_file_size_in_mb = max_file_size_in_mb,
-            source_code = source_code,
-        )
-        .into_owned();
+        // Groups have no menu, so `/start` there shows every help page at once.
+        let text = [
+            t!("help.commands", locale = locale),
+            t!("help.inline", locale = locale, username = username),
+            t!(
+                "help.arguments",
+                locale = locale,
+                max_file_size_in_mb = max_file_size_in_mb,
+                source_code = source_code,
+            ),
+        ]
+        .join("\n\n");
 
         if let Err(err) = self
             .messenger

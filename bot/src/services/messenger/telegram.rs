@@ -21,7 +21,9 @@ use std::{
 use telers::{
     enums::ParseMode,
     errors::{SessionErrorKind, TelegramErrorKind},
-    methods::{self, AnswerInlineQuery, DeleteMessage, EditMessageText, GetMe, SendMediaGroup, SendMessage, TelegramMethod},
+    methods::{
+        self, AnswerCallbackQuery, AnswerInlineQuery, DeleteMessage, EditMessageText, GetMe, SendMediaGroup, SendMessage, TelegramMethod,
+    },
     types::{
         ChatIdKind, InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResult, InlineQueryResultArticle, InputFile, InputMedia,
         InputMediaAudio, InputMediaPhoto, InputMediaVideo, InputTextMessageContent, LinkPreviewOptions, Message, ReplyParameters,
@@ -38,9 +40,10 @@ const WAIT_LIVENESS_INTERVAL: Duration = Duration::from_secs(30);
 const REQUEST_INTERVAL: Duration = Duration::from_millis(100);
 
 use super::{
-    AnswerInlineErrorRequest, AnswerInlineQueryRequest, DeleteMessageRequest, EditMediaByIdRequest, EditTarget, EditTextRequest,
-    InlineQueryArticle, MessengerError, SendMediaByIdRequest, SendMediaGroupRequest, SendTextRequest, SentMessage, TextFormat,
-    UploadAudioRequest, UploadPhotoRequest, UploadPhotoUrlRequest, UploadVideoRequest,
+    AnswerCallbackRequest, AnswerInlineErrorRequest, AnswerInlineQueryRequest, ButtonAction, DeleteMessageRequest, EditMediaByIdRequest,
+    EditMenuRequest, EditTarget, EditTextRequest, InlineQueryArticle, Keyboard, MessengerError, SendMediaByIdRequest,
+    SendMediaGroupRequest, SendMenuRequest, SendTextRequest, SentMessage, TextFormat, UploadAudioRequest, UploadPhotoRequest,
+    UploadPhotoUrlRequest, UploadVideoRequest,
 };
 
 #[derive(Clone)]
@@ -180,6 +183,40 @@ impl MessengerPort for TelegramMessenger {
 
     async fn delete_message(&self, request: DeleteMessageRequest) -> Result<(), MessengerError> {
         with_retries(self, DeleteMessage::new(request.chat_id, request.message_id), 0, None).await?;
+        Ok(())
+    }
+
+    async fn send_menu(&self, request: SendMenuRequest<'_>) -> Result<(), MessengerError> {
+        with_retries(
+            self,
+            SendMessage::new(request.chat_id, request.text)
+                .parse_mode(ParseMode::HTML)
+                .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
+                .reply_markup(InlineKeyboardMarkup::from(request.keyboard)),
+            0,
+            None,
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn edit_menu(&self, request: EditMenuRequest<'_>) -> Result<(), MessengerError> {
+        let method = EditMessageText::new()
+            .chat_id(request.chat_id)
+            .message_id(request.message_id)
+            .text(request.text)
+            .parse_mode(ParseMode::HTML)
+            .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
+            .reply_markup(InlineKeyboardMarkup::from(request.keyboard));
+
+        match with_retries(self, method, 0, None).await {
+            Err(err) if !is_message_not_modified(&err) => Err(err.into()),
+            _ => Ok(()),
+        }
+    }
+
+    async fn answer_callback(&self, request: AnswerCallbackRequest<'_>) -> Result<(), MessengerError> {
+        once(self, AnswerCallbackQuery::new(request.callback_id).text_option(request.text), None).await?;
         Ok(())
     }
 
@@ -674,6 +711,32 @@ impl From<InlineQueryArticle> for InlineQueryResult {
     }
 }
 
+impl From<&Keyboard> for InlineKeyboardMarkup {
+    fn from(keyboard: &Keyboard) -> Self {
+        InlineKeyboardMarkup::new(keyboard.rows.iter().map(|row| {
+            row.iter()
+                .map(|button| {
+                    let telegram_button = InlineKeyboardButton::new(button.text.as_str());
+                    match &button.action {
+                        ButtonAction::Callback(data) => telegram_button.callback_data(data.as_str()),
+                        ButtonAction::Url(url) => telegram_button.url(url.as_str()),
+                    }
+                })
+                .collect::<Vec<_>>()
+        }))
+    }
+}
+
+// Pressing the button of the screen already shown edits to identical content, which the Bot API rejects.
+//  https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L110-L112
+fn is_message_not_modified(error: &SessionErrorKind) -> bool {
+    matches!(
+        error,
+        SessionErrorKind::Telegram(TelegramErrorKind::BadRequest { message })
+            if message.to_ascii_lowercase().contains("message is not modified")
+    )
+}
+
 /// Builds a media caption: an optional custom caption (e.g. recognized-song metadata) followed by
 /// the source "Link" when visible. Either part may be absent.
 fn caption_with_link(caption: Option<String>, link_is_visible: bool, webpage_url: Option<&url::Url>) -> Option<String> {
@@ -945,7 +1008,10 @@ mod upload_deadline_tests {
 #[cfg(test)]
 mod rate_limit_tests {
     use super::*;
-    use crate::services::{messenger::MediaGroupItem, queue::test_support::Fixture};
+    use crate::services::{
+        messenger::{Button, MediaGroupItem},
+        queue::test_support::Fixture,
+    };
     use futures_util::stream;
     use std::{borrow::Cow, net::SocketAddr};
     use telers::client::{
@@ -1049,6 +1115,108 @@ mod rate_limit_tests {
             .await
             .unwrap();
         assert!(server.await.unwrap().contains("/sendPhoto "));
+    }
+
+    #[tokio::test]
+    async fn edit_menu_ignores_an_unchanged_message_and_sends_the_keyboard() {
+        let fixture = Fixture::new().await;
+        let server = reply_once(
+            "400 Bad Request",
+            r#"{"ok":false,"error_code":400,"description":"Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message"}"#,
+        )
+        .await;
+        let keyboard = Keyboard {
+            rows: vec![
+                vec![Button {
+                    text: "Synthetic screen".into(),
+                    action: ButtonAction::Callback("open:synthetic".into()),
+                }],
+                vec![Button {
+                    text: "Synthetic link".into(),
+                    action: ButtonAction::Url("https://example.com/".into()),
+                }],
+            ],
+        };
+
+        test_messenger(server.address, &fixture)
+            .edit_menu(EditMenuRequest {
+                chat_id: 1,
+                message_id: 2,
+                text: "Synthetic menu",
+                keyboard: &keyboard,
+            })
+            .await
+            .unwrap();
+
+        let request = server.request.await.unwrap();
+        assert!(request.contains("/editMessageText "));
+        assert!(request.contains(r#""callback_data":"open:synthetic""#), "{request}");
+        assert!(request.contains(r#""url":"https://example.com/""#), "{request}");
+    }
+
+    #[tokio::test]
+    async fn edit_menu_reports_other_rejections() {
+        let fixture = Fixture::new().await;
+        let server = reply_once(
+            "400 Bad Request",
+            r#"{"ok":false,"error_code":400,"description":"Bad Request: message to edit not found"}"#,
+        )
+        .await;
+
+        let error = test_messenger(server.address, &fixture)
+            .edit_menu(EditMenuRequest {
+                chat_id: 1,
+                message_id: 2,
+                text: "Synthetic menu",
+                keyboard: &Keyboard { rows: Vec::new() },
+            })
+            .await
+            .unwrap_err();
+
+        server.request.await.unwrap();
+        assert!(error.to_string().contains("message to edit not found"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn answer_callback_sends_the_notice() {
+        let fixture = Fixture::new().await;
+        let server = reply_once("200 OK", r#"{"ok":true,"result":true}"#).await;
+
+        test_messenger(server.address, &fixture)
+            .answer_callback(AnswerCallbackRequest {
+                callback_id: "synthetic-callback",
+                text: Some("Synthetic notice"),
+            })
+            .await
+            .unwrap();
+
+        let request = server.request.await.unwrap();
+        assert!(request.contains("/answerCallbackQuery "));
+        assert!(request.contains("synthetic-callback"), "{request}");
+        assert!(request.contains("Synthetic notice"), "{request}");
+    }
+
+    struct FakeServer {
+        address: SocketAddr,
+        request: tokio::task::JoinHandle<String>,
+    }
+
+    async fn reply_once(status: &'static str, body: &'static str) -> FakeServer {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+
+        let request = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut socket).await;
+
+            let response = format!(
+                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+            String::from_utf8_lossy(&request).into_owned()
+        });
+        FakeServer { address, request }
     }
 
     async fn read_http_request(socket: &mut TcpStream) -> Vec<u8> {
