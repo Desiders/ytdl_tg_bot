@@ -1,6 +1,8 @@
 mod base;
 #[cfg(test)]
 mod download_tests;
+#[cfg(test)]
+mod menu_tests;
 
 pub mod audio;
 pub mod auto;
