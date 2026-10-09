@@ -193,7 +193,7 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 ### Bot DI Style
 
 - Keep the current generic DI style around `Messenger`.
-- The composition root (`bot/src/di_container.rs`) has separate registries: `cfg_registry`, `tg_messenger_registry`, `node_router_registry`, `interactors_registry::<Messenger>`, `database_registry`, and `queue_registry`, combined by `init`.
+- The composition root (`bot/src/di_container.rs`) uses Froodi fragments for configuration, Telegram messenger, node router, interactors, database, and queue providers; `init::<Messenger>` composes them into one registry.
 - The composition root builds `TelegramMessenger`, but top-level interactors should be wired generically over `Messenger` rather than directly against the concrete adapter type.
 - If you add a new top-level interactor, register it in `interactors_registry<Messenger>(...)` and keep the same generic pattern.
 - Anything the worker needs must be resolvable from a request scope of the container, since jobs run outside the telers update pipeline.

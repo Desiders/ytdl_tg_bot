@@ -81,15 +81,7 @@ async fn main() {
         Reqwest::default().with_api_server(Cow::Owned(api_server.clone())),
     );
 
-    let cfg_registry = di_container::cfg_registry(config.clone());
-    let tg_messenger_registry = di_container::tg_messenger_registry(bot.clone(), api_server, cfg_registry.clone());
-    let node_router_registry = di_container::node_router_registry(cfg_registry.clone());
-    let interactors_registry =
-        di_container::interactors_registry::<Messenger>(cfg_registry.clone(), tg_messenger_registry, node_router_registry);
-    let database_registry = di_container::database_registry(cfg_registry.clone());
-    let queue_registry = di_container::queue_registry(cfg_registry.clone());
-
-    let container = di_container::init(interactors_registry, database_registry, queue_registry);
+    let container = di_container::init::<Messenger>(config.clone(), bot.clone(), api_server);
     let node_router = container.get::<NodeRouter>().await.unwrap();
     let cfg = container.get::<config::Config>().await.unwrap();
 

@@ -1,6 +1,6 @@
 [package]
 name = "bot"
-version = "5.5.8"
+version = "5.6.0"
 edition = "2021"
 resolver = "2"
 
@@ -10,7 +10,7 @@ backoff = { version = "0.4", features = ["tokio"], default-features = false }
 bytes = { version = "1", default-features = false }
 clear-urls = { version = "1.0.0", features = ["std", "embedded-rules"], default-features = false }
 downloader_client = { path = "../downloader_client" }
-froodi = { version = "1.0.0-beta.17", features = ["async", "thread_safe", "telers"], default-features = false }
+froodi = { version = "1.0.0-beta.19", features = ["async", "thread_safe", "telers"], default-features = false }
 futures-util = { version = "0.3", default-features = false }
 mutagen-rs = { version = "0.2.5", default-features = false }
 nix = { version = "0.31", features = ["fs"], default-features = false }

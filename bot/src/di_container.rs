@@ -1,8 +1,8 @@
 use froodi::{
-    async_impl::{Container, RegistryWithSync},
-    async_registry, boxed, instance, registry,
+    async_impl::Container,
+    boxed, declare, instance, registry,
     DefaultScope::{App, Request},
-    Inject, InstantiateErrorKind, Registry,
+    Inject, InstantiateErrorKind,
 };
 use redis::aio::ConnectionManager;
 use reqwest::Client;
@@ -35,559 +35,545 @@ use crate::{
     utils::{ErrorFormatter, UrlCleaner},
 };
 
-pub(super) fn cfg_registry(cfg: Config) -> Registry {
-    registry! {
-        scope(App) [
-            provide(instance(cfg.clone())),
-            provide(instance(cfg.bot)),
-            provide(instance(cfg.chat)),
-            provide(instance(cfg.timeouts)),
-            provide(instance(cfg.blacklisted)),
-            provide(instance(cfg.logging)),
-            provide(instance(cfg.database)),
-            provide(instance(cfg.redis.clone())),
-            provide(instance(cfg.redis.queue)),
-            provide(instance(cfg.yt_dlp)),
-            provide(instance(cfg.yt_toolkit)),
-            provide(instance(cfg.download)),
-            provide(instance(cfg.telegram_bot_api)),
-            provide(instance(cfg.domains_with_reactions)),
-            provide(instance(cfg.random_cmd)),
-            provide(instance(cfg.audio_first)),
-            provide(instance(cfg.tracking_params)),
-        ]
-    }
+#[froodi::fragment(cfg_registry(cfg))]
+registry! {
+    scope(App) [
+        provide(instance(cfg.clone())),
+        provide(instance(cfg.bot)),
+        provide(instance(cfg.chat)),
+        provide(instance(cfg.timeouts)),
+        provide(instance(cfg.blacklisted)),
+        provide(instance(cfg.logging)),
+        provide(instance(cfg.database)),
+        provide(instance(cfg.redis.clone())),
+        provide(instance(cfg.redis.queue)),
+        provide(instance(cfg.yt_dlp)),
+        provide(instance(cfg.yt_toolkit)),
+        provide(instance(cfg.download)),
+        provide(instance(cfg.telegram_bot_api)),
+        provide(instance(cfg.domains_with_reactions)),
+        provide(instance(cfg.random_cmd)),
+        provide(instance(cfg.audio_first)),
+        provide(instance(cfg.tracking_params)),
+    ]
 }
 
-pub(super) fn tg_messenger_registry(bot: Bot, api_server: APIServer, cfg_registry: Registry) -> RegistryWithSync {
-    async_registry! {
-        provide(
-            App,
-            |Inject(bot): Inject<Bot>, Inject(error_formatter): Inject<ErrorFormatter>, Inject(cfg): Inject<TimeoutsConfig>, Inject(progress_throttle): Inject<ProgressThrottle>| async move {
-                Ok(TelegramMessenger::new(bot, error_formatter, cfg, progress_throttle))
+#[froodi::fragment(tg_messenger_registry(bot, api_server))]
+registry! {
+    scope(App) [
+        provide(instance(bot)),
+        provide(instance(api_server)),
+        provide(|Inject(cfg): Inject<BotConfig>| Ok(ErrorFormatter::new(cfg.token.clone()))),
+    ],
+    provide(
+        App,
+        |Inject(bot): Inject<Bot>, Inject(error_formatter): Inject<ErrorFormatter>, Inject(cfg): Inject<TimeoutsConfig>, Inject(progress_throttle): Inject<ProgressThrottle>| async move {
+            Ok(TelegramMessenger::new(bot, error_formatter, cfg, progress_throttle))
+        },
+    ),
+}
+
+#[froodi::fragment(node_router_registry)]
+registry! {
+    scope(App) [
+        provide(|| Ok(DownloaderServiceTarget::from_env())),
+        provide(|
+            Inject(downloader_cfg): Inject<DownloadConfig>,
+            Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
+            Inject(service_target): Inject<DownloaderServiceTarget>| {
+                Ok(NodeRouter::new(&(*downloader_cfg).clone().into(), yt_dlp_cfg.max_file_size, service_target))
             },
         ),
-        extend(registry! {
-            scope(App) [
-                provide(instance(bot)),
-                provide(instance(api_server)),
-                provide(|Inject(cfg): Inject<BotConfig>| Ok(ErrorFormatter::new(cfg.token.clone()))),
-            ],
-            extend(cfg_registry),
-        }),
-    }
+    ],
 }
 
-pub(super) fn node_router_registry(cfg_registry: Registry) -> Registry {
-    registry! {
-        scope(App) [
-            provide(|| Ok(DownloaderServiceTarget::from_env())),
-            provide(|
-                Inject(downloader_cfg): Inject<DownloadConfig>,
-                Inject(yt_dlp_cfg): Inject<YtDlpConfig>,
-                Inject(service_target): Inject<DownloaderServiceTarget>| {
-                    Ok(NodeRouter::new(&(*downloader_cfg).clone().into(), yt_dlp_cfg.max_file_size, service_target))
+#[froodi::fragment(database_registry)]
+registry! {
+    provide(
+        App,
+        |Inject(cfg): Inject<DatabaseConfig>| async move {
+            let mut options = ConnectOptions::new(cfg.get_postgres_url());
+            options
+                .max_connections(cfg.max_connections)
+                .acquire_timeout(Duration::from_secs(cfg.acquire_timeout_secs))
+                .connect_timeout(Duration::from_secs(cfg.connect_timeout_secs))
+                .sqlx_logging(false);
+
+            match Database::connect(options).await {
+                Ok(database_conn) => {
+                    info!("Database conn created");
+                    Ok(database_conn)
+                }
+                Err(err) => {
+                    error!(%err, "Create database conn error");
+                    Err(InstantiateErrorKind::Custom(err.into()))
+                }
+            }
+        },
+        finalizer = |conn: Arc<DatabaseConnection>| async move {
+            match conn.close_by_ref().await {
+                Ok(()) => {
+                    info!("Database conn closed");
                 },
-            ),
-        ],
-        extend(cfg_registry),
-    }
+                Err(err) => {
+                    error!(%err, "Close database conn error");
+                },
+            }
+        },
+    ),
+    provide(App, || async move { Ok(TxManagerFactories::default()) }),
+    provide(
+        Request,
+        |Inject(pool): Inject<DatabaseConnection>, Inject(factories): Inject<TxManagerFactories>| async move {
+            Ok(boxed!(SeaOrmTxManager::new(pool, factories); TxManager))
+        },
+    ),
 }
 
-pub(super) fn database_registry(cfg_registry: Registry) -> RegistryWithSync {
-    async_registry! {
-        provide(
-            App,
-            |Inject(cfg): Inject<DatabaseConfig>| async move {
-                let mut options = ConnectOptions::new(cfg.get_postgres_url());
-                options
-                    .max_connections(cfg.max_connections)
-                    .acquire_timeout(Duration::from_secs(cfg.acquire_timeout_secs))
-                    .connect_timeout(Duration::from_secs(cfg.connect_timeout_secs))
-                    .sqlx_logging(false);
-
-                match Database::connect(options).await {
-                    Ok(database_conn) => {
-                        info!("Database conn created");
-                        Ok(database_conn)
-                    }
-                    Err(err) => {
-                        error!(%err, "Create database conn error");
-                        Err(InstantiateErrorKind::Custom(err.into()))
-                    }
+#[froodi::fragment(queue_registry)]
+registry! {
+    provide(
+        App,
+        |Inject(cfg): Inject<RedisConfig>| async move {
+            match redis::Client::open(cfg.get_url()) {
+                Ok(client) => Ok(client),
+                Err(err) => {
+                    error!(%err, "Open Redis client error");
+                    Err(InstantiateErrorKind::Custom(err.into()))
                 }
-            },
-            finalizer = |conn: Arc<DatabaseConnection>| async move {
-                match conn.close_by_ref().await {
-                    Ok(()) => {
-                        info!("Database conn closed");
-                    },
-                    Err(err) => {
-                        error!(%err, "Close database conn error");
-                    },
+            }
+        },
+    ),
+    provide(
+        App,
+        |Inject(client): Inject<redis::Client>| async move {
+            match ConnectionManager::new((*client).clone()).await {
+                Ok(conn) => Ok(conn),
+                Err(err) => {
+                    error!(%err, "Create Redis conn error");
+                    Err(InstantiateErrorKind::Custom(err.into()))
                 }
-            },
-         ),
-        provide(App, || async move { Ok(TxManagerFactories::default()) }),
-        provide(
-            Request,
-            |Inject(pool): Inject<DatabaseConnection>, Inject(factories): Inject<TxManagerFactories>| async move {
-                Ok(boxed!(SeaOrmTxManager::new(pool, factories); TxManager))
-            },
-        ),
-        extend(cfg_registry),
-    }
+            }
+        },
+    ),
+    provide(
+        App,
+        |Inject(conn): Inject<ConnectionManager>, Inject(cfg)| async move { Ok(RedisJobQueue::new((*conn).clone(), cfg)) },
+    ),
+    provide(
+        App,
+        |Inject(conn): Inject<ConnectionManager>| async move { Ok(ProgressThrottle::new((*conn).clone())) },
+    ),
 }
 
-pub(super) fn queue_registry(cfg_registry: Registry) -> RegistryWithSync {
-    async_registry! {
-        provide(
-            App,
-            |Inject(cfg): Inject<RedisConfig>| async move {
-                match redis::Client::open(cfg.get_url()) {
-                    Ok(client) => Ok(client),
-                    Err(err) => {
-                        error!(%err, "Open Redis client error");
-                        Err(InstantiateErrorKind::Custom(err.into()))
-                    }
+#[froodi::fragment(interactors_registry)]
+registry! {
+    scope(App) [
+        provide(|| async move { Ok(Mutex::new(ContextV7::new())) }),
+        provide(|| async move { Ok(Client::new()) }),
+        provide(|Inject(cfg): Inject<TrackingParamsConfig>| async move {
+            match UrlCleaner::from_embedded_rules(&cfg) {
+                Ok(cleaner) => Ok(cleaner),
+                Err(err) => {
+                    error!(%err, "Compile URL cleaner rules error");
+                    Err(InstantiateErrorKind::Custom(err.into()))
                 }
-            },
+            }
+        }),
+
+        provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::upload::SendVideo::new(messenger)) }),
+        provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::upload::SendAudio::new(messenger)) }),
+        provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::upload::SendPhoto::new(messenger)) }),
+        provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::upload::SendPhotoUrl::new(messenger)) }),
+        provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::id::EditVideo::new(messenger)) }),
+        provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::id::EditAudio::new(messenger)) }),
+        provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::id::SendVideo::new(messenger)) }),
+        provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::id::SendAudio::new(messenger)) }),
+        provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::id::SendPhoto::new(messenger)) }),
+        provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::id::EditPhoto::new(messenger)) }),
+        provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::id::SendVideoPlaylist::new(messenger)) }),
+        provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::id::SendAudioPlaylist::new(messenger)) }),
+        provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::id::SendPhotoPlaylist::new(messenger)) }),
+
+        provide(|
+            Inject(cfg),
+            Inject(error_formatter),
+            Inject(messenger): Inject<Messenger>| async move {
+                Ok(start::Start::new(cfg, error_formatter, messenger))
+            }
         ),
-        provide(
-            App,
-            |Inject(client): Inject<redis::Client>| async move {
-                match ConnectionManager::new((*client).clone()).await {
-                    Ok(conn) => Ok(conn),
-                    Err(err) => {
-                        error!(%err, "Create Redis conn error");
-                        Err(InstantiateErrorKind::Custom(err.into()))
-                    }
-                }
-            },
+        provide(|
+            Inject(client),
+            Inject(cfg)| async move { Ok(get_media::GetShortMediaByURL::new(client, cfg)) }
         ),
-        provide(
-            App,
-            |Inject(conn): Inject<ConnectionManager>, Inject(cfg)| async move { Ok(RedisJobQueue::new((*conn).clone(), cfg)) },
+        provide(|
+            Inject(client),
+            Inject(cfg)| async move { Ok(get_media::SearchMediaInfo::new(client, cfg)) }
         ),
-        provide(
-            App,
-            |Inject(conn): Inject<ConnectionManager>| async move { Ok(ProgressThrottle::new((*conn).clone())) },
+
+        provide(|
+            Inject(bot),
+            Inject(client),
+            Inject(api_server),
+            Inject(cfg): Inject<TelegramBotApiConfig>,
+            Inject(bot_cfg): Inject<BotConfig>| async move {
+                Ok(file_download::TelegramFileDownloader::new(bot, client, api_server, &cfg, &bot_cfg))
+            }
         ),
-        extend(cfg_registry),
-    }
+
+        provide(|Inject(node_router)| async move { Ok(node_router::GetStats::new(node_router)) }),
+        provide(|Inject(node_router)| async move { Ok(media::DownloadVideo::new(node_router)) }),
+        provide(|Inject(node_router)| async move { Ok(media::DownloadAudio::new(node_router)) }),
+        provide(|Inject(node_router)| async move { Ok(media::DownloadPhoto::new(node_router)) }),
+
+        provide(|
+            Inject(messenger): Inject<Messenger>,
+            Inject(queue)| async move {
+                Ok(enqueue_download::EnqueueCommandDownload::new(messenger, queue))
+            }
+        ),
+        provide(|
+            Inject(messenger): Inject<Messenger>,
+            Inject(queue)| async move {
+                Ok(enqueue_download::EnqueueInlineDownload::new(messenger, queue))
+            }
+        ),
+
+        provide(|
+            Inject(error_formatter),
+            Inject(messenger): Inject<Messenger>,
+            Inject(get_basic_info_media)| async move {
+                Ok(inline_query::SelectByUrl::new(error_formatter, messenger, get_basic_info_media))
+            }
+        ),
+        provide(|
+            Inject(error_formatter),
+            Inject(messenger): Inject<Messenger>,
+            Inject(get_basic_info_media)| async move {
+                Ok(inline_query::SelectByText::new(error_formatter, messenger, get_basic_info_media))
+            }
+        ),
+    ],
+
+    scope(Request) [
+        provide(|Inject(tx_manager)| async move { Ok(chat::SaveChat::new(tx_manager)) }),
+        provide(|Inject(tx_manager)| async move { Ok(chat::GetChatConfig::new(tx_manager)) }),
+        provide(|Inject(tx_manager)| async move { Ok(chat::AddExcludeDomain::new(tx_manager)) }),
+        provide(|Inject(tx_manager)| async move { Ok(chat::RemoveExcludeDomain::new(tx_manager)) }),
+        provide(|Inject(tx_manager)| async move { Ok(chat::UpdateChatConfig::new(tx_manager)) }),
+        provide(|Inject(tx_manager)| async move { Ok(downloaded_media::AddVideo::new(tx_manager)) }),
+        provide(|Inject(tx_manager)| async move { Ok(downloaded_media::AddAudio::new(tx_manager)) }),
+        provide(|Inject(tx_manager)| async move { Ok(downloaded_media::AddPhoto::new(tx_manager)) }),
+        provide(|Inject(tx_manager)| async move { Ok(downloaded_media::GetStats::new(tx_manager)) }),
+        provide(|Inject(cfg), Inject(tx_manager)| async move { Ok(downloaded_media::GetRandomVideo::new(cfg, tx_manager)) }),
+        provide(|Inject(cfg), Inject(tx_manager)| async move { Ok(downloaded_media::GetRandomAudio::new(cfg, tx_manager)) }),
+
+        provide(|
+            Inject(error_formatter),
+            Inject(messenger): Inject<Messenger>,
+            Inject(get_media_stats),
+            Inject(get_node_stats),
+            Inject(queue)| async move {
+                Ok(stats::Stats::new(error_formatter, messenger, get_media_stats, get_node_stats, queue))
+            }
+        ),
+        provide(|
+            Inject(error_formatter),
+            Inject(messenger): Inject<Messenger>,
+            Inject(file_downloader),
+            Inject(node_router),
+            Inject(search_media),
+            Inject(enqueue_download)| async move {
+                Ok(shazam::Shazam::new(error_formatter, messenger, file_downloader, node_router, search_media, enqueue_download))
+            }
+        ),
+        provide(|
+            Inject(error_formatter),
+            Inject(messenger): Inject<Messenger>,
+            Inject(update_chat_cfg)| async move {
+                Ok(config::ChangeLinkVisibility::new(error_formatter, messenger, update_chat_cfg))
+            }
+        ),
+        provide(|
+            Inject(error_formatter),
+            Inject(messenger): Inject<Messenger>,
+            Inject(update_chat_cfg)| async move {
+                Ok(lang::Lang::new(error_formatter, messenger, update_chat_cfg))
+            }
+        ),
+        provide(|
+            Inject(cfg),
+            Inject(error_formatter),
+            Inject(messenger): Inject<Messenger>,
+            Inject(stats)| async move {
+                Ok(menu::OpenMenu::new(cfg, error_formatter, messenger, stats))
+            }
+        ),
+        provide(|
+            Inject(error_formatter),
+            Inject(update_chat_cfg),
+            Inject(open_menu)| async move {
+                Ok(menu::SetMenuLanguage::<Messenger>::new(error_formatter, update_chat_cfg, open_menu))
+            }
+        ),
+        provide(|
+            Inject(error_formatter),
+            Inject(update_chat_cfg),
+            Inject(open_menu)| async move {
+                Ok(menu::SetMenuLinkVisibility::<Messenger>::new(error_formatter, update_chat_cfg, open_menu))
+            }
+        ),
+        provide(|
+            Inject(error_formatter),
+            Inject(add_domain),
+            Inject(open_menu)| async move {
+                Ok(menu::AddMenuDomain::<Messenger>::new(error_formatter, add_domain, open_menu))
+            }
+        ),
+        provide(|
+            Inject(error_formatter),
+            Inject(remove_domain),
+            Inject(open_menu)| async move {
+                Ok(menu::RemoveMenuDomain::<Messenger>::new(error_formatter, remove_domain, open_menu))
+            }
+        ),
+        provide(|
+            Inject(error_formatter),
+            Inject(messenger): Inject<Messenger>,
+            Inject(add_domain)| async move {
+                Ok(config::AddExcludeDomain::new(error_formatter, messenger, add_domain))
+            }
+        ),
+        provide(|
+            Inject(error_formatter),
+            Inject(messenger): Inject<Messenger>,
+            Inject(remove_domain)| async move {
+                Ok(config::RemoveExcludeDomain::new(error_formatter, messenger, remove_domain))
+            }
+        ),
+
+        provide(|
+            Inject(node_router),
+            Inject(url_cleaner),
+            Inject(tx_manager)| async move {
+                Ok(get_media::GetVideoByURL::new(node_router, url_cleaner, tx_manager))
+            }
+        ),
+        provide(|
+            Inject(node_router),
+            Inject(url_cleaner),
+            Inject(tx_manager)| async move {
+                Ok(get_media::GetAudioByURL::new(node_router, url_cleaner, tx_manager))
+            }
+        ),
+        provide(|
+            Inject(node_router),
+            Inject(url_cleaner),
+            Inject(tx_manager)| async move {
+                Ok(get_media::GetPhotoByURL::new(node_router, url_cleaner, tx_manager))
+            }
+        ),
+
+        provide(|
+            Inject(cfg),
+            Inject(error_formatter),
+            Inject(messenger): Inject<Messenger>,
+            Inject(get_media),
+            Inject(media_downloader),
+            Inject(upload_media): Inject<send_media::upload::SendVideo<Messenger>>,
+            Inject(send_media_by_id): Inject<send_media::id::SendVideo<Messenger>>,
+            Inject(send_playlist): Inject<send_media::id::SendVideoPlaylist<Messenger>>,
+            Inject(add_downloaded_media)| async move {
+                Ok(video::Download::new(
+                    cfg, error_formatter, messenger, get_media,
+                    media_downloader,
+                    upload_media, send_media_by_id, send_playlist, add_downloaded_media,
+                ))
+            }
+        ),
+        provide(|
+            Inject(cfg),
+            Inject(error_formatter),
+            Inject(get_media),
+            Inject(media_downloader),
+            Inject(upload_media): Inject<send_media::upload::SendVideo<Messenger>>,
+            Inject(send_media_by_id): Inject<send_media::id::SendVideo<Messenger>>,
+            Inject(send_playlist): Inject<send_media::id::SendVideoPlaylist<Messenger>>,
+            Inject(add_downloaded_media)| async move {
+                Ok(video::DownloadQuiet::new(
+                    cfg, error_formatter, get_media,
+                    media_downloader,
+                    upload_media, send_media_by_id, send_playlist, add_downloaded_media,
+                ))
+            }
+        ),
+        provide(|
+            Inject(error_formatter),
+            Inject(get_media),
+            Inject(send_playlist): Inject<send_media::id::SendVideoPlaylist<Messenger>>| async move {
+                Ok(video::Random::new(error_formatter, get_media, send_playlist))
+            }
+        ),
+        provide(|
+            Inject(cfg),
+            Inject(error_formatter),
+            Inject(messenger): Inject<Messenger>,
+            Inject(get_media),
+            Inject(media_downloader),
+            Inject(upload_media): Inject<send_media::upload::SendAudio<Messenger>>,
+            Inject(send_media_by_id): Inject<send_media::id::SendAudio<Messenger>>,
+            Inject(send_playlist): Inject<send_media::id::SendAudioPlaylist<Messenger>>,
+            Inject(add_downloaded_media)| async move {
+                Ok(audio::Download::new(
+                    cfg, error_formatter, messenger, get_media,
+                    media_downloader,
+                    upload_media, send_media_by_id, send_playlist, add_downloaded_media,
+                ))
+            }
+        ),
+        provide(|
+            Inject(error_formatter),
+            Inject(get_media),
+            Inject(send_playlist): Inject<send_media::id::SendAudioPlaylist<Messenger>>| async move {
+                Ok(audio::Random::new(error_formatter, get_media, send_playlist))
+            }
+        ),
+        provide(|
+            Inject(cfg),
+            Inject(error_formatter),
+            Inject(messenger): Inject<Messenger>,
+            Inject(get_media),
+            Inject(upload_media): Inject<send_media::upload::SendPhotoUrl<Messenger>>,
+            Inject(send_media_by_id): Inject<send_media::id::SendPhoto<Messenger>>,
+            Inject(send_playlist): Inject<send_media::id::SendPhotoPlaylist<Messenger>>,
+            Inject(add_downloaded_media)| async move {
+                Ok(photo::Download::new(
+                    cfg, error_formatter, messenger, get_media,
+                    upload_media, send_media_by_id, send_playlist, add_downloaded_media,
+                ))
+            }
+        ),
+        provide(|
+            Inject(cfg),
+            Inject(error_formatter),
+            Inject(media_downloader),
+            Inject(upload_media): Inject<send_media::upload::SendAudio<Messenger>>,
+            Inject(send_media_by_id): Inject<send_media::id::SendAudio<Messenger>>,
+            Inject(send_playlist): Inject<send_media::id::SendAudioPlaylist<Messenger>>,
+            Inject(add_downloaded_media)| async move {
+                Ok(auto::AudioFulfiller::new(
+                    cfg, error_formatter, media_downloader,
+                    upload_media, send_media_by_id, send_playlist, add_downloaded_media,
+                ))
+            }
+        ),
+        provide(|
+            Inject(cfg),
+            Inject(error_formatter),
+            Inject(upload_media): Inject<send_media::upload::SendPhotoUrl<Messenger>>,
+            Inject(send_media_by_id): Inject<send_media::id::SendPhoto<Messenger>>,
+            Inject(send_playlist): Inject<send_media::id::SendPhotoPlaylist<Messenger>>,
+            Inject(add_downloaded_media)| async move {
+                Ok(auto::PhotoFulfiller::new(
+                    cfg, error_formatter,
+                    upload_media, send_media_by_id, send_playlist, add_downloaded_media,
+                ))
+            }
+        ),
+        provide(|
+            Inject(audio_first),
+            Inject(get_video),
+            Inject(get_audio),
+            Inject(get_photo),
+            Inject(video): Inject<video::DownloadQuiet<Messenger>>,
+            Inject(audio): Inject<auto::AudioFulfiller<Messenger>>,
+            Inject(photo): Inject<auto::PhotoFulfiller<Messenger>>| async move {
+                Ok(auto::AutoQuiet::new(audio_first, get_video, get_audio, get_photo, video, audio, photo))
+            }
+        ),
+        provide(|
+            Inject(audio_first),
+            Inject(get_video),
+            Inject(get_audio),
+            Inject(get_photo),
+            Inject(video): Inject<video::Download<Messenger>>,
+            Inject(audio): Inject<audio::Download<Messenger>>,
+            Inject(photo): Inject<photo::Download<Messenger>>| async move {
+                Ok(auto::Auto::new(audio_first, get_video, get_audio, get_photo, video, audio, photo))
+            }
+        ),
+        provide(|
+            Inject(cfg),
+            Inject(error_formatter),
+            Inject(messenger): Inject<Messenger>,
+            Inject(get_media),
+            Inject(download_media),
+            Inject(upload_media): Inject<send_media::upload::SendVideo<Messenger>>,
+            Inject(edit_media_by_id): Inject<send_media::id::EditVideo<Messenger>>,
+            Inject(add_downloaded_media)| async move {
+                Ok(chosen_inline::DownloadVideo::new(
+                    cfg, error_formatter, messenger, get_media, download_media,
+                    upload_media, edit_media_by_id, add_downloaded_media,
+                ))
+            }
+        ),
+        provide(|
+            Inject(cfg),
+            Inject(error_formatter),
+            Inject(messenger): Inject<Messenger>,
+            Inject(get_media),
+            Inject(download_media),
+            Inject(upload_media): Inject<send_media::upload::SendAudio<Messenger>>,
+            Inject(edit_media_by_id): Inject<send_media::id::EditAudio<Messenger>>,
+            Inject(add_downloaded_media)| async move {
+                Ok(chosen_inline::DownloadAudio::new(
+                    cfg, error_formatter, messenger, get_media, download_media,
+                    upload_media, edit_media_by_id, add_downloaded_media,
+                ))
+            }
+        ),
+        provide(|
+            Inject(cfg),
+            Inject(error_formatter),
+            Inject(messenger): Inject<Messenger>,
+            Inject(get_media),
+            Inject(upload_media): Inject<send_media::upload::SendPhotoUrl<Messenger>>,
+            Inject(edit_media_by_id): Inject<send_media::id::EditPhoto<Messenger>>,
+            Inject(add_downloaded_media)| async move {
+                Ok(chosen_inline::DownloadPhoto::new(
+                    cfg, error_formatter, messenger, get_media,
+                    upload_media, edit_media_by_id, add_downloaded_media,
+                ))
+            }
+        ),
+        provide(|
+            Inject(audio_first),
+            Inject(get_video),
+            Inject(get_audio),
+            Inject(get_photo),
+            Inject(video): Inject<chosen_inline::DownloadVideo<Messenger>>,
+            Inject(audio): Inject<chosen_inline::DownloadAudio<Messenger>>,
+            Inject(photo): Inject<chosen_inline::DownloadPhoto<Messenger>>| async move {
+                Ok(chosen_inline::DownloadAuto::new(audio_first, get_video, get_audio, get_photo, video, audio, photo))
+            }
+        ),
+    ],
 }
 
-#[allow(clippy::too_many_lines)]
-pub(super) fn interactors_registry<Messenger>(
-    cfg_registry: Registry,
-    tg_messenger_registry: RegistryWithSync,
-    node_router_registry: Registry,
-) -> RegistryWithSync
+pub(super) fn init<Messenger>(cfg: Config, bot: Bot, api_server: APIServer) -> Container
 where
     Messenger: Send + Sync + 'static,
 {
-    async_registry! {
-        scope(App) [
-            provide(|| async move { Ok(Mutex::new(ContextV7::new())) }),
-            provide(|| async move { Ok(Client::new()) }),
-            provide(|Inject(cfg): Inject<TrackingParamsConfig>| async move {
-                match UrlCleaner::from_embedded_rules(&cfg) {
-                    Ok(cleaner) => Ok(cleaner),
-                    Err(err) => {
-                        error!(%err, "Compile URL cleaner rules error");
-                        Err(InstantiateErrorKind::Custom(err.into()))
-                    }
-                }
-            }),
-
-            provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::upload::SendVideo::new(messenger)) }),
-            provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::upload::SendAudio::new(messenger)) }),
-            provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::upload::SendPhoto::new(messenger)) }),
-            provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::upload::SendPhotoUrl::new(messenger)) }),
-            provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::id::EditVideo::new(messenger)) }),
-            provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::id::EditAudio::new(messenger)) }),
-            provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::id::SendVideo::new(messenger)) }),
-            provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::id::SendAudio::new(messenger)) }),
-            provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::id::SendPhoto::new(messenger)) }),
-            provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::id::EditPhoto::new(messenger)) }),
-            provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::id::SendVideoPlaylist::new(messenger)) }),
-            provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::id::SendAudioPlaylist::new(messenger)) }),
-            provide(|Inject(messenger): Inject<Messenger>| async move { Ok(send_media::id::SendPhotoPlaylist::new(messenger)) }),
-
-            provide(|
-                Inject(cfg),
-                Inject(error_formatter),
-                Inject(messenger): Inject<Messenger>| async move {
-                    Ok(start::Start::new(cfg, error_formatter, messenger))
-                }
-            ),
-            provide(|
-                Inject(client),
-                Inject(cfg)| async move { Ok(get_media::GetShortMediaByURL::new(client, cfg)) }
-            ),
-            provide(|
-                Inject(client),
-                Inject(cfg)| async move { Ok(get_media::SearchMediaInfo::new(client, cfg)) }
-            ),
-
-            provide(|
-                Inject(bot),
-                Inject(client),
-                Inject(api_server),
-                Inject(cfg): Inject<TelegramBotApiConfig>,
-                Inject(bot_cfg): Inject<BotConfig>| async move {
-                    Ok(file_download::TelegramFileDownloader::new(bot, client, api_server, &cfg, &bot_cfg))
-                }
-            ),
-
-            provide(|Inject(node_router)| async move { Ok(node_router::GetStats::new(node_router)) }),
-            provide(|Inject(node_router)| async move { Ok(media::DownloadVideo::new(node_router)) }),
-            provide(|Inject(node_router)| async move { Ok(media::DownloadAudio::new(node_router)) }),
-            provide(|Inject(node_router)| async move { Ok(media::DownloadPhoto::new(node_router)) }),
-
-            provide(|
-                Inject(messenger): Inject<Messenger>,
-                Inject(queue)| async move {
-                    Ok(enqueue_download::EnqueueCommandDownload::new(messenger, queue))
-                }
-            ),
-            provide(|
-                Inject(messenger): Inject<Messenger>,
-                Inject(queue)| async move {
-                    Ok(enqueue_download::EnqueueInlineDownload::new(messenger, queue))
-                }
-            ),
-
-            provide(|
-                Inject(error_formatter),
-                Inject(messenger): Inject<Messenger>,
-                Inject(get_basic_info_media)| async move {
-                    Ok(inline_query::SelectByUrl::new(error_formatter, messenger, get_basic_info_media))
-                }
-            ),
-            provide(|
-                Inject(error_formatter),
-                Inject(messenger): Inject<Messenger>,
-                Inject(get_basic_info_media)| async move {
-                    Ok(inline_query::SelectByText::new(error_formatter, messenger, get_basic_info_media))
-                }
-            ),
-        ],
-
-        scope(Request) [
-            provide(|Inject(tx_manager)| async move { Ok(chat::SaveChat::new(tx_manager)) }),
-            provide(|Inject(tx_manager)| async move { Ok(chat::GetChatConfig::new(tx_manager)) }),
-            provide(|Inject(tx_manager)| async move { Ok(chat::AddExcludeDomain::new(tx_manager)) }),
-            provide(|Inject(tx_manager)| async move { Ok(chat::RemoveExcludeDomain::new(tx_manager)) }),
-            provide(|Inject(tx_manager)| async move { Ok(chat::UpdateChatConfig::new(tx_manager)) }),
-            provide(|Inject(tx_manager)| async move { Ok(downloaded_media::AddVideo::new(tx_manager)) }),
-            provide(|Inject(tx_manager)| async move { Ok(downloaded_media::AddAudio::new(tx_manager)) }),
-            provide(|Inject(tx_manager)| async move { Ok(downloaded_media::AddPhoto::new(tx_manager)) }),
-            provide(|Inject(tx_manager)| async move { Ok(downloaded_media::GetStats::new(tx_manager)) }),
-            provide(|Inject(cfg), Inject(tx_manager)| async move { Ok(downloaded_media::GetRandomVideo::new(cfg, tx_manager)) }),
-            provide(|Inject(cfg), Inject(tx_manager)| async move { Ok(downloaded_media::GetRandomAudio::new(cfg, tx_manager)) }),
-
-            provide(|
-                Inject(error_formatter),
-                Inject(messenger): Inject<Messenger>,
-                Inject(get_media_stats),
-                Inject(get_node_stats),
-                Inject(queue)| async move {
-                    Ok(stats::Stats::new(error_formatter, messenger, get_media_stats, get_node_stats, queue))
-                }
-            ),
-            provide(|
-                Inject(error_formatter),
-                Inject(messenger): Inject<Messenger>,
-                Inject(file_downloader),
-                Inject(node_router),
-                Inject(search_media),
-                Inject(enqueue_download)| async move {
-                    Ok(shazam::Shazam::new(error_formatter, messenger, file_downloader, node_router, search_media, enqueue_download))
-                }
-            ),
-            provide(|
-                Inject(error_formatter),
-                Inject(messenger): Inject<Messenger>,
-                Inject(update_chat_cfg)| async move {
-                    Ok(config::ChangeLinkVisibility::new(error_formatter, messenger, update_chat_cfg))
-                }
-            ),
-            provide(|
-                Inject(error_formatter),
-                Inject(messenger): Inject<Messenger>,
-                Inject(update_chat_cfg)| async move {
-                    Ok(lang::Lang::new(error_formatter, messenger, update_chat_cfg))
-                }
-            ),
-            provide(|
-                Inject(cfg),
-                Inject(error_formatter),
-                Inject(messenger): Inject<Messenger>,
-                Inject(stats)| async move {
-                    Ok(menu::OpenMenu::new(cfg, error_formatter, messenger, stats))
-                }
-            ),
-            provide(|
-                Inject(error_formatter),
-                Inject(update_chat_cfg),
-                Inject(open_menu)| async move {
-                    Ok(menu::SetMenuLanguage::<Messenger>::new(error_formatter, update_chat_cfg, open_menu))
-                }
-            ),
-            provide(|
-                Inject(error_formatter),
-                Inject(update_chat_cfg),
-                Inject(open_menu)| async move {
-                    Ok(menu::SetMenuLinkVisibility::<Messenger>::new(error_formatter, update_chat_cfg, open_menu))
-                }
-            ),
-            provide(|
-                Inject(error_formatter),
-                Inject(add_domain),
-                Inject(open_menu)| async move {
-                    Ok(menu::AddMenuDomain::<Messenger>::new(error_formatter, add_domain, open_menu))
-                }
-            ),
-            provide(|
-                Inject(error_formatter),
-                Inject(remove_domain),
-                Inject(open_menu)| async move {
-                    Ok(menu::RemoveMenuDomain::<Messenger>::new(error_formatter, remove_domain, open_menu))
-                }
-            ),
-            provide(|
-                Inject(error_formatter),
-                Inject(messenger): Inject<Messenger>,
-                Inject(add_domain)| async move {
-                    Ok(config::AddExcludeDomain::new(error_formatter, messenger, add_domain))
-                }
-            ),
-            provide(|
-                Inject(error_formatter),
-                Inject(messenger): Inject<Messenger>,
-                Inject(remove_domain)| async move {
-                    Ok(config::RemoveExcludeDomain::new(error_formatter, messenger, remove_domain))
-                }
-            ),
-
-            provide(|
-                Inject(node_router),
-                Inject(url_cleaner),
-                Inject(tx_manager)| async move {
-                    Ok(get_media::GetVideoByURL::new(node_router, url_cleaner, tx_manager))
-                }
-            ),
-            provide(|
-                Inject(node_router),
-                Inject(url_cleaner),
-                Inject(tx_manager)| async move {
-                    Ok(get_media::GetAudioByURL::new(node_router, url_cleaner, tx_manager))
-                }
-            ),
-            provide(|
-                Inject(node_router),
-                Inject(url_cleaner),
-                Inject(tx_manager)| async move {
-                    Ok(get_media::GetPhotoByURL::new(node_router, url_cleaner, tx_manager))
-                }
-            ),
-
-            provide(|
-                Inject(cfg),
-                Inject(error_formatter),
-                Inject(messenger): Inject<Messenger>,
-                Inject(get_media),
-                Inject(media_downloader),
-                Inject(upload_media): Inject<send_media::upload::SendVideo<Messenger>>,
-                Inject(send_media_by_id): Inject<send_media::id::SendVideo<Messenger>>,
-                Inject(send_playlist): Inject<send_media::id::SendVideoPlaylist<Messenger>>,
-                Inject(add_downloaded_media)| async move {
-                    Ok(video::Download::new(
-                        cfg, error_formatter, messenger, get_media,
-                        media_downloader,
-                        upload_media, send_media_by_id, send_playlist, add_downloaded_media,
-                    ))
-                }
-            ),
-            provide(|
-                Inject(cfg),
-                Inject(error_formatter),
-                Inject(get_media),
-                Inject(media_downloader),
-                Inject(upload_media): Inject<send_media::upload::SendVideo<Messenger>>,
-                Inject(send_media_by_id): Inject<send_media::id::SendVideo<Messenger>>,
-                Inject(send_playlist): Inject<send_media::id::SendVideoPlaylist<Messenger>>,
-                Inject(add_downloaded_media)| async move {
-                    Ok(video::DownloadQuiet::new(
-                        cfg, error_formatter, get_media,
-                        media_downloader,
-                        upload_media, send_media_by_id, send_playlist, add_downloaded_media,
-                    ))
-                }
-            ),
-            provide(|
-                Inject(error_formatter),
-                Inject(get_media),
-                Inject(send_playlist): Inject<send_media::id::SendVideoPlaylist<Messenger>>| async move {
-                    Ok(video::Random::new(error_formatter, get_media, send_playlist))
-                }
-            ),
-            provide(|
-                Inject(cfg),
-                Inject(error_formatter),
-                Inject(messenger): Inject<Messenger>,
-                Inject(get_media),
-                Inject(media_downloader),
-                Inject(upload_media): Inject<send_media::upload::SendAudio<Messenger>>,
-                Inject(send_media_by_id): Inject<send_media::id::SendAudio<Messenger>>,
-                Inject(send_playlist): Inject<send_media::id::SendAudioPlaylist<Messenger>>,
-                Inject(add_downloaded_media)| async move {
-                    Ok(audio::Download::new(
-                        cfg, error_formatter, messenger, get_media,
-                        media_downloader,
-                        upload_media, send_media_by_id, send_playlist, add_downloaded_media,
-                    ))
-                }
-            ),
-            provide(|
-                Inject(error_formatter),
-                Inject(get_media),
-                Inject(send_playlist): Inject<send_media::id::SendAudioPlaylist<Messenger>>| async move {
-                    Ok(audio::Random::new(error_formatter, get_media, send_playlist))
-                }
-            ),
-            provide(|
-                Inject(cfg),
-                Inject(error_formatter),
-                Inject(messenger): Inject<Messenger>,
-                Inject(get_media),
-                Inject(upload_media): Inject<send_media::upload::SendPhotoUrl<Messenger>>,
-                Inject(send_media_by_id): Inject<send_media::id::SendPhoto<Messenger>>,
-                Inject(send_playlist): Inject<send_media::id::SendPhotoPlaylist<Messenger>>,
-                Inject(add_downloaded_media)| async move {
-                    Ok(photo::Download::new(
-                        cfg, error_formatter, messenger, get_media,
-                        upload_media, send_media_by_id, send_playlist, add_downloaded_media,
-                    ))
-                }
-            ),
-            provide(|
-                Inject(cfg),
-                Inject(error_formatter),
-                Inject(media_downloader),
-                Inject(upload_media): Inject<send_media::upload::SendAudio<Messenger>>,
-                Inject(send_media_by_id): Inject<send_media::id::SendAudio<Messenger>>,
-                Inject(send_playlist): Inject<send_media::id::SendAudioPlaylist<Messenger>>,
-                Inject(add_downloaded_media)| async move {
-                    Ok(auto::AudioFulfiller::new(
-                        cfg, error_formatter, media_downloader,
-                        upload_media, send_media_by_id, send_playlist, add_downloaded_media,
-                    ))
-                }
-            ),
-            provide(|
-                Inject(cfg),
-                Inject(error_formatter),
-                Inject(upload_media): Inject<send_media::upload::SendPhotoUrl<Messenger>>,
-                Inject(send_media_by_id): Inject<send_media::id::SendPhoto<Messenger>>,
-                Inject(send_playlist): Inject<send_media::id::SendPhotoPlaylist<Messenger>>,
-                Inject(add_downloaded_media)| async move {
-                    Ok(auto::PhotoFulfiller::new(
-                        cfg, error_formatter,
-                        upload_media, send_media_by_id, send_playlist, add_downloaded_media,
-                    ))
-                }
-            ),
-            provide(|
-                Inject(audio_first),
-                Inject(get_video),
-                Inject(get_audio),
-                Inject(get_photo),
-                Inject(video): Inject<video::DownloadQuiet<Messenger>>,
-                Inject(audio): Inject<auto::AudioFulfiller<Messenger>>,
-                Inject(photo): Inject<auto::PhotoFulfiller<Messenger>>| async move {
-                    Ok(auto::AutoQuiet::new(audio_first, get_video, get_audio, get_photo, video, audio, photo))
-                }
-            ),
-            provide(|
-                Inject(audio_first),
-                Inject(get_video),
-                Inject(get_audio),
-                Inject(get_photo),
-                Inject(video): Inject<video::Download<Messenger>>,
-                Inject(audio): Inject<audio::Download<Messenger>>,
-                Inject(photo): Inject<photo::Download<Messenger>>| async move {
-                    Ok(auto::Auto::new(audio_first, get_video, get_audio, get_photo, video, audio, photo))
-                }
-            ),
-            provide(|
-                Inject(cfg),
-                Inject(error_formatter),
-                Inject(messenger): Inject<Messenger>,
-                Inject(get_media),
-                Inject(download_media),
-                Inject(upload_media): Inject<send_media::upload::SendVideo<Messenger>>,
-                Inject(edit_media_by_id): Inject<send_media::id::EditVideo<Messenger>>,
-                Inject(add_downloaded_media)| async move {
-                    Ok(chosen_inline::DownloadVideo::new(
-                        cfg, error_formatter, messenger, get_media, download_media,
-                        upload_media, edit_media_by_id, add_downloaded_media,
-                    ))
-                }
-            ),
-            provide(|
-                Inject(cfg),
-                Inject(error_formatter),
-                Inject(messenger): Inject<Messenger>,
-                Inject(get_media),
-                Inject(download_media),
-                Inject(upload_media): Inject<send_media::upload::SendAudio<Messenger>>,
-                Inject(edit_media_by_id): Inject<send_media::id::EditAudio<Messenger>>,
-                Inject(add_downloaded_media)| async move {
-                    Ok(chosen_inline::DownloadAudio::new(
-                        cfg, error_formatter, messenger, get_media, download_media,
-                        upload_media, edit_media_by_id, add_downloaded_media,
-                    ))
-                }
-            ),
-            provide(|
-                Inject(cfg),
-                Inject(error_formatter),
-                Inject(messenger): Inject<Messenger>,
-                Inject(get_media),
-                Inject(upload_media): Inject<send_media::upload::SendPhotoUrl<Messenger>>,
-                Inject(edit_media_by_id): Inject<send_media::id::EditPhoto<Messenger>>,
-                Inject(add_downloaded_media)| async move {
-                    Ok(chosen_inline::DownloadPhoto::new(
-                        cfg, error_formatter, messenger, get_media,
-                        upload_media, edit_media_by_id, add_downloaded_media,
-                    ))
-                }
-            ),
-            provide(|
-                Inject(audio_first),
-                Inject(get_video),
-                Inject(get_audio),
-                Inject(get_photo),
-                Inject(video): Inject<chosen_inline::DownloadVideo<Messenger>>,
-                Inject(audio): Inject<chosen_inline::DownloadAudio<Messenger>>,
-                Inject(photo): Inject<chosen_inline::DownloadPhoto<Messenger>>| async move {
-                    Ok(chosen_inline::DownloadAuto::new(audio_first, get_video, get_audio, get_photo, video, audio, photo))
-                }
-            ),
-        ],
-        extend(cfg_registry, tg_messenger_registry, node_router_registry),
-    }
-}
-
-pub(super) fn init(
-    interactors_registry: RegistryWithSync,
-    database_registry: RegistryWithSync,
-    queue_registry: RegistryWithSync,
-) -> Container {
-    let registry = async_registry! {
-        extend(interactors_registry, database_registry, queue_registry),
+    let registry = registry! {
+        provide(App, declare::<Messenger>()),
+        extend_fragment(
+            cfg_registry!(cfg),
+            tg_messenger_registry!(bot, api_server),
+            node_router_registry!(),
+            interactors_registry!(),
+            database_registry!(),
+            queue_registry!(),
+        ),
     };
     Container::new(registry)
 }
@@ -609,21 +595,19 @@ mod tests {
             BareFilesPathWrapper,
         );
         let bot = Bot::with_client("123:synthetic", Reqwest::default().with_api_server(Cow::Owned(api_server.clone())));
-        let cfg_registry = registry! {
+        let conn = fixture.connection();
+        let container = Container::new(registry! {
+            provide(App, declare::<TelegramMessenger>()),
             scope(App) [
                 provide(instance(BotConfig { token: "123:synthetic".into(), src_url: "https://example.test".into() })),
                 provide(instance(TimeoutsConfig::default())),
-            ]
-        };
-        let telegram = tg_messenger_registry(bot, api_server, cfg_registry);
-        let conn = fixture.connection();
-        let throttle = async_registry! {
+            ],
             provide(App, move || {
                 let conn = conn.clone();
                 async move { Ok(ProgressThrottle::new(conn)) }
             }),
-        };
-        let container = Container::new(async_registry! { extend(telegram, throttle) });
+            extend_fragment(tg_messenger_registry!(bot, api_server)),
+        });
 
         container.get::<TelegramMessenger>().await.unwrap();
     }
