@@ -31,7 +31,7 @@ rustfs:
   storageClass: ""
   image:
     repository: rustfs/rustfs
-    tag: "latest"
+    tag: "1.0.1"
     pullPolicy: IfNotPresent
   secretName: s3
   bucketBootstrap:
