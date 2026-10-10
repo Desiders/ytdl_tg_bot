@@ -17,7 +17,7 @@ use tonic::Status;
 use tracing::{debug, error, instrument, trace, warn};
 
 const STREAM_CHUNK_SIZE: usize = 256 * 1024;
-const VIDEO_FORMAT_SORT: &str = "height,ext,quality,codec,source,lang";
+const VIDEO_FORMAT_SORT: &str = "quality,height,ext,codec,source,lang";
 
 pub enum StreamItem {
     Data(Vec<u8>),
