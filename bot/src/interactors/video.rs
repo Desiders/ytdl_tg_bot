@@ -124,6 +124,7 @@ where
                         input.chat_id,
                         progress_message_id,
                         &text,
+                        Some(input.url),
                         Some(TextFormat::Html),
                     )
                     .await;
@@ -148,6 +149,7 @@ where
                         input.chat_id,
                         progress_message_id,
                         &text,
+                        Some(input.url),
                         Some(TextFormat::Html),
                     )
                     .await;
@@ -208,14 +210,14 @@ where
                         input.chat_id,
                         progress_message_id,
                         &text,
+                        Some(input.url),
                         Some(TextFormat::Html),
                     )
                     .await;
                 }
             }
             Ok(Playlist { cached, uncached }) => {
-                let mut send_err = None;
-                let mut download_errs = vec![];
+                let mut failed_media = vec![];
                 let (cached_len, uncached_len) = (cached.len(), uncached.len());
                 let mut downloaded_playlist = Vec::with_capacity(cached_len + uncached_len);
                 downloaded_playlist.extend(cached);
@@ -252,7 +254,7 @@ where
                     let (media_for_upload, format, duration) = match download_res {
                         Ok(Some(prepared)) => prepared,
                         Ok(None) => {
-                            download_errs.push(progress::FailedMedia {
+                            failed_media.push(progress::FailedMedia {
                                 webpage_url: media.webpage_url.clone(),
                                 errs: candidate_errs,
                             });
@@ -261,7 +263,7 @@ where
                         Err(err) => {
                             error!(%err, "Download error");
                             candidate_errs.push(html_quote(self.error_formatter.format(&err).as_ref()));
-                            download_errs.push(progress::FailedMedia {
+                            failed_media.push(progress::FailedMedia {
                                 webpage_url: media.webpage_url.clone(),
                                 errs: candidate_errs,
                             });
@@ -296,7 +298,7 @@ where
                         Err(err) => {
                             let err = self.error_formatter.format(&err);
                             error!(%err, "Send error");
-                            send_err = Some(progress::FailedMedia {
+                            failed_media.push(progress::FailedMedia {
                                 webpage_url: media.webpage_url.clone(),
                                 errs: vec![progress::upload_error(err.as_ref(), input.chat_cfg.locale().as_str())],
                             });
@@ -330,13 +332,13 @@ where
                     }
                 }
 
-                let errs = download_errs.into_iter().chain(send_err).collect::<Vec<_>>();
                 let media_to_send_count = downloaded_playlist.len();
                 let _ = progress::is_errors_if_exist(
                     self.messenger.as_ref(),
                     input.chat_id,
                     progress_message_id,
-                    &errs,
+                    &failed_media,
+                    Some(input.url),
                     media_to_send_count,
                     input.chat_cfg.locale().as_str(),
                     None,
@@ -349,7 +351,7 @@ where
                     .execute(send_media::id::SendPlaylistInput {
                         chat_id: input.chat_id,
                         reply_to_message_id: Some(input.message_id),
-                        edit_message_id: errs.is_empty().then_some(progress_message_id),
+                        edit_message_id: failed_media.is_empty().then_some(progress_message_id),
                         playlist: downloaded_playlist,
                         link_is_visible: input.link_is_visible,
                         caption: None,
@@ -369,10 +371,11 @@ where
                         input.chat_id,
                         progress_message_id,
                         &text,
+                        Some(input.url),
                         Some(TextFormat::Html),
                     )
                     .await;
-                } else if media_to_send_count != 1 && errs.is_empty() {
+                } else if media_to_send_count != 1 && failed_media.is_empty() {
                     let _ = progress::delete(self.messenger.as_ref(), input.chat_id, progress_message_id).await;
                 }
             }
@@ -383,6 +386,7 @@ where
                     input.chat_id,
                     progress_message_id,
                     &t!("download.playlist_empty", locale = locale.as_str()),
+                    Some(input.url),
                     Some(TextFormat::Html),
                 )
                 .await;
@@ -399,6 +403,7 @@ where
                     input.chat_id,
                     progress_message_id,
                     &text,
+                    Some(input.url),
                     Some(TextFormat::Html),
                 )
                 .await;

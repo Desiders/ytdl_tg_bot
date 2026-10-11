@@ -8,7 +8,7 @@ use url::Url;
 use crate::{
     entities::{ChatConfig, DownloadJob, JobTarget, Params},
     handlers_utils::progress,
-    interactors::Interactor,
+    interactors::{chosen_inline, Interactor},
     services::{
         messenger::{EditTarget, EditTextRequest, MessengerPort, TextFormat},
         queue::RedisJobQueue,
@@ -75,7 +75,8 @@ where
         info!(job_id = %job.job_id, "Enqueueing download job");
         if let Err(err) = self.queue.enqueue(&job).await {
             error!(%err, "Enqueue download job error");
-            let text = t!("download.error_queue", locale = input.chat_cfg.locale().as_str()).into_owned();
+            let text = t!("download.error_queue", locale = input.chat_cfg.locale().as_str());
+            let text = progress::with_link(&text, input.url, None);
             let _ = progress::new(self.messenger.as_ref(), &text, input.chat_id, Some(input.message_id), None).await;
         }
 
@@ -134,7 +135,9 @@ where
         info!(job_id = %job.job_id, "Enqueueing download job");
         if let Err(err) = self.queue.enqueue(&job).await {
             error!(%err, "Enqueue inline download job error");
-            let text = t!("download.error_queue", locale = input.chat_cfg.locale().as_str()).into_owned();
+            let text = t!("download.error_queue", locale = input.chat_cfg.locale().as_str());
+            let url = chosen_inline::resolve_url(input.url, input.result_id);
+            let text = progress::with_link(&text, &url, Some(TextFormat::Html));
             let _ = self
                 .messenger
                 .edit_text(EditTextRequest {

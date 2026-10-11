@@ -153,6 +153,7 @@ where
                     );
                     match &job.target {
                         JobTarget::Command { chat_id, message_id } => {
+                            let text = progress::with_link(&text, url, Some(TextFormat::Html));
                             let _ =
                                 progress::new(self.messenger.as_ref(), &text, *chat_id, Some(*message_id), Some(TextFormat::Html)).await;
                         }
@@ -161,6 +162,7 @@ where
                                 self.messenger.as_ref(),
                                 inline_message_id,
                                 &text,
+                                url,
                                 Some(TextFormat::Html),
                             )
                             .await;
