@@ -529,13 +529,13 @@ async fn probe_photo(
     (!matches!(result, Empty)).then_some((MediaType::Photo, result))
 }
 
-// Video when any uncached format has dimensions or a video container ext (generic/snapsave often
-// omits width), or when every entry was already cached as video.
 pub(crate) fn is_audio_first(cfg: &AudioFirstConfig, url: &Url) -> bool {
     url.domain()
         .is_some_and(|domain| cfg.domains.contains(&domain.trim_start_matches("www.").to_owned()))
 }
 
+// Video when any uncached format has dimensions or a video container ext (generic/snapsave often
+//  omits width), or when every entry was already cached as video.
 fn has_video_stream(cached: &[MediaInPlaylist], uncached: &[(Media, Vec<(MediaFormat, RawMediaWithFormat)>)]) -> bool {
     if uncached.iter().any(|(_, formats)| {
         formats
