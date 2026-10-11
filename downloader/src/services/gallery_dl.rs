@@ -41,12 +41,6 @@ pub enum GetInfoErrorKind {
     EmptyEntries,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum DownloadErrorKind {
-    #[error("IO error: {0}")]
-    Io(#[from] io::Error),
-}
-
 /// Parses gallery-dl's `--dump-json` / `--resolve-json` output: a `DataJob` array of message
 /// tuples whose first element is the identifier. In gallery-dl 1.32 a `DataJob` only emits:
 /// - `[2, metadata]` — Directory: post-level metadata for the files that follow.
@@ -285,79 +279,6 @@ async fn run_gallery_dl_json(
                 stdout,
                 logged_error: extract_logged_error(&stderr),
             })
-        }
-        Ok(Err(err)) => Err(err.into()),
-        Err(_) => Err(io::Error::new(io::ErrorKind::TimedOut, "Gallery-dl timed out").into()),
-    }
-}
-
-#[instrument(skip_all)]
-pub async fn download_media(
-    search: &str,
-    raw_info: &RawPhotoInfo,
-    max_filesize: u64,
-    output_dir_path: &Path,
-    gallery_dl_cfg: &GalleryDlConfig,
-    timeout: u64,
-    cookie_path: Option<&Path>,
-) -> Result<(), DownloadErrorKind> {
-    let max_filesize = max_filesize.to_string();
-    let output_dir_path = output_dir_path.to_string_lossy();
-    let filter = format!(
-        "url == {}",
-        serde_json::to_string(raw_info.direct_url.as_str()).expect("valid JSON string")
-    );
-    let file_name = format!("media.{}", raw_info.ext);
-
-    let mut args = vec![
-        "--no-input",
-        "--config-ignore",
-        "--no-colors",
-        "--no-part",
-        "--no-skip",
-        "--filesize-max",
-        &max_filesize,
-        "--directory",
-        &output_dir_path,
-        "--filename",
-        &file_name,
-        "--filter",
-        &filter,
-    ];
-
-    let cookie_path = cookie_path.map(|path| path.to_string_lossy());
-    if let Some(cookie_path) = cookie_path.as_deref() {
-        args.push("--cookies");
-        args.push(cookie_path);
-    }
-
-    args.push("--");
-    args.push(search);
-
-    trace!(?args, "Gallery-dl args");
-
-    let child = create_gallery_dl_command(gallery_dl_cfg)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .process_group(0)
-        .spawn()?;
-    let _process_group = ProcessGroup::new(&child);
-
-    match time::timeout(Duration::from_secs(timeout), child.wait_with_output()).await {
-        Ok(Ok(Output { status, stderr, .. })) => {
-            let stderr = String::from_utf8_lossy(&stderr);
-            if status.success() {
-                if !stderr.trim().is_empty() {
-                    warn!("{stderr}");
-                }
-                Ok(())
-            } else {
-                error!("{stderr}");
-                Err(process_exit_error("Gallery-dl", status, &stderr).into())
-            }
         }
         Ok(Err(err)) => Err(err.into()),
         Err(_) => Err(io::Error::new(io::ErrorKind::TimedOut, "Gallery-dl timed out").into()),

@@ -271,9 +271,7 @@ impl DownloaderService {
 
         let guard = Arc::new(DownloadGuard { _permit: permit });
         let yt_dlp_cfg = self.yt_dlp_cfg.clone();
-        let gallery_dl_cfg = self.gallery_dl_cfg.clone();
         let yt_pot_provider_cfg = self.yt_pot_provider_cfg.clone();
-        let domain_replacer = self.domain_replacer.clone();
         let user_agents = self.user_agents.clone();
         let cookies = self.cookies.clone();
 
@@ -284,18 +282,7 @@ impl DownloaderService {
             let started_at = Instant::now();
             let deadline = started_at + Duration::from_secs(DOWNLOAD_TASK_TIMEOUT_SECS);
             let stream = async {
-                let result = stream_download(
-                    request,
-                    yt_dlp_cfg,
-                    gallery_dl_cfg,
-                    yt_pot_provider_cfg,
-                    domain_replacer,
-                    user_agents,
-                    cookies,
-                    tx,
-                    guard.clone(),
-                )
-                .await;
+                let result = stream_download(request, yt_dlp_cfg, yt_pot_provider_cfg, user_agents, cookies, tx, guard.clone()).await;
                 drop(guard);
                 result
             };
@@ -374,9 +361,7 @@ async fn run_download(
 async fn stream_download(
     request: DownloadRequest,
     yt_dlp_cfg: Arc<YtDlpConfig>,
-    gallery_dl_cfg: Arc<GalleryDlConfig>,
     yt_pot_provider_cfg: Arc<YtPotProviderConfig>,
-    domain_replacer: Arc<DomainReplacer>,
     user_agents: Arc<UserAgentResolver>,
     cookies: Arc<Cookies>,
     tx: Sender<Result<DownloadChunk, Status>>,
@@ -387,19 +372,6 @@ async fn stream_download(
     let effective_max_file_size = resolve_max_file_size(request.max_file_size, yt_dlp_cfg.max_file_size);
     let host = url.host();
     let cookie = cookies.get_path_by_optional_host(host.as_ref());
-
-    if request.media_type == "photo" {
-        // Mirror the deterministic switching from get-info so the download fetches from the same
-        // host the `direct_url` filter was built against.
-        let photo_url = if cookie.is_some() {
-            url.clone()
-        } else {
-            domain_replacer.replace_url(&url, MediaKind::Photo).unwrap_or_else(|| url.clone())
-        };
-        // The original URL uses its cookie; the proxy is a cookie-free frontend.
-        let photo_cookie = if photo_url.as_str() == url.as_str() { cookie } else { None };
-        return stream_photo_download(request, photo_url, effective_max_file_size, gallery_dl_cfg, photo_cookie, tx).await;
-    }
 
     let media_with_format: MediaWithFormat =
         serde_json::from_str(&request.raw_info_json).map_err(|err| Status::invalid_argument(format!("Invalid info file error: {err}")))?;
@@ -683,74 +655,6 @@ async fn stream_piped_download(
     }
 
     info!(url = %url, bytes_streamed = total_bytes, "Finished streaming downloaded media");
-    drop(temp_dir);
-    Ok(())
-}
-
-async fn stream_photo_download(
-    request: DownloadRequest,
-    url: Url,
-    effective_max_file_size: u64,
-    gallery_dl_cfg: Arc<GalleryDlConfig>,
-    cookie: Option<std::path::PathBuf>,
-    tx: Sender<Result<DownloadChunk, Status>>,
-) -> Result<(), Status> {
-    let raw_info: RawPhotoInfo =
-        serde_json::from_str(&request.raw_info_json).map_err(|err| Status::invalid_argument(format!("Invalid info file error: {err}")))?;
-
-    info!(
-        url = %url,
-        format_id = %request.format_id,
-        media_type = "photo",
-        has_cookie = cookie.is_some(),
-        max_file_size = effective_max_file_size,
-        "Starting media download"
-    );
-
-    let temp_dir = TempDir::with_prefix("ytdl-tg-bot-").map_err(|err| Status::internal(format!("Temp dir error: {err}")))?;
-    let output_dir_path = temp_dir.path();
-    let media_file_path = output_dir_path.join(format!("media.{}", raw_info.ext));
-
-    let download = async {
-        if raw_info.direct {
-            download_and_convert(raw_info.direct_url.as_str(), &media_file_path, FFMPEG_PATH, DOWNLOAD_TIMEOUT_SECS)
-                .await
-                .map_err(|err| Status::internal(err.to_string()))?;
-        } else {
-            gallery_dl::download_media(
-                url.as_str(),
-                &raw_info,
-                effective_max_file_size,
-                output_dir_path,
-                gallery_dl_cfg.as_ref(),
-                DOWNLOAD_TIMEOUT_SECS,
-                cookie.as_deref(),
-            )
-            .await
-            .map_err(|err| Status::internal(err.to_string()))?;
-        }
-        Ok(())
-    };
-    run_file_download(download, &media_file_path, &tx).await?;
-
-    let media_file_path = resolve_media_file_path(output_dir_path, &media_file_path).await?;
-    let file_size = validate_download_file(&url, &media_file_path, effective_max_file_size).await?;
-
-    send_chunk(
-        &tx,
-        DownloadChunk {
-            payload: Some(Payload::Meta(DownloadMeta {
-                ext: raw_info.ext,
-                width: raw_info.width,
-                height: raw_info.height,
-                duration: None,
-                has_thumbnail: false,
-            })),
-        },
-    )
-    .await?;
-
-    stream_media_to_client(&url, &media_file_path, file_size, &tx).await?;
     drop(temp_dir);
     Ok(())
 }
@@ -1070,8 +974,7 @@ fn synthesize_direct(item: &ResolvedMedia, webpage_url: &Url, ext: &str) -> Resu
     Ok(Playlist::new(vec![(media, raw)]))
 }
 
-// Builds a single-photo playlist for a snapsave image: the direct CDN URL is fetched as-is at
-// download time (`direct` marker), with the original post URL shown.
+// Builds a single-photo playlist for a snapsave image: the direct CDN URL, with the original post URL shown.
 fn synthesize_photo(item: &ResolvedMedia, webpage_url: &Url) -> Result<Playlist, Status> {
     let raw = RawPhotoInfo {
         id: snapsave_name(webpage_url),
@@ -1085,7 +988,6 @@ fn synthesize_photo(item: &ResolvedMedia, webpage_url: &Url) -> Result<Playlist,
         height: None,
         filesize_approx: None,
         playlist_index: 1,
-        direct: true,
     };
     let entry = raw
         .into_playlist_entry()
