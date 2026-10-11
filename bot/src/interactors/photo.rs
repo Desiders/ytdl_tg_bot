@@ -194,7 +194,10 @@ where
                 .await;
                 for (media, _formats) in uncached {
                     let Some(photo_url) = media.direct_url.as_ref() else {
-                        send_err = Some(html_quote("Photo URL is missing in downloader response"));
+                        send_err = Some(progress::FailedMedia {
+                            webpage_url: media.webpage_url.clone(),
+                            errs: vec![html_quote("Photo URL is missing in downloader response")],
+                        });
                         continue;
                     };
                     let file_id = match self
@@ -213,7 +216,10 @@ where
                         Err(err) => {
                             let err = self.error_formatter.format(&err);
                             error!(%err, "Send error");
-                            send_err = Some(progress::upload_error(err.as_ref(), input.chat_cfg.locale().as_str()));
+                            send_err = Some(progress::FailedMedia {
+                                webpage_url: media.webpage_url.clone(),
+                                errs: vec![progress::upload_error(err.as_ref(), input.chat_cfg.locale().as_str())],
+                            });
                             continue;
                         }
                     };
@@ -241,7 +247,7 @@ where
                     }
                 }
 
-                let errs = send_err.map(|err| vec![err]).into_iter().collect::<Vec<_>>();
+                let errs = send_err.into_iter().collect::<Vec<_>>();
                 let media_to_send_count = downloaded_playlist.len();
                 let _ = progress::is_errors_if_exist(
                     self.messenger.as_ref(),

@@ -105,7 +105,7 @@ media_progress = "Download progress: %{progress}"
 error_downloading = "Error while downloading :("
 error_downloading_some = "Some files failed to download :("
 download_retries = "Download retries: %{count}"
-media_download_retries = "%{n} file(s) (retries: %{count}):"
+media_download_retries = "%{n}. %{url} (retries: %{count}):"
 
 [download]
 upload_failed_resend = "The upload was not retried. Please resend the link manually after any indicated cooldown."

@@ -2,6 +2,7 @@ use std::{fmt::Write as _, future::Future};
 
 use rust_i18n::t;
 use telers::utils::text::{html_expandable_blockquote, html_quote};
+use url::Url;
 
 use crate::{
     services::messenger::{
@@ -106,19 +107,25 @@ pub async fn is_sending(
         .await
 }
 
+/// One playlist item that was not delivered, with every error its attempts produced, already HTML-escaped.
+pub struct FailedMedia {
+    pub webpage_url: Url,
+    pub errs: Vec<String>,
+}
+
 pub async fn is_errors_if_exist(
     messenger: &(impl MessengerPort + ?Sized),
     chat_id: i64,
     message_id: i64,
-    media_errs: &[Vec<String>],
+    media_errs: &[FailedMedia],
     media_to_send_count: usize,
     locale: &str,
     base: Option<&str>,
 ) -> Result<(), MessengerError> {
     let mut errs_text = String::new();
-    for (failed_media_index, format_errs) in media_errs.iter().enumerate() {
+    for (failed_media_index, FailedMedia { webpage_url, errs }) in media_errs.iter().enumerate() {
         let mut format_errs_text = String::new();
-        for (format_err_index, format_err) in format_errs.iter().enumerate() {
+        for (format_err_index, format_err) in errs.iter().enumerate() {
             let _ = writeln!(format_errs_text, "{}. {}", format_err_index + 1, format_err);
         }
         let _ = writeln!(
@@ -128,7 +135,8 @@ pub async fn is_errors_if_exist(
                 "progress.media_download_retries",
                 locale = locale,
                 n = failed_media_index + 1,
-                count = format_errs.len()
+                url = html_quote(webpage_url.as_str()),
+                count = errs.len()
             )
         );
         errs_text.push_str(&html_expandable_blockquote(&format_errs_text));
@@ -165,24 +173,39 @@ pub async fn is_errors_if_exist(
         .await
 }
 
+pub struct PlaylistItem<'a> {
+    pub current_media_index: usize,
+    pub playlist_len: usize,
+    pub webpage_url: &'a Url,
+}
+
 pub async fn is_downloading_with_progress(
     messenger: &(impl MessengerPort + ?Sized),
     chat_id: i64,
     message_id: i64,
     progress: String,
-    current_media_index: usize,
-    playlist_len: usize,
+    item: PlaylistItem<'_>,
     locale: &str,
     base: Option<&str>,
 ) -> Result<(), MessengerError> {
+    let PlaylistItem {
+        current_media_index,
+        playlist_len,
+        webpage_url,
+    } = item;
     let header = if playlist_len > 1 {
-        t!(
+        let url = if base.is_some() {
+            html_quote(webpage_url.as_str())
+        } else {
+            webpage_url.to_string()
+        };
+        let playlist_header = t!(
             "progress.downloading_playlist",
             locale = locale,
             current = current_media_index,
             total = playlist_len
-        )
-        .into_owned()
+        );
+        format!("{playlist_header}\n{url}")
     } else {
         t!("progress.downloading", locale = locale).into_owned()
     };
@@ -196,7 +219,7 @@ pub async fn is_downloading_with_progress(
             target: EditTarget::ChatMessage { chat_id, message_id },
             text: &text,
             format: if base.is_some() { Some(TextFormat::Html) } else { None },
-            disable_link_preview: base.is_some(),
+            disable_link_preview: true,
             clear_inline_keyboard: false,
         })
         .await

@@ -790,6 +790,26 @@ async fn fatal_download_error_is_rendered_once_and_not_deleted() {
 }
 
 #[tokio::test]
+async fn download_error_names_the_failed_playlist_item() {
+    for audio in [false, true] {
+        let fixture = Fixture::new(State {
+            replies: Mutex::new(VecDeque::from([Some(Status::internal("Synthetic transport failure"))])),
+            ..Default::default()
+        })
+        .await;
+        let outcome = ExecutionOutcome::default();
+        tokio::time::timeout(Duration::from_secs(10), outcome.scope(fixture.command(audio, 2)))
+            .await
+            .unwrap();
+
+        let edits = fixture.state.edits.lock().unwrap();
+        let error_message = edits.last().unwrap();
+        assert!(error_message.contains("1. https://example.test/0 ("));
+        assert!(!error_message.contains("https://example.test/1"));
+    }
+}
+
+#[tokio::test]
 async fn inline_ready_upload_cancels_blocked_optional_edit_before_final_result() {
     for audio in [false, true] {
         let fixture = Fixture::new(State {
