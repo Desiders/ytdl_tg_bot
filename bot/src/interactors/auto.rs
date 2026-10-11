@@ -489,7 +489,7 @@ async fn probe_audio(
     audio_language: &Language,
     overwrite_cache: bool,
 ) -> Option<(MediaType, GetMediaByURLKind)> {
-    let result = get_audio
+    match get_audio
         .execute(get_media::GetMediaByURLInput {
             url,
             playlist_range: range,
@@ -500,8 +500,12 @@ async fn probe_audio(
             overwrite_cache,
         })
         .await
-        .ok()?;
-    (!matches!(result, Empty)).then_some((MediaType::Audio, result))
+        .ok()?
+    {
+        Empty => None,
+        Playlist { uncached, .. } if !has_audio_stream(&uncached) => None,
+        result => Some((MediaType::Audio, result)),
+    }
 }
 
 async fn probe_photo(
@@ -541,6 +545,19 @@ fn has_video_stream(cached: &[MediaInPlaylist], uncached: &[(Media, Vec<(MediaFo
         return true;
     }
     uncached.is_empty() && !cached.is_empty()
+}
+
+// `yt-dlp` returns a non-HTML link served without an audio or video `Content-Type` as one direct
+//  format with the link's ext, or `unknown_video` when that ext is missing or unknown, and the
+//  `b*` audio fallback selects it, so a direct image link passed as audio and then failed in `ffprobe`.
+//  https://github.com/yt-dlp/yt-dlp/blob/7fd74d10097833ebce0cb162e0ccf7825de9b768/yt_dlp/extractor/generic.py#L901-L914
+fn has_audio_stream(uncached: &[(Media, Vec<(MediaFormat, RawMediaWithFormat)>)]) -> bool {
+    uncached.is_empty()
+        || uncached.iter().any(|(_, formats)| {
+            formats
+                .iter()
+                .any(|(format, _)| format.ext != "unknown_video" && !is_image_ext(&format.ext))
+        })
 }
 
 // Default bare-link download: classify the link (video -> audio -> photo), then run that type's
@@ -710,4 +727,61 @@ fn is_video_ext(ext: &str) -> bool {
         ext.to_ascii_lowercase().as_str(),
         "mp4" | "mkv" | "mov" | "m4v" | "avi" | "flv" | "ts" | "3gp" | "wmv"
     )
+}
+
+// Same list as `is_photo_extension` in `downloader/src/entities/gallery_dl.rs`.
+fn is_image_ext(ext: &str) -> bool {
+    matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "jpg" | "jpeg" | "jfif" | "png" | "webp" | "gif" | "heic" | "heif" | "avif" | "bmp" | "tiff" | "tif" | "jxl" | "svg"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use url::Url;
+
+    use super::has_audio_stream;
+    use crate::entities::{Media, MediaFormat, RawMediaWithFormat};
+
+    fn entry(ext: &str) -> (Media, Vec<(MediaFormat, RawMediaWithFormat)>) {
+        let media = Media {
+            id: "0".into(),
+            display_id: None,
+            webpage_url: Url::parse("https://example.test/0").unwrap(),
+            direct_url: None,
+            title: None,
+            language: None,
+            uploader: None,
+            duration: None,
+            playlist_index: 0,
+            thumbnail: None,
+            thumbnails: vec![],
+        };
+        let format = MediaFormat {
+            format_id: "0".into(),
+            format_note: None,
+            ext: ext.into(),
+            width: None,
+            height: None,
+            aspect_ratio: None,
+            filesize_approx: None,
+        };
+        (media, vec![(format, "{}".into())])
+    }
+
+    #[test]
+    fn direct_image_link_is_not_audio() {
+        assert!(!has_audio_stream(&[entry("jpg")]));
+        assert!(!has_audio_stream(&[entry("PNG")]));
+        assert!(!has_audio_stream(&[entry("jfif")]));
+        assert!(!has_audio_stream(&[entry("unknown_video")]));
+    }
+
+    #[test]
+    fn audio_formats_are_audio() {
+        assert!(has_audio_stream(&[entry("m4a")]));
+        assert!(has_audio_stream(&[entry("jpg"), entry("mp3")]));
+        assert!(has_audio_stream(&[]));
+    }
 }
