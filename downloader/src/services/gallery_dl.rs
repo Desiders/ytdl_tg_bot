@@ -303,8 +303,12 @@ pub async fn download_media(
 ) -> Result<(), DownloadErrorKind> {
     let max_filesize = max_filesize.to_string();
     let output_dir_path = output_dir_path.to_string_lossy();
+    // gallery-dl exposes the file URL as `_url`, and a filter naming an unknown key evaluates falsy, so
+    //  `url == ...` skipped every file, gallery-dl still exited 0 and the node found no downloaded file.
+    //  https://github.com/mikf/gallery-dl/blob/ef30ea97c68d0d03ec49bd810ffe3fb4965559b7/gallery_dl/job.py#L79-L80
+    //  https://github.com/mikf/gallery-dl/blob/ef30ea97c68d0d03ec49bd810ffe3fb4965559b7/gallery_dl/util.py#L855-L871
     let filter = format!(
-        "url == {}",
+        "_url == {}",
         serde_json::to_string(raw_info.direct_url.as_str()).expect("valid JSON string")
     );
     let file_name = format!("media.{}", raw_info.ext);
