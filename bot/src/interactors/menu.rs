@@ -474,19 +474,18 @@ impl<Messenger> RemoveMenuDomain<Messenger> {
     async fn remove(&self, chat_cfg: &ChatConfig, domains: &mut Vec<String>, domain_key: DomainKey) -> Option<Notice> {
         let locale = chat_cfg.locale().as_str();
         let index = domain_key.position(domains)?;
-        let domain = domains[index].clone();
         match self
             .remove_domain
             .execute(chat::ExcludeDomainInput {
-                dto: ChatConfigExcludeDomain::new(chat_cfg.tg_id, domain.clone()),
+                dto: ChatConfigExcludeDomain::new(chat_cfg.tg_id, domains[index].clone()),
             })
             .await
         {
+            // The notice is a callback answer, capped at 200 characters, so it leaves out the domain.
+            //  https://github.com/Desiders/telers/blob/a14a34520eaeffccd1ebdbb4fffe8e44ead81bb9/telers/src/methods/answer_callback_query.rs#L12-L14
             Ok(()) => {
                 domains.remove(index);
-                Some(Notice::new(
-                    t!("menu.domain_removed", locale = locale, domain = domain).into_owned(),
-                ))
+                Some(Notice::new(t!("menu.domain_removed", locale = locale).into_owned()))
             }
             Err(err) => {
                 error!(err = %self.error_formatter.format(&err), "Remove error");
