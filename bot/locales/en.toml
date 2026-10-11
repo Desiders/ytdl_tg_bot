@@ -162,8 +162,9 @@ name = "English"
 
 [menu]
 main = """
-Send me a link and I'll download it, up to %{max_file_size_in_mb} MB.
-Choose a section below.\
+Send me a link and I'll download it.
+
+Choose a section below:\
 """
 settings = "<b>Settings</b>"
 language = "<b>Language</b>"

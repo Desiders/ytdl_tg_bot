@@ -554,7 +554,7 @@ fn render(screen: Screen, page: &Page<'_>) -> View {
 
     let (text, buttons) = match screen {
         Screen::Main => (
-            t!("menu.main", locale = locale, max_file_size_in_mb = page.max_file_size_in_mb).into_owned(),
+            t!("menu.main", locale = locale).into_owned(),
             vec![
                 open(label("menu.btn_settings"), Screen::Settings),
                 open(label("menu.btn_language"), Screen::Language),
