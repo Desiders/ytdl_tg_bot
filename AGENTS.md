@@ -248,8 +248,8 @@ New messenger bots should be separate applications, not modes inside the Telegra
 - never pulls cookies on its own
 - media sources by type:
   - video and audio: `yt-dlp`, with `[yt_dlp].extractor_args` and the `yt-pot-provider` sidecar for YouTube; do not add `player_skip=configs`, it breaks adaptive YouTube formats
-  - photo: `gallery-dl`
-  - Instagram/Facebook without a cookie: snapsave (`[snapsave].enabled`), which yields direct CDN URLs downloaded through `ffmpeg` remux (video), audio extraction (audio), or direct fetch (photo); when snapsave is enabled but unreachable those links fail fast with `NOT_FOUND`; only a disabled snapsave falls back to the domain-replace rule
+  - photo: `gallery-dl` metadata only (`GetMediaInfo`); the bot sends the returned `direct_url` to Telegram, which fetches the image itself, so `DownloadMedia` serves video and audio only
+  - Instagram/Facebook without a cookie: snapsave (`[snapsave].enabled`), which yields direct CDN URLs downloaded through `ffmpeg` remux (video), audio extraction (audio), or the CDN URL as the photo `direct_url`; when snapsave is enabled but unreachable those links fail fast with `NOT_FOUND`; only a disabled snapsave falls back to the domain-replace rule
   - Spotify: `spotdl` (`[spotdl].enabled`) resolves a track, album, or playlist to YouTube URLs; the bot then downloads those
   - `/shazam`: `songrec` (`[songrec].enabled`) with `[songrec].max_audio_size` as the gRPC decoding limit
 - applies `[[replace_domains.<video|audio|photo>]]` regex rules only when the node has no cookie for the domain

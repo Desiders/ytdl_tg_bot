@@ -224,7 +224,6 @@ registry! {
         provide(|Inject(node_router)| async move { Ok(node_router::GetStats::new(node_router)) }),
         provide(|Inject(node_router)| async move { Ok(media::DownloadVideo::new(node_router)) }),
         provide(|Inject(node_router)| async move { Ok(media::DownloadAudio::new(node_router)) }),
-        provide(|Inject(node_router)| async move { Ok(media::DownloadPhoto::new(node_router)) }),
 
         provide(|
             Inject(messenger): Inject<Messenger>,
