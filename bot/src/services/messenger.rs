@@ -178,10 +178,11 @@ pub struct SendMediaByIdRequest<'a> {
 }
 
 pub struct EditMediaByIdRequest<'a> {
-    pub inline_message_id: &'a str,
+    pub target: EditTarget<'a>,
     pub remote_id: &'a str,
     pub webpage_url: Option<&'a Url>,
     pub link_is_visible: bool,
+    pub caption: Option<&'a str>,
 }
 
 pub struct MediaGroupItem {

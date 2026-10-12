@@ -33,12 +33,12 @@ use url::Url;
 use super::{
     audio,
     auto::{AudioFulfiller, FulfillCtx},
-    chosen_inline, post, test_support, video, Interactor,
+    chosen_inline, photo, post, test_support, video, Interactor,
 };
 use crate::{
     config::Config,
     database::{SeaOrmTxManager, TxManager, TxManagerFactories},
-    entities::{language::Language, ChatConfig, DownloadJob, JobTarget, Media, MediaForUpload, MediaFormat, Params},
+    entities::{language::Language, ChatConfig, DownloadJob, JobTarget, Media, MediaForUpload, MediaFormat, MediaInPlaylist, Params},
     services::{
         download::media,
         downloaded_media,
@@ -64,9 +64,11 @@ struct State {
     post_send_error: Mutex<Option<MessengerError>>,
     post_metadata_active: AtomicBool,
     edits: Mutex<Vec<String>>,
+    media_edits: Mutex<Vec<String>>,
     optional_edit_started: Notify,
     block_optional_edits: bool,
     reject_upload: bool,
+    reject_media_edit: bool,
 }
 
 impl State {
@@ -103,7 +105,7 @@ impl Downloader for FakeNode {
             .lock()
             .unwrap()
             .iter()
-            .any(|event| matches!(event.as_str(), "final command send" | "final inline edit")));
+            .any(|event| matches!(event.as_str(), "final command send" | "final command edit" | "final inline edit")));
         self.0.post_metadata_active.store(true, Relaxed);
         self.0.event("post metadata");
         self.0
@@ -163,6 +165,27 @@ impl NodeCapabilities for FakeNode {
 struct RecordingMessenger(Arc<State>);
 
 impl RecordingMessenger {
+    fn edit_media(&self, kind: &str, request: &EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
+        if self.0.reject_media_edit {
+            self.0.event("media edit rejected");
+            return Err(MessengerError::new("Synthetic media edit failure"));
+        }
+        match request.target {
+            EditTarget::ChatMessage { chat_id, message_id } => {
+                self.0.media_edits.lock().unwrap().push(format!(
+                    "{kind} chat:{chat_id}:{message_id} id={} caption={:?}",
+                    request.remote_id, request.caption
+                ));
+                self.0.event("final command edit");
+            }
+            EditTarget::InlineMessage { inline_message_id } => {
+                assert_eq!(inline_message_id, "synthetic-inline");
+                self.0.event("final inline edit");
+            }
+        }
+        Ok(())
+    }
+
     async fn upload(&self, media: MediaForUpload) -> Result<Box<str>, MessengerError> {
         self.0.event("upload started");
         // A later item must not already have spent time waiting behind this upload.
@@ -266,13 +289,11 @@ impl MessengerPort for RecordingMessenger {
         self.0.event("final command send");
         Ok(Some(SentMessage { message_id: 42 }))
     }
-    async fn edit_video_by_id(&self, _: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
-        self.0.event("final inline edit");
-        Ok(())
+    async fn edit_video_by_id(&self, request: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
+        self.edit_media("video", &request)
     }
-    async fn edit_audio_by_id(&self, _: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
-        self.0.event("final inline edit");
-        Ok(())
+    async fn edit_audio_by_id(&self, request: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
+        self.edit_media("audio", &request)
     }
     async fn send_menu(&self, _: SendMenuRequest<'_>) -> Result<(), MessengerError> {
         unreachable!()
@@ -292,17 +313,24 @@ impl MessengerPort for RecordingMessenger {
     async fn upload_photo(&self, _: UploadPhotoRequest<'_>) -> Result<Box<str>, MessengerError> {
         unreachable!()
     }
-    async fn upload_photo_url(&self, _: UploadPhotoUrlRequest<'_>) -> Result<Box<str>, MessengerError> {
-        unreachable!()
+    async fn upload_photo_url(&self, request: UploadPhotoUrlRequest<'_>) -> Result<Box<str>, MessengerError> {
+        assert_eq!(request.photo_url.host_str(), Some("example.test"));
+        self.0.event("photo upload");
+        Ok("synthetic-file-id".into())
     }
     async fn send_photo_by_id(&self, _: SendMediaByIdRequest<'_>) -> Result<SentMessage, MessengerError> {
-        unreachable!()
+        self.0.event("final command send");
+        Ok(SentMessage { message_id: 42 })
     }
-    async fn edit_photo_by_id(&self, _: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
-        unreachable!()
+    async fn edit_photo_by_id(&self, request: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
+        self.edit_media("photo", &request)
     }
-    async fn send_photo_group(&self, _: SendMediaGroupRequest) -> Result<Option<SentMessage>, MessengerError> {
-        unreachable!()
+    async fn send_photo_group(&self, request: SendMediaGroupRequest) -> Result<Option<SentMessage>, MessengerError> {
+        if request.items.is_empty() {
+            return Ok(None);
+        }
+        self.0.event("final command send");
+        Ok(Some(SentMessage { message_id: 42 }))
     }
 }
 
@@ -364,12 +392,21 @@ impl Fixture {
     }
 
     async fn command(&self, audio: bool, count: i16) -> Option<SentMessage> {
+        Box::pin(self.command_media(if audio { MediaType::Audio } else { MediaType::Video }, playlist(count), None)).await
+    }
+
+    async fn command_media(
+        &self,
+        media_type: MediaType,
+        prefetched: GetMediaByURLKind,
+        progress: Option<(i64, &str)>,
+    ) -> Option<SentMessage> {
         self.state.post_metadata_active.store(false, Relaxed);
         let url = Url::parse("https://example.test/playlist").unwrap();
         let params = Params::default();
         let chat = ChatConfig::new(1, false, "en".into());
         let current = watch::channel(None).0;
-        if audio {
+        if matches!(media_type, MediaType::Audio) {
             let interactor = audio::Download::new(
                 self.cfg.clone(),
                 self.formatter.clone(),
@@ -394,13 +431,13 @@ impl Fixture {
                     url: &url,
                     chat_cfg: &chat,
                     link_is_visible: false,
-                    prefetched: Some(playlist(count)),
-                    base_text: None,
-                    progress_message_id: None,
+                    prefetched: Some(prefetched),
+                    base_text: progress.map(|(_, text)| text),
+                    progress_message_id: progress.map(|(message_id, _)| message_id),
                 })
                 .await
                 .unwrap()
-        } else {
+        } else if matches!(media_type, MediaType::Video) {
             let interactor = video::Download::new(
                 self.cfg.clone(),
                 self.formatter.clone(),
@@ -425,10 +462,37 @@ impl Fixture {
                     url: &url,
                     chat_cfg: &chat,
                     link_is_visible: false,
-                    prefetched: Some(playlist(count)),
+                    prefetched: Some(prefetched),
                 })
                 .await
                 .unwrap()
+        } else {
+            photo::Download::new(
+                self.cfg.clone(),
+                self.formatter.clone(),
+                self.messenger.clone(),
+                Arc::new(get_media::GetPhotoByURL::new(
+                    self.router.clone(),
+                    self.cleaner.clone(),
+                    self.tx.clone(),
+                )),
+                Arc::new(send_media::upload::SendPhotoUrl::new(self.messenger.clone())),
+                Arc::new(send_media::id::SendPhoto::new(self.messenger.clone())),
+                Arc::new(send_media::id::SendPhotoPlaylist::new(self.messenger.clone())),
+                Arc::new(downloaded_media::AddPhoto::new(self.tx.clone())),
+            )
+            .execute(photo::DownloadInput {
+                current_message: &current,
+                message_id: 1,
+                chat_id: 1,
+                params: &params,
+                url: &url,
+                chat_cfg: &chat,
+                link_is_visible: false,
+                prefetched: Some(prefetched),
+            })
+            .await
+            .unwrap()
         }
     }
 
@@ -541,7 +605,7 @@ fn playlist(count: i16) -> GetMediaByURLKind {
                         id: index.to_string(),
                         display_id: None,
                         webpage_url: Url::parse(&format!("https://example.test/{index}")).unwrap(),
-                        direct_url: None,
+                        direct_url: Some(Url::parse(&format!("https://example.test/{index}.jpg")).unwrap()),
                         title: None,
                         language: None,
                         uploader: None,
@@ -566,6 +630,105 @@ fn playlist(count: i16) -> GetMediaByURLKind {
             })
             .collect(),
     }
+}
+
+#[tokio::test]
+async fn single_media_replaces_progress_while_albums_send_new_messages() {
+    for (media_type, kind) in [
+        (MediaType::Video, "video"),
+        (MediaType::Audio, "audio"),
+        (MediaType::Photo, "photo"),
+    ] {
+        let fixture = Fixture::new(State::default()).await;
+        let cached = |count| GetMediaByURLKind::Playlist {
+            cached: (0..count)
+                .map(|index| MediaInPlaylist {
+                    file_id: "synthetic-file-id".into(),
+                    playlist_index: index,
+                    webpage_url: None,
+                })
+                .collect(),
+            uncached: vec![],
+        };
+        for (message_id, metadata) in [
+            (1, GetMediaByURLKind::SingleCached("synthetic-file-id".into())),
+            (1, cached(1)),
+            (1, playlist(1)),
+            (42, cached(2)),
+            (42, playlist(2)),
+        ] {
+            fixture.state.events.lock().unwrap().clear();
+            fixture.state.media_edits.lock().unwrap().clear();
+            let message = tokio::time::timeout(Duration::from_secs(5), fixture.command_media(media_type, metadata, None))
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(message.message_id, message_id);
+            let events = fixture.state.events.lock().unwrap();
+            let is_album = message_id == 42;
+            assert_eq!(events.iter().filter(|event| *event == "delete").count(), usize::from(is_album));
+            assert_eq!(
+                events.iter().filter(|event| *event == "final command send").count(),
+                usize::from(is_album)
+            );
+            assert_eq!(
+                events.iter().filter(|event| *event == "final command edit").count(),
+                usize::from(!is_album)
+            );
+            let edits = fixture.state.media_edits.lock().unwrap();
+            if is_album {
+                assert!(edits.is_empty());
+            } else {
+                assert_eq!(*edits, [format!("{kind} chat:1:1 id=synthetic-file-id caption=None")]);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn failed_media_edit_keeps_progress_and_reports_the_error() {
+    for media_type in [MediaType::Video, MediaType::Audio, MediaType::Photo] {
+        let fixture = Fixture::new(State {
+            reject_media_edit: true,
+            ..Default::default()
+        })
+        .await;
+        for metadata in [GetMediaByURLKind::SingleCached("synthetic-file-id".into()), playlist(1)] {
+            assert!(fixture.command_media(media_type, metadata, None).await.is_none());
+            assert!(fixture
+                .state
+                .edits
+                .lock()
+                .unwrap()
+                .last()
+                .unwrap()
+                .contains("Synthetic media edit failure"));
+        }
+        let events = fixture.state.events.lock().unwrap();
+        assert_eq!(events.iter().filter(|event| *event == "media edit rejected").count(), 2);
+        assert!(!events.iter().any(|event| event == "delete" || event == "final command send"));
+    }
+}
+
+#[tokio::test]
+async fn audio_replaces_supplied_progress_and_keeps_recognition_text() {
+    let fixture = Fixture::new(State::default()).await;
+    let text = "<b>Synthetic artist — Synthetic song</b>";
+    for metadata in [GetMediaByURLKind::SingleCached("synthetic-file-id".into()), playlist(1)] {
+        let message = fixture.command_media(MediaType::Audio, metadata, Some((17, text))).await.unwrap();
+        assert_eq!(message.message_id, 17);
+        assert_eq!(
+            fixture.state.media_edits.lock().unwrap().last().unwrap(),
+            &format!("audio chat:1:17 id=synthetic-file-id caption={:?}", Some(text))
+        );
+    }
+    assert!(!fixture
+        .state
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|event| event == "delete" || event == "final command send"));
 }
 
 #[tokio::test]
@@ -720,7 +883,7 @@ async fn known_failed_playlist_item_does_not_stop_next_item() {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(message.message_id, 42);
+        assert_eq!(message.message_id, 1);
         let events = fixture.state.events.lock().unwrap();
         assert_eq!(events.iter().filter(|event| event.starts_with("download ")).count(), 2);
         assert_eq!(events.iter().filter(|event| *event == "upload finished").count(), 1);
@@ -831,7 +994,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
         .with_auto(false);
 
         let message = fixture.command(false, 1).await.unwrap();
-        assert_eq!(message.message_id, 42);
+        assert_eq!(message.message_id, 1);
         assert!(display
             .execute(post::DisplayInput {
                 job: &job,
@@ -842,7 +1005,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
             .unwrap());
         assert_eq!(
             fixture.state.events.lock().unwrap().last().unwrap(),
-            &format!("post edit chat:1:42 caption=true: {short_rendered}")
+            &format!("post edit chat:1:1 caption=true: {short_rendered}")
         );
 
         let edits = fixture.state.edits.lock().unwrap().len();
@@ -879,7 +1042,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
             .unwrap());
         assert_truncated(
             fixture.state.events.lock().unwrap().last().unwrap(),
-            "post edit chat:1:42 caption=true: ",
+            "post edit chat:1:1 caption=true: ",
             1_024,
         );
 
@@ -977,7 +1140,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
             .await
             .unwrap());
         let hidden = fixture.state.events.lock().unwrap().last().unwrap().clone();
-        let hidden = hidden.strip_prefix("post edit chat:1:42 caption=true: ").unwrap();
+        let hidden = hidden.strip_prefix("post edit chat:1:1 caption=true: ").unwrap();
         assert!(hidden.contains("Synthetic &lt;caption&gt; &amp; text"));
         assert!(hidden.contains("<b>Synthetic Context Author (@synthetic_context)</b>\nSynthetic &lt;context&gt; &amp; text"));
         assert!(hidden.ends_with("\n\nSynthetic Author"));
@@ -1032,11 +1195,11 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
         assert_eq!(events.iter().filter(|event| event.starts_with("post text ")).count(), 3);
         assert!(!events
             .iter()
-            .any(|event| event.starts_with("post text 1 reply=Some(42):") || event.starts_with("post text 1 reply=None:")));
+            .any(|event| event.starts_with("post text 1 reply=Some(1):") || event.starts_with("post text 1 reply=None:")));
         assert_eq!(events.iter().filter(|event| *event == "post metadata").count(), 14);
         assert_eq!(events.iter().filter(|event| event.starts_with("download ")).count(), 2);
         assert_eq!(events.iter().filter(|event| *event == "upload finished").count(), 2);
-        assert_eq!(events.iter().filter(|event| *event == "final command send").count(), 1);
+        assert_eq!(events.iter().filter(|event| *event == "final command edit").count(), 1);
         assert_eq!(events.iter().filter(|event| *event == "final inline edit").count(), 1);
         assert!(fixture.state.post_replies.lock().unwrap().is_empty());
     })
