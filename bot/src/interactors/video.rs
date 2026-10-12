@@ -337,7 +337,7 @@ where
                     .execute(send_media::id::SendPlaylistInput {
                         chat_id: input.chat_id,
                         reply_to_message_id: Some(input.message_id),
-                        edit_message_id: Some(progress_message_id),
+                        edit_message_id: errs.is_empty().then_some(progress_message_id),
                         playlist: downloaded_playlist,
                         link_is_visible: input.link_is_visible,
                         caption: None,

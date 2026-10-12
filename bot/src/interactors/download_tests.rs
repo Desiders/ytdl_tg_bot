@@ -883,14 +883,36 @@ async fn known_failed_playlist_item_does_not_stop_next_item() {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(message.message_id, 1);
+        assert_eq!(message.message_id, 42);
         let events = fixture.state.events.lock().unwrap();
         assert_eq!(events.iter().filter(|event| event.starts_with("download ")).count(), 2);
         assert_eq!(events.iter().filter(|event| *event == "upload finished").count(), 1);
+        assert_eq!(events.iter().filter(|event| *event == "final command send").count(), 1);
+        assert!(!events.iter().any(|event| event == "final command edit"));
         assert!(!events.iter().any(|event| event == "delete"));
+        assert!(fixture.state.media_edits.lock().unwrap().is_empty());
         let edits = fixture.state.edits.lock().unwrap();
         assert_eq!(edits.iter().filter(|text| text.contains("Synthetic known failure")).count(), 1);
     }
+}
+
+#[tokio::test]
+async fn failed_photo_in_playlist_keeps_error_when_other_photo_succeeds() {
+    let fixture = Fixture::new(State::default()).await;
+    let mut metadata = playlist(2);
+    if let GetMediaByURLKind::Playlist { uncached, .. } = &mut metadata {
+        uncached[0].0.direct_url = None;
+    }
+
+    let message = fixture.command_media(MediaType::Photo, metadata, None).await.unwrap();
+    assert_eq!(message.message_id, 42);
+    let events = fixture.state.events.lock().unwrap();
+    assert_eq!(events.iter().filter(|event| *event == "photo upload").count(), 1);
+    assert_eq!(events.iter().filter(|event| *event == "final command send").count(), 1);
+    assert!(!events.iter().any(|event| event == "final command edit" || event == "delete"));
+    assert!(fixture.state.media_edits.lock().unwrap().is_empty());
+    let edits = fixture.state.edits.lock().unwrap();
+    assert_eq!(edits.iter().filter(|text| text.contains("Photo URL is missing")).count(), 1);
 }
 
 #[tokio::test]

@@ -513,11 +513,11 @@ impl MessengerPort for TelegramMessenger {
     async fn edit_video_by_id(&self, request: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
         let method = methods::EditMessageMedia::new(
             InputMediaVideo::new(InputFile::id(request.remote_id))
-                .caption_option(if request.link_is_visible {
-                    media_link(request.webpage_url)
-                } else {
-                    None
-                })
+                .caption_option(caption_with_link(
+                    request.caption.map(ToOwned::to_owned),
+                    request.link_is_visible,
+                    request.webpage_url,
+                ))
                 .supports_streaming(true)
                 .parse_mode(ParseMode::HTML),
         )
@@ -552,11 +552,11 @@ impl MessengerPort for TelegramMessenger {
     async fn edit_photo_by_id(&self, request: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
         let method = methods::EditMessageMedia::new(
             InputMediaPhoto::new(InputFile::id(request.remote_id))
-                .caption_option(if request.link_is_visible {
-                    media_link(request.webpage_url)
-                } else {
-                    None
-                })
+                .caption_option(caption_with_link(
+                    request.caption.map(ToOwned::to_owned),
+                    request.link_is_visible,
+                    request.webpage_url,
+                ))
                 .parse_mode(ParseMode::HTML),
         )
         .reply_markup(InlineKeyboardMarkup::new([[]]));
@@ -1209,7 +1209,7 @@ mod rate_limit_tests {
                             message_id: 7,
                         }
                     };
-                    let caption = (kind == "audio" && !is_inline).then_some(base_text);
+                    let caption = (!is_inline).then_some(base_text);
                     let input = EditMediaByIdRequest {
                         target,
                         remote_id: "synthetic-file-id",
