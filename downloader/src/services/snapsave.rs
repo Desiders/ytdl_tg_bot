@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use snapsave_parser::SnapSave;
+use snapsave_parser::{SnapSave, SnapSaveDownloaderData};
 use tracing::warn;
 use url::Url;
 
@@ -40,13 +40,44 @@ impl SnapsaveResolver {
     }
 
     pub async fn resolve(&self, url: &Url, kind: MediaKind) -> SnapsaveOutcome {
-        if !self.enabled {
+        let Some(data) = self.resolve_post(url).await else {
             return SnapsaveOutcome::Unavailable;
+        };
+
+        let wanted_type = if matches!(kind, MediaKind::Photo) { "image" } else { "video" };
+        let preview = data.preview.as_deref().and_then(|preview| Url::parse(preview).ok());
+        let items: Vec<ResolvedMedia> = data
+            .media
+            .into_iter()
+            // Render-gated entries (Facebook hi-res variants) need a server-side render, not a
+            // direct URL, so skip them.
+            .filter(|media| media.should_render != Some(true))
+            .filter(|media| media.r#type.as_deref() == Some(wanted_type))
+            .filter_map(|media| {
+                let url = Url::parse(media.url.as_deref()?).ok()?;
+                let thumbnail = media
+                    .thumbnail
+                    .as_deref()
+                    .and_then(|thumbnail| Url::parse(thumbnail).ok())
+                    .or_else(|| preview.clone());
+                Some(ResolvedMedia { url, thumbnail })
+            })
+            .collect();
+
+        if items.is_empty() {
+            SnapsaveOutcome::WrongKind
+        } else {
+            SnapsaveOutcome::Resolved(items)
+        }
+    }
+
+    pub async fn resolve_post(&self, url: &Url) -> Option<SnapSaveDownloaderData> {
+        if !self.enabled {
+            return None;
         }
 
         let target = url.to_string();
         let proxy = self.proxy.clone();
-        let wanted_type = if matches!(kind, MediaKind::Photo) { "image" } else { "video" };
 
         let resolved = tokio::task::spawn_blocking(move || {
             let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().ok()?;
@@ -58,32 +89,13 @@ impl SnapsaveResolver {
                 }
                 .map_err(|err| warn!(url = %target, %err, "Failed to build snapsave parser"))
                 .ok()?;
-                let data = match snap.download(&target, None).await {
-                    Ok(data) => data,
+                match snap.download(&target, None).await {
+                    Ok(data) => Some(data),
                     Err(err) => {
                         warn!(url = %target, %err, "Snapsave resolve failed");
-                        return None;
+                        None
                     }
-                };
-                let preview = data.preview.as_deref().and_then(|preview| Url::parse(preview).ok());
-                let items: Vec<ResolvedMedia> = data
-                        .media
-                        .into_iter()
-                        // Render-gated entries (Facebook hi-res variants) need a server-side render, not a
-                        // direct URL, so skip them.
-                        .filter(|media| media.should_render != Some(true))
-                        .filter(|media| media.r#type.as_deref() == Some(wanted_type))
-                        .filter_map(|media| {
-                            let url = Url::parse(media.url.as_deref()?).ok()?;
-                            let thumbnail = media
-                                .thumbnail
-                                .as_deref()
-                                .and_then(|thumbnail| Url::parse(thumbnail).ok())
-                                .or_else(|| preview.clone());
-                            Some(ResolvedMedia { url, thumbnail })
-                        })
-                        .collect();
-                Some(items)
+                }
             }));
             if let Ok(result) = result {
                 result
@@ -94,11 +106,7 @@ impl SnapsaveResolver {
         })
         .await;
 
-        match resolved {
-            Ok(Some(items)) if !items.is_empty() => SnapsaveOutcome::Resolved(items),
-            Ok(Some(_)) => SnapsaveOutcome::WrongKind,
-            Ok(None) | Err(_) => SnapsaveOutcome::Unavailable,
-        }
+        resolved.ok().flatten()
     }
 }
 

@@ -26,9 +26,9 @@ use crate::{
         chat, downloaded_media,
         messenger::{
             AnswerCallbackRequest, AnswerInlineErrorRequest, AnswerInlineQueryRequest, ButtonAction, DeleteMessageRequest,
-            EditMediaByIdRequest, EditMenuRequest, EditTextRequest, Keyboard, MessengerError, MessengerPort, SendMediaByIdRequest,
-            SendMediaGroupRequest, SendMenuRequest, SendTextRequest, SentMessage, UploadAudioRequest, UploadPhotoRequest,
-            UploadPhotoUrlRequest, UploadVideoRequest,
+            EditCaptionRequest, EditMediaByIdRequest, EditMenuRequest, EditTextRequest, Keyboard, MessengerError, MessengerPort,
+            SendMediaByIdRequest, SendMediaGroupRequest, SendMenuRequest, SendTextRequest, SentMessage, UploadAudioRequest,
+            UploadPhotoRequest, UploadPhotoUrlRequest, UploadVideoRequest,
         },
         node_router, queue,
     },
@@ -78,6 +78,9 @@ impl MessengerPort for RecordingMessenger {
     async fn edit_text(&self, _: EditTextRequest<'_>) -> Result<(), MessengerError> {
         unreachable!()
     }
+    async fn edit_caption(&self, _: EditCaptionRequest<'_>) -> Result<(), MessengerError> {
+        unreachable!()
+    }
     async fn delete_message(&self, _: DeleteMessageRequest) -> Result<(), MessengerError> {
         unreachable!()
     }
@@ -99,13 +102,13 @@ impl MessengerPort for RecordingMessenger {
     async fn upload_photo_url(&self, _: UploadPhotoUrlRequest<'_>) -> Result<Box<str>, MessengerError> {
         unreachable!()
     }
-    async fn send_video_by_id(&self, _: SendMediaByIdRequest<'_>) -> Result<(), MessengerError> {
+    async fn send_video_by_id(&self, _: SendMediaByIdRequest<'_>) -> Result<SentMessage, MessengerError> {
         unreachable!()
     }
-    async fn send_audio_by_id(&self, _: SendMediaByIdRequest<'_>) -> Result<(), MessengerError> {
+    async fn send_audio_by_id(&self, _: SendMediaByIdRequest<'_>) -> Result<SentMessage, MessengerError> {
         unreachable!()
     }
-    async fn send_photo_by_id(&self, _: SendMediaByIdRequest<'_>) -> Result<(), MessengerError> {
+    async fn send_photo_by_id(&self, _: SendMediaByIdRequest<'_>) -> Result<SentMessage, MessengerError> {
         unreachable!()
     }
     async fn edit_video_by_id(&self, _: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
@@ -117,13 +120,13 @@ impl MessengerPort for RecordingMessenger {
     async fn edit_photo_by_id(&self, _: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
         unreachable!()
     }
-    async fn send_video_group(&self, _: SendMediaGroupRequest) -> Result<(), MessengerError> {
+    async fn send_video_group(&self, _: SendMediaGroupRequest) -> Result<Option<SentMessage>, MessengerError> {
         unreachable!()
     }
-    async fn send_audio_group(&self, _: SendMediaGroupRequest) -> Result<(), MessengerError> {
+    async fn send_audio_group(&self, _: SendMediaGroupRequest) -> Result<Option<SentMessage>, MessengerError> {
         unreachable!()
     }
-    async fn send_photo_group(&self, _: SendMediaGroupRequest) -> Result<(), MessengerError> {
+    async fn send_photo_group(&self, _: SendMediaGroupRequest) -> Result<Option<SentMessage>, MessengerError> {
         unreachable!()
     }
 }

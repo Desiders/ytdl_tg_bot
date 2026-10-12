@@ -40,8 +40,8 @@ const WAIT_LIVENESS_INTERVAL: Duration = Duration::from_secs(30);
 const REQUEST_INTERVAL: Duration = Duration::from_millis(100);
 
 use super::{
-    AnswerCallbackRequest, AnswerInlineErrorRequest, AnswerInlineQueryRequest, ButtonAction, DeleteMessageRequest, EditMediaByIdRequest,
-    EditMenuRequest, EditTarget, EditTextRequest, InlineQueryArticle, Keyboard, MessengerError, SendMediaByIdRequest,
+    AnswerCallbackRequest, AnswerInlineErrorRequest, AnswerInlineQueryRequest, ButtonAction, DeleteMessageRequest, EditCaptionRequest,
+    EditMediaByIdRequest, EditMenuRequest, EditTarget, EditTextRequest, InlineQueryArticle, Keyboard, MessengerError, SendMediaByIdRequest,
     SendMediaGroupRequest, SendMenuRequest, SendTextRequest, SentMessage, TextFormat, UploadAudioRequest, UploadPhotoRequest,
     UploadPhotoUrlRequest, UploadVideoRequest,
 };
@@ -178,6 +178,25 @@ impl MessengerPort for TelegramMessenger {
         } else {
             with_retries(self, method, 0, None).await?;
         }
+        Ok(())
+    }
+
+    async fn edit_caption(&self, request: EditCaptionRequest<'_>) -> Result<(), MessengerError> {
+        let method = methods::EditMessageCaption::new()
+            .caption(request.text)
+            .parse_mode_option(request.format.map(ParseMode::from));
+        let method = match request.target {
+            EditTarget::ChatMessage { chat_id, message_id } => method.chat_id(chat_id).message_id(message_id),
+            EditTarget::InlineMessage { inline_message_id } => {
+                let method = method.inline_message_id(inline_message_id);
+                if request.clear_inline_keyboard {
+                    method.reply_markup(InlineKeyboardMarkup::new([[]]))
+                } else {
+                    method
+                }
+            }
+        };
+        with_retries(self, method, 2, Some(self.timeouts_cfg.send_by_id)).await?;
         Ok(())
     }
 
@@ -415,8 +434,8 @@ impl MessengerPort for TelegramMessenger {
         Ok(file_id)
     }
 
-    async fn send_video_by_id(&self, request: SendMediaByIdRequest<'_>) -> Result<(), MessengerError> {
-        with_retries(
+    async fn send_video_by_id(&self, request: SendMediaByIdRequest<'_>) -> Result<SentMessage, MessengerError> {
+        let message = with_retries(
             self,
             methods::SendVideo::new(request.chat_id, InputFile::id(request.remote_id))
                 .reply_parameters_option(
@@ -436,11 +455,13 @@ impl MessengerPort for TelegramMessenger {
             Some(self.timeouts_cfg.send_by_id),
         )
         .await?;
-        Ok(())
+        Ok(SentMessage {
+            message_id: message.message_id(),
+        })
     }
 
-    async fn send_audio_by_id(&self, request: SendMediaByIdRequest<'_>) -> Result<(), MessengerError> {
-        with_retries(
+    async fn send_audio_by_id(&self, request: SendMediaByIdRequest<'_>) -> Result<SentMessage, MessengerError> {
+        let message = with_retries(
             self,
             methods::SendAudio::new(request.chat_id, InputFile::id(request.remote_id))
                 .reply_parameters_option(
@@ -459,11 +480,13 @@ impl MessengerPort for TelegramMessenger {
             Some(self.timeouts_cfg.send_by_id),
         )
         .await?;
-        Ok(())
+        Ok(SentMessage {
+            message_id: message.message_id(),
+        })
     }
 
-    async fn send_photo_by_id(&self, request: SendMediaByIdRequest<'_>) -> Result<(), MessengerError> {
-        with_retries(
+    async fn send_photo_by_id(&self, request: SendMediaByIdRequest<'_>) -> Result<SentMessage, MessengerError> {
+        let message = with_retries(
             self,
             methods::SendPhoto::new(request.chat_id, InputFile::id(request.remote_id))
                 .reply_parameters_option(
@@ -482,7 +505,9 @@ impl MessengerPort for TelegramMessenger {
             Some(self.timeouts_cfg.send_by_id),
         )
         .await?;
-        Ok(())
+        Ok(SentMessage {
+            message_id: message.message_id(),
+        })
     }
 
     async fn edit_video_by_id(&self, request: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
@@ -549,7 +574,7 @@ impl MessengerPort for TelegramMessenger {
         Ok(())
     }
 
-    async fn send_video_group(&self, request: SendMediaGroupRequest) -> Result<(), MessengerError> {
+    async fn send_video_group(&self, request: SendMediaGroupRequest) -> Result<Option<SentMessage>, MessengerError> {
         if let [item] = request.items.as_slice() {
             return self
                 .send_video_by_id(SendMediaByIdRequest {
@@ -560,9 +585,10 @@ impl MessengerPort for TelegramMessenger {
                     link_is_visible: request.link_is_visible,
                     caption: request.caption.as_deref(),
                 })
-                .await;
+                .await
+                .map(Some);
         }
-        media_groups(
+        let messages = media_groups(
             self,
             request.chat_id,
             request
@@ -582,7 +608,9 @@ impl MessengerPort for TelegramMessenger {
             Some(self.timeouts_cfg.send_by_id),
         )
         .await?;
-        Ok(())
+        Ok(messages.first().map(|message| SentMessage {
+            message_id: message.message_id(),
+        }))
     }
 
     async fn send_audio_group(
@@ -594,7 +622,7 @@ impl MessengerPort for TelegramMessenger {
             link_is_visible,
             caption,
         }: SendMediaGroupRequest,
-    ) -> Result<(), MessengerError> {
+    ) -> Result<Option<SentMessage>, MessengerError> {
         if let [item] = items.as_slice() {
             return self
                 .send_audio_by_id(SendMediaByIdRequest {
@@ -605,9 +633,10 @@ impl MessengerPort for TelegramMessenger {
                     link_is_visible,
                     caption: caption.as_deref(),
                 })
-                .await;
+                .await
+                .map(Some);
         }
-        media_groups(
+        let messages = media_groups(
             self,
             chat_id,
             items
@@ -623,10 +652,12 @@ impl MessengerPort for TelegramMessenger {
             Some(self.timeouts_cfg.send_by_id),
         )
         .await?;
-        Ok(())
+        Ok(messages.first().map(|message| SentMessage {
+            message_id: message.message_id(),
+        }))
     }
 
-    async fn send_photo_group(&self, request: SendMediaGroupRequest) -> Result<(), MessengerError> {
+    async fn send_photo_group(&self, request: SendMediaGroupRequest) -> Result<Option<SentMessage>, MessengerError> {
         if let [item] = request.items.as_slice() {
             return self
                 .send_photo_by_id(SendMediaByIdRequest {
@@ -637,9 +668,10 @@ impl MessengerPort for TelegramMessenger {
                     link_is_visible: request.link_is_visible,
                     caption: request.caption.as_deref(),
                 })
-                .await;
+                .await
+                .map(Some);
         }
-        media_groups(
+        let messages = media_groups(
             self,
             request.chat_id,
             request
@@ -659,7 +691,9 @@ impl MessengerPort for TelegramMessenger {
             Some(self.timeouts_cfg.send_by_id),
         )
         .await?;
-        Ok(())
+        Ok(messages.first().map(|message| SentMessage {
+            message_id: message.message_id(),
+        }))
     }
 }
 
@@ -1084,7 +1118,7 @@ mod rate_limit_tests {
     }
 
     #[tokio::test]
-    async fn one_item_playlist_uses_the_existing_file_id_send() {
+    async fn media_playlists_return_the_first_delivered_message() {
         let fixture = Fixture::new().await;
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -1101,7 +1135,7 @@ mod rate_limit_tests {
             first_line
         });
         let messenger = test_messenger(address, &fixture);
-        messenger
+        let sent = messenger
             .send_photo_group(SendMediaGroupRequest {
                 chat_id: 1,
                 reply_to_message_id: None,
@@ -1114,7 +1148,145 @@ mod rate_limit_tests {
             })
             .await
             .unwrap();
+        assert_eq!(sent.unwrap().message_id, 1);
         assert!(server.await.unwrap().contains("/sendPhoto "));
+
+        let server = reply_once(
+            "200 OK",
+            r#"{"ok":true,"result":[{"message_id":42,"date":1,"chat":{"id":1,"type":"private"}},{"message_id":43,"date":1,"chat":{"id":1,"type":"private"}}]}"#,
+        )
+        .await;
+        let messenger = test_messenger(server.address, &fixture);
+        let sent = messenger
+            .send_photo_group(SendMediaGroupRequest {
+                chat_id: 1,
+                reply_to_message_id: None,
+                items: vec![
+                    MediaGroupItem {
+                        remote_id: "synthetic-first-photo".into(),
+                        webpage_url: None,
+                    },
+                    MediaGroupItem {
+                        remote_id: "synthetic-second-photo".into(),
+                        webpage_url: None,
+                    },
+                ],
+                link_is_visible: false,
+                caption: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(sent.unwrap().message_id, 42);
+        assert!(server.request.await.unwrap().contains("/sendMediaGroup "));
+        let sent = messenger
+            .send_photo_group(SendMediaGroupRequest {
+                chat_id: 1,
+                reply_to_message_id: None,
+                items: vec![],
+                link_is_visible: false,
+                caption: None,
+            })
+            .await
+            .unwrap();
+        assert!(sent.is_none());
+    }
+
+    #[tokio::test]
+    async fn post_text_and_caption_edits_keep_the_source_footer_and_content() {
+        let fixture = Fixture::new().await;
+        let text = concat!(
+            "<blockquote>Synthetic post &amp; content</blockquote>\n\n",
+            "Synthetic &amp; author | <a href=\"https://example.test/post?a=1&amp;b=2\">Link</a>"
+        );
+        let server = reply_once(
+            "200 OK",
+            r#"{"ok":true,"result":{"message_id":1,"date":1,"chat":{"id":1,"type":"private"}}}"#,
+        )
+        .await;
+        test_messenger(server.address, &fixture)
+            .send_text(SendTextRequest {
+                chat_id: 1,
+                reply_to_message_id: Some(7),
+                text,
+                format: Some(TextFormat::Html),
+                disable_link_preview: true,
+            })
+            .await
+            .unwrap();
+        let request = server.request.await.unwrap();
+        assert!(request.contains("/sendMessage "));
+        assert!(request.contains("name=\"text\""));
+        assert!(request.contains(text));
+        assert!(request.contains("HTML"));
+        assert!(!request.contains("name=\"reply_markup\""));
+        assert!(!request.contains(r#""url":"https://example.test/post"#));
+        assert!(request.contains(r#""message_id":7"#));
+        assert!(request.contains(r#""is_disabled":true"#));
+
+        for as_caption in [true, false] {
+            for (is_inline, clear_inline_keyboard) in [(false, false), (true, false), (true, true)] {
+                let server = reply_once("200 OK", r#"{"ok":true,"result":true}"#).await;
+                let target = if is_inline {
+                    EditTarget::InlineMessage {
+                        inline_message_id: "synthetic-inline-message",
+                    }
+                } else {
+                    EditTarget::ChatMessage {
+                        chat_id: 321,
+                        message_id: 7,
+                    }
+                };
+                let messenger = test_messenger(server.address, &fixture);
+                if as_caption {
+                    messenger
+                        .edit_caption(EditCaptionRequest {
+                            target,
+                            text,
+                            format: Some(TextFormat::Html),
+                            clear_inline_keyboard,
+                        })
+                        .await
+                } else {
+                    messenger
+                        .edit_text(EditTextRequest {
+                            is_progress: false,
+                            target,
+                            text,
+                            format: Some(TextFormat::Html),
+                            disable_link_preview: true,
+                            clear_inline_keyboard,
+                        })
+                        .await
+                }
+                .unwrap();
+                let request = server.request.await.unwrap();
+                let (method, field) = if as_caption {
+                    ("editMessageCaption", "caption")
+                } else {
+                    ("editMessageText", "text")
+                };
+                assert!(request.contains(&format!("/{method} ")));
+                assert!(request.contains(&format!("name=\"{field}\"")));
+                assert!(request.contains(text));
+                assert!(request.contains("HTML"));
+                if clear_inline_keyboard {
+                    assert!(request.contains(r#""inline_keyboard":[[]]"#));
+                } else {
+                    assert!(!request.contains("name=\"reply_markup\""));
+                }
+                assert!(!request.contains(r#""url":"https://example.test/post"#));
+                assert!(!request.contains("name=\"media\""));
+                if is_inline {
+                    assert!(request.contains("synthetic-inline-message"));
+                } else {
+                    assert!(request.contains("name=\"chat_id\"\r\n\r\n321"));
+                    assert!(request.contains("name=\"message_id\"\r\n\r\n7"));
+                }
+                if !as_caption {
+                    assert!(request.contains(r#""is_disabled":true"#));
+                }
+            }
+        }
     }
 
     #[tokio::test]

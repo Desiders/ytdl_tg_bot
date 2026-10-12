@@ -375,7 +375,10 @@ async fn get_media_by_url(
                     entry
                 }));
             }
-            MediaInfoResponse { entries }
+            MediaInfoResponse {
+                entries,
+                ..Default::default()
+            }
         }
         _ => get_media_info(
             router,
@@ -523,6 +526,7 @@ mod tests {
                 raw_info_json: r#"{"id":"id","value":0.22668514563732178}"#.to_owned(),
                 ..Default::default()
             }],
+            ..Default::default()
         };
 
         let playlist = playlist_from_response(response).unwrap();
@@ -548,6 +552,7 @@ mod tests {
                 formats: vec![format],
                 ..Default::default()
             }],
+            ..Default::default()
         };
 
         let playlist = playlist_from_response(response).unwrap();

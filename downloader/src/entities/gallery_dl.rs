@@ -81,6 +81,50 @@ impl GalleryDlEntry {
             .map(ToOwned::to_owned)
     }
 
+    pub fn extract_text(&self) -> Option<String> {
+        let metadata = self.metadata.as_ref()?;
+        ["content", "description", "caption", "text"]
+            .iter()
+            .find_map(|key| metadata.get(*key).and_then(Value::as_str).filter(|value| !value.trim().is_empty()))
+            .map(ToOwned::to_owned)
+    }
+
+    pub fn extract_author_display_name(&self) -> Option<String> {
+        if let Some(author) = self.extract_string(&["author"]).filter(|value| !value.trim().is_empty()) {
+            return Some(author);
+        }
+        let metadata = self.metadata.as_ref()?;
+        for key in ["author", "user"] {
+            if let Some(author) = metadata.get(key) {
+                for name in ["nick", "display_name", "name"] {
+                    if let Some(value) = author.get(name).and_then(Value::as_str).filter(|value| !value.trim().is_empty()) {
+                        return Some(value.to_owned());
+                    }
+                }
+            }
+        }
+        ["fullname", "full_name", "display_name"]
+            .iter()
+            .find_map(|key| self.extract_string(&[*key]).filter(|value| !value.trim().is_empty()))
+            .or_else(|| self.extract_author().filter(|value| !value.trim().is_empty()))
+    }
+
+    pub fn extract_author_handle(&self) -> Option<String> {
+        let metadata = self.metadata.as_ref()?;
+        for key in ["author", "user"] {
+            if let Some(author) = metadata.get(key) {
+                for name in ["handle", "username", "name"] {
+                    if let Some(value) = author.get(name).and_then(Value::as_str).filter(|value| !value.trim().is_empty()) {
+                        return Some(value.to_owned());
+                    }
+                }
+            }
+        }
+        ["username", "handle"]
+            .iter()
+            .find_map(|key| self.extract_string(&[*key]).filter(|value| !value.trim().is_empty()))
+    }
+
     pub fn extract_dimensions(&self) -> Option<(u32, u32)> {
         let width = self.extract_u64(&["width", "image_width", "imageWidth"])?;
         let height = self.extract_u64(&["height", "image_height", "imageHeight"])?;
@@ -154,7 +198,7 @@ impl GalleryDlEntry {
         self.extract_u64(&["filesize", "file_size", "size"])
     }
 
-    fn extract_webpage_url(&self) -> Option<Url> {
+    pub fn extract_webpage_url(&self) -> Option<Url> {
         let meta = self.metadata.as_ref()?;
         ["webpage_url", "page_url", "source_url", "post_url"]
             .iter()

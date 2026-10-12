@@ -148,7 +148,7 @@ impl<Messenger> Interactor<DownloadInput<'_>> for &DownloadVideo<Messenger>
 where
     Messenger: MessengerPort,
 {
-    type Output = ();
+    type Output = bool;
     type Err = HandlerError;
 
     #[instrument(skip_all, fields(inline_message_id = input.inline_message_id, ?input.params))]
@@ -161,7 +161,7 @@ impl<Messenger> Interactor<DownloadInput<'_>> for &DownloadAudio<Messenger>
 where
     Messenger: MessengerPort,
 {
-    type Output = ();
+    type Output = bool;
     type Err = HandlerError;
 
     #[instrument(skip_all, fields(inline_message_id = input.inline_message_id, ?input.params))]
@@ -174,7 +174,7 @@ impl<Messenger> Interactor<DownloadInput<'_>> for &DownloadPhoto<Messenger>
 where
     Messenger: MessengerPort,
 {
-    type Output = ();
+    type Output = bool;
     type Err = HandlerError;
 
     #[instrument(skip_all, fields(inline_message_id = input.inline_message_id, ?input.params))]
@@ -183,7 +183,7 @@ where
     }
 }
 
-async fn execute_video<Messenger>(interactor: &DownloadVideo<Messenger>, input: DownloadInput<'_>) -> Result<(), HandlerError>
+async fn execute_video<Messenger>(interactor: &DownloadVideo<Messenger>, input: DownloadInput<'_>) -> Result<bool, HandlerError>
 where
     Messenger: MessengerPort,
 {
@@ -209,7 +209,7 @@ where
                     Some(TextFormat::Html),
                 )
                 .await;
-                return Ok(());
+                return Ok(false);
             }
         }),
         None => None,
@@ -263,7 +263,9 @@ where
                     Some(TextFormat::Html),
                 )
                 .await;
+                return Ok(false);
             }
+            return Ok(true);
         }
         Ok(Playlist { mut cached, .. }) if !cached.is_empty() => {
             let media = cached.remove(0);
@@ -293,7 +295,9 @@ where
                     Some(TextFormat::Html),
                 )
                 .await;
+                return Ok(false);
             }
+            return Ok(true);
         }
         Ok(Playlist { mut uncached, .. }) if !uncached.is_empty() => {
             let mut errs = vec![];
@@ -333,7 +337,7 @@ where
                         input.chat_cfg.locale().as_str(),
                     )
                     .await;
-                    return Ok(());
+                    return Ok(false);
                 }
                 Err(err) => {
                     error!(%err, "Download error");
@@ -344,7 +348,7 @@ where
                         Some(TextFormat::Html),
                     )
                     .await;
-                    return Ok(());
+                    return Ok(false);
                 }
             };
 
@@ -381,7 +385,7 @@ where
                         Some(TextFormat::Html),
                     )
                     .await;
-                    return Ok(());
+                    return Ok(false);
                 }
             };
 
@@ -409,7 +413,7 @@ where
                     Some(TextFormat::Html),
                 )
                 .await;
-                return Ok(());
+                return Ok(false);
             }
 
             if let Err(err) = interactor
@@ -427,6 +431,7 @@ where
             {
                 error!(%err, "Add error");
             }
+            return Ok(true);
         }
         Ok(Empty) => {
             warn!("Empty playlist");
@@ -456,10 +461,10 @@ where
         _ => unreachable!("Incorrect branch"),
     }
 
-    Ok(())
+    Ok(false)
 }
 
-async fn execute_audio<Messenger>(interactor: &DownloadAudio<Messenger>, input: DownloadInput<'_>) -> Result<(), HandlerError>
+async fn execute_audio<Messenger>(interactor: &DownloadAudio<Messenger>, input: DownloadInput<'_>) -> Result<bool, HandlerError>
 where
     Messenger: MessengerPort,
 {
@@ -485,7 +490,7 @@ where
                     Some(TextFormat::Html),
                 )
                 .await;
-                return Ok(());
+                return Ok(false);
             }
         }),
         None => None,
@@ -539,7 +544,9 @@ where
                     Some(TextFormat::Html),
                 )
                 .await;
+                return Ok(false);
             }
+            return Ok(true);
         }
         Ok(Playlist { mut cached, .. }) if !cached.is_empty() => {
             let media = cached.remove(0);
@@ -569,7 +576,9 @@ where
                     Some(TextFormat::Html),
                 )
                 .await;
+                return Ok(false);
             }
+            return Ok(true);
         }
         Ok(Playlist { mut uncached, .. }) if !uncached.is_empty() => {
             let mut download_errs = vec![];
@@ -609,7 +618,7 @@ where
                         input.chat_cfg.locale().as_str(),
                     )
                     .await;
-                    return Ok(());
+                    return Ok(false);
                 }
                 Err(err) => {
                     error!(%err, "Download error");
@@ -620,7 +629,7 @@ where
                         Some(TextFormat::Html),
                     )
                     .await;
-                    return Ok(());
+                    return Ok(false);
                 }
             };
 
@@ -657,7 +666,7 @@ where
                         Some(TextFormat::Html),
                     )
                     .await;
-                    return Ok(());
+                    return Ok(false);
                 }
             };
 
@@ -685,7 +694,7 @@ where
                     Some(TextFormat::Html),
                 )
                 .await;
-                return Ok(());
+                return Ok(false);
             }
 
             if let Err(err) = interactor
@@ -703,6 +712,7 @@ where
             {
                 error!(%err, "Add error");
             }
+            return Ok(true);
         }
         Ok(Empty) => {
             warn!("Empty playlist");
@@ -732,10 +742,10 @@ where
         _ => unreachable!("Incorrect branch"),
     }
 
-    Ok(())
+    Ok(false)
 }
 
-async fn execute_photo<Messenger>(interactor: &DownloadPhoto<Messenger>, input: DownloadInput<'_>) -> Result<(), HandlerError>
+async fn execute_photo<Messenger>(interactor: &DownloadPhoto<Messenger>, input: DownloadInput<'_>) -> Result<bool, HandlerError>
 where
     Messenger: MessengerPort,
 {
@@ -789,7 +799,9 @@ where
                     Some(TextFormat::Html),
                 )
                 .await;
+                return Ok(false);
             }
+            return Ok(true);
         }
         Ok(Playlist { mut cached, .. }) if !cached.is_empty() => {
             let media = cached.remove(0);
@@ -817,7 +829,9 @@ where
                     Some(TextFormat::Html),
                 )
                 .await;
+                return Ok(false);
             }
+            return Ok(true);
         }
         Ok(Playlist { mut uncached, .. }) if !uncached.is_empty() => {
             let (media, _formats) = uncached.remove(0);
@@ -830,7 +844,7 @@ where
                     Some(TextFormat::Html),
                 )
                 .await;
-                return Ok(());
+                return Ok(false);
             };
 
             let file_id = match interactor
@@ -856,7 +870,7 @@ where
                         Some(TextFormat::Html),
                     )
                     .await;
-                    return Ok(());
+                    return Ok(false);
                 }
             };
 
@@ -884,7 +898,7 @@ where
                     Some(TextFormat::Html),
                 )
                 .await;
-                return Ok(());
+                return Ok(false);
             }
 
             if let Err(err) = interactor
@@ -902,6 +916,7 @@ where
             {
                 error!(%err, "Add error");
             }
+            return Ok(true);
         }
         Ok(Empty) => {
             warn!("No media");
@@ -932,7 +947,7 @@ where
         _ => unreachable!("Incorrect branch"),
     }
 
-    Ok(())
+    Ok(false)
 }
 
 fn resolve_url(url: Option<&Url>, result_id: &str) -> Url {
@@ -983,7 +998,7 @@ impl<Messenger> Interactor<DownloadInput<'_>> for &DownloadAuto<Messenger>
 where
     Messenger: MessengerPort,
 {
-    type Output = ();
+    type Output = auto::AutoResult;
     type Err = HandlerError;
 
     #[instrument(skip_all, fields(inline_message_id = input.inline_message_id, result_id = input.result_id))]
@@ -1019,11 +1034,20 @@ where
         )
         .await;
 
-        let input = DownloadInput { prefetched, ..input };
-        match media_type {
-            MediaType::Video => self.video.execute(input).await,
-            MediaType::Audio => self.audio.execute(input).await,
-            MediaType::Photo => self.photo.execute(input).await,
+        if prefetched.is_none() {
+            return Ok(auto::AutoResult::NoMedia);
         }
+
+        let input = DownloadInput { prefetched, ..input };
+        let sent = match media_type {
+            MediaType::Video => self.video.execute(input).await?,
+            MediaType::Audio => self.audio.execute(input).await?,
+            MediaType::Photo => self.photo.execute(input).await?,
+        };
+        Ok(if sent {
+            auto::AutoResult::SentInline
+        } else {
+            auto::AutoResult::Failed
+        })
     }
 }

@@ -23,7 +23,7 @@ use crate::{
     config::{DomainsWithReactionsConfig, PROGRESS_REFRESH_INTERVAL_SECS},
     entities::{DownloadJob, JobTarget},
     handlers_utils::progress,
-    interactors::{audio, auto, chosen_inline, photo, video, Interactor as _},
+    interactors::{audio, auto, chosen_inline, photo, post, video, Interactor as _},
     services::{
         messenger::telegram::TelegramMessenger,
         node_router::NodeRouter,
@@ -287,12 +287,12 @@ async fn run_job(container: Container, job: &DownloadJob, current_message: &watc
     result
 }
 
+#[allow(clippy::too_many_lines)]
 async fn run_in_scope(child: &Container, job: &DownloadJob, current_message: &watch::Sender<Option<(i64, i64)>>) -> Result<(), JobError> {
-    match &job.target {
-        JobTarget::Command { chat_id, message_id } => {
-            let url = job.url.as_ref().ok_or(JobError::MissingUrl)?;
-            if job.auto {
-                // Bare link with no committed type: classify (video -> audio -> photo) and download.
+    if job.auto {
+        let result = match &job.target {
+            JobTarget::Command { chat_id, message_id } => {
+                let url = job.url.as_ref().ok_or(JobError::MissingUrl)?;
                 if job.quiet {
                     let interactor = child.get::<auto::AutoQuiet<TelegramMessenger>>().await.unwrap();
                     Box::pin(interactor.execute(auto::AutoQuietInput {
@@ -302,7 +302,7 @@ async fn run_in_scope(child: &Container, job: &DownloadJob, current_message: &wa
                         url,
                         link_is_visible: job.link_is_visible,
                     }))
-                    .await?;
+                    .await?
                 } else {
                     let interactor = child.get::<auto::Auto<TelegramMessenger>>().await.unwrap();
                     Box::pin(interactor.execute(auto::AutoInput {
@@ -314,15 +314,101 @@ async fn run_in_scope(child: &Container, job: &DownloadJob, current_message: &wa
                         chat_cfg: &job.chat_cfg,
                         link_is_visible: job.link_is_visible,
                     }))
+                    .await?
+                }
+            }
+            JobTarget::Inline {
+                inline_message_id,
+                result_id,
+            } => {
+                let interactor = child.get::<chosen_inline::DownloadAuto<TelegramMessenger>>().await.unwrap();
+                Box::pin(interactor.execute(chosen_inline::DownloadInput {
+                    params: &job.params,
+                    url: job.url.as_ref(),
+                    chat_cfg: &job.chat_cfg,
+                    link_is_visible: job.link_is_visible,
+                    inline_message_id,
+                    result_id,
+                    prefetched: None,
+                }))
+                .await?
+            }
+        };
+        let display = child.get::<post::Display<TelegramMessenger>>().await.unwrap();
+        match result {
+            auto::AutoResult::Sent(message) => {
+                Box::pin(display.execute(post::DisplayInput {
+                    job,
+                    message: Some(&message),
+                    has_media: true,
+                }))
+                .await?;
+                return Ok(());
+            }
+            auto::AutoResult::SentInline => {
+                Box::pin(display.execute(post::DisplayInput {
+                    job,
+                    message: None,
+                    has_media: true,
+                }))
+                .await?;
+                return Ok(());
+            }
+            auto::AutoResult::Failed => return Ok(()),
+            auto::AutoResult::NoMedia => {
+                if Box::pin(display.execute(post::DisplayInput {
+                    job,
+                    message: None,
+                    has_media: false,
+                }))
+                .await?
+                    || job.quiet
+                {
+                    return Ok(());
+                }
+            }
+        }
+    }
+    match &job.target {
+        JobTarget::Command { chat_id, message_id } => {
+            let url = job.url.as_ref().ok_or(JobError::MissingUrl)?;
+            // Each media type has its own interactor + `Input` type (same fields, distinct types),
+            // so these can't collapse into a macro the way the inline arm below does.
+            match if job.auto { MediaType::Video } else { job.media_type } {
+                MediaType::Video => {
+                    let interactor = child.get::<video::Download<TelegramMessenger>>().await.unwrap();
+                    Box::pin(interactor.execute(video::DownloadInput {
+                        current_message,
+                        message_id: *message_id,
+                        chat_id: *chat_id,
+                        params: &job.params,
+                        url,
+                        chat_cfg: &job.chat_cfg,
+                        link_is_visible: job.link_is_visible,
+                        prefetched: None,
+                    }))
                     .await?;
                 }
-            } else {
-                // Each media type has its own interactor + `Input` type (same fields, distinct types),
-                // so these can't collapse into a macro the way the inline arm below does.
-                match job.media_type {
-                    MediaType::Video => {
-                        let interactor = child.get::<video::Download<TelegramMessenger>>().await.unwrap();
-                        Box::pin(interactor.execute(video::DownloadInput {
+                MediaType::Audio => {
+                    let interactor = child.get::<audio::Download<TelegramMessenger>>().await.unwrap();
+                    Box::pin(interactor.execute(audio::DownloadInput {
+                        current_message,
+                        message_id: *message_id,
+                        chat_id: *chat_id,
+                        params: &job.params,
+                        url,
+                        chat_cfg: &job.chat_cfg,
+                        link_is_visible: job.link_is_visible,
+                        progress_message_id: job.progress_message_id,
+                        base_text: job.base_text.as_deref(),
+                        prefetched: None,
+                    }))
+                    .await?;
+                }
+                MediaType::Photo => {
+                    let interactor = child.get::<photo::Download<TelegramMessenger>>().await.unwrap();
+                    interactor
+                        .execute(photo::DownloadInput {
                             current_message,
                             message_id: *message_id,
                             chat_id: *chat_id,
@@ -331,40 +417,8 @@ async fn run_in_scope(child: &Container, job: &DownloadJob, current_message: &wa
                             chat_cfg: &job.chat_cfg,
                             link_is_visible: job.link_is_visible,
                             prefetched: None,
-                        }))
+                        })
                         .await?;
-                    }
-                    MediaType::Audio => {
-                        let interactor = child.get::<audio::Download<TelegramMessenger>>().await.unwrap();
-                        Box::pin(interactor.execute(audio::DownloadInput {
-                            current_message,
-                            message_id: *message_id,
-                            chat_id: *chat_id,
-                            params: &job.params,
-                            url,
-                            chat_cfg: &job.chat_cfg,
-                            link_is_visible: job.link_is_visible,
-                            progress_message_id: job.progress_message_id,
-                            base_text: job.base_text.as_deref(),
-                            prefetched: None,
-                        }))
-                        .await?;
-                    }
-                    MediaType::Photo => {
-                        let interactor = child.get::<photo::Download<TelegramMessenger>>().await.unwrap();
-                        interactor
-                            .execute(photo::DownloadInput {
-                                current_message,
-                                message_id: *message_id,
-                                chat_id: *chat_id,
-                                params: &job.params,
-                                url,
-                                chat_cfg: &job.chat_cfg,
-                                link_is_visible: job.link_is_visible,
-                                prefetched: None,
-                            })
-                            .await?;
-                    }
                 }
             }
         }
@@ -373,7 +427,6 @@ async fn run_in_scope(child: &Container, job: &DownloadJob, current_message: &wa
             result_id,
         } => {
             let url = job.url.as_ref();
-
             macro_rules! run {
                 ($download:ty) => {{
                     let interactor = child.get::<$download>().await.unwrap();
@@ -390,14 +443,10 @@ async fn run_in_scope(child: &Container, job: &DownloadJob, current_message: &wa
                         .await?;
                 }};
             }
-            if job.auto {
-                run!(chosen_inline::DownloadAuto<TelegramMessenger>);
-            } else {
-                match job.media_type {
-                    MediaType::Video => run!(chosen_inline::DownloadVideo<TelegramMessenger>),
-                    MediaType::Audio => run!(chosen_inline::DownloadAudio<TelegramMessenger>),
-                    MediaType::Photo => run!(chosen_inline::DownloadPhoto<TelegramMessenger>),
-                }
+            match if job.auto { MediaType::Video } else { job.media_type } {
+                MediaType::Video => run!(chosen_inline::DownloadVideo<TelegramMessenger>),
+                MediaType::Audio => run!(chosen_inline::DownloadAudio<TelegramMessenger>),
+                MediaType::Photo => run!(chosen_inline::DownloadPhoto<TelegramMessenger>),
             }
         }
     }

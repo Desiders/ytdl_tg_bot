@@ -2,6 +2,7 @@ use std::{
     ffi::OsStr,
     fs,
     future::Future,
+    path::Path,
     pin::Pin,
     sync::Arc,
     time::{Duration, Instant},
@@ -10,7 +11,7 @@ use std::{
 use futures_util::{stream, StreamExt as _};
 use proto::downloader::{
     download_chunk::Payload, downloader_server::Downloader, DownloadChunk, DownloadMeta, DownloadRequest, MediaEntry, MediaFormatEntry,
-    MediaInfoRequest, MediaInfoResponse, Section,
+    MediaInfoRequest, MediaInfoResponse, PostEntry, Section,
 };
 use tempfile::TempDir;
 use tokio::{
@@ -43,6 +44,7 @@ use crate::{
 };
 
 const GET_INFO_TIMEOUT_SECS: u64 = 180;
+const GET_POST_TIMEOUT_SECS: u64 = 20;
 const DOWNLOAD_TIMEOUT_SECS: u64 = proto::MEDIA_EXECUTION_LIMIT_SECS;
 const DOWNLOAD_TASK_TIMEOUT_SECS: u64 = proto::MEDIA_EXECUTION_LIMIT_SECS;
 const AUDIO_EXT: &str = "m4a";
@@ -88,14 +90,27 @@ impl DownloaderService {
         let started_at = Instant::now();
         let request = request.into_inner();
         let url = parse_url(&request.url)?;
-        let playlist_range = parse_range(request.playlist_range)?;
-        let audio_language = parse_language(&request.audio_language);
-        let allow_playlist = !playlist_range.is_single_element();
         let host = url.host();
         let cookie = self.cookies.get_path_by_optional_host(host.as_ref());
         let has_cookie = cookie.is_some();
-        let effective_max_file_size = resolve_max_file_size(request.max_file_size, self.yt_dlp_cfg.max_file_size);
 
+        if request.media_type == "post" {
+            if !matches!(url.scheme(), "http" | "https") {
+                return Err(Status::invalid_argument("Post URL must use HTTP or HTTPS"));
+            }
+            let response = time::timeout(
+                Duration::from_secs(GET_INFO_TIMEOUT_SECS),
+                self.get_post_info(&url, cookie.as_deref()),
+            )
+            .await
+            .map_err(|_| Status::deadline_exceeded("Post info timed out"))??;
+            return Ok(Response::new(response));
+        }
+
+        let playlist_range = parse_range(request.playlist_range)?;
+        let audio_language = parse_language(&request.audio_language);
+        let allow_playlist = !playlist_range.is_single_element();
+        let effective_max_file_size = resolve_max_file_size(request.max_file_size, self.yt_dlp_cfg.max_file_size);
         let kind = match request.media_type.as_str() {
             "audio" => MediaKind::Audio,
             "photo" => MediaKind::Photo,
@@ -243,6 +258,37 @@ impl DownloaderService {
         );
 
         Ok(Response::new(map_playlist_response(playlist, effective_max_file_size)?))
+    }
+
+    async fn get_post_info(&self, url: &Url, cookie_path: Option<&Path>) -> Result<MediaInfoResponse, Status> {
+        if cookie_path.is_none() && self.snapsave.is_supported(url) {
+            let data = self
+                .snapsave
+                .resolve_post(url)
+                .await
+                .ok_or_else(|| Status::not_found("Instagram/Facebook resolver is unavailable"))?;
+            return map_snapsave_post(data, url);
+        }
+
+        let native_posts = gallery_dl::get_posts(url.as_str(), self.gallery_dl_cfg.as_ref(), GET_POST_TIMEOUT_SECS, cookie_path)
+            .await
+            .map_err(|err| Status::not_found(err.to_string()))?;
+        let mut posts = vec![];
+        for (post_index, post) in native_posts.into_iter().enumerate() {
+            // Keep the requested post's author even when only its native context has text.
+            if post_index == 0 || !post.text.trim().is_empty() {
+                posts.push(PostEntry {
+                    text: post.text,
+                    author: post.author,
+                    author_handle: post.author_handle,
+                    webpage_url: post.webpage_url.to_string(),
+                });
+            }
+        }
+        if posts.iter().all(|post| post.text.trim().is_empty()) {
+            return Err(Status::not_found("No post content was found"));
+        }
+        Ok(MediaInfoResponse { entries: vec![], posts })
     }
 
     #[allow(clippy::too_many_lines)]
@@ -928,7 +974,7 @@ fn map_playlist_response(playlist: Playlist, max_file_size: u64) -> Result<Media
         });
     }
 
-    Ok(MediaInfoResponse { entries })
+    Ok(MediaInfoResponse { entries, posts: vec![] })
 }
 
 #[allow(clippy::result_large_err)]
@@ -937,6 +983,22 @@ fn reject_active_livestreams(playlist: &Playlist) -> Result<(), Status> {
         return Err(Status::invalid_argument("Livestream downloads are not supported"));
     }
     Ok(())
+}
+
+fn map_snapsave_post(data: snapsave_parser::SnapSaveDownloaderData, webpage_url: &Url) -> Result<MediaInfoResponse, Status> {
+    let text = data.description.unwrap_or_default();
+    if text.trim().is_empty() {
+        return Err(Status::not_found("No post content was found"));
+    }
+    Ok(MediaInfoResponse {
+        entries: vec![],
+        posts: vec![PostEntry {
+            text,
+            author: None,
+            author_handle: None,
+            webpage_url: webpage_url.to_string(),
+        }],
+    })
 }
 
 // Builds a `direct_fetch`-marked entry from a snapsave CDN URL so the download path fetches it with
@@ -1482,6 +1544,98 @@ mod tests {
             max_concurrent: u32::try_from(capacity).unwrap(),
             semaphore: Arc::new(tokio::sync::Semaphore::new(capacity)),
         }
+    }
+
+    #[tokio::test]
+    async fn post_info_preserves_native_text_and_context_without_resolving_media() {
+        use proto::downloader::{downloader_server::Downloader as _, MediaInfoRequest};
+        let input = serde_json::json!([
+            [2, {"id": "synthetic-native-post", "content": "", "author": "Synthetic Author"}],
+            [3, "https://cdn.example.invalid/video.mp4", {"type": "video"}],
+            [3, "https://cdn.example.invalid/photo.jpg", {}],
+            [2, {"id": "synthetic-native-quote", "content": "Synthetic text-only quote"}]
+        ]);
+        let context = serde_json::json!([
+            [2, {"id": "synthetic-native-parent", "content": "Synthetic reply context"}],
+            input[0], input[1], input[2], input[3],
+            [2, {"id": "synthetic-native-following", "content": "Excluded subsequent reply"}]
+        ]);
+        // Any yt-dlp call would fail the request: enrichment only needs native metadata.
+        let mut service = test_service("exit 1", 1);
+        service.gallery_dl_cfg = std::sync::Arc::new(crate::config::GalleryDlConfig {
+            command: vec![
+                "python3".into(),
+                "-c".into(),
+                "import sys; print(sys.argv[2] if 'conversations=true' in sys.argv[3:] else sys.argv[1])".into(),
+                input.to_string().into(),
+                context.to_string().into(),
+            ],
+        });
+        let mut request = MediaInfoRequest {
+            url: "https://source.example.invalid/post/synthetic".into(),
+            media_type: "post".into(),
+            ..MediaInfoRequest::default()
+        };
+        let response = service
+            .get_media_info(tonic::Request::new(request.clone()))
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(response.entries.is_empty());
+        assert_eq!(response.posts.len(), 3);
+        assert_eq!(response.posts[0].author.as_deref(), Some("Synthetic Author"));
+        assert!(response.posts[0].text.is_empty());
+        assert_eq!(response.posts[0].webpage_url, request.url);
+        assert_eq!(response.posts[1].text, "Synthetic text-only quote");
+        assert_eq!(response.posts[2].text, "Synthetic reply context");
+        request.playlist_range = Some(proto::downloader::Range {
+            start: 3,
+            count: 3,
+            step: 1,
+        });
+        let filtered = service
+            .get_media_info(tonic::Request::new(request.clone()))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(filtered, response);
+
+        let captionless = serde_json::json!([input[0], input[1], input[2]]);
+        service.gallery_dl_cfg = std::sync::Arc::new(crate::config::GalleryDlConfig {
+            command: vec![
+                "python3".into(),
+                "-c".into(),
+                "import sys; print(sys.argv[1])".into(),
+                captionless.to_string().into(),
+            ],
+        });
+        let error = service.get_media_info(tonic::Request::new(request)).await.unwrap_err();
+        assert_eq!(error.code(), Code::NotFound);
+    }
+
+    #[test]
+    fn snapsave_posts_preserve_native_description_without_media() {
+        use snapsave_parser::SnapSave;
+        let html = r#"
+            <span class="video-des">Synthetic caption &amp; description</span>
+            <article class="media"><figure><img src="https://cdn.example.invalid/preview.jpg"></figure></article>
+            <div class="card"><div class="card-body"><a href="https://cdn.example.invalid/video.mp4">Download Video</a></div></div>
+            <div class="card"><div class="card-body"><a href="https://cdn.example.invalid/photo.jpg">Download Photo</a></div></div>
+        "#;
+        let mut data = SnapSave::new().unwrap().parse_html(html).unwrap();
+        assert_eq!(data.media.len(), 2);
+        let url = Url::parse("https://source.example.invalid/post/synthetic").unwrap();
+        let response = super::map_snapsave_post(data.clone(), &url).unwrap();
+        assert!(response.entries.is_empty());
+        assert_eq!(response.posts.len(), 1);
+        let post = &response.posts[0];
+        assert_eq!(post.text, "Synthetic caption & description");
+        assert_eq!(post.webpage_url, url.as_str());
+        assert!(post.author.is_none());
+        assert!(post.author_handle.is_none());
+        data.description = None;
+        let captionless = super::map_snapsave_post(data, &url).unwrap_err();
+        assert_eq!(captionless.code(), Code::NotFound);
     }
 
     fn download_request() -> tonic::Request<proto::downloader::DownloadRequest> {

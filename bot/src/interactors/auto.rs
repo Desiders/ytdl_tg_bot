@@ -17,12 +17,19 @@ use crate::{
             self,
             GetMediaByURLKind::{self, Empty, Playlist, SingleCached},
         },
-        messenger::MessengerPort,
+        messenger::{MessengerPort, SentMessage},
         send_media,
     },
     utils::ErrorFormatter,
     value_objects::MediaType,
 };
+
+pub enum AutoResult {
+    Sent(SentMessage),
+    SentInline,
+    NoMedia,
+    Failed,
+}
 
 // Download context shared by the silent fulfillers, parsed once from the message params.
 pub struct FulfillCtx<'a> {
@@ -73,7 +80,8 @@ impl<Messenger> AudioFulfiller<Messenger>
 where
     Messenger: MessengerPort,
 {
-    pub async fn fulfill(&self, result: GetMediaByURLKind, ctx: &FulfillCtx<'_>) {
+    pub async fn fulfill(&self, result: GetMediaByURLKind, ctx: &FulfillCtx<'_>) -> Option<SentMessage> {
+        let mut sent_message = None;
         match result {
             SingleCached(file_id) => {
                 if let Err(err) = self
@@ -87,6 +95,7 @@ where
                         caption: None,
                     })
                     .await
+                    .map(|message| sent_message = Some(message))
                 {
                     error!(err = %self.error_formatter.format(&err), "Send error");
                 }
@@ -169,12 +178,14 @@ where
                         caption: None,
                     })
                     .await
+                    .map(|message| sent_message = message)
                 {
                     error!(err = %self.error_formatter.format(&err), "Send error");
                 }
             }
             Empty => warn!("Empty playlist"),
         }
+        sent_message
     }
 }
 
@@ -213,7 +224,8 @@ impl<Messenger> PhotoFulfiller<Messenger>
 where
     Messenger: MessengerPort,
 {
-    pub async fn fulfill(&self, result: GetMediaByURLKind, ctx: &FulfillCtx<'_>) {
+    pub async fn fulfill(&self, result: GetMediaByURLKind, ctx: &FulfillCtx<'_>) -> Option<SentMessage> {
+        let mut sent_message = None;
         match result {
             SingleCached(file_id) => {
                 if let Err(err) = self
@@ -227,6 +239,7 @@ where
                         caption: None,
                     })
                     .await
+                    .map(|message| sent_message = Some(message))
                 {
                     error!(err = %self.error_formatter.format(&err), "Send error");
                 }
@@ -293,12 +306,14 @@ where
                         caption: None,
                     })
                     .await
+                    .map(|message| sent_message = message)
                 {
                     error!(err = %self.error_formatter.format(&err), "Send error");
                 }
             }
             Empty => warn!("No media"),
         }
+        sent_message
     }
 }
 
@@ -350,7 +365,7 @@ impl<Messenger> Interactor<AutoQuietInput<'_>> for &AutoQuiet<Messenger>
 where
     Messenger: MessengerPort,
 {
-    type Output = ();
+    type Output = AutoResult;
     type Err = HandlerError;
 
     #[instrument(skip_all, fields(message_id = input.message_id, url = input.url.as_str(), ?input.params))]
@@ -362,7 +377,7 @@ where
                 Ok(val) => val,
                 Err(err) => {
                     error!(%err, "Parse range error");
-                    return Ok(());
+                    return Ok(AutoResult::Failed);
                 }
             },
             None => Range::default(),
@@ -372,7 +387,7 @@ where
                 Ok(val) => val,
                 Err(err) => {
                     error!(%err, "Parse sections error");
-                    return Ok(());
+                    return Ok(AutoResult::Failed);
                 }
             }),
             None => None,
@@ -407,17 +422,17 @@ where
         )
         .await;
 
-        if let Some(result) = result {
-            match media_type {
-                MediaType::Video => self.video.fulfill(result, &ctx).await,
-                MediaType::Audio => self.audio.fulfill(result, &ctx).await,
-                MediaType::Photo => self.photo.fulfill(result, &ctx).await,
-            }
-        } else {
+        let Some(result) = result else {
             debug!("Auto found no downloadable media");
-        }
+            return Ok(AutoResult::NoMedia);
+        };
+        let sent_message = match media_type {
+            MediaType::Video => self.video.fulfill(result, &ctx).await,
+            MediaType::Audio => self.audio.fulfill(result, &ctx).await,
+            MediaType::Photo => self.photo.fulfill(result, &ctx).await,
+        };
 
-        Ok(())
+        Ok(sent_message.map_or(AutoResult::Failed, AutoResult::Sent))
     }
 }
 
@@ -597,8 +612,8 @@ impl<Messenger> Auto<Messenger> {
 }
 
 impl<Messenger> Auto<Messenger> {
-    // First-success probe over video -> audio -> photo. Falls back to video so an undownloadable link
-    // still surfaces the video extractor's error to the user.
+    // First-success probe over video -> audio -> photo. Reports no media so the worker can try
+    // post text before falling back to the video extractor's error.
     #[allow(clippy::too_many_arguments)]
     async fn classify(
         &self,
@@ -638,7 +653,7 @@ impl<Messenger> Interactor<AutoInput<'_>> for &Auto<Messenger>
 where
     Messenger: MessengerPort,
 {
-    type Output = ();
+    type Output = AutoResult;
     type Err = HandlerError;
 
     #[instrument(skip_all, fields(message_id = input.message_id, url = input.url.as_str(), ?input.params))]
@@ -671,7 +686,11 @@ where
             )
             .await;
 
-        match media_type {
+        if prefetched.is_none() {
+            return Ok(AutoResult::NoMedia);
+        }
+
+        let sent_message = match media_type {
             MediaType::Video => {
                 self.video
                     .execute(super::video::DownloadInput {
@@ -716,7 +735,8 @@ where
                     })
                     .await
             }
-        }
+        }?;
+        Ok(sent_message.map_or(AutoResult::Failed, AutoResult::Sent))
     }
 }
 

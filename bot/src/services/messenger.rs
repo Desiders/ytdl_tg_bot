@@ -56,6 +56,13 @@ pub struct EditTextRequest<'a> {
     pub clear_inline_keyboard: bool,
 }
 
+pub struct EditCaptionRequest<'a> {
+    pub target: EditTarget<'a>,
+    pub text: &'a str,
+    pub format: Option<TextFormat>,
+    pub clear_inline_keyboard: bool,
+}
+
 pub enum ButtonAction {
     Callback(String),
     Url(String),
@@ -197,6 +204,8 @@ pub trait MessengerPort: Send + Sync {
 
     fn edit_text(&self, request: EditTextRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
 
+    fn edit_caption(&self, request: EditCaptionRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
+
     fn delete_message(&self, request: DeleteMessageRequest) -> impl Future<Output = Result<(), MessengerError>> + Send;
 
     fn send_menu(&self, request: SendMenuRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
@@ -218,11 +227,11 @@ pub trait MessengerPort: Send + Sync {
 
     fn upload_photo_url(&self, request: UploadPhotoUrlRequest<'_>) -> impl Future<Output = Result<Box<str>, MessengerError>> + Send;
 
-    fn send_video_by_id(&self, request: SendMediaByIdRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
+    fn send_video_by_id(&self, request: SendMediaByIdRequest<'_>) -> impl Future<Output = Result<SentMessage, MessengerError>> + Send;
 
-    fn send_audio_by_id(&self, request: SendMediaByIdRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
+    fn send_audio_by_id(&self, request: SendMediaByIdRequest<'_>) -> impl Future<Output = Result<SentMessage, MessengerError>> + Send;
 
-    fn send_photo_by_id(&self, request: SendMediaByIdRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
+    fn send_photo_by_id(&self, request: SendMediaByIdRequest<'_>) -> impl Future<Output = Result<SentMessage, MessengerError>> + Send;
 
     fn edit_video_by_id(&self, request: EditMediaByIdRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
 
@@ -230,9 +239,9 @@ pub trait MessengerPort: Send + Sync {
 
     fn edit_photo_by_id(&self, request: EditMediaByIdRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
 
-    fn send_video_group(&self, request: SendMediaGroupRequest) -> impl Future<Output = Result<(), MessengerError>> + Send;
+    fn send_video_group(&self, request: SendMediaGroupRequest) -> impl Future<Output = Result<Option<SentMessage>, MessengerError>> + Send;
 
-    fn send_audio_group(&self, request: SendMediaGroupRequest) -> impl Future<Output = Result<(), MessengerError>> + Send;
+    fn send_audio_group(&self, request: SendMediaGroupRequest) -> impl Future<Output = Result<Option<SentMessage>, MessengerError>> + Send;
 
-    fn send_photo_group(&self, request: SendMediaGroupRequest) -> impl Future<Output = Result<(), MessengerError>> + Send;
+    fn send_photo_group(&self, request: SendMediaGroupRequest) -> impl Future<Output = Result<Option<SentMessage>, MessengerError>> + Send;
 }

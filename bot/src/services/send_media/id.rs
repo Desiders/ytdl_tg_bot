@@ -2,7 +2,7 @@ use crate::{
     entities::MediaInPlaylist,
     interactors::Interactor,
     services::messenger::{
-        EditMediaByIdRequest, MediaGroupItem, MessengerError, MessengerPort, SendMediaByIdRequest, SendMediaGroupRequest,
+        EditMediaByIdRequest, MediaGroupItem, MessengerError, MessengerPort, SendMediaByIdRequest, SendMediaGroupRequest, SentMessage,
     },
 };
 
@@ -48,7 +48,7 @@ impl<Messenger> Interactor<SendMediaInput<'_>> for &SendVideo<Messenger>
 where
     Messenger: MessengerPort,
 {
-    type Output = ();
+    type Output = SentMessage;
     type Err = MessengerError;
 
     async fn execute(self, input: SendMediaInput<'_>) -> Result<Self::Output, Self::Err> {
@@ -91,7 +91,7 @@ impl<Messenger> Interactor<SendMediaInput<'_>> for &SendAudio<Messenger>
 where
     Messenger: MessengerPort,
 {
-    type Output = ();
+    type Output = SentMessage;
     type Err = MessengerError;
 
     async fn execute(self, input: SendMediaInput<'_>) -> Result<Self::Output, Self::Err> {
@@ -112,7 +112,7 @@ impl<Messenger> Interactor<SendMediaInput<'_>> for &SendPhoto<Messenger>
 where
     Messenger: MessengerPort,
 {
-    type Output = ();
+    type Output = SentMessage;
     type Err = MessengerError;
 
     async fn execute(self, input: SendMediaInput<'_>) -> Result<Self::Output, Self::Err> {
@@ -234,12 +234,12 @@ impl<Messenger> Interactor<SendPlaylistInput> for &SendVideoPlaylist<Messenger>
 where
     Messenger: MessengerPort,
 {
-    type Output = ();
+    type Output = Option<SentMessage>;
     type Err = MessengerError;
 
     async fn execute(self, input: SendPlaylistInput) -> Result<Self::Output, Self::Err> {
         if input.playlist.is_empty() {
-            return Ok(());
+            return Ok(None);
         }
         self.messenger
             .send_video_group(SendMediaGroupRequest {
@@ -286,12 +286,12 @@ impl<Messenger> Interactor<SendPlaylistInput> for &SendAudioPlaylist<Messenger>
 where
     Messenger: MessengerPort,
 {
-    type Output = ();
+    type Output = Option<SentMessage>;
     type Err = MessengerError;
 
     async fn execute(self, input: SendPlaylistInput) -> Result<Self::Output, Self::Err> {
         if input.playlist.is_empty() {
-            return Ok(());
+            return Ok(None);
         }
         self.messenger
             .send_audio_group(SendMediaGroupRequest {
@@ -316,12 +316,12 @@ impl<Messenger> Interactor<SendPlaylistInput> for &SendPhotoPlaylist<Messenger>
 where
     Messenger: MessengerPort,
 {
-    type Output = ();
+    type Output = Option<SentMessage>;
     type Err = MessengerError;
 
     async fn execute(self, input: SendPlaylistInput) -> Result<Self::Output, Self::Err> {
         if input.playlist.is_empty() {
-            return Ok(());
+            return Ok(None);
         }
         self.messenger
             .send_photo_group(SendMediaGroupRequest {
