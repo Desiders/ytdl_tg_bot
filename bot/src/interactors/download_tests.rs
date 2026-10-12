@@ -1,7 +1,10 @@
 use std::{
     collections::VecDeque,
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering::Relaxed},
+        Arc, Mutex,
+    },
     time::Duration,
 };
 
@@ -11,7 +14,8 @@ use proto::downloader::{
     download_chunk::Payload,
     downloader_server::{Downloader, DownloaderServer},
     node_capabilities_server::{NodeCapabilities, NodeCapabilitiesServer},
-    DownloadChunk, DownloadMeta, DownloadRequest, Empty, MediaInfoRequest, MediaInfoResponse, NodeStatus, SupportedDomainsResponse,
+    DownloadChunk, DownloadMeta, DownloadRequest, Empty, MediaInfoRequest, MediaInfoResponse, NodeStatus, PostEntry,
+    SupportedDomainsResponse,
 };
 use sea_orm::DatabaseConnection;
 use tokio::{
@@ -29,30 +33,36 @@ use url::Url;
 use super::{
     audio,
     auto::{AudioFulfiller, FulfillCtx},
-    chosen_inline, test_support, video, Interactor,
+    chosen_inline, post, test_support, video, Interactor,
 };
 use crate::{
     config::Config,
     database::{SeaOrmTxManager, TxManager, TxManagerFactories},
-    entities::{language::Language, ChatConfig, Media, MediaForUpload, MediaFormat, Params},
+    entities::{language::Language, ChatConfig, DownloadJob, JobTarget, Media, MediaForUpload, MediaFormat, Params},
     services::{
         download::media,
         downloaded_media,
         get_media::{self, GetMediaByURLKind},
         messenger::{
-            AnswerCallbackRequest, AnswerInlineErrorRequest, AnswerInlineQueryRequest, DeleteMessageRequest, EditMediaByIdRequest,
-            EditMenuRequest, EditTextRequest, MessengerError, MessengerPort, SendMediaByIdRequest, SendMediaGroupRequest, SendMenuRequest,
-            SendTextRequest, SentMessage, UploadAudioRequest, UploadPhotoRequest, UploadPhotoUrlRequest, UploadVideoRequest,
+            AnswerCallbackRequest, AnswerInlineErrorRequest, AnswerInlineQueryRequest, DeleteMessageRequest, EditCaptionRequest,
+            EditMediaByIdRequest, EditMenuRequest, EditTarget, EditTextRequest, MessengerError, MessengerPort, SendMediaByIdRequest,
+            SendMediaGroupRequest, SendMenuRequest, SendTextRequest, SentMessage, TextFormat, UploadAudioRequest, UploadPhotoRequest,
+            UploadPhotoUrlRequest, UploadVideoRequest,
         },
         send_media,
     },
     utils::{ErrorFormatter, UrlCleaner},
+    value_objects::MediaType,
 };
 
 #[derive(Default)]
 struct State {
     events: Mutex<Vec<String>>,
     replies: Mutex<VecDeque<Option<Status>>>,
+    post_replies: Mutex<VecDeque<Result<MediaInfoResponse, Status>>>,
+    post_edit_error: Mutex<Option<MessengerError>>,
+    post_send_error: Mutex<Option<MessengerError>>,
+    post_metadata_active: AtomicBool,
     edits: Mutex<Vec<String>>,
     optional_edit_started: Notify,
     block_optional_edits: bool,
@@ -63,6 +73,20 @@ impl State {
     fn event(&self, event: impl Into<String>) {
         self.events.lock().unwrap().push(event.into());
     }
+
+    fn post_edit(&self, target: &EditTarget<'_>, text: &str, as_caption: bool) -> Result<(), MessengerError> {
+        if let Some(error) = self.post_edit_error.lock().unwrap().take() {
+            self.event("post edit rejected");
+            return Err(error);
+        }
+        let target = match target {
+            EditTarget::ChatMessage { chat_id, message_id } => format!("chat:{chat_id}:{message_id}"),
+            EditTarget::InlineMessage { inline_message_id } => format!("inline:{inline_message_id}"),
+        };
+        self.event(format!("post edit {target} caption={as_caption}: {text}"));
+        self.edits.lock().unwrap().push(text.to_owned());
+        Ok(())
+    }
 }
 
 struct FakeNode(Arc<State>);
@@ -71,8 +95,24 @@ struct FakeNode(Arc<State>);
 impl Downloader for FakeNode {
     type DownloadMediaStream = Pin<Box<dyn Stream<Item = Result<DownloadChunk, Status>> + Send>>;
 
-    async fn get_media_info(&self, _: Request<MediaInfoRequest>) -> Result<Response<MediaInfoResponse>, Status> {
-        panic!("Tests use prefetched metadata");
+    async fn get_media_info(&self, request: Request<MediaInfoRequest>) -> Result<Response<MediaInfoResponse>, Status> {
+        assert_eq!(request.into_inner().media_type, "post", "Media tests use prefetched metadata");
+        assert!(self
+            .0
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| matches!(event.as_str(), "final command send" | "final inline edit")));
+        self.0.post_metadata_active.store(true, Relaxed);
+        self.0.event("post metadata");
+        self.0
+            .post_replies
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("Expected post metadata request")
+            .map(Response::new)
     }
 
     async fn download_media(&self, request: Request<DownloadRequest>) -> Result<Response<Self::DownloadMediaStream>, Status> {
@@ -153,10 +193,28 @@ impl MessengerPort for RecordingMessenger {
     async fn username(&self) -> Result<String, MessengerError> {
         Ok("test_bot".into())
     }
-    async fn send_text(&self, _: SendTextRequest<'_>) -> Result<SentMessage, MessengerError> {
+    async fn send_text(&self, request: SendTextRequest<'_>) -> Result<SentMessage, MessengerError> {
+        if self.0.post_metadata_active.load(Relaxed) {
+            assert_eq!(request.format, Some(TextFormat::Html));
+            assert!(request.disable_link_preview);
+            if let Some(error) = self.0.post_send_error.lock().unwrap().take() {
+                self.0.event("post send rejected");
+                return Err(error);
+            }
+            self.0.event(format!(
+                "post text {} reply={:?}: {}",
+                request.chat_id, request.reply_to_message_id, request.text
+            ));
+        }
         Ok(SentMessage { message_id: 1 })
     }
     async fn edit_text(&self, request: EditTextRequest<'_>) -> Result<(), MessengerError> {
+        if self.0.post_metadata_active.load(Relaxed) && !request.is_progress {
+            assert_eq!(request.format, Some(TextFormat::Html));
+            assert!(request.disable_link_preview);
+            assert!(request.clear_inline_keyboard);
+            return self.0.post_edit(&request.target, request.text, false);
+        }
         if self.0.block_optional_edits && (request.is_progress || request.text.contains("Sending")) {
             let _edit = OptionalEdit(&self.0);
             self.0.optional_edit_started.notify_one();
@@ -170,6 +228,12 @@ impl MessengerPort for RecordingMessenger {
         }
         Ok(())
     }
+    async fn edit_caption(&self, request: EditCaptionRequest<'_>) -> Result<(), MessengerError> {
+        assert!(self.0.post_metadata_active.load(Relaxed));
+        assert_eq!(request.format, Some(TextFormat::Html));
+        assert!(request.clear_inline_keyboard);
+        self.0.post_edit(&request.target, request.text, true)
+    }
     async fn delete_message(&self, _: DeleteMessageRequest) -> Result<(), MessengerError> {
         self.0.event("delete");
         Ok(())
@@ -180,17 +244,27 @@ impl MessengerPort for RecordingMessenger {
     async fn upload_audio(&self, request: UploadAudioRequest<'_>) -> Result<Box<str>, MessengerError> {
         self.upload(request.media_for_upload).await
     }
-    async fn send_video_by_id(&self, _: SendMediaByIdRequest<'_>) -> Result<(), MessengerError> {
-        Ok(())
+    async fn send_video_by_id(&self, _: SendMediaByIdRequest<'_>) -> Result<SentMessage, MessengerError> {
+        self.0.event("final command send");
+        Ok(SentMessage { message_id: 42 })
     }
-    async fn send_audio_by_id(&self, _: SendMediaByIdRequest<'_>) -> Result<(), MessengerError> {
-        Ok(())
+    async fn send_audio_by_id(&self, _: SendMediaByIdRequest<'_>) -> Result<SentMessage, MessengerError> {
+        self.0.event("final command send");
+        Ok(SentMessage { message_id: 42 })
     }
-    async fn send_video_group(&self, _: SendMediaGroupRequest) -> Result<(), MessengerError> {
-        Ok(())
+    async fn send_video_group(&self, request: SendMediaGroupRequest) -> Result<Option<SentMessage>, MessengerError> {
+        if request.items.is_empty() {
+            return Ok(None);
+        }
+        self.0.event("final command send");
+        Ok(Some(SentMessage { message_id: 42 }))
     }
-    async fn send_audio_group(&self, _: SendMediaGroupRequest) -> Result<(), MessengerError> {
-        Ok(())
+    async fn send_audio_group(&self, request: SendMediaGroupRequest) -> Result<Option<SentMessage>, MessengerError> {
+        if request.items.is_empty() {
+            return Ok(None);
+        }
+        self.0.event("final command send");
+        Ok(Some(SentMessage { message_id: 42 }))
     }
     async fn edit_video_by_id(&self, _: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
         self.0.event("final inline edit");
@@ -221,13 +295,13 @@ impl MessengerPort for RecordingMessenger {
     async fn upload_photo_url(&self, _: UploadPhotoUrlRequest<'_>) -> Result<Box<str>, MessengerError> {
         unreachable!()
     }
-    async fn send_photo_by_id(&self, _: SendMediaByIdRequest<'_>) -> Result<(), MessengerError> {
+    async fn send_photo_by_id(&self, _: SendMediaByIdRequest<'_>) -> Result<SentMessage, MessengerError> {
         unreachable!()
     }
     async fn edit_photo_by_id(&self, _: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
         unreachable!()
     }
-    async fn send_photo_group(&self, _: SendMediaGroupRequest) -> Result<(), MessengerError> {
+    async fn send_photo_group(&self, _: SendMediaGroupRequest) -> Result<Option<SentMessage>, MessengerError> {
         unreachable!()
     }
 }
@@ -289,7 +363,8 @@ impl Fixture {
         }
     }
 
-    async fn command(&self, audio: bool, count: i16) {
+    async fn command(&self, audio: bool, count: i16) -> Option<SentMessage> {
+        self.state.post_metadata_active.store(false, Relaxed);
         let url = Url::parse("https://example.test/playlist").unwrap();
         let params = Params::default();
         let chat = ChatConfig::new(1, false, "en".into());
@@ -324,7 +399,7 @@ impl Fixture {
                     progress_message_id: None,
                 })
                 .await
-                .unwrap();
+                .unwrap()
         } else {
             let interactor = video::Download::new(
                 self.cfg.clone(),
@@ -353,11 +428,12 @@ impl Fixture {
                     prefetched: Some(playlist(count)),
                 })
                 .await
-                .unwrap();
+                .unwrap()
         }
     }
 
-    async fn inline(&self, audio: bool) {
+    async fn inline(&self, audio: bool) -> bool {
+        self.state.post_metadata_active.store(false, Relaxed);
         let url = Url::parse("https://example.test/playlist").unwrap();
         let params = Params::default();
         let chat = ChatConfig::new(1, false, "en".into());
@@ -387,7 +463,7 @@ impl Fixture {
             )
             .execute(input)
             .await
-            .unwrap();
+            .unwrap()
         } else {
             chosen_inline::DownloadVideo::new(
                 self.cfg.clone(),
@@ -405,11 +481,12 @@ impl Fixture {
             )
             .execute(input)
             .await
-            .unwrap();
+            .unwrap()
         }
     }
 
-    async fn quiet(&self, audio: bool) {
+    async fn quiet(&self, audio: bool) -> Option<SentMessage> {
+        self.state.post_metadata_active.store(false, Relaxed);
         let url = Url::parse("https://example.test/playlist").unwrap();
         let language = Language::default();
         let ctx = FulfillCtx {
@@ -432,7 +509,7 @@ impl Fixture {
                 Arc::new(downloaded_media::AddAudio::new(self.tx.clone())),
             )
             .fulfill(playlist(2), &ctx)
-            .await;
+            .await
         } else {
             video::DownloadQuiet::new(
                 self.cfg.clone(),
@@ -449,7 +526,7 @@ impl Fixture {
                 Arc::new(downloaded_media::AddVideo::new(self.tx.clone())),
             )
             .fulfill(playlist(2), &ctx)
-            .await;
+            .await
         }
     }
 }
@@ -495,9 +572,11 @@ fn playlist(count: i16) -> GetMediaByURLKind {
 async fn playlist_waits_for_upload_before_starting_next_media() {
     for audio in [false, true] {
         let fixture = Fixture::new(State::default()).await;
-        tokio::time::timeout(Duration::from_secs(10), fixture.command(audio, 2))
+        let message = tokio::time::timeout(Duration::from_secs(10), fixture.command(audio, 2))
             .await
+            .unwrap()
             .unwrap();
+        assert_eq!(message.message_id, 42);
         let events = fixture.state.events.lock().unwrap();
         let execution = events
             .iter()
@@ -530,9 +609,12 @@ async fn fatal_download_error_is_rendered_once_and_not_deleted() {
             })
             .await;
             let outcome = ExecutionOutcome::default();
-            tokio::time::timeout(Duration::from_secs(10), outcome.scope(fixture.command(audio, 2)))
-                .await
-                .unwrap();
+            assert!(
+                tokio::time::timeout(Duration::from_secs(10), outcome.scope(fixture.command(audio, 2)))
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
             let events = fixture.state.events.lock().unwrap();
             assert_eq!(events.iter().filter(|event| event.starts_with("download ")).count(), 1);
             assert!(!events.iter().any(|event| event == "delete"));
@@ -552,7 +634,7 @@ async fn inline_ready_upload_cancels_blocked_optional_edit_before_final_result()
             ..Default::default()
         })
         .await;
-        tokio::time::timeout(Duration::from_secs(5), fixture.inline(audio)).await.unwrap();
+        assert!(tokio::time::timeout(Duration::from_secs(5), fixture.inline(audio)).await.unwrap());
         assert_eq!(
             *fixture.state.events.lock().unwrap(),
             [
@@ -571,7 +653,7 @@ async fn inline_ready_upload_cancels_blocked_optional_edit_before_final_result()
 async fn sending_status_is_visible_during_upload_instead_of_blocking_it() {
     for audio in [false, true] {
         let fixture = Fixture::new(State::default()).await;
-        tokio::time::timeout(Duration::from_secs(5), fixture.inline(audio)).await.unwrap();
+        assert!(tokio::time::timeout(Duration::from_secs(5), fixture.inline(audio)).await.unwrap());
         assert_eq!(
             *fixture.state.events.lock().unwrap(),
             [
@@ -605,9 +687,9 @@ async fn rejected_upload_is_not_retried_and_tells_user_to_resend() {
             .await;
             tokio::time::timeout(Duration::from_secs(5), async {
                 if inline {
-                    fixture.inline(audio).await;
+                    assert!(!fixture.inline(audio).await);
                 } else {
-                    fixture.command(audio, 1).await;
+                    assert!(fixture.command(audio, 1).await.is_none());
                 }
             })
             .await
@@ -634,9 +716,11 @@ async fn known_failed_playlist_item_does_not_stop_next_item() {
             ..Default::default()
         })
         .await;
-        tokio::time::timeout(Duration::from_secs(10), fixture.command(audio, 2))
+        let message = tokio::time::timeout(Duration::from_secs(10), fixture.command(audio, 2))
             .await
+            .unwrap()
             .unwrap();
+        assert_eq!(message.message_id, 42);
         let events = fixture.state.events.lock().unwrap();
         assert_eq!(events.iter().filter(|event| event.starts_with("download ")).count(), 2);
         assert_eq!(events.iter().filter(|event| *event == "upload finished").count(), 1);
@@ -650,7 +734,11 @@ async fn known_failed_playlist_item_does_not_stop_next_item() {
 async fn quiet_playlists_also_finish_each_upload_before_next_download() {
     for audio in [false, true] {
         let fixture = Fixture::new(State::default()).await;
-        tokio::time::timeout(Duration::from_secs(10), fixture.quiet(audio)).await.unwrap();
+        let message = tokio::time::timeout(Duration::from_secs(10), fixture.quiet(audio))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(message.message_id, 42);
         assert_eq!(
             *fixture.state.events.lock().unwrap(),
             [
@@ -660,8 +748,298 @@ async fn quiet_playlists_also_finish_each_upload_before_next_download() {
                 "download https://example.test/playlist",
                 "upload started",
                 "upload finished",
+                "final command send",
             ]
         );
         assert!(fixture.state.edits.lock().unwrap().is_empty());
     }
+}
+
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn post_text_enriches_delivered_media_without_repeating_downloads() {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let short = "Synthetic <caption> & text";
+        let footer = "Synthetic Author | <a href=\"https://example.test/playlist\">Link</a>";
+        let short_rendered = format!("Synthetic &lt;caption&gt; &amp; text\n\n{footer}");
+        let long = "Long caption 😀<&> ".repeat(110);
+        let very_long = "Long post 😀<&> ".repeat(500);
+        let assert_truncated = |event: &str, prefix: &str, limit: usize| {
+            let html = event.strip_prefix(prefix).unwrap();
+            assert!(html.contains("<blockquote expandable>"));
+            assert!(html.contains("&lt;") && html.contains("&amp;"));
+            let (body, source) = html.rsplit_once("\n\n").unwrap();
+            assert!(body.ends_with("…</blockquote>"));
+            assert_eq!(source, footer);
+            let visible = regex::Regex::new("<[^>]*>")
+                .unwrap()
+                .replace_all(html, "")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&amp;", "&");
+            assert!(visible.encode_utf16().count() <= limit);
+            assert!(visible.ends_with("Synthetic Author | Link"));
+            assert!(visible.contains('😀'));
+        };
+        let response = |text: &str| {
+            Ok(MediaInfoResponse {
+                posts: vec![PostEntry {
+                    text: text.into(),
+                    author: Some("Synthetic Author".into()),
+                    webpage_url: "https://example.test/playlist".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            })
+        };
+        let mut hidden = response(short).unwrap();
+        hidden.posts.push(PostEntry {
+            text: "Synthetic <context> & text".into(),
+            author: Some("Synthetic Context Author".into()),
+            author_handle: Some("synthetic_context".into()),
+            webpage_url: "https://example.test/context".into(),
+        });
+        let fixture = Fixture::new(State {
+            post_replies: Mutex::new(VecDeque::from([
+                response(short),
+                response(short),
+                Err(Status::not_found("Synthetic metadata failure")),
+                response(&long),
+                response(short),
+                response(&long),
+                response(short),
+                response(&very_long),
+                response(short),
+                response(&very_long),
+                Ok(hidden),
+                response(short),
+                response(short),
+                response(short),
+            ])),
+            ..Default::default()
+        })
+        .await;
+        let display = post::Display::new(fixture.router.clone(), fixture.messenger.clone(), fixture.formatter.clone());
+        let mut job = DownloadJob::new(
+            MediaType::Video,
+            Some(Url::parse("https://example.test/playlist").unwrap()),
+            Params::default(),
+            ChatConfig::new(1, false, "en".into()),
+            true,
+            JobTarget::Command { chat_id: 1, message_id: 9 },
+        )
+        .with_auto(false);
+
+        let message = fixture.command(false, 1).await.unwrap();
+        assert_eq!(message.message_id, 42);
+        assert!(display
+            .execute(post::DisplayInput {
+                job: &job,
+                message: Some(&message),
+                has_media: true
+            })
+            .await
+            .unwrap());
+        assert_eq!(
+            fixture.state.events.lock().unwrap().last().unwrap(),
+            &format!("post edit chat:1:42 caption=true: {short_rendered}")
+        );
+
+        let edits = fixture.state.edits.lock().unwrap().len();
+        *fixture.state.post_edit_error.lock().unwrap() = Some(MessengerError::new("Synthetic caption edit failure"));
+        assert!(display
+            .execute(post::DisplayInput {
+                job: &job,
+                message: Some(&message),
+                has_media: true
+            })
+            .await
+            .unwrap());
+        assert_eq!(fixture.state.edits.lock().unwrap().len(), edits);
+        assert_eq!(fixture.state.events.lock().unwrap().last().unwrap(), "post edit rejected");
+
+        assert!(!display
+            .execute(post::DisplayInput {
+                job: &job,
+                message: Some(&message),
+                has_media: true
+            })
+            .await
+            .unwrap());
+        assert_eq!(fixture.state.edits.lock().unwrap().len(), edits);
+        assert_eq!(fixture.state.events.lock().unwrap().last().unwrap(), "post metadata");
+
+        assert!(display
+            .execute(post::DisplayInput {
+                job: &job,
+                message: Some(&message),
+                has_media: true
+            })
+            .await
+            .unwrap());
+        assert_truncated(
+            fixture.state.events.lock().unwrap().last().unwrap(),
+            "post edit chat:1:42 caption=true: ",
+            1_024,
+        );
+
+        assert!(fixture.inline(false).await);
+        job.target = JobTarget::Inline {
+            inline_message_id: "synthetic-inline".into(),
+            result_id: "synthetic-result".into(),
+        };
+        assert!(display
+            .execute(post::DisplayInput {
+                job: &job,
+                message: None,
+                has_media: true
+            })
+            .await
+            .unwrap());
+        assert_eq!(
+            fixture.state.events.lock().unwrap().last().unwrap(),
+            &format!("post edit inline:synthetic-inline caption=true: {short_rendered}")
+        );
+        assert!(display
+            .execute(post::DisplayInput {
+                job: &job,
+                message: None,
+                has_media: true
+            })
+            .await
+            .unwrap());
+        assert_truncated(
+            fixture.state.events.lock().unwrap().last().unwrap(),
+            "post edit inline:synthetic-inline caption=true: ",
+            1_024,
+        );
+
+        assert!(display
+            .execute(post::DisplayInput {
+                job: &job,
+                message: None,
+                has_media: false
+            })
+            .await
+            .unwrap());
+        assert_eq!(
+            fixture.state.events.lock().unwrap().last().unwrap(),
+            &format!("post edit inline:synthetic-inline caption=false: {short_rendered}")
+        );
+        assert!(display
+            .execute(post::DisplayInput {
+                job: &job,
+                message: None,
+                has_media: false
+            })
+            .await
+            .unwrap());
+        assert_truncated(
+            fixture.state.events.lock().unwrap().last().unwrap(),
+            "post edit inline:synthetic-inline caption=false: ",
+            4_096,
+        );
+
+        job.target = JobTarget::Command { chat_id: 1, message_id: 9 };
+        assert!(display
+            .execute(post::DisplayInput {
+                job: &job,
+                message: None,
+                has_media: false
+            })
+            .await
+            .unwrap());
+        assert_eq!(
+            fixture.state.events.lock().unwrap().last().unwrap(),
+            &format!("post text 1 reply=Some(9): {short_rendered}")
+        );
+        assert!(display
+            .execute(post::DisplayInput {
+                job: &job,
+                message: None,
+                has_media: false
+            })
+            .await
+            .unwrap());
+        assert_truncated(
+            fixture.state.events.lock().unwrap().last().unwrap(),
+            "post text 1 reply=Some(9): ",
+            4_096,
+        );
+
+        job.link_is_visible = false;
+        assert!(display
+            .execute(post::DisplayInput {
+                job: &job,
+                message: Some(&message),
+                has_media: true
+            })
+            .await
+            .unwrap());
+        let hidden = fixture.state.events.lock().unwrap().last().unwrap().clone();
+        let hidden = hidden.strip_prefix("post edit chat:1:42 caption=true: ").unwrap();
+        assert!(hidden.contains("Synthetic &lt;caption&gt; &amp; text"));
+        assert!(hidden.contains("<b>Synthetic Context Author (@synthetic_context)</b>\nSynthetic &lt;context&gt; &amp; text"));
+        assert!(hidden.ends_with("\n\nSynthetic Author"));
+        assert!(!hidden.contains("href=") && !hidden.contains("https://example.test/"));
+
+        *fixture.state.post_send_error.lock().unwrap() = Some(MessengerError::new("Synthetic <delivery> failure & text token=test"));
+        let error = display
+            .execute(post::DisplayInput {
+                job: &job,
+                message: None,
+                has_media: false,
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(error.to_string(), "Messenger error: Synthetic <delivery> failure & text token=...");
+        let command_error = fixture.state.events.lock().unwrap().last().unwrap().clone();
+        assert!(command_error.starts_with("post text 1 reply=Some(9): Failed to send message\n"));
+        assert!(command_error
+            .contains("<blockquote expandable>Messenger error: Synthetic &lt;delivery&gt; failure &amp; text token=...</blockquote>"));
+
+        job.target = JobTarget::Inline {
+            inline_message_id: "synthetic-inline".into(),
+            result_id: "synthetic-result".into(),
+        };
+        *fixture.state.post_edit_error.lock().unwrap() = Some(MessengerError::new("Synthetic <edit> failure & text"));
+        assert!(display
+            .execute(post::DisplayInput {
+                job: &job,
+                message: None,
+                has_media: false
+            })
+            .await
+            .is_err());
+        let inline_error = fixture.state.events.lock().unwrap().last().unwrap().clone();
+        assert!(inline_error.starts_with("post edit inline:synthetic-inline caption=false: Failed to send message\n"));
+        assert!(inline_error.contains("<blockquote expandable>Messenger error: Synthetic &lt;edit&gt; failure &amp; text</blockquote>"));
+
+        job.target = JobTarget::Command { chat_id: 1, message_id: 9 };
+        job.quiet = true;
+        *fixture.state.post_send_error.lock().unwrap() = Some(MessengerError::new("Synthetic quiet delivery failure"));
+        assert!(display
+            .execute(post::DisplayInput {
+                job: &job,
+                message: None,
+                has_media: false
+            })
+            .await
+            .is_err());
+        assert_eq!(fixture.state.events.lock().unwrap().last().unwrap(), "post send rejected");
+
+        let events = fixture.state.events.lock().unwrap();
+        assert_eq!(events.iter().filter(|event| event.starts_with("post text ")).count(), 3);
+        assert!(!events
+            .iter()
+            .any(|event| event.starts_with("post text 1 reply=Some(42):") || event.starts_with("post text 1 reply=None:")));
+        assert_eq!(events.iter().filter(|event| *event == "post metadata").count(), 14);
+        assert_eq!(events.iter().filter(|event| event.starts_with("download ")).count(), 2);
+        assert_eq!(events.iter().filter(|event| *event == "upload finished").count(), 2);
+        assert_eq!(events.iter().filter(|event| *event == "final command send").count(), 1);
+        assert_eq!(events.iter().filter(|event| *event == "final inline edit").count(), 1);
+        assert!(fixture.state.post_replies.lock().unwrap().is_empty());
+    })
+    .await
+    .unwrap();
 }

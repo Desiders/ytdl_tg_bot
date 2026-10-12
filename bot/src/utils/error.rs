@@ -138,6 +138,12 @@ impl FormatErrorToMessage for MessengerError {
     }
 }
 
+impl FormatErrorToMessage for node_router::GetMediaInfoErrorKind {
+    fn format(&self, token: &str) -> Cow<'static, str> {
+        Cow::Owned(redact_token(self.to_string(), token))
+    }
+}
+
 impl<E> FormatErrorToMessage for ErrorKind<E>
 where
     E: std::error::Error + Debug,

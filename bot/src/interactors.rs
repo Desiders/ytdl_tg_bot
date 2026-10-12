@@ -15,6 +15,7 @@ pub mod inline_query;
 pub mod lang;
 pub mod menu;
 pub mod photo;
+pub mod post;
 pub mod shazam;
 pub mod start;
 pub mod stats;

@@ -22,7 +22,7 @@ use crate::{
             self,
             GetMediaByURLKind::{self, Empty, Playlist, SingleCached},
         },
-        messenger::{EditTarget, MessengerPort, TextFormat},
+        messenger::{EditTarget, MessengerPort, SentMessage, TextFormat},
         send_media,
     },
     utils::{prefixed, ErrorFormatter},
@@ -85,7 +85,7 @@ impl<Messenger> Interactor<DownloadInput<'_>> for &Download<Messenger>
 where
     Messenger: MessengerPort,
 {
-    type Output = ();
+    type Output = Option<SentMessage>;
     type Err = HandlerError;
 
     #[instrument(skip_all, fields(message_id = input.message_id, url = input.url.as_str(), ?input.params))]
@@ -111,7 +111,7 @@ where
                 Ok(progress_message) => progress_message.message_id,
                 Err(err) => {
                     error!(err = %self.error_formatter.format(&err), "Send progress error");
-                    return Ok(());
+                    return Ok(None);
                 }
             },
         };
@@ -136,7 +136,7 @@ where
                         Some(TextFormat::Html),
                     )
                     .await;
-                    return Ok(());
+                    return Ok(None);
                 }
             },
             None => Range::default(),
@@ -160,7 +160,7 @@ where
                         Some(TextFormat::Html),
                     )
                     .await;
-                    return Ok(());
+                    return Ok(None);
                 }
             }),
             None => None,
@@ -188,6 +188,7 @@ where
                     .await
             }
         };
+        let mut sent_message = None;
         match result {
             Ok(SingleCached(file_id)) => {
                 if let Err(err) = self
@@ -201,6 +202,7 @@ where
                         caption: input.base_text,
                     })
                     .await
+                    .map(|message| sent_message = Some(message))
                 {
                     let err = self.error_formatter.format(&err);
                     error!(%err, "Send error");
@@ -350,6 +352,7 @@ where
                         caption: input.base_text.map(ToOwned::to_owned),
                     })
                     .await
+                    .map(|message| sent_message = message)
                 {
                     let err = self.error_formatter.format(&err);
                     error!(%err, "Send error");
@@ -399,7 +402,7 @@ where
             }
         }
 
-        Ok(())
+        Ok(sent_message)
     }
 }
 

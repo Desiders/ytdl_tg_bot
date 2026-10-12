@@ -21,7 +21,9 @@ use crate::{
         YtDlpConfig,
     },
     database::{SeaOrmTxManager, TxManager, TxManagerFactories},
-    interactors::{audio, auto, chosen_inline, config, enqueue_download, inline_query, lang, menu, photo, shazam, start, stats, video},
+    interactors::{
+        audio, auto, chosen_inline, config, enqueue_download, inline_query, lang, menu, photo, post, shazam, start, stats, video,
+    },
     services::{
         chat,
         download::media,
@@ -263,6 +265,13 @@ registry! {
         provide(|Inject(tx_manager)| async move { Ok(downloaded_media::AddVideo::new(tx_manager)) }),
         provide(|Inject(tx_manager)| async move { Ok(downloaded_media::AddAudio::new(tx_manager)) }),
         provide(|Inject(tx_manager)| async move { Ok(downloaded_media::AddPhoto::new(tx_manager)) }),
+        provide(|
+            Inject(node_router),
+            Inject(messenger): Inject<Messenger>,
+            Inject(error_formatter)| async move {
+                Ok(post::Display::new(node_router, messenger, error_formatter))
+            }
+        ),
         provide(|Inject(tx_manager)| async move { Ok(downloaded_media::GetStats::new(tx_manager)) }),
         provide(|Inject(cfg), Inject(tx_manager)| async move { Ok(downloaded_media::GetRandomVideo::new(cfg, tx_manager)) }),
         provide(|Inject(cfg), Inject(tx_manager)| async move { Ok(downloaded_media::GetRandomAudio::new(cfg, tx_manager)) }),

@@ -49,8 +49,16 @@ message MediaEntry {
   string raw_info_json = 12;
 }
 
+message PostEntry {
+  string text = 1;
+  optional string author = 2;
+  optional string author_handle = 3;
+  string webpage_url = 4;
+}
+
 message MediaInfoResponse {
   repeated MediaEntry entries = 1;
+  repeated PostEntry posts = 2;
 }
 
 message DownloadRequest {
