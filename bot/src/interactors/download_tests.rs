@@ -945,7 +945,7 @@ async fn quiet_playlists_also_finish_each_upload_before_next_download() {
 async fn post_text_enriches_delivered_media_without_repeating_downloads() {
     tokio::time::timeout(Duration::from_secs(10), async {
         let short = "Synthetic <caption> & text";
-        let footer = "Synthetic Author | <a href=\"https://example.test/playlist\">Link</a>";
+        let footer = "<a href=\"https://example.test/playlist\">Link</a>";
         let short_rendered = format!("Synthetic &lt;caption&gt; &amp; text\n\n{footer}");
         let long = "Long caption 😀<&> ".repeat(110);
         let very_long = "Long post 😀<&> ".repeat(500);
@@ -963,7 +963,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
                 .replace("&gt;", ">")
                 .replace("&amp;", "&");
             assert!(visible.encode_utf16().count() <= limit);
-            assert!(visible.ends_with("Synthetic Author | Link"));
+            assert!(visible.ends_with("Link"));
             assert!(visible.contains('😀'));
         };
         let response = |text: &str| {
@@ -1165,7 +1165,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
         let hidden = hidden.strip_prefix("post edit chat:1:1 caption=true: ").unwrap();
         assert!(hidden.contains("Synthetic &lt;caption&gt; &amp; text"));
         assert!(hidden.contains("<b>Synthetic Context Author (@synthetic_context)</b>\nSynthetic &lt;context&gt; &amp; text"));
-        assert!(hidden.ends_with("\n\nSynthetic Author"));
+        assert!(hidden.ends_with("Synthetic &lt;caption&gt; &amp; text"));
         assert!(!hidden.contains("href=") && !hidden.contains("https://example.test/"));
 
         *fixture.state.post_send_error.lock().unwrap() = Some(MessengerError::new("Synthetic <delivery> failure & text token=test"));

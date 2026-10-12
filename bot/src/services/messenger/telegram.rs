@@ -1260,7 +1260,7 @@ mod rate_limit_tests {
         let fixture = Fixture::new().await;
         let text = concat!(
             "<blockquote>Synthetic post &amp; content</blockquote>\n\n",
-            "Synthetic &amp; author | <a href=\"https://example.test/post?a=1&amp;b=2\">Link</a>"
+            "<a href=\"https://example.test/post?a=1&amp;b=2\">Link</a>"
         );
         let server = reply_once(
             "200 OK",

@@ -195,18 +195,12 @@ fn source_url(post: &PostEntry, fallback: &Url) -> Url {
 }
 
 fn render(posts: &[PostEntry], fallback: &Url, limit: usize, link_is_visible: bool) -> String {
-    let label = author_label(&posts[0]);
-    let link = html_text_link("Link", html_quote(source_url(&posts[0], fallback).as_str()));
-    let (footer, footer_units) = match (label.is_empty(), link_is_visible) {
-        (true, true) => (link, "Link".len()),
-        (false, true) => (
-            format!("{} | {link}", html_quote(&label)),
-            label.encode_utf16().count() + " | Link".len(),
-        ),
-        (false, false) => (html_quote(&label), label.encode_utf16().count()),
-        (true, false) => (String::new(), 0),
+    let footer = if link_is_visible {
+        html_text_link("Link", html_quote(source_url(&posts[0], fallback).as_str()))
+    } else {
+        String::new()
     };
-    let body_limit = limit - footer_units - usize::from(!footer.is_empty()) * 2;
+    let body_limit = limit - if link_is_visible { "Link".len() + 2 } else { 0 };
     let (main, units) = render_entry(&posts[0], false, fallback, body_limit, link_is_visible).unwrap_or_default();
     let mut remaining = body_limit - units;
     let mut parts = Vec::new();
@@ -288,7 +282,7 @@ mod tests {
             ..Default::default()
         };
         let link = "<a href=\"https://source.example.invalid/post?one=1&amp;two=2\">Link</a>";
-        let footer = format!("\n\nAuthor | {link}");
+        let footer = format!("\n\n{link}");
         let text = render(std::slice::from_ref(&main), &url, CAPTION_UNITS, true);
         assert_eq!(text, format!("Hello &lt;world&gt; &amp; friends{footer}"));
 
@@ -305,7 +299,7 @@ mod tests {
         let hidden = render(&[main.clone(), quote], &url, CAPTION_UNITS, false);
         assert!(!hidden.contains("<a "));
         assert!(hidden.starts_with("<blockquote expandable><b>Quoted (@quoted_handle)</b>"));
-        assert!(hidden.ends_with("Hello &lt;world&gt; &amp; friends\n\nAuthor"));
+        assert!(hidden.ends_with("Hello &lt;world&gt; &amp; friends"));
 
         let mut long = main;
         long.text = "😀<&>".repeat(2_000);
@@ -314,14 +308,14 @@ mod tests {
             text,
             format!(
                 "{}{footer}",
-                html_expandable_blockquote(html_quote(format!("{}😀<…", "😀<&>".repeat(201))))
+                html_expandable_blockquote(html_quote(format!("{}😀…", "😀<&>".repeat(203))))
             )
         );
         long.text = "😀".repeat(3_000);
         let text = render(std::slice::from_ref(&long), &url, BODY_UNITS, true);
         assert_eq!(
             text,
-            format!("{}{footer}", html_expandable_blockquote(format!("{}…", "😀".repeat(2_040))))
+            format!("{}{footer}", html_expandable_blockquote(format!("{}…", "😀".repeat(2_044))))
         );
 
         long.text = "Long text ".repeat(150);
