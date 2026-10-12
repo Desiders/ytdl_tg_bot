@@ -89,6 +89,7 @@ where
                     .execute(send_media::id::SendMediaInput {
                         chat_id: ctx.chat_id,
                         reply_to_message_id: Some(ctx.message_id),
+                        edit_message_id: None,
                         id: &file_id,
                         webpage_url: Some(ctx.url),
                         link_is_visible: ctx.link_is_visible,
@@ -173,6 +174,7 @@ where
                     .execute(send_media::id::SendPlaylistInput {
                         chat_id: ctx.chat_id,
                         reply_to_message_id: Some(ctx.message_id),
+                        edit_message_id: None,
                         playlist: downloaded_playlist,
                         link_is_visible: ctx.link_is_visible,
                         caption: None,
@@ -233,6 +235,7 @@ where
                     .execute(send_media::id::SendMediaInput {
                         chat_id: ctx.chat_id,
                         reply_to_message_id: Some(ctx.message_id),
+                        edit_message_id: None,
                         id: &file_id,
                         webpage_url: Some(ctx.url),
                         link_is_visible: ctx.link_is_visible,
@@ -301,6 +304,7 @@ where
                     .execute(send_media::id::SendPlaylistInput {
                         chat_id: ctx.chat_id,
                         reply_to_message_id: Some(ctx.message_id),
+                        edit_message_id: None,
                         playlist: downloaded_playlist,
                         link_is_visible: ctx.link_is_visible,
                         caption: None,

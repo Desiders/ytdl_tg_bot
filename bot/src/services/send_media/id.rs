@@ -2,7 +2,8 @@ use crate::{
     entities::MediaInPlaylist,
     interactors::Interactor,
     services::messenger::{
-        EditMediaByIdRequest, MediaGroupItem, MessengerError, MessengerPort, SendMediaByIdRequest, SendMediaGroupRequest, SentMessage,
+        EditMediaByIdRequest, EditTarget, MediaGroupItem, MessengerError, MessengerPort, SendMediaByIdRequest, SendMediaGroupRequest,
+        SentMessage,
     },
 };
 
@@ -12,6 +13,7 @@ use url::Url;
 pub struct SendMediaInput<'a> {
     pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
+    pub edit_message_id: Option<i64>,
     pub id: &'a str,
     pub webpage_url: Option<&'a Url>,
     pub link_is_visible: bool,
@@ -21,6 +23,7 @@ pub struct SendMediaInput<'a> {
 pub struct SendPlaylistInput {
     pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
+    pub edit_message_id: Option<i64>,
     pub playlist: Vec<MediaInPlaylist>,
     pub link_is_visible: bool,
     pub caption: Option<String>,
@@ -52,6 +55,21 @@ where
     type Err = MessengerError;
 
     async fn execute(self, input: SendMediaInput<'_>) -> Result<Self::Output, Self::Err> {
+        if let Some(message_id) = input.edit_message_id {
+            self.messenger
+                .edit_video_by_id(EditMediaByIdRequest {
+                    target: EditTarget::ChatMessage {
+                        chat_id: input.chat_id,
+                        message_id,
+                    },
+                    remote_id: input.id,
+                    webpage_url: input.webpage_url,
+                    link_is_visible: input.link_is_visible,
+                    caption: input.caption,
+                })
+                .await?;
+            return Ok(SentMessage { message_id });
+        }
         self.messenger
             .send_video_by_id(SendMediaByIdRequest {
                 chat_id: input.chat_id,
@@ -95,6 +113,21 @@ where
     type Err = MessengerError;
 
     async fn execute(self, input: SendMediaInput<'_>) -> Result<Self::Output, Self::Err> {
+        if let Some(message_id) = input.edit_message_id {
+            self.messenger
+                .edit_audio_by_id(EditMediaByIdRequest {
+                    target: EditTarget::ChatMessage {
+                        chat_id: input.chat_id,
+                        message_id,
+                    },
+                    remote_id: input.id,
+                    webpage_url: input.webpage_url,
+                    link_is_visible: input.link_is_visible,
+                    caption: input.caption,
+                })
+                .await?;
+            return Ok(SentMessage { message_id });
+        }
         self.messenger
             .send_audio_by_id(SendMediaByIdRequest {
                 chat_id: input.chat_id,
@@ -116,6 +149,21 @@ where
     type Err = MessengerError;
 
     async fn execute(self, input: SendMediaInput<'_>) -> Result<Self::Output, Self::Err> {
+        if let Some(message_id) = input.edit_message_id {
+            self.messenger
+                .edit_photo_by_id(EditMediaByIdRequest {
+                    target: EditTarget::ChatMessage {
+                        chat_id: input.chat_id,
+                        message_id,
+                    },
+                    remote_id: input.id,
+                    webpage_url: input.webpage_url,
+                    link_is_visible: input.link_is_visible,
+                    caption: input.caption,
+                })
+                .await?;
+            return Ok(SentMessage { message_id });
+        }
         self.messenger
             .send_photo_by_id(SendMediaByIdRequest {
                 chat_id: input.chat_id,
@@ -150,10 +198,13 @@ where
     async fn execute(self, input: EditMediaInput<'_>) -> Result<Self::Output, Self::Err> {
         self.messenger
             .edit_video_by_id(EditMediaByIdRequest {
-                inline_message_id: input.inline_message_id,
+                target: EditTarget::InlineMessage {
+                    inline_message_id: input.inline_message_id,
+                },
                 remote_id: input.id,
                 webpage_url: input.webpage_url,
                 link_is_visible: input.link_is_visible,
+                caption: None,
             })
             .await
     }
@@ -191,10 +242,13 @@ where
     async fn execute(self, input: EditMediaInput<'_>) -> Result<Self::Output, Self::Err> {
         self.messenger
             .edit_audio_by_id(EditMediaByIdRequest {
-                inline_message_id: input.inline_message_id,
+                target: EditTarget::InlineMessage {
+                    inline_message_id: input.inline_message_id,
+                },
                 remote_id: input.id,
                 webpage_url: input.webpage_url,
                 link_is_visible: input.link_is_visible,
+                caption: None,
             })
             .await
     }
@@ -210,10 +264,13 @@ where
     async fn execute(self, input: EditMediaInput<'_>) -> Result<Self::Output, Self::Err> {
         self.messenger
             .edit_photo_by_id(EditMediaByIdRequest {
-                inline_message_id: input.inline_message_id,
+                target: EditTarget::InlineMessage {
+                    inline_message_id: input.inline_message_id,
+                },
                 remote_id: input.id,
                 webpage_url: input.webpage_url,
                 link_is_visible: input.link_is_visible,
+                caption: None,
             })
             .await
     }
@@ -240,6 +297,22 @@ where
     async fn execute(self, input: SendPlaylistInput) -> Result<Self::Output, Self::Err> {
         if input.playlist.is_empty() {
             return Ok(None);
+        }
+        if let [item] = input.playlist.as_slice() {
+            if input.edit_message_id.is_some() {
+                return SendVideo::new(Arc::clone(&self.messenger))
+                    .execute(SendMediaInput {
+                        chat_id: input.chat_id,
+                        reply_to_message_id: input.reply_to_message_id,
+                        edit_message_id: input.edit_message_id,
+                        id: &item.file_id,
+                        webpage_url: item.webpage_url.as_ref(),
+                        link_is_visible: input.link_is_visible,
+                        caption: input.caption.as_deref(),
+                    })
+                    .await
+                    .map(Some);
+            }
         }
         self.messenger
             .send_video_group(SendMediaGroupRequest {
@@ -293,6 +366,22 @@ where
         if input.playlist.is_empty() {
             return Ok(None);
         }
+        if let [item] = input.playlist.as_slice() {
+            if input.edit_message_id.is_some() {
+                return SendAudio::new(Arc::clone(&self.messenger))
+                    .execute(SendMediaInput {
+                        chat_id: input.chat_id,
+                        reply_to_message_id: input.reply_to_message_id,
+                        edit_message_id: input.edit_message_id,
+                        id: &item.file_id,
+                        webpage_url: item.webpage_url.as_ref(),
+                        link_is_visible: input.link_is_visible,
+                        caption: input.caption.as_deref(),
+                    })
+                    .await
+                    .map(Some);
+            }
+        }
         self.messenger
             .send_audio_group(SendMediaGroupRequest {
                 chat_id: input.chat_id,
@@ -322,6 +411,22 @@ where
     async fn execute(self, input: SendPlaylistInput) -> Result<Self::Output, Self::Err> {
         if input.playlist.is_empty() {
             return Ok(None);
+        }
+        if let [item] = input.playlist.as_slice() {
+            if input.edit_message_id.is_some() {
+                return SendPhoto::new(Arc::clone(&self.messenger))
+                    .execute(SendMediaInput {
+                        chat_id: input.chat_id,
+                        reply_to_message_id: input.reply_to_message_id,
+                        edit_message_id: input.edit_message_id,
+                        id: &item.file_id,
+                        webpage_url: item.webpage_url.as_ref(),
+                        link_is_visible: input.link_is_visible,
+                        caption: input.caption.as_deref(),
+                    })
+                    .await
+                    .map(Some);
+            }
         }
         self.messenger
             .send_photo_group(SendMediaGroupRequest {

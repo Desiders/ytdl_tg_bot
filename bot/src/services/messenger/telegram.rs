@@ -511,66 +511,60 @@ impl MessengerPort for TelegramMessenger {
     }
 
     async fn edit_video_by_id(&self, request: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
-        with_retries(
-            self,
-            methods::EditMessageMedia::new(
-                InputMediaVideo::new(InputFile::id(request.remote_id))
-                    .caption_option(if request.link_is_visible {
-                        media_link(request.webpage_url)
-                    } else {
-                        None
-                    })
-                    .supports_streaming(true)
-                    .parse_mode(ParseMode::HTML),
-            )
-            .inline_message_id(request.inline_message_id)
-            .reply_markup(InlineKeyboardMarkup::new([[]])),
-            2,
-            Some(self.timeouts_cfg.send_by_id),
+        let method = methods::EditMessageMedia::new(
+            InputMediaVideo::new(InputFile::id(request.remote_id))
+                .caption_option(if request.link_is_visible {
+                    media_link(request.webpage_url)
+                } else {
+                    None
+                })
+                .supports_streaming(true)
+                .parse_mode(ParseMode::HTML),
         )
-        .await?;
+        .reply_markup(InlineKeyboardMarkup::new([[]]));
+        let method = match request.target {
+            EditTarget::ChatMessage { chat_id, message_id } => method.chat_id(chat_id).message_id(message_id),
+            EditTarget::InlineMessage { inline_message_id } => method.inline_message_id(inline_message_id),
+        };
+        with_retries(self, method, 2, Some(self.timeouts_cfg.send_by_id)).await?;
         Ok(())
     }
 
     async fn edit_audio_by_id(&self, request: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
-        with_retries(
-            self,
-            methods::EditMessageMedia::new(
-                InputMediaAudio::new(InputFile::id(request.remote_id))
-                    .caption_option(if request.link_is_visible {
-                        media_link(request.webpage_url)
-                    } else {
-                        None
-                    })
-                    .parse_mode(ParseMode::HTML),
-            )
-            .inline_message_id(request.inline_message_id)
-            .reply_markup(InlineKeyboardMarkup::new([[]])),
-            2,
-            Some(self.timeouts_cfg.send_by_id),
+        let method = methods::EditMessageMedia::new(
+            InputMediaAudio::new(InputFile::id(request.remote_id))
+                .caption_option(caption_with_link(
+                    request.caption.map(ToOwned::to_owned),
+                    request.link_is_visible,
+                    request.webpage_url,
+                ))
+                .parse_mode(ParseMode::HTML),
         )
-        .await?;
+        .reply_markup(InlineKeyboardMarkup::new([[]]));
+        let method = match request.target {
+            EditTarget::ChatMessage { chat_id, message_id } => method.chat_id(chat_id).message_id(message_id),
+            EditTarget::InlineMessage { inline_message_id } => method.inline_message_id(inline_message_id),
+        };
+        with_retries(self, method, 2, Some(self.timeouts_cfg.send_by_id)).await?;
         Ok(())
     }
 
     async fn edit_photo_by_id(&self, request: EditMediaByIdRequest<'_>) -> Result<(), MessengerError> {
-        with_retries(
-            self,
-            methods::EditMessageMedia::new(
-                InputMediaPhoto::new(InputFile::id(request.remote_id))
-                    .caption_option(if request.link_is_visible {
-                        media_link(request.webpage_url)
-                    } else {
-                        None
-                    })
-                    .parse_mode(ParseMode::HTML),
-            )
-            .inline_message_id(request.inline_message_id)
-            .reply_markup(InlineKeyboardMarkup::new([[]])),
-            2,
-            Some(self.timeouts_cfg.send_by_id),
+        let method = methods::EditMessageMedia::new(
+            InputMediaPhoto::new(InputFile::id(request.remote_id))
+                .caption_option(if request.link_is_visible {
+                    media_link(request.webpage_url)
+                } else {
+                    None
+                })
+                .parse_mode(ParseMode::HTML),
         )
-        .await?;
+        .reply_markup(InlineKeyboardMarkup::new([[]]));
+        let method = match request.target {
+            EditTarget::ChatMessage { chat_id, message_id } => method.chat_id(chat_id).message_id(message_id),
+            EditTarget::InlineMessage { inline_message_id } => method.inline_message_id(inline_message_id),
+        };
+        with_retries(self, method, 2, Some(self.timeouts_cfg.send_by_id)).await?;
         Ok(())
     }
 
@@ -1189,6 +1183,76 @@ mod rate_limit_tests {
             .await
             .unwrap();
         assert!(sent.is_none());
+    }
+
+    #[tokio::test]
+    async fn media_edits_support_chat_and_inline_targets() {
+        let fixture = Fixture::new().await;
+        let url = Url::parse("https://example.test/media?a=1&b=2").unwrap();
+        let base_text = "<b>Synthetic artist — Synthetic song</b>";
+        for kind in ["video", "audio", "photo"] {
+            for is_inline in [false, true] {
+                for link_is_visible in [false, true] {
+                    let body = if is_inline {
+                        r#"{"ok":true,"result":true}"#
+                    } else {
+                        r#"{"ok":true,"result":{"message_id":7,"date":1,"chat":{"id":321,"type":"private"}}}"#
+                    };
+                    let server = reply_once("200 OK", body).await;
+                    let target = if is_inline {
+                        EditTarget::InlineMessage {
+                            inline_message_id: "synthetic-inline-message",
+                        }
+                    } else {
+                        EditTarget::ChatMessage {
+                            chat_id: 321,
+                            message_id: 7,
+                        }
+                    };
+                    let caption = (kind == "audio" && !is_inline).then_some(base_text);
+                    let input = EditMediaByIdRequest {
+                        target,
+                        remote_id: "synthetic-file-id",
+                        webpage_url: Some(&url),
+                        link_is_visible,
+                        caption,
+                    };
+                    let messenger = test_messenger(server.address, &fixture);
+                    match kind {
+                        "video" => messenger.edit_video_by_id(input).await,
+                        "audio" => messenger.edit_audio_by_id(input).await,
+                        _ => messenger.edit_photo_by_id(input).await,
+                    }
+                    .unwrap();
+                    let request = server.request.await.unwrap();
+                    assert!(request.contains("/editMessageMedia "));
+                    assert!(request.contains(r#""inline_keyboard":[[]]"#));
+                    if is_inline {
+                        assert!(request.contains("name=\"inline_message_id\"\r\n\r\nsynthetic-inline-message"));
+                        assert!(!request.contains("name=\"chat_id\""));
+                    } else {
+                        assert!(request.contains("name=\"chat_id\"\r\n\r\n321"));
+                        assert!(request.contains("name=\"message_id\"\r\n\r\n7"));
+                        assert!(!request.contains("name=\"inline_message_id\""));
+                    }
+                    let media = request.split_once("name=\"media\"\r\n\r\n").unwrap().1;
+                    let media = media.split_once("\r\n--").unwrap().0;
+                    let media: serde_json::Value = serde_json::from_str(media).unwrap();
+                    assert_eq!(media["type"], kind);
+                    assert_eq!(media["media"], "synthetic-file-id");
+                    assert_eq!(media["parse_mode"], "HTML");
+                    if kind == "video" {
+                        assert_eq!(media["supports_streaming"], true);
+                    }
+                    let actual_caption = media["caption"].as_str().unwrap_or_default();
+                    assert_eq!(actual_caption.contains(base_text), caption.is_some());
+                    assert_eq!(actual_caption.contains(url.as_str()), link_is_visible);
+                    if caption.is_some() && link_is_visible {
+                        assert!(actual_caption.starts_with(&format!("{base_text}\n\n")));
+                    }
+                }
+            }
+        }
     }
 
     #[tokio::test]

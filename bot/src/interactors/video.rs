@@ -187,6 +187,7 @@ where
                     .execute(send_media::id::SendMediaInput {
                         chat_id: input.chat_id,
                         reply_to_message_id: Some(input.message_id),
+                        edit_message_id: Some(progress_message_id),
                         id: &file_id,
                         webpage_url: Some(input.url),
                         link_is_visible: input.link_is_visible,
@@ -210,8 +211,6 @@ where
                         Some(TextFormat::Html),
                     )
                     .await;
-                } else {
-                    let _ = progress::delete(self.messenger.as_ref(), input.chat_id, progress_message_id).await;
                 }
             }
             Ok(Playlist { cached, uncached }) => {
@@ -338,6 +337,7 @@ where
                     .execute(send_media::id::SendPlaylistInput {
                         chat_id: input.chat_id,
                         reply_to_message_id: Some(input.message_id),
+                        edit_message_id: Some(progress_message_id),
                         playlist: downloaded_playlist,
                         link_is_visible: input.link_is_visible,
                         caption: None,
@@ -360,7 +360,7 @@ where
                         Some(TextFormat::Html),
                     )
                     .await;
-                } else if errs.is_empty() {
+                } else if media_to_send_count != 1 && errs.is_empty() {
                     let _ = progress::delete(self.messenger.as_ref(), input.chat_id, progress_message_id).await;
                 }
             }
@@ -528,6 +528,7 @@ where
                     .execute(send_media::id::SendMediaInput {
                         chat_id: ctx.chat_id,
                         reply_to_message_id: Some(ctx.message_id),
+                        edit_message_id: None,
                         id: &file_id,
                         webpage_url: Some(ctx.url),
                         link_is_visible: ctx.link_is_visible,
@@ -612,6 +613,7 @@ where
                     .execute(send_media::id::SendPlaylistInput {
                         chat_id: ctx.chat_id,
                         reply_to_message_id: Some(ctx.message_id),
+                        edit_message_id: None,
                         playlist: downloaded_playlist,
                         link_is_visible: ctx.link_is_visible,
                         caption: None,
@@ -682,6 +684,7 @@ where
                     .execute(send_media::id::SendPlaylistInput {
                         chat_id: input.chat_id,
                         reply_to_message_id: Some(input.message_id),
+                        edit_message_id: None,
                         playlist: playlist
                             .into_iter()
                             .enumerate()
