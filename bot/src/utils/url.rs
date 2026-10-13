@@ -1,8 +1,9 @@
 use clear_urls::UrlCleaner as ClearUrls;
+use serde_json::{json, Map};
 use thiserror::Error;
 use url::Url;
 
-use crate::config::TrackingParamsConfig;
+use crate::config::{TrackingParamsConfig, TrackingParamsRule};
 
 #[derive(Debug, Error)]
 pub enum ErrorKind {
@@ -15,20 +16,32 @@ pub enum ErrorKind {
 
 pub struct UrlCleaner {
     inner: ClearUrls,
+    config_rules: Option<ClearUrls>,
     extra_params: Box<[Box<str>]>,
 }
 
 impl UrlCleaner {
     pub fn from_embedded_rules(cfg: &TrackingParamsConfig) -> Result<Self, clear_urls::Error> {
+        let config_rules = if cfg.rules.is_empty() {
+            None
+        } else {
+            Some(ClearUrls::from_rules_json(&rules_json(&cfg.rules))?)
+        };
         Ok(Self {
             inner: ClearUrls::from_embedded_rules()?,
+            config_rules,
             extra_params: cfg.params.clone().into(),
         })
     }
 
     #[must_use]
     pub fn clean(&self, url: &Url) -> Option<Url> {
-        let result = self.inner.clean(url.as_str());
+        let mut result = self.inner.clean(url.as_str());
+        if let Some(config_rules) = &self.config_rules {
+            let config_result = config_rules.clean(&result.url);
+            result.changed |= config_result.changed;
+            result.url = config_result.url;
+        }
         let mut cleaned = if result.changed {
             Url::parse(&result.url).ok()?
         } else {
@@ -60,6 +73,21 @@ impl UrlCleaner {
         }
         true
     }
+}
+
+/// Builds a `ClearURLs` rules document, so `clear-urls` matches `params` case-insensitively against whole parameter names.
+fn rules_json(rules: &[TrackingParamsRule]) -> String {
+    let providers = rules
+        .iter()
+        .enumerate()
+        .map(|(index, rule)| {
+            (
+                format!("tracking_params.rules[{index}]"),
+                json!({ "urlPattern": rule.url_pattern, "rules": rule.params }),
+            )
+        })
+        .collect::<Map<_, _>>();
+    json!({ "providers": providers }).to_string()
 }
 
 const VIDEO_ID_LENGTH: usize = 11;
@@ -99,6 +127,64 @@ pub fn get_video_id(input: &str) -> Result<String, ErrorKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn example_cleaner() -> UrlCleaner {
+        let cfg = crate::config::parse_from_fs(concat!(env!("CARGO_MANIFEST_DIR"), "/../configs/config.example.toml")).unwrap();
+        UrlCleaner::from_embedded_rules(&cfg.tracking_params).unwrap()
+    }
+
+    #[test]
+    fn example_rules_strip_instagram_share_params() {
+        let cleaner = example_cleaner();
+        for (url, expected) in [
+            (
+                "https://www.instagram.com/reel/AAAAAAAAAAA/?obrf=c3ludGhldGlj",
+                "https://www.instagram.com/reel/AAAAAAAAAAA/",
+            ),
+            (
+                "https://www.instagram.com/synthetic_user/reel/AAAAAAAAAAA/?vrfl=c3ludGhldGlj==",
+                "https://www.instagram.com/synthetic_user/reel/AAAAAAAAAAA/",
+            ),
+            (
+                "https://instagr.am/p/AAAAAAAAAAA/?xtok=c3ludGhldGlj",
+                "https://instagr.am/p/AAAAAAAAAAA/",
+            ),
+            (
+                "https://instagram.com/p/AAAAAAAAAAA/?utm_source=synthetic&obrf=c3ludGhldGlj&img_index=2&igsh=synthetic",
+                "https://instagram.com/p/AAAAAAAAAAA/?img_index=2",
+            ),
+        ] {
+            assert_eq!(cleaner.clean(&Url::parse(url).unwrap()).unwrap().as_str(), expected);
+        }
+    }
+
+    #[test]
+    fn example_rules_keep_other_params() {
+        let cleaner = example_cleaner();
+        for url in [
+            "https://example.test/watch?obrf=synthetic",
+            "https://instagram.com@example.test/reel/AAAAAAAAAAA/?obrf=synthetic",
+            "https://www.instagram.com/p/AAAAAAAAAAA/?img_index=2",
+            "https://www.instagram.com/s/c3ludGhldGlj?story_media_id=1",
+        ] {
+            assert_eq!(cleaner.clean(&Url::parse(url).unwrap()), None, "{url}");
+        }
+    }
+
+    #[test]
+    fn config_rule_with_invalid_regex_is_rejected() {
+        let cfg = TrackingParamsConfig {
+            params: vec![],
+            rules: vec![TrackingParamsRule {
+                url_pattern: "example\\.test".into(),
+                params: vec!["(".into()],
+            }],
+        };
+        assert!(matches!(
+            UrlCleaner::from_embedded_rules(&cfg),
+            Err(clear_urls::Error::InvalidRegex { .. })
+        ));
+    }
 
     #[test]
     fn test_valid_url_standard() {

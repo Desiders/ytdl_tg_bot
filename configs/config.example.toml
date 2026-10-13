@@ -276,3 +276,11 @@ params = [
     "domain_userid",
     "network_userid",
 ]
+
+# Per-URL rules: `params` are regexes matched case-insensitively against whole parameter names
+#  (query and fragment) of URLs matching `url_pattern`. Instagram adds a parameter with a random
+#  four-letter name per share (`?obrf=<base64>`). Longer names stay: the vxinstagram domain
+#  replacement reads `img_index` to pick a carousel item, and gallery-dl reads `story_media_id`.
+[[tracking_params.rules]]
+url_pattern = '^https?://(?:[a-z0-9-]+\.)*?(?:instagram\.(?:com|net|org|tv)|instagr\.am)[/:]'
+params = ['[a-z]{4}']

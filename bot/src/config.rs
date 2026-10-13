@@ -113,6 +113,14 @@ const fn default_db_connect_timeout_secs() -> u64 {
 pub struct TrackingParamsConfig {
     #[serde(default)]
     pub params: Vec<Box<str>>,
+    #[serde(default)]
+    pub rules: Vec<TrackingParamsRule>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct TrackingParamsRule {
+    pub url_pattern: Box<str>,
+    pub params: Vec<Box<str>>,
 }
 
 impl DatabaseConfig {

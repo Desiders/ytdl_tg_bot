@@ -117,7 +117,7 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 ### Bot
 
 - accepts Telegram updates through long polling
-- cleans incoming URLs with `clear-urls` embedded rules plus `[tracking_params]` (`CleanUrlMiddleware`)
+- cleans incoming URLs with `clear-urls` embedded rules plus `[tracking_params]` (`CleanUrlMiddleware`): `rules` are per-URL-pattern regex rules for query and fragment parameter names, run through the same `clear-urls` engine, then exact `params` names are removed; an invalid regex fails startup
 - filters links: `[blacklisted].domains`, per-chat excluded domains, `yv2t_bot=false`-style skip params, and messages sent via the bot itself
 - sets an acknowledgment reaction for `[domains_with_reactions]` on receipt; the worker clears it when the job finishes
 - enqueues every download (command, bare link, chosen inline result) as a `DownloadJob` into the Valkey stream

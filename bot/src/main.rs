@@ -43,7 +43,7 @@ use crate::{
     handlers::{audio, chosen_inline, inline_query, lang, menu, photo, shazam, start, stats, video},
     middlewares::{CleanUrlMiddleware, CreateChatMiddleware, ReactionMiddleware},
     services::messenger::telegram::TelegramMessenger,
-    utils::{on_shutdown, on_startup},
+    utils::{on_shutdown, on_startup, UrlCleaner},
     value_objects::menu::{DeleteDomain, MenuState, OpenScreen, SetLanguage, SetLinkVisibility},
 };
 
@@ -83,6 +83,8 @@ async fn main() {
 
     let container = di_container::init::<Messenger>(config.clone(), bot.clone(), api_server);
     let node_router = container.get::<NodeRouter>().await.unwrap();
+    // Built eagerly so an invalid `[tracking_params].rules` regex stops startup instead of failing per message.
+    container.get::<UrlCleaner>().await.unwrap();
     let cfg = container.get::<config::Config>().await.unwrap();
 
     let download_router = Router::new("download")
