@@ -118,6 +118,7 @@ where
                         input.chat_id,
                         progress_message_id,
                         &text,
+                        Some(input.url),
                         Some(TextFormat::Html),
                     )
                     .await;
@@ -173,13 +174,14 @@ where
                         input.chat_id,
                         progress_message_id,
                         &text,
+                        Some(input.url),
                         Some(TextFormat::Html),
                     )
                     .await;
                 }
             }
             Ok(Playlist { cached, uncached }) => {
-                let mut send_err = None;
+                let mut failed_media = vec![];
                 let (cached_len, uncached_len) = (cached.len(), uncached.len());
                 let mut downloaded_playlist = Vec::with_capacity(cached_len + uncached_len);
                 downloaded_playlist.extend(cached);
@@ -194,7 +196,10 @@ where
                 .await;
                 for (media, _formats) in uncached {
                     let Some(photo_url) = media.direct_url.as_ref() else {
-                        send_err = Some(html_quote("Photo URL is missing in downloader response"));
+                        failed_media.push(progress::FailedMedia {
+                            webpage_url: media.webpage_url.clone(),
+                            errs: vec![html_quote("Photo URL is missing in downloader response")],
+                        });
                         continue;
                     };
                     let file_id = match self
@@ -213,7 +218,10 @@ where
                         Err(err) => {
                             let err = self.error_formatter.format(&err);
                             error!(%err, "Send error");
-                            send_err = Some(progress::upload_error(err.as_ref(), input.chat_cfg.locale().as_str()));
+                            failed_media.push(progress::FailedMedia {
+                                webpage_url: media.webpage_url.clone(),
+                                errs: vec![progress::upload_error(err.as_ref(), input.chat_cfg.locale().as_str())],
+                            });
                             continue;
                         }
                     };
@@ -241,13 +249,13 @@ where
                     }
                 }
 
-                let errs = send_err.map(|err| vec![err]).into_iter().collect::<Vec<_>>();
                 let media_to_send_count = downloaded_playlist.len();
                 let _ = progress::is_errors_if_exist(
                     self.messenger.as_ref(),
                     input.chat_id,
                     progress_message_id,
-                    &errs,
+                    &failed_media,
+                    Some(input.url),
                     media_to_send_count,
                     input.chat_cfg.locale().as_str(),
                     None,
@@ -260,7 +268,7 @@ where
                     .execute(send_media::id::SendPlaylistInput {
                         chat_id: input.chat_id,
                         reply_to_message_id: Some(input.message_id),
-                        edit_message_id: errs.is_empty().then_some(progress_message_id),
+                        edit_message_id: failed_media.is_empty().then_some(progress_message_id),
                         playlist: downloaded_playlist,
                         link_is_visible: input.link_is_visible,
                         caption: None,
@@ -280,10 +288,11 @@ where
                         input.chat_id,
                         progress_message_id,
                         &text,
+                        Some(input.url),
                         Some(TextFormat::Html),
                     )
                     .await;
-                } else if media_to_send_count != 1 && errs.is_empty() {
+                } else if media_to_send_count != 1 && failed_media.is_empty() {
                     // Keep the progress message when there were per-photo errors: sending an empty
                     // playlist "succeeds" as a no-op, and deleting here would wipe the error we just
                     // showed via `is_errors_if_exist`.
@@ -297,6 +306,7 @@ where
                     input.chat_id,
                     progress_message_id,
                     &t!("download.no_media_found", locale = locale.as_str()),
+                    Some(input.url),
                     None,
                 )
                 .await;
@@ -314,6 +324,7 @@ where
                     input.chat_id,
                     progress_message_id,
                     &text,
+                    Some(input.url),
                     Some(TextFormat::Html),
                 )
                 .await;

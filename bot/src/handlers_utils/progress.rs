@@ -2,6 +2,7 @@ use std::{fmt::Write as _, future::Future};
 
 use rust_i18n::t;
 use telers::utils::text::{html_expandable_blockquote, html_quote};
+use url::Url;
 
 use crate::{
     services::messenger::{
@@ -106,19 +107,27 @@ pub async fn is_sending(
         .await
 }
 
+/// One playlist item that was not delivered, with every error its attempts produced, already HTML-escaped.
+pub struct FailedMedia {
+    pub webpage_url: Url,
+    pub errs: Vec<String>,
+}
+
+#[allow(clippy::too_many_arguments, reason = "each argument is a separate part of the rendered message")]
 pub async fn is_errors_if_exist(
     messenger: &(impl MessengerPort + ?Sized),
     chat_id: i64,
     message_id: i64,
-    media_errs: &[Vec<String>],
+    media_errs: &[FailedMedia],
+    original_url: Option<&Url>,
     media_to_send_count: usize,
     locale: &str,
     base: Option<&str>,
 ) -> Result<(), MessengerError> {
     let mut errs_text = String::new();
-    for (failed_media_index, format_errs) in media_errs.iter().enumerate() {
+    for (failed_media_index, FailedMedia { webpage_url, errs }) in media_errs.iter().enumerate() {
         let mut format_errs_text = String::new();
-        for (format_err_index, format_err) in format_errs.iter().enumerate() {
+        for (format_err_index, format_err) in errs.iter().enumerate() {
             let _ = writeln!(format_errs_text, "{}. {}", format_err_index + 1, format_err);
         }
         let _ = writeln!(
@@ -128,7 +137,8 @@ pub async fn is_errors_if_exist(
                 "progress.media_download_retries",
                 locale = locale,
                 n = failed_media_index + 1,
-                count = format_errs.len()
+                url = link_text(webpage_url, Some(TextFormat::Html)),
+                count = errs.len()
             )
         );
         errs_text.push_str(&html_expandable_blockquote(&format_errs_text));
@@ -151,7 +161,7 @@ pub async fn is_errors_if_exist(
         }
         (_, _) => return Ok(()),
     };
-    let text = prefixed(base, &text);
+    let text = prefixed(base, &with_optional_link(&text, original_url, Some(TextFormat::Html)));
 
     messenger
         .edit_text(EditTextRequest {
@@ -165,24 +175,36 @@ pub async fn is_errors_if_exist(
         .await
 }
 
+pub struct PlaylistItem<'a> {
+    pub current_media_index: usize,
+    pub playlist_len: usize,
+    pub webpage_url: &'a Url,
+}
+
 pub async fn is_downloading_with_progress(
     messenger: &(impl MessengerPort + ?Sized),
     chat_id: i64,
     message_id: i64,
     progress: String,
-    current_media_index: usize,
-    playlist_len: usize,
+    item: PlaylistItem<'_>,
     locale: &str,
     base: Option<&str>,
 ) -> Result<(), MessengerError> {
+    let PlaylistItem {
+        current_media_index,
+        playlist_len,
+        webpage_url,
+    } = item;
+    let format = base.map(|_| TextFormat::Html);
     let header = if playlist_len > 1 {
-        t!(
+        let url = link_text(webpage_url, format);
+        let playlist_header = t!(
             "progress.downloading_playlist",
             locale = locale,
             current = current_media_index,
             total = playlist_len
-        )
-        .into_owned()
+        );
+        format!("{playlist_header}\n{url}")
     } else {
         t!("progress.downloading", locale = locale).into_owned()
     };
@@ -195,8 +217,8 @@ pub async fn is_downloading_with_progress(
             is_progress: true,
             target: EditTarget::ChatMessage { chat_id, message_id },
             text: &text,
-            format: if base.is_some() { Some(TextFormat::Html) } else { None },
-            disable_link_preview: base.is_some(),
+            format,
+            disable_link_preview: true,
             clear_inline_keyboard: false,
         })
         .await
@@ -223,18 +245,39 @@ pub async fn is_downloading_with_progress_in_chosen_inline(
         .await
 }
 
+fn link_text(url: &Url, format: Option<TextFormat>) -> String {
+    match format {
+        Some(TextFormat::Html) => html_quote(url.as_str()),
+        None => url.to_string(),
+    }
+}
+
+/// Every download error ends with the link the user sent, so the link survives even when the user's own message is gone.
+pub fn with_link(text: &str, original_url: &Url, format: Option<TextFormat>) -> String {
+    format!("{text}\n\n{}", link_text(original_url, format))
+}
+
+/// `None` when the text already names the link, as the `/shazam` caption does.
+pub fn with_optional_link(text: &str, original_url: Option<&Url>, format: Option<TextFormat>) -> String {
+    match original_url {
+        Some(original_url) => with_link(text, original_url, format),
+        None => text.to_owned(),
+    }
+}
+
 pub async fn is_error_in_progress(
     messenger: &(impl MessengerPort + ?Sized),
     chat_id: i64,
     message_id: i64,
     text: &str,
+    original_url: Option<&Url>,
     format: Option<TextFormat>,
 ) -> Result<(), MessengerError> {
     messenger
         .edit_text(EditTextRequest {
             is_progress: false,
             target: EditTarget::ChatMessage { chat_id, message_id },
-            text,
+            text: &with_optional_link(text, original_url, format),
             format,
             disable_link_preview: true,
             clear_inline_keyboard: false,
@@ -246,13 +289,14 @@ pub async fn is_error_in_chosen_inline(
     messenger: &(impl MessengerPort + ?Sized),
     inline_message_id: &str,
     text: &str,
+    original_url: &Url,
     format: Option<TextFormat>,
 ) -> Result<(), MessengerError> {
     messenger
         .edit_text(EditTextRequest {
             is_progress: false,
             target: EditTarget::InlineMessage { inline_message_id },
-            text,
+            text: &with_link(text, original_url, format),
             format,
             disable_link_preview: true,
             clear_inline_keyboard: true,
@@ -264,6 +308,7 @@ pub async fn is_errors_in_chosen_inline(
     messenger: &(impl MessengerPort + ?Sized),
     inline_message_id: &str,
     format_errs: &[String],
+    original_url: &Url,
     format: Option<TextFormat>,
     locale: &str,
 ) -> Result<(), MessengerError> {
@@ -282,7 +327,7 @@ pub async fn is_errors_in_chosen_inline(
         t!("progress.error_downloading", locale = locale),
         html_expandable_blockquote(&errs_text),
     );
-    is_error_in_chosen_inline(messenger, inline_message_id, &text, format).await
+    is_error_in_chosen_inline(messenger, inline_message_id, &text, original_url, format).await
 }
 
 pub async fn is_error_in_inline_query(messenger: &(impl MessengerPort + ?Sized), query_id: &str, text: &str) -> Result<(), MessengerError> {

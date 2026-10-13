@@ -105,7 +105,7 @@ media_progress = "Прогрес завантаження: %{progress}"
 error_downloading = "Помилка під час завантаження :("
 error_downloading_some = "Не вдалося завантажити деякі файли :("
 download_retries = "Спроб завантаження: %{count}"
-media_download_retries = "%{n} файл(ів) (спроб завантаження: %{count}):"
+media_download_retries = "%{n}. %{url} (спроб завантаження: %{count}):"
 
 [download]
 upload_failed_resend = "Повторного надсилання файлу не було. Надішліть посилання ще раз вручну після вказаного періоду очікування, якщо він є."

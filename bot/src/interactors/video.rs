@@ -124,6 +124,7 @@ where
                         input.chat_id,
                         progress_message_id,
                         &text,
+                        Some(input.url),
                         Some(TextFormat::Html),
                     )
                     .await;
@@ -148,6 +149,7 @@ where
                         input.chat_id,
                         progress_message_id,
                         &text,
+                        Some(input.url),
                         Some(TextFormat::Html),
                     )
                     .await;
@@ -208,18 +210,18 @@ where
                         input.chat_id,
                         progress_message_id,
                         &text,
+                        Some(input.url),
                         Some(TextFormat::Html),
                     )
                     .await;
                 }
             }
             Ok(Playlist { cached, uncached }) => {
-                let mut send_err = None;
-                let mut download_errs: Vec<Vec<_>> = vec![];
+                let mut failed_media = vec![];
                 let (cached_len, uncached_len) = (cached.len(), uncached.len());
                 let mut downloaded_playlist = Vec::with_capacity(cached_len + uncached_len);
                 downloaded_playlist.extend(cached);
-                for (media, formats) in uncached {
+                for (position, (media, formats)) in uncached.into_iter().enumerate() {
                     let (download_input, mut err_receiver, mut progress_receiver) =
                         media::DownloadMediaInput::new_with_progress(input.url, &media, sections.as_ref(), formats);
                     let download_res = progress::with_optional_updates(self.media_downloader.execute(download_input), async {
@@ -229,8 +231,11 @@ where
                                 input.chat_id,
                                 progress_message_id,
                                 progress_str,
-                                downloaded_playlist.len(),
-                                cached_len + uncached_len,
+                                progress::PlaylistItem {
+                                    current_media_index: cached_len + position + 1,
+                                    playlist_len: cached_len + uncached_len,
+                                    webpage_url: &media.webpage_url,
+                                },
                                 input.chat_cfg.locale().as_str(),
                                 None,
                             )
@@ -249,13 +254,19 @@ where
                     let (media_for_upload, format, duration) = match download_res {
                         Ok(Some(prepared)) => prepared,
                         Ok(None) => {
-                            download_errs.push(candidate_errs);
+                            failed_media.push(progress::FailedMedia {
+                                webpage_url: media.webpage_url.clone(),
+                                errs: candidate_errs,
+                            });
                             continue;
                         }
                         Err(err) => {
                             error!(%err, "Download error");
                             candidate_errs.push(html_quote(self.error_formatter.format(&err).as_ref()));
-                            download_errs.push(candidate_errs);
+                            failed_media.push(progress::FailedMedia {
+                                webpage_url: media.webpage_url.clone(),
+                                errs: candidate_errs,
+                            });
                             break;
                         }
                     };
@@ -287,7 +298,10 @@ where
                         Err(err) => {
                             let err = self.error_formatter.format(&err);
                             error!(%err, "Send error");
-                            send_err = Some(progress::upload_error(err.as_ref(), input.chat_cfg.locale().as_str()));
+                            failed_media.push(progress::FailedMedia {
+                                webpage_url: media.webpage_url.clone(),
+                                errs: vec![progress::upload_error(err.as_ref(), input.chat_cfg.locale().as_str())],
+                            });
                             if current_execution_outcome().is_some_and(|outcome| outcome.is_uncertain()) {
                                 break;
                             }
@@ -318,13 +332,13 @@ where
                     }
                 }
 
-                let errs = download_errs.into_iter().chain(send_err.map(|err| vec![err])).collect::<Vec<_>>();
                 let media_to_send_count = downloaded_playlist.len();
                 let _ = progress::is_errors_if_exist(
                     self.messenger.as_ref(),
                     input.chat_id,
                     progress_message_id,
-                    &errs,
+                    &failed_media,
+                    Some(input.url),
                     media_to_send_count,
                     input.chat_cfg.locale().as_str(),
                     None,
@@ -337,7 +351,7 @@ where
                     .execute(send_media::id::SendPlaylistInput {
                         chat_id: input.chat_id,
                         reply_to_message_id: Some(input.message_id),
-                        edit_message_id: errs.is_empty().then_some(progress_message_id),
+                        edit_message_id: failed_media.is_empty().then_some(progress_message_id),
                         playlist: downloaded_playlist,
                         link_is_visible: input.link_is_visible,
                         caption: None,
@@ -357,10 +371,11 @@ where
                         input.chat_id,
                         progress_message_id,
                         &text,
+                        Some(input.url),
                         Some(TextFormat::Html),
                     )
                     .await;
-                } else if media_to_send_count != 1 && errs.is_empty() {
+                } else if media_to_send_count != 1 && failed_media.is_empty() {
                     let _ = progress::delete(self.messenger.as_ref(), input.chat_id, progress_message_id).await;
                 }
             }
@@ -371,6 +386,7 @@ where
                     input.chat_id,
                     progress_message_id,
                     &t!("download.playlist_empty", locale = locale.as_str()),
+                    Some(input.url),
                     Some(TextFormat::Html),
                 )
                 .await;
@@ -387,6 +403,7 @@ where
                     input.chat_id,
                     progress_message_id,
                     &text,
+                    Some(input.url),
                     Some(TextFormat::Html),
                 )
                 .await;

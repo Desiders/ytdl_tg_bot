@@ -206,6 +206,7 @@ where
                     interactor.messenger.as_ref(),
                     input.inline_message_id,
                     &text,
+                    &url,
                     Some(TextFormat::Html),
                 )
                 .await;
@@ -260,6 +261,7 @@ where
                     interactor.messenger.as_ref(),
                     input.inline_message_id,
                     &text,
+                    &url,
                     Some(TextFormat::Html),
                 )
                 .await;
@@ -292,6 +294,7 @@ where
                     interactor.messenger.as_ref(),
                     input.inline_message_id,
                     &text,
+                    &url,
                     Some(TextFormat::Html),
                 )
                 .await;
@@ -333,6 +336,7 @@ where
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
                         &errs,
+                        &url,
                         Some(TextFormat::Html),
                         input.chat_cfg.locale().as_str(),
                     )
@@ -345,6 +349,7 @@ where
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
                         &html_quote(interactor.error_formatter.format(&err).as_ref()),
+                        &url,
                         Some(TextFormat::Html),
                     )
                     .await;
@@ -382,6 +387,7 @@ where
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
                         &progress::upload_error(err.as_ref(), input.chat_cfg.locale().as_str()),
+                        &url,
                         Some(TextFormat::Html),
                     )
                     .await;
@@ -410,6 +416,7 @@ where
                     interactor.messenger.as_ref(),
                     input.inline_message_id,
                     &text,
+                    &url,
                     Some(TextFormat::Html),
                 )
                 .await;
@@ -439,6 +446,7 @@ where
                 interactor.messenger.as_ref(),
                 input.inline_message_id,
                 t!("download.playlist_empty", locale = locale.as_str()).as_ref(),
+                &url,
                 Some(TextFormat::Html),
             )
             .await;
@@ -454,6 +462,7 @@ where
                 interactor.messenger.as_ref(),
                 input.inline_message_id,
                 &text,
+                &url,
                 Some(TextFormat::Html),
             )
             .await;
@@ -487,6 +496,7 @@ where
                     interactor.messenger.as_ref(),
                     input.inline_message_id,
                     &text,
+                    &url,
                     Some(TextFormat::Html),
                 )
                 .await;
@@ -541,6 +551,7 @@ where
                     interactor.messenger.as_ref(),
                     input.inline_message_id,
                     &text,
+                    &url,
                     Some(TextFormat::Html),
                 )
                 .await;
@@ -573,6 +584,7 @@ where
                     interactor.messenger.as_ref(),
                     input.inline_message_id,
                     &text,
+                    &url,
                     Some(TextFormat::Html),
                 )
                 .await;
@@ -614,6 +626,7 @@ where
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
                         &download_errs,
+                        &url,
                         Some(TextFormat::Html),
                         input.chat_cfg.locale().as_str(),
                     )
@@ -626,6 +639,7 @@ where
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
                         &html_quote(interactor.error_formatter.format(&err).as_ref()),
+                        &url,
                         Some(TextFormat::Html),
                     )
                     .await;
@@ -663,6 +677,7 @@ where
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
                         &progress::upload_error(err.as_ref(), input.chat_cfg.locale().as_str()),
+                        &url,
                         Some(TextFormat::Html),
                     )
                     .await;
@@ -691,6 +706,7 @@ where
                     interactor.messenger.as_ref(),
                     input.inline_message_id,
                     &text,
+                    &url,
                     Some(TextFormat::Html),
                 )
                 .await;
@@ -720,6 +736,7 @@ where
                 interactor.messenger.as_ref(),
                 input.inline_message_id,
                 t!("download.playlist_empty", locale = locale.as_str()).as_ref(),
+                &url,
                 Some(TextFormat::Html),
             )
             .await;
@@ -735,6 +752,7 @@ where
                 interactor.messenger.as_ref(),
                 input.inline_message_id,
                 &text,
+                &url,
                 Some(TextFormat::Html),
             )
             .await;
@@ -796,6 +814,7 @@ where
                     interactor.messenger.as_ref(),
                     input.inline_message_id,
                     &text,
+                    &url,
                     Some(TextFormat::Html),
                 )
                 .await;
@@ -826,6 +845,7 @@ where
                     interactor.messenger.as_ref(),
                     input.inline_message_id,
                     &text,
+                    &url,
                     Some(TextFormat::Html),
                 )
                 .await;
@@ -841,6 +861,7 @@ where
                     interactor.messenger.as_ref(),
                     input.inline_message_id,
                     &html_quote("Photo URL is missing in downloader response"),
+                    &url,
                     Some(TextFormat::Html),
                 )
                 .await;
@@ -867,6 +888,7 @@ where
                         interactor.messenger.as_ref(),
                         input.inline_message_id,
                         &progress::upload_error(err.as_ref(), input.chat_cfg.locale().as_str()),
+                        &url,
                         Some(TextFormat::Html),
                     )
                     .await;
@@ -895,6 +917,7 @@ where
                     interactor.messenger.as_ref(),
                     input.inline_message_id,
                     &text,
+                    &url,
                     Some(TextFormat::Html),
                 )
                 .await;
@@ -924,6 +947,7 @@ where
                 interactor.messenger.as_ref(),
                 input.inline_message_id,
                 t!("download.no_media_found", locale = locale.as_str()).as_ref(),
+                &url,
                 None,
             )
             .await;
@@ -940,6 +964,7 @@ where
                 interactor.messenger.as_ref(),
                 input.inline_message_id,
                 &text,
+                &url,
                 Some(TextFormat::Html),
             )
             .await;
@@ -950,7 +975,7 @@ where
     Ok(false)
 }
 
-fn resolve_url(url: Option<&Url>, result_id: &str) -> Url {
+pub(crate) fn resolve_url(url: Option<&Url>, result_id: &str) -> Url {
     if let Some(url) = url {
         return url.clone();
     }

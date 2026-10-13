@@ -65,8 +65,11 @@ struct State {
     post_metadata_active: AtomicBool,
     edits: Mutex<Vec<String>>,
     media_edits: Mutex<Vec<String>>,
+    progress_edits: Mutex<Vec<String>>,
     optional_edit_started: Notify,
+    progress_edit_recorded: Notify,
     block_optional_edits: bool,
+    meta_waits_for_progress_edit: bool,
     reject_upload: bool,
     reject_media_edit: bool,
 }
@@ -132,6 +135,9 @@ impl Downloader for FakeNode {
                     1 => {
                         if state.block_optional_edits {
                             state.optional_edit_started.notified().await;
+                        }
+                        if state.meta_waits_for_progress_edit {
+                            state.progress_edit_recorded.notified().await;
                         }
                         Payload::Meta(DownloadMeta {
                             ext: "mp4".into(),
@@ -246,7 +252,11 @@ impl MessengerPort for RecordingMessenger {
         if request.text.contains("Sending") {
             self.0.event("sending");
         }
-        if !request.is_progress {
+        assert!(request.disable_link_preview);
+        if request.is_progress {
+            self.0.progress_edits.lock().unwrap().push(request.text.to_owned());
+            self.0.progress_edit_recorded.notify_one();
+        } else {
             self.0.edits.lock().unwrap().push(request.text.to_owned());
         }
         Ok(())
@@ -342,6 +352,8 @@ struct Fixture {
     formatter: Arc<ErrorFormatter>,
     tx: Arc<Box<dyn TxManager>>,
     cleaner: Arc<UrlCleaner>,
+    url: Url,
+    base_text: Option<&'static str>,
     server: JoinHandle<()>,
 }
 
@@ -382,6 +394,8 @@ impl Fixture {
             state,
             cleaner: Arc::new(UrlCleaner::from_embedded_rules(&cfg.tracking_params).unwrap()),
             cfg: Arc::new(cfg),
+            url: Url::parse("https://example.test/playlist").unwrap(),
+            base_text: None,
             formatter: Arc::new(ErrorFormatter::new("test")),
             // Metadata is prefetched; cache writes may fail without affecting delivery.
             tx: Arc::new(Box::new(SeaOrmTxManager::new(
@@ -402,7 +416,6 @@ impl Fixture {
         progress: Option<(i64, &str)>,
     ) -> Option<SentMessage> {
         self.state.post_metadata_active.store(false, Relaxed);
-        let url = Url::parse("https://example.test/playlist").unwrap();
         let params = Params::default();
         let chat = ChatConfig::new(1, false, "en".into());
         let current = watch::channel(None).0;
@@ -428,11 +441,11 @@ impl Fixture {
                     message_id: 1,
                     chat_id: 1,
                     params: &params,
-                    url: &url,
+                    url: &self.url,
                     chat_cfg: &chat,
                     link_is_visible: false,
                     prefetched: Some(prefetched),
-                    base_text: progress.map(|(_, text)| text),
+                    base_text: progress.map(|(_, text)| text).or(self.base_text),
                     progress_message_id: progress.map(|(message_id, _)| message_id),
                 })
                 .await
@@ -459,7 +472,7 @@ impl Fixture {
                     message_id: 1,
                     chat_id: 1,
                     params: &params,
-                    url: &url,
+                    url: &self.url,
                     chat_cfg: &chat,
                     link_is_visible: false,
                     prefetched: Some(prefetched),
@@ -486,7 +499,7 @@ impl Fixture {
                 message_id: 1,
                 chat_id: 1,
                 params: &params,
-                url: &url,
+                url: &self.url,
                 chat_cfg: &chat,
                 link_is_visible: false,
                 prefetched: Some(prefetched),
@@ -498,12 +511,11 @@ impl Fixture {
 
     async fn inline(&self, audio: bool) -> bool {
         self.state.post_metadata_active.store(false, Relaxed);
-        let url = Url::parse("https://example.test/playlist").unwrap();
         let params = Params::default();
         let chat = ChatConfig::new(1, false, "en".into());
         let input = chosen_inline::DownloadInput {
             params: &params,
-            url: Some(&url),
+            url: Some(&self.url),
             chat_cfg: &chat,
             link_is_visible: false,
             inline_message_id: "synthetic-inline",
@@ -551,12 +563,11 @@ impl Fixture {
 
     async fn quiet(&self, audio: bool) -> Option<SentMessage> {
         self.state.post_metadata_active.store(false, Relaxed);
-        let url = Url::parse("https://example.test/playlist").unwrap();
         let language = Language::default();
         let ctx = FulfillCtx {
             chat_id: 1,
             message_id: 1,
-            url: &url,
+            url: &self.url,
             link_is_visible: false,
             sections: None,
             audio_language: &language,
@@ -604,7 +615,7 @@ fn playlist(count: i16) -> GetMediaByURLKind {
                     Media {
                         id: index.to_string(),
                         display_id: None,
-                        webpage_url: Url::parse(&format!("https://example.test/{index}")).unwrap(),
+                        webpage_url: Url::parse(&format!("https://example.test/watch?v={index}&list=synthetic")).unwrap(),
                         direct_url: Some(Url::parse(&format!("https://example.test/{index}.jpg")).unwrap()),
                         title: None,
                         language: None,
@@ -790,6 +801,84 @@ async fn fatal_download_error_is_rendered_once_and_not_deleted() {
 }
 
 #[tokio::test]
+async fn download_error_names_the_failed_playlist_item() {
+    for audio in [false, true] {
+        let mut fixture = Fixture::new(State {
+            replies: Mutex::new(VecDeque::from([Some(Status::internal("Synthetic transport failure"))])),
+            ..Default::default()
+        })
+        .await;
+        fixture.url = Url::parse("https://example.test/playlist?list=synthetic&index=0").unwrap();
+        let outcome = ExecutionOutcome::default();
+        tokio::time::timeout(Duration::from_secs(10), outcome.scope(fixture.command(audio, 2)))
+            .await
+            .unwrap();
+
+        let edits = fixture.state.edits.lock().unwrap();
+        let error_message = edits.last().unwrap();
+        assert!(error_message.contains("1. https://example.test/watch?v=0&amp;list=synthetic ("));
+        assert!(!error_message.contains("v=1"));
+        assert!(error_message.ends_with("\n\nhttps://example.test/playlist?list=synthetic&amp;index=0"));
+    }
+}
+
+#[tokio::test]
+async fn playlist_progress_names_the_current_item() {
+    for audio in [false, true] {
+        let fixture = Fixture::new(State {
+            meta_waits_for_progress_edit: true,
+            ..Default::default()
+        })
+        .await;
+        tokio::time::timeout(Duration::from_secs(10), fixture.command(audio, 2))
+            .await
+            .unwrap();
+
+        let progress_edits = fixture.state.progress_edits.lock().unwrap();
+        assert_eq!(progress_edits.len(), 2);
+        assert!(progress_edits[0].contains("Downloading playlist... 1/2\nhttps://example.test/watch?v=0&list=synthetic\n"));
+        assert!(progress_edits[1].contains("Downloading playlist... 2/2\nhttps://example.test/watch?v=1&list=synthetic\n"));
+    }
+}
+
+#[tokio::test]
+async fn download_error_keeps_the_single_link_of_a_base_text() {
+    let mut fixture = Fixture::new(State {
+        replies: Mutex::new(VecDeque::from([Some(Status::internal("Synthetic transport failure"))])),
+        ..Default::default()
+    })
+    .await;
+    fixture.base_text = Some("Synthetic song\n<a href=\"https://example.test/playlist\">Link</a>");
+    let outcome = ExecutionOutcome::default();
+    tokio::time::timeout(Duration::from_secs(10), outcome.scope(fixture.command(true, 2)))
+        .await
+        .unwrap();
+
+    let edits = fixture.state.edits.lock().unwrap();
+    let error_message = edits.last().unwrap();
+    assert!(error_message.starts_with("Synthetic song"));
+    assert_eq!(error_message.matches("https://example.test/playlist").count(), 1);
+}
+
+#[tokio::test]
+async fn inline_download_error_names_the_link() {
+    for audio in [false, true] {
+        let fixture = Fixture::new(State {
+            replies: Mutex::new(VecDeque::from([Some(Status::internal("Synthetic transport failure"))])),
+            ..Default::default()
+        })
+        .await;
+        let outcome = ExecutionOutcome::default();
+        tokio::time::timeout(Duration::from_secs(10), outcome.scope(fixture.inline(audio)))
+            .await
+            .unwrap();
+
+        let edits = fixture.state.edits.lock().unwrap();
+        assert!(edits.last().unwrap().ends_with("\n\nhttps://example.test/playlist"));
+    }
+}
+
+#[tokio::test]
 async fn inline_ready_upload_cancels_blocked_optional_edit_before_final_result() {
     for audio in [false, true] {
         let fixture = Fixture::new(State {
@@ -866,6 +955,25 @@ async fn rejected_upload_is_not_retried_and_tells_user_to_resend() {
             assert!(final_error.contains("retry after 2"));
             assert!(final_error.contains("resend the link manually"));
         }
+    }
+}
+
+#[tokio::test]
+async fn every_rejected_playlist_upload_is_named() {
+    for audio in [false, true] {
+        let fixture = Fixture::new(State {
+            reject_upload: true,
+            ..Default::default()
+        })
+        .await;
+        tokio::time::timeout(Duration::from_secs(10), fixture.command(audio, 2))
+            .await
+            .unwrap();
+
+        let edits = fixture.state.edits.lock().unwrap();
+        let error_message = edits.last().unwrap();
+        assert!(error_message.contains("1. https://example.test/watch?v=0&amp;list=synthetic ("));
+        assert!(error_message.contains("2. https://example.test/watch?v=1&amp;list=synthetic ("));
     }
 }
 
@@ -1182,6 +1290,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
         assert!(command_error.starts_with("post text 1 reply=Some(9): Failed to send message\n"));
         assert!(command_error
             .contains("<blockquote expandable>Messenger error: Synthetic &lt;delivery&gt; failure &amp; text token=...</blockquote>"));
+        assert!(command_error.ends_with("</blockquote>\n\nhttps://example.test/playlist"));
 
         job.target = JobTarget::Inline {
             inline_message_id: "synthetic-inline".into(),
@@ -1199,6 +1308,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
         let inline_error = fixture.state.events.lock().unwrap().last().unwrap().clone();
         assert!(inline_error.starts_with("post edit inline:synthetic-inline caption=false: Failed to send message\n"));
         assert!(inline_error.contains("<blockquote expandable>Messenger error: Synthetic &lt;edit&gt; failure &amp; text</blockquote>"));
+        assert!(inline_error.ends_with("</blockquote>\n\nhttps://example.test/playlist"));
 
         job.target = JobTarget::Command { chat_id: 1, message_id: 9 };
         job.quiet = true;

@@ -25,7 +25,7 @@ use crate::{
     handlers_utils::progress,
     interactors::{audio, auto, chosen_inline, photo, post, video, Interactor as _},
     services::{
-        messenger::telegram::TelegramMessenger,
+        messenger::{telegram::TelegramMessenger, MessengerError},
         node_router::NodeRouter,
         queue::{QueuedJob, RedisJobQueue},
     },
@@ -165,22 +165,8 @@ async fn process(container: Container, queue: &RedisJobQueue, consumer: &str, qu
         warn!("Job lost queue liveness; stopping execution");
         let notification = tokio::time::timeout(Duration::from_secs(30), async {
             let messenger = container.get::<TelegramMessenger>().await.unwrap();
-            let text = t!("download.execution_unknown", locale = queued.job.chat_cfg.locale().as_str());
-            match &queued.job.target {
-                JobTarget::Command { chat_id, message_id } => {
-                    let current = *message.borrow();
-                    if let Some((chat_id, message_id)) = current {
-                        progress::is_error_in_progress(messenger.as_ref(), chat_id, message_id, &text, None).await
-                    } else {
-                        progress::new(messenger.as_ref(), &text, *chat_id, Some(*message_id), None)
-                            .await
-                            .map(|_| ())
-                    }
-                }
-                JobTarget::Inline { inline_message_id, .. } => {
-                    progress::is_error_in_chosen_inline(messenger.as_ref(), inline_message_id, &text, None).await
-                }
-            }
+            let current = *message.borrow();
+            notify_lost_liveness(messenger.as_ref(), &queued.job, current).await
         })
         .await;
         match notification {
@@ -189,6 +175,39 @@ async fn process(container: Container, queue: &RedisJobQueue, consumer: &str, qu
             Err(err) => error!(%err, "Send queue liveness error timed out"),
         }
         finish(queue, consumer, &queued, Ok(Ok(())), &outcome).await;
+    }
+}
+
+async fn notify_lost_liveness(
+    messenger: &TelegramMessenger,
+    job: &DownloadJob,
+    current_message: Option<(i64, i64)>,
+) -> Result<(), MessengerError> {
+    let text = t!("download.execution_unknown", locale = job.chat_cfg.locale().as_str());
+    match &job.target {
+        JobTarget::Command { chat_id, message_id } => {
+            let url = job.url.as_ref();
+            if let Some((chat_id, message_id)) = current_message {
+                return progress::is_error_in_progress(messenger, chat_id, message_id, &text, url, None).await;
+            }
+
+            progress::new(
+                messenger,
+                &progress::with_optional_link(&text, url, None),
+                *chat_id,
+                Some(*message_id),
+                None,
+            )
+            .await
+            .map(|_| ())
+        }
+        JobTarget::Inline {
+            inline_message_id,
+            result_id,
+        } => {
+            let url = chosen_inline::resolve_url(job.url.as_ref(), result_id);
+            progress::is_error_in_chosen_inline(messenger, inline_message_id, &text, &url, None).await
+        }
     }
 }
 
