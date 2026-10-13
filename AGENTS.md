@@ -128,7 +128,7 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - selects nodes through `NodeRouter`
 - downloads media streams from downloader nodes and forwards media plus thumbnail streams to Telegram
 - refreshes node status every 5 seconds and node cookie capabilities every `[download].capabilities_refresh_interval` seconds (0 disables)
-- recognizes songs for `/shazam` by downloading the Telegram file and calling the node `SongRecognizer`, then enqueues the found track as an audio download
+- recognizes songs for `/shazam` by downloading the Telegram file and calling the node `SongRecognizer`, then enqueues the found track as an audio download; in private chats a voice, audio, video or video note without a command runs the same flow
 - serves `en`, `ru`, and `uk` locales; `/lang` switches a chat's locale
 - in private chats `/start`, `/help`, `/stats`, and `/lang` without an argument open an inline-button menu (main, settings, language, help pages, stats, excluded domains) that edits one message per button press; a bare link still downloads, except while the add-domain prompt waits for a typed domain. Groups keep the plain commands, and group `/start` prints all help pages
 
