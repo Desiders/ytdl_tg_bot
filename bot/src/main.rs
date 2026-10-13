@@ -23,7 +23,10 @@ use telers::{
         telegram::{APIServer, BareFilesPathWrapper},
         Reqwest,
     },
-    enums::{ChatType::Private, MessageType::Text},
+    enums::{
+        ChatType::Private,
+        MessageType::{Audio, Text, Video, VideoNote, Voice},
+    },
     event::{simple::Handler as SimpleHandler, telegram::Handler},
     filters::{CallbackData, ChatType, Command, Filter as _, MessageType, State},
     fsm::MemoryStorage,
@@ -232,6 +235,12 @@ async fn main() {
                         .filter(State::one(MenuState::DomainInput))
                         // Download commands are handled by `download_router`, tried after this one.
                         .filter(is_command.invert()),
+                )
+                .register(
+                    Handler::new(shazam::<Messenger>)
+                        .filter(ChatType::one(Private))
+                        .filter(MessageType::many([Voice, Audio, Video, VideoNote]))
+                        .filter(is_via_bot.invert()),
                 )
         })
         .on_callback_query(|observer| {
