@@ -20,13 +20,24 @@ Example: `cookies/youtube.com/main.txt` with content:
 Rules:
 
 - `<domain>` is the host without `www.`; the node matches it against the URL host exactly.
-- `<cookie-id>` is any file name ending in `.txt`. Names may repeat across domains.
+- `<cookie-id>.txt` is a non-hidden file name. Names may repeat across domains.
 - `__` is reserved for Secret key encoding and must not appear in the domain or file name.
 - Nested directories below `<domain>` are not supported.
 - `*.txt` files here are gitignored.
 - Each node receives at most one cookie per domain, so several files for one domain spread across several nodes.
 
-Sync to the cluster:
+## Docker Compose
+
+Compose mounts this directory into the cookie-assignment controller. Add or remove files
+using the layout above; the controller reconciles them on its next sync cycle, configured
+by `[sync].interval` in `configs/cookie_assignment.toml`. No Secret sync or image rebuild is
+needed. With one downloader, only one cookie per domain is assigned.
+
+See [Local Development](../README.md#local-development) to start the stack.
+
+## Kubernetes
+
+Run from the repository root to sync files to the cluster:
 
 ```bash
 just k8s-sync-cookie-assignment-cookies "${NAMESPACE}"

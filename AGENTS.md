@@ -27,9 +27,20 @@ This file describes the current architecture and the rules future changes should
   - `configs/downloader.example.toml` -> `configs/downloader.toml`
 - config path env vars: `CONFIG_PATH` (bot), `DOWNLOADER_CONFIG_PATH`, `COOKIE_ASSIGNMENT_CONFIG_PATH`
 - `DOWNLOADER_SERVICE_DNS` (`host:port`) is required by the bot and the cookie-assignment controller; the charts set it to `downloader.<namespace>.svc.cluster.local:50051`
-- Dockerfiles live in `deployment/` (`Dockerfile.<component>` for release, `Dockerfile.<component>.dev` for dev images built by `scripts/build-*-dev-image.sh`)
+- Dockerfiles live in `deployment/` (`Dockerfile.<component>` for release, `Dockerfile.<component>.dev` for the local Compose stack)
 - bot locales live in `bot/locales/{en,ru,uk}.toml`; every new text key must be added to all three
 - `justfile` is the entry point for lint, fmt, images, Helm, and Kubernetes helpers
+
+## Docker Compose Development
+
+- `docker-compose.yaml` runs the bot with one downloader, cookie assignment, PostgreSQL, Valkey, the local Telegram Bot API with an nginx file server, yt-toolkit, and the PO-token provider.
+- Compose uses the existing `deployment/Dockerfile.*.dev` files with `Cargo.lock` and `k8s-dev`. Build each package in its own Cargo invocation to keep database TLS features out of downloader/cookie-assignment binaries.
+- Applications directly mount the existing TOMLs from `configs/`. PostgreSQL, Valkey, and migrations use matching development credentials in the compose file. The controller directly mounts the existing `cookies/<domain>/<cookie-id>.txt` inventory.
+- `.env.example` contains local Telegram Bot API container credentials and optional PostgreSQL/Valkey host ports. Only the databases publish ports, bound to `127.0.0.1`; internal service ports are fixed. The bot token and application settings stay in TOML. Real `.env`, local TOMLs, cookies, and certificates are ignored.
+- `just docker-compose-up` prepares persistent development mTLS certificates in the existing `tls/` directory with the `docker-compose-tls` recipe, then starts Compose in the foreground with all service logs; Ctrl+C stops the stack. Applications mount only their own identity and the CA certificate; the CA key is not mounted.
+- Preserve DNS discovery and mTLS: the node service name and certificate SAN are both `downloader`.
+- Only PostgreSQL and Valkey have Compose healthchecks. Migrations wait for PostgreSQL's TCP listener; the bot waits for successful migrations and Valkey readiness. Other dependencies use startup ordering. RustFS and cluster backup/operator infrastructure are not needed locally.
+- See [Local Development](README.md#local-development) for startup instructions.
 
 ## Kubernetes Deployment & Infrastructure
 
@@ -364,7 +375,7 @@ The bot no longer owns cookie distribution.
 - Cookie files are mounted only into the cookie-assignment deployment.
 - Source cookie layout in the repo is `cookies/<domain>/<cookie-id>.txt`; `*.txt` is gitignored.
 - `scripts/sync-cookies-secret.sh` (via `just k8s-sync-cookie-assignment-cookies`) flattens entry names to `<domain>__<cookie-id>.txt`; `__` is reserved and nested directories are rejected.
-- The cookie-assignment runtime reads flattened `*.txt` files from `/app/cookies` and decodes them back into domain plus file name.
+- The cookie-assignment runtime reads `/app/cookies`, accepting the repository's domain directories and flattened Kubernetes Secret entries.
 - `cookie_id` is tracked as `<domain>/<cookie-id>.txt` so file names may repeat across domains without colliding.
 - Cookie assignments are in-memory only inside the cookie-assignment controller.
 - At most one cookie per domain is assigned to a node; free cookies go to the eligible worker with the fewest cookies, then fewest domains, then lowest address.
