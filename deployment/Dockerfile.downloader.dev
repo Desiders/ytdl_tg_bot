@@ -31,42 +31,43 @@ RUN pip install --no-cache-dir -U pip \
 RUN pip uninstall -y spotapi tls-client \
  && pip install --no-cache-dir "spotapi @ https://github.com/Desiders/SpotAPI/archive/b299d1d1f13e06273b686fa579edc2968ebdc7fd.tar.gz"
 
-FROM rust:1.91-bookworm AS build
+FROM rust:1.94-bookworm AS build
 RUN apt update && apt install -y --no-install-recommends \
         protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/app
 
+COPY Cargo.toml Cargo.lock ./
+COPY bot/Cargo.toml bot/Cargo.toml
+COPY cookie_assignment/Cargo.toml cookie_assignment/Cargo.toml
 COPY downloader/Cargo.toml downloader/Cargo.toml
+COPY downloader_client/Cargo.toml downloader_client/Cargo.toml
+COPY migration/Cargo.toml migration/Cargo.toml
 COPY proto/Cargo.toml proto/Cargo.toml
 
-RUN mkdir -p downloader/src && echo "fn main(){}" > downloader/src/main.rs
-RUN mkdir -p proto/src && echo "" > proto/src/lib.rs
+RUN mkdir -p bot/src cookie_assignment/src downloader/src downloader_client/src migration/src proto/src \
+    && echo "fn main(){}" > bot/src/main.rs \
+    && echo "fn main(){}" > cookie_assignment/src/main.rs \
+    && echo "fn main(){}" > downloader/src/main.rs \
+    && echo "fn main(){}" > migration/src/main.rs \
+    && echo "" > downloader_client/src/lib.rs \
+    && echo "" > migration/src/lib.rs \
+    && echo "" > proto/src/lib.rs
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    cargo fetch --manifest-path downloader/Cargo.toml
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    cargo fetch --manifest-path proto/Cargo.toml
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    cargo fetch --locked
 
 COPY proto proto
-RUN touch proto/src/lib.rs
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/src/app/target \
-    cargo build --profile k8s-dev --manifest-path proto/Cargo.toml --target-dir /usr/src/app/target
-
 COPY downloader downloader
-RUN touch downloader/src/main.rs
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/src/app/target \
-    cargo build --profile k8s-dev --manifest-path downloader/Cargo.toml --target-dir /usr/src/app/target
 
-RUN --mount=type=cache,target=/usr/src/app/target \
-    mkdir -p /usr/src/app/bin \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,target=/usr/src/app/target,sharing=locked \
+    touch proto/src/lib.rs proto/build.rs proto/proto/downloader.proto downloader/src/main.rs \
+    && cargo build --locked --profile k8s-dev -p downloader \
+    && mkdir -p /usr/src/app/bin \
     && cp /usr/src/app/target/k8s-dev/downloader /usr/src/app/bin/downloader
 
 FROM base AS final

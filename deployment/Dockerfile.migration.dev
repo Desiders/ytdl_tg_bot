@@ -8,25 +8,35 @@ FROM rust:1.94-bookworm AS build
 
 WORKDIR /usr/src/app
 
+COPY Cargo.toml Cargo.lock ./
+COPY bot/Cargo.toml bot/Cargo.toml
+COPY cookie_assignment/Cargo.toml cookie_assignment/Cargo.toml
+COPY downloader/Cargo.toml downloader/Cargo.toml
+COPY downloader_client/Cargo.toml downloader_client/Cargo.toml
 COPY migration/Cargo.toml migration/Cargo.toml
+COPY proto/Cargo.toml proto/Cargo.toml
 
-RUN mkdir -p migration/src && echo "fn main(){}" > migration/src/main.rs
-RUN touch migration/src/lib.rs
+RUN mkdir -p bot/src cookie_assignment/src downloader/src downloader_client/src migration/src proto/src \
+    && echo "fn main(){}" > bot/src/main.rs \
+    && echo "fn main(){}" > cookie_assignment/src/main.rs \
+    && echo "fn main(){}" > downloader/src/main.rs \
+    && echo "fn main(){}" > migration/src/main.rs \
+    && echo "" > downloader_client/src/lib.rs \
+    && echo "" > migration/src/lib.rs \
+    && echo "" > proto/src/lib.rs
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    cargo fetch --manifest-path migration/Cargo.toml
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    cargo fetch --locked
 
-COPY migration/src migration/src
-RUN touch migration/src/main.rs && touch migration/src/lib.rs
+COPY migration migration
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/src/app/target \
-    cargo build --profile k8s-dev --manifest-path migration/Cargo.toml --target-dir /usr/src/app/target
-
-RUN --mount=type=cache,target=/usr/src/app/target \
-    mkdir -p /usr/src/app/bin \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,target=/usr/src/app/target,sharing=locked \
+    touch migration/src/main.rs migration/src/lib.rs \
+    && cargo build --locked --profile k8s-dev -p migration \
+    && mkdir -p /usr/src/app/bin \
     && cp /usr/src/app/target/k8s-dev/migration /usr/src/app/bin/migration
 
 FROM base AS final
