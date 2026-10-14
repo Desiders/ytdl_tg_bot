@@ -3,7 +3,7 @@
 <h1><code>ytdl_tg_bot</code></h1>
 
 <h3>
-A telegram bot for downloading audio and video
+A Telegram bot for downloading media and post text
 </h3>
 
 </div>
@@ -27,13 +27,14 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 - Audio download
 - Photo download
 - Playlist download
+- Post text and quote/reply context — added after automatic media delivery, with text-only posts supported where the source provides metadata
 - Inline mode (auto / video / audio)
 - Song recognition (`/shazam`) — identify a track from an audio, voice, video or video note, then download it
 - Cookie-free Instagram / Facebook downloads (via [`snapsave-parser`](https://github.com/Desiders/snapsave-parser))
 - Spotify tracks, albums and playlists — resolved to DRM-free sources via [`spotdl`](https://github.com/spotDL/spotify-downloader)
 - Broad platform support — YouTube, TikTok, Instagram, Facebook, Twitter/X, Spotify, VK, Bluesky, Coub and more
-- Durable download queue — jobs survive bot restarts (Valkey streams)
-- Cached re-sends — already downloaded media is sent by Telegram `file_id` without touching a downloader node
+- Persistent download queue — waiting jobs survive bot restarts; interrupted jobs are discarded without replay
+- Cached re-sends — already downloaded media is reused by Telegram `file_id` without downloading it again
 - Language selection (English, Russian, Ukrainian)
 - Media crop
 - Skip download param
@@ -50,14 +51,20 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 | `/ad`, `/audio` | Download audio |
 | `/pd`, `/photo` | Download photo |
 | `/rv`, `/ra` | Random video or audio from the configured domains |
-| `/shazam`, `/sh` | Recognize a song from a replied voice, audio, video or video note, then download it |
+| `/shazam`, `/sh` | Recognize a song from a voice, audio, video or video note, using a reply or media caption, then download it |
 | `/add_ed`, `/rm_ed` | Exclude or re-include a domain for the current chat |
 | `/change_link_visibility` | Show or hide the source link in captions (private chats) |
 | `/stats` | Cache, node, queue and chat statistics |
 | `/lang` | Switch interface language |
 | `/start`, `/help` | In a private chat, a button menu for settings, language, excluded domains, help and stats; in groups, help text with all arguments |
 
-A bare link in a private chat is downloaded automatically with media-type detection; in groups the same happens silently. Append `yv2t_bot=false` to a link to make the bot ignore it.
+A bare link in a private chat is downloaded automatically with media-type detection; in groups the same happens silently. In groups, add `yv2t_bot=false` to the URL query to skip automatic downloading.
+
+Automatic downloads add available post text and context after sending media; explicit media
+commands skip this step. Long text is truncated to Telegram limits and uses expandable quotes.
+Photo requests select up to ten images by default; video and audio requests select one unless
+an `items` range is specified. Inline mode sends one media item. Mixed photo/video albums are
+currently unsupported.
 
 Arguments go in square brackets after the command, for example `/vd [lang=ru,items=1:3:1,crop=00:01:30-,overwrite=true]`. Inline mode (`@bot <url>` or `@bot <title>`) supports `lang` and `overwrite`.
 

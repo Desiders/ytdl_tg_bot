@@ -129,7 +129,7 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 
 - accepts Telegram updates through long polling
 - cleans incoming URLs with `clear-urls` embedded rules plus `[tracking_params]` (`CleanUrlMiddleware`)
-- filters links: `[blacklisted].domains`, per-chat excluded domains, `yv2t_bot=false`-style skip params, and messages sent via the bot itself
+- filters links by `[blacklisted].domains`, per-chat excluded domains, and messages sent via the bot itself; `yv2t_bot=false`-style skip params apply only to quiet group auto-downloads
 - sets an acknowledgment reaction for `[domains_with_reactions]` on receipt; the worker clears it when the job finishes
 - enqueues every download (command, bare link, chosen inline result) as a `DownloadJob` into the Valkey stream
 - runs one Redis dispatcher that starts concurrent download tasks using fresh downloader capacity/load samples
@@ -164,6 +164,7 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - `TelegramMessenger` (`bot/src/services/messenger/telegram.rs`) is the adapter that owns Telegram API calls, retries, parse modes, inline answer wiring, and Telegram media send/edit method construction.
 - Transient progress edits use atomic Redis `SET NX PX` throttle keys: one update per chat every 5 seconds, or per inline message every 15 seconds. Intermediate updates are skipped; final/error edits are not throttled this way. Redis failures skip optional progress updates. Downloader liveness is independent of Telegram presentation.
 - Adapter requests share an in-process Telegram retry-after cooldown, including media sends and cleanup. Both structured retry-after responses and explicit text-form flood waits returned as Bad Request establish this cooldown. Requests are spaced after cooldown expiry; existing in-flight requests cannot be recalled. Consumed upload streams are never automatically replayed or saved for retry; an upload failure asks the user to resend manually after any indicated cooldown. Replayable text/file-ID requests still honor retry-after. Other bot processes and the direct-Bot exceptions below do not share this cooldown.
+- Telegram sends can have ambiguous outcomes: a timeout or transport error can leave an accepted send unconfirmed. Abandoned queue deliveries are discarded rather than replayed.
 - Optional download progress edits are scoped to preparation and cancelled when the media becomes ready. In video/audio flows, "Sending" runs alongside the upload and is cancelled when that upload ends, so it cannot block the media or leave a detached edit task behind final result rendering. Already-dispatched Telegram requests cannot be recalled. Fatal download errors join the final error aggregation rather than being shown only transiently.
 - Single video, audio, and photo deliveries replace their chat progress message with media by `file_id` and return that retained message ID for later post-caption edits. Multi-item deliveries send an album and keep the existing progress cleanup/error behavior. Quiet deliveries without a progress message still send new messages.
 - Bot handlers, top-level bot interactors, and `send_media` interactors should depend on the messenger port layer, not construct Telegram methods directly.
@@ -200,7 +201,7 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
   - `yt_toolkit`
 - Top-level interactors may call these services.
 - Services must not call top-level interactors.
-- `auto` classifies a bare link video -> audio -> photo and reuses the type-specific interactors through `prefetched` metadata; `AutoQuiet` is the group-chat variant with no progress messages.
+- `auto` classifies a bare link video -> audio -> photo, or audio -> video -> photo for `[audio_first].domains`, and reuses the type-specific interactors through `prefetched` metadata; `AutoQuiet` is the group-chat variant with no progress messages.
 
 ### Bot DI Style
 
@@ -433,7 +434,7 @@ These are accepted for now. Do not "fix" them in passing without discussing the 
 - Downloader cookie storage is one file per domain in `/tmp/cookies/<domain>.txt`, which is what enforces "at most one cookie per domain per node".
 - Interactor input DTOs and `DownloadJob` carry Telegram-shaped identifiers (`chat_id`, `message_id`, `inline_message_id`).
 - Inbound transport extraction is handler-side; there is no separate inbound adapter layer.
-- Telegram delivery is at-least-once, not exactly-once. The configured-TTL done marker suppresses queue replay only after it is written; a crash or ambiguous Telegram-send response before that point can duplicate delivery, and replay after the marker expires can also duplicate it.
+- Telegram delivery is best-effort. Waiting jobs survive bot restarts while Redis data is retained, but interrupted pending jobs may be lost: stale cleanup discards them without re-execution. Telegram sends can have ambiguous outcomes. Configured-TTL done markers only suppress duplicate handling of the same job ID after they are written; they do not guarantee delivery or exactly-once sends.
 - UUID-based dispatcher consumer names can leave inactive Redis consumer records after process restarts. Monitor Valkey storage; consumer cleanup must not remove consumers that still own pending entries.
 - When snapsave is enabled but unreachable, Instagram/Facebook links without a cookie fail fast with `NOT_FOUND`; only a disabled snapsave falls back to the domain-replace rule.
 
