@@ -5,6 +5,8 @@ AGENTS.md
 
 .gitignore
 .gitattributes
+.git/
+docker-compose*.yaml
 
 justfile
 rustfmt.toml

@@ -3,12 +3,22 @@
 <h1><code>ytdl_tg_bot</code></h1>
 
 <h3>
-A telegram bot for downloading audio and video
+A Telegram bot for downloading media and post text
 </h3>
 
 </div>
 
 Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
+
+## Contents
+
+- [Features](#features)
+- [Commands](#commands)
+- [Local Development](#local-development)
+- [Checks](#checks)
+- [Kubernetes Deployment](#kubernetes-deployment)
+- [Operations](#operations)
+- [Backups and Recovery](#backups-and-recovery)
 
 ## Features
 
@@ -17,13 +27,14 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 - Audio download
 - Photo download
 - Playlist download
+- Post text and quote/reply context — added after automatic media delivery, with text-only posts supported where the source provides metadata
 - Inline mode (auto / video / audio)
 - Song recognition (`/shazam`) — identify a track from an audio, voice, video or video note, then download it
 - Cookie-free Instagram / Facebook downloads (via [`snapsave-parser`](https://github.com/Desiders/snapsave-parser))
 - Spotify tracks, albums and playlists — resolved to DRM-free sources via [`spotdl`](https://github.com/spotDL/spotify-downloader)
 - Broad platform support — YouTube, TikTok, Instagram, Facebook, Twitter/X, Spotify, VK, Bluesky, Coub and more
-- Durable download queue — jobs survive bot restarts (Valkey streams)
-- Cached re-sends — already downloaded media is sent by Telegram `file_id` without touching a downloader node
+- Persistent download queue — waiting jobs survive bot restarts; interrupted jobs are discarded without replay
+- Cached re-sends — already downloaded media is reused by Telegram `file_id` without downloading it again
 - Language selection (English, Russian, Ukrainian)
 - Media crop
 - Skip download param
@@ -40,20 +51,132 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 | `/ad`, `/audio` | Download audio |
 | `/pd`, `/photo` | Download photo |
 | `/rv`, `/ra` | Random video or audio from the configured domains |
-| `/shazam`, `/sh` | Recognize a song from a replied voice, audio, video or video note, then download it |
+| `/shazam`, `/sh` | Recognize a song from a voice, audio, video or video note, using a reply or media caption, then download it |
 | `/add_ed`, `/rm_ed` | Exclude or re-include a domain for the current chat |
 | `/change_link_visibility` | Show or hide the source link in captions (private chats) |
 | `/stats` | Cache, node, queue and chat statistics |
 | `/lang` | Switch interface language |
 | `/start`, `/help` | In a private chat, a button menu for settings, language, excluded domains, help and stats; in groups, help text with all arguments |
 
-A bare link in a private chat is downloaded automatically with media-type detection; in groups the same happens silently. Append `yv2t_bot=false` to a link to make the bot ignore it.
+A bare link in a private chat is downloaded automatically with media-type detection; in groups the same happens silently. In groups, add `yv2t_bot=false` to the URL query to skip automatic downloading.
+
+Automatic downloads add available post text and context after sending media; explicit media
+commands skip this step. Long text is truncated to Telegram limits and uses expandable quotes.
+Photo requests select up to ten images by default; video and audio requests select one unless
+an `items` range is specified. Inline mode sends one media item. Mixed photo/video albums are
+currently unsupported.
 
 Arguments go in square brackets after the command, for example `/vd [lang=ru,items=1:3:1,crop=00:01:30-,overwrite=true]`. Inline mode (`@bot <url>` or `@bot <title>`) supports `lang` and `overwrite`.
 
-## Self Install
+## Local Development
 
-This guide assumes Kubernetes, Helm, and a working image registry. If you are deploying from this repository instead of using already-published images, build and push dev images first.
+You need Docker with Compose v2, `just`, and OpenSSL 3. Run commands from the repository root.
+
+### Prepare
+
+Copy the examples; existing files are preserved:
+
+```bash
+cp -n .env.example .env
+cp -n configs/config.example.toml configs/config.toml
+cp -n configs/downloader.example.toml configs/downloader.toml
+cp -n configs/cookie_assignment.example.toml configs/cookie_assignment.toml
+```
+
+In `configs/config.toml`, set `[bot].token` from [BotFather](https://t.me/BotFather) and
+`[chat].receiver_chat_id` to a chat accessible to the bot. For a private receiver chat, send
+`/start` to the bot first. Update these existing sections:
+
+```toml
+[database]
+host = "postgres"
+user = "bot"
+password = "bot"
+database = "api"
+
+[redis]
+host = "valkey"
+user = "admin"
+password = "valkey"
+
+[telegram_bot_api]
+url = "http://telegram-bot-api:8081"
+file_server_url = "http://telegram-bot-api-files:8080"
+work_dir = "/var/lib/telegram-bot-api"
+```
+
+Keep the other template values. In `.env`, set `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` from
+[my.telegram.org](https://my.telegram.org).
+If the database ports are occupied, change `POSTGRES_PORT` or `VALKEY_PORT` in `.env`.
+
+In `configs/downloader.toml`, enable `[spotdl].enabled` for Spotify,
+`[snapsave].enabled` for cookie-free Instagram/Facebook, and `[songrec].enabled` for `/shazam`
+if you need these features. They are disabled in the template.
+
+Stop other instances using the same bot token. If this bot previously used the cloud API,
+call [`logOut`](https://core.telegram.org/bots/api#logout) before starting the local server.
+
+Optional cookies go in `cookies/<domain>/<cookie-id>.txt`.
+
+### Run
+
+```bash
+just docker-compose-up
+```
+
+The command builds and starts the stack and shows logs from every service. Migrations run
+automatically; the migration container exiting with status 0 is expected. Press Ctrl+C to stop
+all services and keep their data. Run the same command again after code or config changes.
+
+### Regenerate Database Models
+
+SeaORM generates models from the PostgreSQL schema. New migrations in `migration/src/`
+must be registered in `migration/src/lib.rs`; the
+[migration generator](migration/README.md#migrator-cli) does this automatically.
+Apply them before regenerating models.
+
+Install the CLI version used in `Cargo.lock` once (requires Rust on the host):
+
+```bash
+cargo install sea-orm-cli --version 2.0.4 --locked
+```
+
+With the Compose stack running, open another terminal in the repository root. Replace
+`<db-user>`, `<db-password>`, and `<db-name>` with `[database].user`, `[database].password`,
+and `[database].database` from `configs/config.toml`:
+
+```bash
+just docker-compose-migration up
+
+DATABASE_URL="postgres://<db-user>:<db-password>@$(docker compose port postgres 5432)/<db-name>" \
+    sea-orm-cli generate entity \
+        -o bot/src/database/models \
+        --date-time-crate time \
+        --with-prelude none \
+        --banner-version patch \
+        --entity-format dense && \
+    rm -f bot/src/database/models/mod.rs
+```
+
+The database address uses the published port from Compose, including any `POSTGRES_PORT`
+override. Modules are declared in `bot/src/database/models.rs`, so remove the generated
+`mod.rs` and add a `pub mod` declaration there for each new table.
+
+## Checks
+
+Run checks from the host:
+
+```bash
+cargo check -p bot            # or downloader, downloader_client, cookie_assignment
+just lint                     # clippy::pedantic across the workspace
+just fmt                      # nightly rustfmt
+cargo test -p downloader_client
+cargo test -p bot             # database tests start PostgreSQL via testcontainers and need Docker
+```
+
+## Kubernetes Deployment
+
+This guide assumes Kubernetes, Helm, and a working image registry. If you are deploying from this repository instead of using already-published images, build and push the images first.
 
 ### 1. Prerequisites
 
@@ -198,12 +321,15 @@ Edit these files before installing:
 Required config checks:
 
 - `configs/config.toml` has the real Telegram bot token.
+- `[chat].receiver_chat_id` is a chat accessible to the bot. For a private receiver chat, send `/start` to the bot first.
 - Database credentials in `configs/config.toml` match the `db` Secret.
+- `[database].host` is `postgres-rw`, and `[database].database` matches `postgres.database` in `charts/bot/values.yaml` (`api` by default).
 - Normal downloader token from `configs/config.toml` `[download].node_token` is listed in `configs/downloader.toml` `[auth].node_tokens`.
 - Cookie-manager token matches in `configs/downloader.toml` `[auth].cookie_manager_token` and `configs/cookie_assignment.toml` `[download].cookie_manager_token`.
 - `configs/config.toml` `[redis].host` matches the Valkey service name (`valkey` with the bundled operator; confirm with `kubectl get svc -n "${NAMESPACE}"` after the `ValkeyCluster` reconciles).
 - `configs/config.toml` `[redis].user` is `admin` and `[redis].password` matches the `valkey` Secret's `password`.
 - `configs/config.toml` `[telegram_bot_api]` keeps `file_server_url` and `work_dir` when using the bundled local Bot API server; remove both only when pointing `url` at `https://api.telegram.org`.
+- For the bundled server, `[telegram_bot_api].url` is `http://telegram-bot-api:8081` and `file_server_url` is `http://telegram-bot-api:8080`.
 - Default in-cluster service URLs are correct if all charts are installed into the same namespace.
 
 Optional downloader features are off by default in `configs/downloader.toml`; enable the ones you need:
@@ -234,7 +360,8 @@ just helm-install-infra "${NAMESPACE}"
 just k8s-update-bot-config "${NAMESPACE}"
 just helm-install-bot "${NAMESPACE}"
 
-just k8s-migration "${NAMESPACE}"
+kubectl wait -n "${NAMESPACE}" --for=condition=Ready --timeout=5m clusters.postgresql.cnpg.io/postgres
+just k8s-migration "${NAMESPACE}" up
 
 just k8s-update-downloader-config "${NAMESPACE}"
 just helm-install-downloader "${NAMESPACE}"
@@ -253,20 +380,7 @@ Notes:
 - `downloader` creates the headless downloader service and worker pods.
 - `cookie-assignment` distributes cookies to downloader nodes and is safe with an empty cookie inventory.
 
-### 7. Adding Another Bot
-
-Another bot can reuse the same downloader nodes without using the Telegram bot crate.
-
-- Create a new bot crate, for example `bot_discord`, and depend on `downloader_client` directly.
-- Create a separate chart for the new bot, usually by copying `charts/bot` only as a starting point and removing Telegram-specific resources.
-- Give the new bot its own config Secret and client TLS certificate.
-- Put the new bot's normal downloader token in its bot config, then add the same token to downloader config `[auth].node_tokens`.
-- Do not give the new bot `cookie_manager_token`; only `cookie_assignment` should have that token.
-- Keep cookie distribution in `cookie_assignment`; do not add cookie assignment logic to a bot.
-- PostgreSQL, RustFS, migrations, and upload cache are optional for another bot. A simple bot can use downloader nodes without any cache.
-- If another bot has a cache, design that cache for that messenger. Do not blindly reuse the Telegram `file_id` cache model.
-
-### 8. Verify
+### 7. Verify
 
 ```bash
 kubectl get pods -n "${NAMESPACE}"
@@ -292,7 +406,64 @@ just k8s-logs-yt-toolkit "${NAMESPACE}"
 just k8s-logs-pot-provider "${NAMESPACE}"
 ```
 
-Manual backup check:
+## Operations
+
+Upgrade charts:
+
+```bash
+just helm-upgrade-infra "${NAMESPACE}"
+just helm-upgrade-bot "${NAMESPACE}"
+just helm-upgrade-downloader "${NAMESPACE}"
+just helm-upgrade-cookie-assignment "${NAMESPACE}"
+```
+
+Refresh configs:
+
+```bash
+just k8s-update-bot-config "${NAMESPACE}"
+just k8s-update-downloader-config "${NAMESPACE}"
+just k8s-update-cookie-assignment-config "${NAMESPACE}"
+```
+
+Refresh cookies:
+
+```bash
+just k8s-sync-cookie-assignment-cookies "${NAMESPACE}"
+just k8s-rollout-cookie-assignment "${NAMESPACE}"
+```
+
+Scale downloader nodes:
+
+```bash
+just scale-downloader "${NAMESPACE}" 3
+```
+
+Run migrations:
+
+```bash
+just k8s-migration "${NAMESPACE}" up
+```
+
+Run a different migration command:
+
+```bash
+just k8s-migration "${NAMESPACE}" down
+```
+
+Reach the database from your machine:
+
+```bash
+just k8s-port-forward-db "${NAMESPACE}"
+```
+
+To regenerate models after applying migrations, use the SeaORM CLI command in
+[Regenerate Database Models](#regenerate-database-models). Replace its `DATABASE_URL`
+assignment with `postgres://<db-user>:<db-password>@127.0.0.1:5432/<db-name>`, using the
+credentials from the cluster's `db` Secret and `[database].database` from `configs/config.toml`.
+
+## Backups and Recovery
+
+### Manual Backup Check
 
 ```bash
 kubectl -n "${NAMESPACE}" delete backup postgres-manual-backup --ignore-not-found
@@ -355,7 +526,7 @@ If you change backup credentials or endpoint settings:
 just helm-upgrade-bot "${NAMESPACE}"
 ```
 
-Use shell exports only for manual S3 checks from your machine or a debug container, for example with `mc` or `aws` CLI:
+Use these shell exports for manual S3 checks with `mc` or `aws` CLI in a debug pod in the application's namespace:
 
 ```bash
 export AWS_ACCESS_KEY_ID='<value from s3 secret access-key-id>'
@@ -488,110 +659,3 @@ Notes:
 
 - plain `.sql` dumps are restored with `psql`
 - custom-format dumps are restored with `pg_restore`
-
-## Operations
-
-Upgrade charts:
-
-```bash
-just helm-upgrade-infra "${NAMESPACE}"
-just helm-upgrade-bot "${NAMESPACE}"
-just helm-upgrade-downloader "${NAMESPACE}"
-just helm-upgrade-cookie-assignment "${NAMESPACE}"
-```
-
-Refresh configs:
-
-```bash
-just k8s-update-bot-config "${NAMESPACE}"
-just k8s-update-downloader-config "${NAMESPACE}"
-just k8s-update-cookie-assignment-config "${NAMESPACE}"
-```
-
-Refresh cookies:
-
-```bash
-just k8s-sync-cookie-assignment-cookies "${NAMESPACE}"
-just k8s-rollout-cookie-assignment "${NAMESPACE}"
-```
-
-Scale downloader nodes:
-
-```bash
-just scale-downloader "${NAMESPACE}" 3
-```
-
-Run migrations:
-
-```bash
-just k8s-migration "${NAMESPACE}"
-```
-
-Run a different migration command:
-
-```bash
-just k8s-migration "${NAMESPACE}" down
-```
-
-Reach the database from your machine and regenerate SeaORM entities after a migration:
-
-```bash
-just k8s-port-forward-db "${NAMESPACE}"
-just generate-entities-from-db "${NAMESPACE}"
-```
-
-## Local Development
-
-```bash
-cargo check -p bot            # or downloader, downloader_client, cookie_assignment
-just lint                     # clippy::pedantic across the workspace
-just fmt                      # nightly rustfmt
-cargo test -p downloader_client
-cargo test -p bot             # database tests start PostgreSQL via testcontainers and need Docker
-```
-
-Each binary reads its config from a path env var, defaulting to the `configs/` files: `CONFIG_PATH` (bot), `DOWNLOADER_CONFIG_PATH`, and `COOKIE_ASSIGNMENT_CONFIG_PATH`. The bot and cookie assignment also require `DOWNLOADER_SERVICE_DNS=<host>:<port>`, whose host is used as the TLS server name.
-
-See [AGENTS.md](AGENTS.md) for architecture, invariants, and change rules.
-
-## Dev Images
-
-Use this when deploying images built from your local checkout.
-
-```bash
-just docker-push-dev-bot
-just docker-push-dev-downloader
-just docker-push-dev-cookie-assignment
-just docker-push-dev-migration
-```
-
-Each script builds with Docker `buildx`, pushes to the registry, uses remote cache, and defaults to `dev-<git-short-sha>`.
-
-- Bot, downloader, and cookie-assignment scripts print the next `helm upgrade` command after a successful push.
-- The migration script builds from `deployment/Dockerfile.migration.dev` and prints the next `just k8s-migration` command with `IMAGE_REPO`, `IMAGE_TAG`, and `PULL_POLICY=Always`.
-
-Useful overrides:
-
-- `NAMESPACE`
-- `IMAGE_REPO`
-- `IMAGE_TAG`
-- `MIGRATION_COMMAND`
-- `CACHE_REF`
-- `PLATFORM`
-- `DOCKERFILE`
-- `CONTEXT_DIR`
-- `BUILDER_NAME`
-
-Example:
-
-```bash
-export NAMESPACE=dev
-export IMAGE_TAG=dev-manual-1
-
-IMAGE_TAG="${IMAGE_TAG}" just docker-push-dev-bot
-IMAGE_TAG="${IMAGE_TAG}" just docker-push-dev-downloader
-IMAGE_TAG="${IMAGE_TAG}" just docker-push-dev-cookie-assignment
-IMAGE_TAG="${IMAGE_TAG}" just docker-push-dev-migration
-```
-
-If only one component changed, rebuild and upgrade only that component.

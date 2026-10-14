@@ -27,9 +27,20 @@ This file describes the current architecture and the rules future changes should
   - `configs/downloader.example.toml` -> `configs/downloader.toml`
 - config path env vars: `CONFIG_PATH` (bot), `DOWNLOADER_CONFIG_PATH`, `COOKIE_ASSIGNMENT_CONFIG_PATH`
 - `DOWNLOADER_SERVICE_DNS` (`host:port`) is required by the bot and the cookie-assignment controller; the charts set it to `downloader.<namespace>.svc.cluster.local:50051`
-- Dockerfiles live in `deployment/` (`Dockerfile.<component>` for release, `Dockerfile.<component>.dev` for dev images built by `scripts/build-*-dev-image.sh`)
+- Dockerfiles live in `deployment/` (`Dockerfile.<component>` for release, `Dockerfile.<component>.dev` for the local Compose stack)
 - bot locales live in `bot/locales/{en,ru,uk}.toml`; every new text key must be added to all three
 - `justfile` is the entry point for lint, fmt, images, Helm, and Kubernetes helpers
+
+## Docker Compose Development
+
+- `docker-compose.yaml` runs the bot with one downloader, cookie assignment, PostgreSQL, Valkey, the local Telegram Bot API with an nginx file server, yt-toolkit, and the PO-token provider.
+- Compose uses the existing `deployment/Dockerfile.*.dev` files with `Cargo.lock` and `k8s-dev`. Build each package in its own Cargo invocation to keep database TLS features out of downloader/cookie-assignment binaries.
+- Applications directly mount the existing TOMLs from `configs/`. PostgreSQL, Valkey, and migrations use matching development credentials in the compose file. The controller directly mounts the existing `cookies/<domain>/<cookie-id>.txt` inventory.
+- `.env.example` contains local Telegram Bot API container credentials and optional PostgreSQL/Valkey host ports. Only the databases publish ports, bound to `127.0.0.1`; internal service ports are fixed. The bot token and application settings stay in TOML. Real `.env`, local TOMLs, cookies, and certificates are ignored.
+- `just docker-compose-up` prepares persistent development mTLS certificates in the existing `tls/` directory with the `docker-compose-tls` recipe, then starts Compose in the foreground with all service logs; Ctrl+C stops the stack. Applications mount only their own identity and the CA certificate; the CA key is not mounted.
+- Preserve DNS discovery and mTLS: the node service name and certificate SAN are both `downloader`.
+- Only PostgreSQL and Valkey have Compose healthchecks. Migrations wait for PostgreSQL's TCP listener; the bot waits for successful migrations and Valkey readiness. Other dependencies use startup ordering. RustFS and cluster backup/operator infrastructure are not needed locally.
+- See [Local Development](README.md#local-development) for startup instructions.
 
 ## Kubernetes Deployment & Infrastructure
 
@@ -118,7 +129,7 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 
 - accepts Telegram updates through long polling
 - cleans incoming URLs with `clear-urls` embedded rules plus `[tracking_params]` (`CleanUrlMiddleware`)
-- filters links: `[blacklisted].domains`, per-chat excluded domains, `yv2t_bot=false`-style skip params, and messages sent via the bot itself
+- filters links by `[blacklisted].domains`, per-chat excluded domains, and messages sent via the bot itself; `yv2t_bot=false`-style skip params apply only to quiet group auto-downloads
 - sets an acknowledgment reaction for `[domains_with_reactions]` on receipt; the worker clears it when the job finishes
 - enqueues every download (command, bare link, chosen inline result) as a `DownloadJob` into the Valkey stream
 - runs one Redis dispatcher that starts concurrent download tasks using fresh downloader capacity/load samples
@@ -153,6 +164,7 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - `TelegramMessenger` (`bot/src/services/messenger/telegram.rs`) is the adapter that owns Telegram API calls, retries, parse modes, inline answer wiring, and Telegram media send/edit method construction.
 - Transient progress edits use atomic Redis `SET NX PX` throttle keys: one update per chat every 5 seconds, or per inline message every 15 seconds. Intermediate updates are skipped; final/error edits are not throttled this way. Redis failures skip optional progress updates. Downloader liveness is independent of Telegram presentation.
 - Adapter requests share an in-process Telegram retry-after cooldown, including media sends and cleanup. Both structured retry-after responses and explicit text-form flood waits returned as Bad Request establish this cooldown. Requests are spaced after cooldown expiry; existing in-flight requests cannot be recalled. Consumed upload streams are never automatically replayed or saved for retry; an upload failure asks the user to resend manually after any indicated cooldown. Replayable text/file-ID requests still honor retry-after. Other bot processes and the direct-Bot exceptions below do not share this cooldown.
+- Telegram sends can have ambiguous outcomes: a timeout or transport error can leave an accepted send unconfirmed. Abandoned queue deliveries are discarded rather than replayed.
 - Optional download progress edits are scoped to preparation and cancelled when the media becomes ready. In video/audio flows, "Sending" runs alongside the upload and is cancelled when that upload ends, so it cannot block the media or leave a detached edit task behind final result rendering. Already-dispatched Telegram requests cannot be recalled. Fatal download errors join the final error aggregation rather than being shown only transiently.
 - Single video, audio, and photo deliveries replace their chat progress message with media by `file_id` and return that retained message ID for later post-caption edits. Multi-item deliveries send an album and keep the existing progress cleanup/error behavior. Quiet deliveries without a progress message still send new messages.
 - Every download error message ends with the link the user sent, through `progress::with_link`, so the user still sees what failed after deleting their own message. A failed playlist item line also names that item's URL, and playlist progress names the current item's URL. The `/shazam` caption already carries the link, so errors prefixed with it skip the second copy.
@@ -190,7 +202,7 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
   - `yt_toolkit`
 - Top-level interactors may call these services.
 - Services must not call top-level interactors.
-- `auto` classifies a bare link video -> audio -> photo and reuses the type-specific interactors through `prefetched` metadata; `AutoQuiet` is the group-chat variant with no progress messages.
+- `auto` classifies a bare link video -> audio -> photo, or audio -> video -> photo for `[audio_first].domains`, and reuses the type-specific interactors through `prefetched` metadata; `AutoQuiet` is the group-chat variant with no progress messages.
 
 ### Bot DI Style
 
@@ -365,7 +377,7 @@ The bot no longer owns cookie distribution.
 - Cookie files are mounted only into the cookie-assignment deployment.
 - Source cookie layout in the repo is `cookies/<domain>/<cookie-id>.txt`; `*.txt` is gitignored.
 - `scripts/sync-cookies-secret.sh` (via `just k8s-sync-cookie-assignment-cookies`) flattens entry names to `<domain>__<cookie-id>.txt`; `__` is reserved and nested directories are rejected.
-- The cookie-assignment runtime reads flattened `*.txt` files from `/app/cookies` and decodes them back into domain plus file name.
+- The cookie-assignment runtime reads `/app/cookies`, accepting the repository's domain directories and flattened Kubernetes Secret entries.
 - `cookie_id` is tracked as `<domain>/<cookie-id>.txt` so file names may repeat across domains without colliding.
 - Cookie assignments are in-memory only inside the cookie-assignment controller.
 - At most one cookie per domain is assigned to a node; free cookies go to the eligible worker with the fewest cookies, then fewest domains, then lowest address.
@@ -423,7 +435,7 @@ These are accepted for now. Do not "fix" them in passing without discussing the 
 - Downloader cookie storage is one file per domain in `/tmp/cookies/<domain>.txt`, which is what enforces "at most one cookie per domain per node".
 - Interactor input DTOs and `DownloadJob` carry Telegram-shaped identifiers (`chat_id`, `message_id`, `inline_message_id`).
 - Inbound transport extraction is handler-side; there is no separate inbound adapter layer.
-- Telegram delivery is at-least-once, not exactly-once. The configured-TTL done marker suppresses queue replay only after it is written; a crash or ambiguous Telegram-send response before that point can duplicate delivery, and replay after the marker expires can also duplicate it.
+- Telegram delivery is best-effort. Waiting jobs survive bot restarts while Redis data is retained, but interrupted pending jobs may be lost: stale cleanup discards them without re-execution. Telegram sends can have ambiguous outcomes. Configured-TTL done markers only suppress duplicate handling of the same job ID after they are written; they do not guarantee delivery or exactly-once sends.
 - UUID-based dispatcher consumer names can leave inactive Redis consumer records after process restarts. Monitor Valkey storage; consumer cleanup must not remove consumers that still own pending entries.
 - When snapsave is enabled but unreachable, Instagram/Facebook links without a cookie fail fast with `NOT_FOUND`; only a disabled snapsave falls back to the domain-replace rule.
 

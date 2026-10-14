@@ -1,0 +1,206 @@
+name: ytdl-tg-bot-dev
+
+services:
+  bot:
+    container_name: ytdl-tg-bot-dev.bot
+    hostname: bot
+    image: "${BOT_IMAGE:-ytdl-tg-bot.bot:dev}"
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile.bot.dev
+    restart: "unless-stopped"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+      downloader:
+        condition: service_started
+      telegram-bot-api:
+        condition: service_started
+      telegram-bot-api-files:
+        condition: service_started
+      yt-toolkit-api:
+        condition: service_started
+    environment:
+      CONFIG_PATH: /app/configs/config.toml
+      DOWNLOADER_SERVICE_DNS: downloader:50051
+    volumes:
+      - ./configs/config.toml:/app/configs/config.toml:ro
+      - ./tls/ca.crt:/app/tls/ca.crt:ro
+      - ./tls/bot.crt:/app/tls/bot.crt:ro
+      - ./tls/bot.key:/app/tls/bot.key:ro
+    networks:
+      - postgres.network
+      - valkey.network
+      - media.network
+
+  downloader:
+    container_name: ytdl-tg-bot-dev.downloader
+    hostname: downloader
+    image: "${DOWNLOADER_IMAGE:-ytdl-tg-bot.downloader:dev}"
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile.downloader.dev
+    restart: "unless-stopped"
+    depends_on:
+      yt-pot-provider:
+        condition: service_started
+    environment:
+      DOWNLOADER_CONFIG_PATH: /app/configs/downloader.toml
+    volumes:
+      - ./configs/downloader.toml:/app/configs/downloader.toml:ro
+      - ./tls/ca.crt:/app/tls/ca.crt:ro
+      - ./tls/node.crt:/app/tls/node.crt:ro
+      - ./tls/node.key:/app/tls/node.key:ro
+    networks:
+      - media.network
+
+  cookie-assignment:
+    container_name: ytdl-tg-bot-dev.cookie-assignment
+    hostname: cookie-assignment
+    image: "${COOKIE_ASSIGNMENT_IMAGE:-ytdl-tg-bot.cookie-assignment:dev}"
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile.cookie_assignment.dev
+    restart: "unless-stopped"
+    depends_on:
+      downloader:
+        condition: service_started
+    environment:
+      COOKIE_ASSIGNMENT_CONFIG_PATH: /app/configs/cookie_assignment.toml
+      DOWNLOADER_SERVICE_DNS: downloader:50051
+    volumes:
+      - ./configs/cookie_assignment.toml:/app/configs/cookie_assignment.toml:ro
+      - ./tls/ca.crt:/app/tls/ca.crt:ro
+      - ./tls/cookie-assignment.crt:/app/tls/cookie-assignment.crt:ro
+      - ./tls/cookie-assignment.key:/app/tls/cookie-assignment.key:ro
+      - ./cookies:/app/cookies:ro
+    networks:
+      - media.network
+
+  postgres:
+    container_name: ytdl-tg-bot-dev.postgres
+    hostname: postgres
+    image: "postgres:18-alpine"
+    restart: "unless-stopped"
+    environment:
+      POSTGRES_USER: bot
+      POSTGRES_PASSWORD: bot
+      POSTGRES_DB: api
+    volumes:
+      - postgres.data:/var/lib/postgresql:rw
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -h 127.0.0.1 -d "$$POSTGRES_DB" -U "$$POSTGRES_USER"']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - postgres.network
+
+  valkey:
+    container_name: ytdl-tg-bot-dev.valkey
+    hostname: valkey
+    image: "valkey/valkey:9-alpine"
+    restart: "unless-stopped"
+    command:
+      - valkey-server
+      - --appendonly
+      - "yes"
+      - --maxmemory-policy
+      - noeviction
+      - --user
+      - default
+      - "off"
+      - --user
+      - admin
+      - "on"
+      - ">valkey"
+      - "~*"
+      - "&*"
+      - "+@all"
+    volumes:
+      - valkey.data:/data:rw
+    ports:
+      - "127.0.0.1:${VALKEY_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli --user admin --no-auth-warning -a valkey ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    networks:
+      - valkey.network
+
+  migrate:
+    container_name: ytdl-tg-bot-dev.migrate
+    hostname: migrate
+    image: "${MIGRATION_IMAGE:-ytdl-tg-bot.migration:dev}"
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile.migration.dev
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://bot:bot@postgres:5432/api
+    command: ["up"]
+    networks:
+      - postgres.network
+
+  telegram-bot-api:
+    container_name: ytdl-tg-bot-dev.telegram-bot-api
+    hostname: telegram-bot-api
+    image: "aiogram/telegram-bot-api:latest"
+    restart: "unless-stopped"
+    environment:
+      TELEGRAM_API_ID: "${TELEGRAM_API_ID:?Set TELEGRAM_API_ID in .env}"
+      TELEGRAM_API_HASH: "${TELEGRAM_API_HASH:?Set TELEGRAM_API_HASH in .env}"
+      TELEGRAM_LOCAL: "1"
+      TELEGRAM_VERBOSITY: "2"
+      TELEGRAM_WORK_DIR: /var/lib/telegram-bot-api
+    volumes:
+      - telegram.data:/var/lib/telegram-bot-api:rw
+    networks:
+      - media.network
+
+  telegram-bot-api-files:
+    container_name: ytdl-tg-bot-dev.telegram-bot-api-files
+    hostname: telegram-bot-api-files
+    image: "nginx:1.30-alpine"
+    restart: "unless-stopped"
+    volumes:
+      - telegram.data:/var/lib/telegram-bot-api:rw
+      - ./deployment/docker-compose/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - media.network
+
+  yt-toolkit-api:
+    container_name: ytdl-tg-bot-dev.yt-toolkit-api
+    hostname: yt-toolkit-api
+    image: "ghcr.io/ikiovi/yt-toolkit/info-api:v2.1.0"
+    restart: "unless-stopped"
+    networks:
+      - media.network
+
+  yt-pot-provider:
+    container_name: ytdl-tg-bot-dev.yt-pot-provider
+    hostname: yt-pot-provider
+    image: "brainicism/bgutil-ytdlp-pot-provider:2.0.0"
+    restart: "unless-stopped"
+    networks:
+      - media.network
+
+volumes:
+  postgres.data: {}
+  valkey.data: {}
+  telegram.data: {}
+
+networks:
+  postgres.network: {}
+  valkey.network: {}
+  media.network: {}

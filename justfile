@@ -12,23 +12,62 @@ fmt:
 @docker-build-cookie-assignment VERSION="latest":
     docker build -f ./deployment/Dockerfile.cookie_assignment -t desiders/ytdl_tg_bot.cookie_assignment:{{VERSION}} .
 
-@docker-push-dev-bot:
-    ./scripts/build-bot-dev-image.sh
-
-@docker-push-dev-downloader:
-    ./scripts/build-downloader-dev-image.sh
-
-@docker-push-dev-cookie-assignment:
-    ./scripts/build-cookie-assignment-dev-image.sh
-
-@docker-push-dev-migration:
-    ./scripts/build-migration-dev-image.sh
-
 @docker-build-downloader VERSION="latest":
     docker build -f ./deployment/Dockerfile.downloader -t desiders/ytdl_tg_bot.downloader:{{VERSION}} .
 
 @docker-build-migration VERSION="latest":
     docker build -f ./deployment/Dockerfile.migration -t desiders/ytdl_tg_bot.migration:{{VERSION}} .
+
+docker-compose-tls:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    umask 077
+    openssl version >/dev/null
+    mkdir -p tls
+    cd tls
+    ensure_key() {
+        if ! openssl pkey -in "$1.key" -check -noout </dev/null >/dev/null 2>&1; then
+            openssl genrsa -out "$1.key" 2048
+        fi
+    }
+    pair_matches() {
+        [[ -s "$1.crt" ]] && [[ "$(openssl x509 -in "$1.crt" -pubkey -noout 2>/dev/null)" == "$(openssl pkey -in "$1.key" -pubout)" ]]
+    }
+    ensure_key ca
+    if ! pair_matches ca || ! openssl verify -CAfile ca.crt ca.crt >/dev/null 2>&1 || \
+        [[ "$(openssl x509 -in ca.crt -noout -ext basicConstraints)" != *CA:TRUE* ]]; then
+        openssl req -new -x509 -key ca.key -days 3650 -sha256 -subj "/CN=ytdl-tg-bot-dev-ca" \
+            -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" -out ca.crt
+    fi
+    for identity in bot node cookie-assignment; do
+        ensure_key "$identity"
+        purpose=sslclient; usage=clientAuth; san=; host_check=()
+        if [[ "$identity" == node ]]; then
+            purpose=sslserver; usage=serverAuth; san="subjectAltName=DNS:downloader"; host_check=(-verify_hostname downloader)
+        fi
+        if pair_matches "$identity" && openssl verify -CAfile ca.crt -purpose "$purpose" "${host_check[@]}" "$identity.crt" >/dev/null 2>&1; then
+            continue
+        fi
+        openssl req -new -key "$identity.key" -subj "/CN=$identity" -out "$identity.csr"
+        openssl x509 -req -in "$identity.csr" -CA ca.crt -CAkey ca.key -set_serial "0x$(openssl rand -hex 16)" \
+            -days 365 -sha256 -extfile <(printf '%s\n' "basicConstraints=critical,CA:FALSE" \
+                "keyUsage=critical,digitalSignature,keyEncipherment" "extendedKeyUsage=$usage" "$san") -out "$identity.crt"
+        rm "$identity.csr"
+    done
+    chmod 600 *.key
+    echo "Development TLS certificates are ready"
+
+@docker-compose-up: docker-compose-tls
+    docker compose up --build
+
+@docker-compose-down:
+    docker compose down
+
+@docker-compose-logs:
+    docker compose logs -f
+
+@docker-compose-migration COMMAND="up":
+    docker compose run --build --rm migrate {{COMMAND}}
 
 docker-push USER VERSION="latest":
     @just docker-build {{VERSION}}
@@ -111,19 +150,6 @@ k8s-update-cookie-assignment-config NAMESPACE:
 
 k8s-port-forward-db NAMESPACE LOCAL_PORT="5432":
     kubectl -n {{NAMESPACE}} port-forward svc/postgres-rw {{LOCAL_PORT}}:5432
-
-generate-entities-from-db NAMESPACE LOCAL_PORT="5432" DB_NAME="api" DB_SECRET_NAME="db":
-    DB_USER=$(kubectl -n {{NAMESPACE}} get secret {{DB_SECRET_NAME}} -o jsonpath='{.data.username}' | base64 -d); \
-    DB_PASSWORD=$(kubectl -n {{NAMESPACE}} get secret {{DB_SECRET_NAME}} -o jsonpath='{.data.password}' | base64 -d); \
-    export DATABASE_URL="postgres://$DB_USER:$DB_PASSWORD@127.0.0.1:{{LOCAL_PORT}}/{{DB_NAME}}"; \
-    cd ./migration && \
-    sea-orm-cli generate entity \
-        -o ../bot/src/database/models \
-        --date-time-crate time \
-        --with-prelude none \
-        --banner-version patch \
-        --entity-format dense && \
-        rm -f ../bot/src/database/models/mod.rs
 
 k8s-migration NAMESPACE COMMAND="up":
     if [ -n "${IMAGE_REPO:-}" ] && [ -z "${IMAGE_TAG:-}" ]; then echo "IMAGE_TAG is required when IMAGE_REPO is set" >&2; exit 1; fi
