@@ -866,9 +866,9 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "clear-urls"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "345c8943d825d5a6257d1d8c683149e17fcd74fe4a22255d8a818eac75b28d20"
+checksum = "77e2a84268c043b7fd4e99a2aded19768b47b883753d4be22fe7e1c7eccf0008"
 dependencies = [
  "form_urlencoded",
  "miniserde",
