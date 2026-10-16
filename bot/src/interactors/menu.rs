@@ -168,7 +168,7 @@ where
     }
 
     async fn username(&self, screen: Screen) -> String {
-        if screen != Screen::HelpInline {
+        if !matches!(screen, Screen::HelpInline | Screen::HelpGuest) {
             return String::new();
         }
         match self.messenger.username().await {
@@ -595,6 +595,7 @@ fn render(screen: Screen, page: &Page<'_>) -> View {
                 open(label("menu.btn_help_commands"), Screen::HelpCommands),
                 open(label("menu.btn_help_arguments"), Screen::HelpArguments),
                 open(label("menu.btn_help_inline"), Screen::HelpInline),
+                open(label("menu.btn_help_guest"), Screen::HelpGuest),
                 back(Screen::Main),
             ],
         ),
@@ -612,6 +613,10 @@ fn render(screen: Screen, page: &Page<'_>) -> View {
         }
         Screen::HelpInline => (
             t!("help.inline", locale = locale, username = page.username).into_owned(),
+            vec![back(Screen::Help)],
+        ),
+        Screen::HelpGuest => (
+            t!("help.guest", locale = locale, username = page.username).into_owned(),
             vec![back(Screen::Help)],
         ),
         Screen::Stats => (
@@ -736,6 +741,7 @@ mod tests {
             Screen::HelpCommands,
             Screen::HelpArguments,
             Screen::HelpInline,
+            Screen::HelpGuest,
             Screen::Stats,
             Screen::Domains,
             Screen::DomainAdd,
