@@ -25,9 +25,9 @@ use crate::{
     services::{
         chat, downloaded_media,
         messenger::{
-            AnswerCallbackRequest, AnswerInlineErrorRequest, AnswerInlineQueryRequest, ButtonAction, DeleteMessageRequest,
-            EditCaptionRequest, EditMediaByIdRequest, EditMenuRequest, EditTextRequest, Keyboard, MessengerError, MessengerPort,
-            SendMediaByIdRequest, SendMediaGroupRequest, SendMenuRequest, SendTextRequest, SentMessage, UploadAudioRequest,
+            AnswerCallbackRequest, AnswerGuestRequest, AnswerInlineErrorRequest, AnswerInlineQueryRequest, ButtonAction,
+            DeleteMessageRequest, EditCaptionRequest, EditMediaByIdRequest, EditMenuRequest, EditTextRequest, Keyboard, MessengerError,
+            MessengerPort, SendMediaByIdRequest, SendMediaGroupRequest, SendMenuRequest, SendTextRequest, SentMessage, UploadAudioRequest,
             UploadPhotoRequest, UploadPhotoUrlRequest, UploadVideoRequest,
         },
         node_router, queue,
@@ -56,6 +56,9 @@ impl RecordingMessenger {
 }
 
 impl MessengerPort for RecordingMessenger {
+    async fn answer_guest(&self, _: AnswerGuestRequest<'_>) -> Result<String, MessengerError> {
+        unreachable!()
+    }
     async fn username(&self) -> Result<String, MessengerError> {
         Ok("test_bot".into())
     }

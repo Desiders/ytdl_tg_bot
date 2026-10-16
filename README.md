@@ -68,6 +68,10 @@ Photo requests select up to ten images by default; video and audio requests sele
 an `items` range is specified. Inline mode sends one media item. Mixed photo/video albums are
 currently unsupported.
 
+Enable **Guest Mode** in BotFather to accept mentions in chats where the bot is not a member.
+Mention the bot with a media URL, or mention it in a reply to a message containing one; the
+bot uses automatic detection and sends one media item through the inline delivery flow.
+
 Arguments go in square brackets after the command, for example `/vd [lang=ru,items=1:3:1,crop=00:01:30-,overwrite=true]`. Inline mode (`@bot <url>` or `@bot <title>`) supports `lang` and `overwrite`.
 
 ## Local Development
@@ -181,8 +185,6 @@ cargo test -p bot             # database tests start PostgreSQL via testcontaine
 This guide assumes Kubernetes, Helm, and a working image registry. If you are deploying from this repository instead of using already-published images, build and push the images first.
 
 ### 1. Prerequisites
-
-Enable **Guest Mode** in BotFather to accept mentions in chats where the bot is not a member.
 
 Required local tools:
 

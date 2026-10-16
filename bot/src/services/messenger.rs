@@ -204,7 +204,6 @@ pub struct SendMediaGroupRequest {
 }
 
 pub trait MessengerPort: Send + Sync {
-    /// Consumes a guest query once and returns the inline message to edit afterwards.
     fn answer_guest(&self, request: AnswerGuestRequest<'_>) -> impl Future<Output = Result<String, MessengerError>> + Send;
 
     fn username(&self) -> impl Future<Output = Result<String, MessengerError>> + Send;

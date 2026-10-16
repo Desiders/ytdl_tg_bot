@@ -9,8 +9,9 @@ use crate::{
     entities::{ChatConfig, DownloadJob, JobTarget, Params},
     handlers_utils::progress,
     interactors::{chosen_inline, Interactor},
+    locale::Locale,
     services::{
-        messenger::{EditTarget, EditTextRequest, MessengerPort, TextFormat},
+        messenger::{AnswerGuestRequest, EditTarget, EditTextRequest, MessengerPort, TextFormat},
         queue::RedisJobQueue,
     },
     value_objects::MediaType,
@@ -144,6 +145,93 @@ where
                     is_progress: false,
                     target: EditTarget::InlineMessage {
                         inline_message_id: input.inline_message_id,
+                    },
+                    text: &text,
+                    format: Some(TextFormat::Html),
+                    disable_link_preview: true,
+                    clear_inline_keyboard: false,
+                })
+                .await;
+        }
+
+        Ok(())
+    }
+}
+
+pub struct EnqueueGuestDownload<Messenger> {
+    messenger: Arc<Messenger>,
+    queue: Arc<RedisJobQueue>,
+}
+
+impl<Messenger> EnqueueGuestDownload<Messenger> {
+    #[must_use]
+    pub const fn new(messenger: Arc<Messenger>, queue: Arc<RedisJobQueue>) -> Self {
+        Self { messenger, queue }
+    }
+}
+
+pub struct EnqueueGuestInput<'a> {
+    pub query_id: &'a str,
+    pub url: Option<&'a Url>,
+    pub locale: Locale,
+}
+
+impl<Messenger> Interactor<EnqueueGuestInput<'_>> for &EnqueueGuestDownload<Messenger>
+where
+    Messenger: MessengerPort,
+{
+    type Output = ();
+    type Err = HandlerError;
+
+    #[instrument(skip_all)]
+    async fn execute(self, input: EnqueueGuestInput<'_>) -> Result<Self::Output, Self::Err> {
+        let text = if input.url.is_some() {
+            t!("download.preparing", locale = input.locale.as_str())
+        } else {
+            t!("guest.help", locale = input.locale.as_str())
+        };
+        let inline_message_id = match self
+            .messenger
+            .answer_guest(AnswerGuestRequest {
+                query_id: input.query_id,
+                text: &text,
+            })
+            .await
+        {
+            Ok(inline_message_id) => inline_message_id,
+            Err(err) => {
+                error!(%err, "Answer guest query error");
+                return Ok(());
+            }
+        };
+        let Some(url) = input.url else {
+            return Ok(());
+        };
+
+        let job = DownloadJob::new(
+            MediaType::Video,
+            Some(url.clone()),
+            Params::default(),
+            ChatConfig::new(0, false, input.locale.as_str().to_owned()),
+            false,
+            JobTarget::Inline {
+                inline_message_id: inline_message_id.clone(),
+                result_id: "guest".to_owned(),
+            },
+        )
+        .with_auto(false);
+
+        info!(job_id = %job.job_id, "Enqueueing download job");
+        if let Err(err) = self.queue.enqueue(&job).await {
+            error!(%err, "Enqueue guest download job error");
+            let text = t!("download.error_queue", locale = input.locale.as_str());
+            let text = progress::with_link(&text, url, Some(TextFormat::Html));
+            let _ = self
+                .messenger
+                .edit_text(EditTextRequest {
+                    is_progress: false,
+                    target: EditTarget::InlineMessage {
+                        inline_message_id: &inline_message_id,
                     },
                     text: &text,
                     format: Some(TextFormat::Html),

@@ -197,3 +197,6 @@ btn_confirm_delete = "🗑 Yes, remove"
 btn_help_commands = "⌨️ Commands"
 btn_help_arguments = "🧩 Arguments"
 btn_help_inline = "🔎 Inline mode"
+
+[guest]
+help = "Mention me with a media link, or reply to a message containing one. I detect the media type automatically and return one media item per request."

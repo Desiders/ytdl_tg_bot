@@ -43,7 +43,7 @@ use crate::{
         is_video_inline_result, random_cmd_is_enabled, text_contains_host_with_reply, text_contains_url, text_contains_url_with_reply,
         text_empty, url_is_blacklisted, url_is_skippable_by_param,
     },
-    handlers::{audio, chosen_inline, inline_query, lang, menu, photo, shazam, start, stats, video},
+    handlers::{audio, chosen_inline, guest, inline_query, lang, menu, photo, shazam, start, stats, video},
     middlewares::{CleanUrlMiddleware, CreateChatMiddleware, ReactionMiddleware},
     services::messenger::telegram::TelegramMessenger,
     utils::{on_shutdown, on_startup},
@@ -89,7 +89,16 @@ async fn main() {
     let cfg = container.get::<config::Config>().await.unwrap();
 
     let download_router = Router::new("download")
-        .on_guest_message(|observer| observer.register(Handler::new(handlers::guest::download::<Messenger>)))
+        .on_guest_message(|observer| {
+            observer
+                .register_inner_middleware(CleanUrlMiddleware)
+                .register(
+                    Handler::new(guest::download::<Messenger>)
+                        .filter(text_contains_url_with_reply)
+                        .filter(url_is_blacklisted.invert()),
+                )
+                .register(Handler::new(guest::help::<Messenger>))
+        })
         .on_message(|observer| {
             observer
                 .register_inner_middleware(CleanUrlMiddleware)
