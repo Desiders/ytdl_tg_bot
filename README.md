@@ -29,6 +29,7 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 - Playlist download
 - Post text and quote/reply context — added after automatic media delivery, with text-only posts supported where the source provides metadata
 - Inline mode (auto / video / audio)
+- Guest mode — mention the bot in a chat where it is not a member to download one media file
 - Song recognition (`/shazam`) — identify a track from an audio, voice, video or video note, then download it
 - Cookie-free Instagram / Facebook downloads (via [`snapsave-parser`](https://github.com/Desiders/snapsave-parser))
 - Spotify tracks, albums and playlists — resolved to DRM-free sources via [`spotdl`](https://github.com/spotDL/spotify-downloader)
@@ -47,6 +48,7 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 
 | Command | Description |
 | --- | --- |
+| `@bot <url>` or a mention in a reply | Download one file in guest mode with automatic media-type detection |
 | `/vd`, `/video` | Download video with progress messages |
 | `/ad`, `/audio` | Download audio |
 | `/pd`, `/photo` | Download photo |
@@ -65,6 +67,11 @@ commands skip this step. Long text is truncated to Telegram limits and uses expa
 Photo requests select up to ten images by default; video and audio requests select one unless
 an `items` range is specified. Inline mode sends one media item. Mixed photo/video albums are
 currently unsupported.
+
+Enable **Guest Mode** in BotFather to accept mentions in chats where the bot is not a member.
+Mention the bot with a media URL, or mention it in a reply to a message containing one; the
+bot uses automatic detection and sends one media item through the inline delivery flow.
+The private-chat menu explains this under **Help → Guest mode**.
 
 Arguments go in square brackets after the command, for example `/vd [lang=ru,items=1:3:1,crop=00:01:30-,overwrite=true]`. Inline mode (`@bot <url>` or `@bot <title>`) supports `lang` and `overwrite`.
 

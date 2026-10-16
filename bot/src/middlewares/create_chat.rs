@@ -23,6 +23,10 @@ pub struct CreateChatMiddleware;
 impl Middleware for CreateChatMiddleware {
     #[instrument(skip_all)]
     async fn call(&mut self, mut request: Request) -> Result<MiddlewareResponse, EventErrorKind> {
+        // Guest chat IDs live in a separate namespace. Do not look up or persist their settings.
+        if request.update.guest_message().is_some() {
+            return Ok((request, EventReturn::Finish));
+        }
         let (chat_id, cmd_random_enabled, username, chat_type) = match (request.update.chat(), request.update.from()) {
             (Some(chat), _) => {
                 let chat_type = match ChatType::try_from(enums::ChatType::from(chat)) {

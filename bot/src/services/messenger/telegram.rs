@@ -22,7 +22,8 @@ use telers::{
     enums::ParseMode,
     errors::{SessionErrorKind, TelegramErrorKind},
     methods::{
-        self, AnswerCallbackQuery, AnswerInlineQuery, DeleteMessage, EditMessageText, GetMe, SendMediaGroup, SendMessage, TelegramMethod,
+        self, AnswerCallbackQuery, AnswerGuestQuery, AnswerInlineQuery, DeleteMessage, EditMessageText, GetMe, SendMediaGroup, SendMessage,
+        TelegramMethod,
     },
     types::{
         ChatIdKind, InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResult, InlineQueryResultArticle, InputFile, InputMedia,
@@ -40,10 +41,10 @@ const WAIT_LIVENESS_INTERVAL: Duration = Duration::from_secs(30);
 const REQUEST_INTERVAL: Duration = Duration::from_millis(100);
 
 use super::{
-    AnswerCallbackRequest, AnswerInlineErrorRequest, AnswerInlineQueryRequest, ButtonAction, DeleteMessageRequest, EditCaptionRequest,
-    EditMediaByIdRequest, EditMenuRequest, EditTarget, EditTextRequest, InlineQueryArticle, Keyboard, MessengerError, SendMediaByIdRequest,
-    SendMediaGroupRequest, SendMenuRequest, SendTextRequest, SentMessage, TextFormat, UploadAudioRequest, UploadPhotoRequest,
-    UploadPhotoUrlRequest, UploadVideoRequest,
+    AnswerCallbackRequest, AnswerGuestRequest, AnswerInlineErrorRequest, AnswerInlineQueryRequest, ButtonAction, DeleteMessageRequest,
+    EditCaptionRequest, EditMediaByIdRequest, EditMenuRequest, EditTarget, EditTextRequest, InlineQueryArticle, Keyboard, MessengerError,
+    SendMediaByIdRequest, SendMediaGroupRequest, SendMenuRequest, SendTextRequest, SentMessage, TextFormat, UploadAudioRequest,
+    UploadPhotoRequest, UploadPhotoUrlRequest, UploadVideoRequest,
 };
 
 #[derive(Clone)]
@@ -258,6 +259,16 @@ impl MessengerPort for TelegramMessenger {
         )
         .await?;
         Ok(())
+    }
+
+    async fn answer_guest(&self, request: AnswerGuestRequest<'_>) -> Result<String, MessengerError> {
+        let result = InlineQueryResultArticle::new(
+            "guest",
+            request.text,
+            InputTextMessageContent::new(request.text).link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
+        );
+        let sent = with_retries(self, AnswerGuestQuery::new(request.query_id, result), 0, None).await?;
+        Ok(sent.inline_message_id.into())
     }
 
     async fn upload_video(&self, request: UploadVideoRequest<'_>) -> Result<Box<str>, MessengerError> {

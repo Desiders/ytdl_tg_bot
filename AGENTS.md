@@ -204,6 +204,15 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - Services must not call top-level interactors.
 - `auto` classifies a bare link video -> audio -> photo, or audio -> video -> photo for `[audio_first].domains`, and reuses the type-specific interactors through `prefetched` metadata; `AutoQuiet` is the group-chat variant with no progress messages.
 
+### Telegram Guest Mode
+
+- Enable Guest Mode in BotFather to receive `guest_message` updates from chats where the bot is not a member.
+- Guest handlers reuse the existing URL filter, blacklist and URL-cleaning middleware, then call `enqueue_download::EnqueueGuestDownload`. Links follow the same literal-text/direct-reply parsing as other message downloads; command parameters are not applied.
+- Guest updates bypass `CreateChatMiddleware`: guest chat IDs belong to a separate namespace and must not create or look up ordinary chat settings. Use the sender's locale and a default `ChatConfig` with `tg_id: 0` for the queued download.
+- `MessengerPort::answer_guest` sends a text placeholder and returns its confirmed inline message ID. Only then enqueue an ordinary inline auto job; the existing worker handles media, post text and errors. Without a supported link, answer with guest help and do not enqueue.
+- Guest query IDs are not stored or reserved in Redis. Do not add guest-specific TTLs, retries, media-selection rules or error formatting.
+- Guest usage is documented on the private menu's `HelpGuest` screen and included in the group `/start` help. Keep it alongside the existing inline-mode help in all locales.
+
 ### Bot DI Style
 
 - Keep the current generic DI style around `Messenger`.

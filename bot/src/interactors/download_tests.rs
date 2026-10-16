@@ -44,10 +44,10 @@ use crate::{
         downloaded_media,
         get_media::{self, GetMediaByURLKind},
         messenger::{
-            AnswerCallbackRequest, AnswerInlineErrorRequest, AnswerInlineQueryRequest, DeleteMessageRequest, EditCaptionRequest,
-            EditMediaByIdRequest, EditMenuRequest, EditTarget, EditTextRequest, MessengerError, MessengerPort, SendMediaByIdRequest,
-            SendMediaGroupRequest, SendMenuRequest, SendTextRequest, SentMessage, TextFormat, UploadAudioRequest, UploadPhotoRequest,
-            UploadPhotoUrlRequest, UploadVideoRequest,
+            AnswerCallbackRequest, AnswerGuestRequest, AnswerInlineErrorRequest, AnswerInlineQueryRequest, DeleteMessageRequest,
+            EditCaptionRequest, EditMediaByIdRequest, EditMenuRequest, EditTarget, EditTextRequest, MessengerError, MessengerPort,
+            SendMediaByIdRequest, SendMediaGroupRequest, SendMenuRequest, SendTextRequest, SentMessage, TextFormat, UploadAudioRequest,
+            UploadPhotoRequest, UploadPhotoUrlRequest, UploadVideoRequest,
         },
         send_media,
     },
@@ -219,6 +219,9 @@ impl Drop for OptionalEdit<'_> {
 }
 
 impl MessengerPort for RecordingMessenger {
+    async fn answer_guest(&self, _: AnswerGuestRequest<'_>) -> Result<String, MessengerError> {
+        unreachable!()
+    }
     async fn username(&self) -> Result<String, MessengerError> {
         Ok("test_bot".into())
     }

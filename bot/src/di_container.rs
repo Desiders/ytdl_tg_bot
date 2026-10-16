@@ -239,6 +239,12 @@ registry! {
                 Ok(enqueue_download::EnqueueInlineDownload::new(messenger, queue))
             }
         ),
+        provide(|
+            Inject(messenger): Inject<Messenger>,
+            Inject(enqueue_download)| async move {
+                Ok(enqueue_download::EnqueueGuestDownload::new(messenger, enqueue_download))
+            }
+        ),
 
         provide(|
             Inject(error_formatter),

@@ -106,6 +106,11 @@ pub struct AnswerInlineErrorRequest<'a> {
     pub text: &'a str,
 }
 
+pub struct AnswerGuestRequest<'a> {
+    pub query_id: &'a str,
+    pub text: &'a str,
+}
+
 pub struct InlineQueryArticle {
     pub id: String,
     pub title: String,
@@ -219,6 +224,8 @@ pub trait MessengerPort: Send + Sync {
     fn answer_inline_error(&self, request: AnswerInlineErrorRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
 
     fn answer_inline_query(&self, request: AnswerInlineQueryRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
+
+    fn answer_guest(&self, request: AnswerGuestRequest<'_>) -> impl Future<Output = Result<String, MessengerError>> + Send;
 
     fn upload_video(&self, request: UploadVideoRequest<'_>) -> impl Future<Output = Result<Box<str>, MessengerError>> + Send;
 

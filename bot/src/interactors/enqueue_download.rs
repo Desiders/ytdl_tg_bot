@@ -9,8 +9,9 @@ use crate::{
     entities::{ChatConfig, DownloadJob, JobTarget, Params},
     handlers_utils::progress,
     interactors::{chosen_inline, Interactor},
+    locale::Locale,
     services::{
-        messenger::{EditTarget, EditTextRequest, MessengerPort, TextFormat},
+        messenger::{AnswerGuestRequest, EditTarget, EditTextRequest, MessengerPort, TextFormat},
         queue::RedisJobQueue,
     },
     value_objects::MediaType,
@@ -154,5 +155,74 @@ where
         }
 
         Ok(())
+    }
+}
+
+pub struct EnqueueGuestDownload<Messenger> {
+    messenger: Arc<Messenger>,
+    enqueue_download: Arc<EnqueueInlineDownload<Messenger>>,
+}
+
+impl<Messenger> EnqueueGuestDownload<Messenger> {
+    #[must_use]
+    pub const fn new(messenger: Arc<Messenger>, enqueue_download: Arc<EnqueueInlineDownload<Messenger>>) -> Self {
+        Self {
+            messenger,
+            enqueue_download,
+        }
+    }
+}
+
+pub struct EnqueueGuestInput<'a> {
+    pub query_id: &'a str,
+    pub url: Option<&'a Url>,
+    pub locale: Locale,
+}
+
+impl<Messenger> Interactor<EnqueueGuestInput<'_>> for &EnqueueGuestDownload<Messenger>
+where
+    Messenger: MessengerPort,
+{
+    type Output = ();
+    type Err = HandlerError;
+
+    #[instrument(skip_all, fields(query_id = input.query_id, url = input.url.map(Url::as_str)))]
+    async fn execute(self, input: EnqueueGuestInput<'_>) -> Result<Self::Output, Self::Err> {
+        let text = if input.url.is_some() {
+            t!("download.preparing", locale = input.locale.as_str())
+        } else {
+            t!("guest.help", locale = input.locale.as_str())
+        };
+        let inline_message_id = match self
+            .messenger
+            .answer_guest(AnswerGuestRequest {
+                query_id: input.query_id,
+                text: &text,
+            })
+            .await
+        {
+            Ok(inline_message_id) => inline_message_id,
+            Err(err) => {
+                error!(%err, "Answer guest query error");
+                return Ok(());
+            }
+        };
+        let Some(url) = input.url else {
+            return Ok(());
+        };
+
+        self.enqueue_download
+            .as_ref()
+            .execute(EnqueueInlineInput {
+                media_type: MediaType::Video,
+                inline_message_id: &inline_message_id,
+                result_id: "guest",
+                url: Some(url),
+                params: &Params::default(),
+                chat_cfg: &ChatConfig::new(0, false, input.locale.as_str().to_owned()),
+                link_is_visible: false,
+                auto: true,
+            })
+            .await
     }
 }

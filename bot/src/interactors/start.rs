@@ -64,6 +64,7 @@ where
         let text = [
             t!("help.commands", locale = locale),
             t!("help.inline", locale = locale, username = username),
+            t!("help.guest", locale = locale, username = username),
             t!(
                 "help.arguments",
                 locale = locale,
