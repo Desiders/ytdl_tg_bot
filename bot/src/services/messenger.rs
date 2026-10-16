@@ -204,8 +204,6 @@ pub struct SendMediaGroupRequest {
 }
 
 pub trait MessengerPort: Send + Sync {
-    fn answer_guest(&self, request: AnswerGuestRequest<'_>) -> impl Future<Output = Result<String, MessengerError>> + Send;
-
     fn username(&self) -> impl Future<Output = Result<String, MessengerError>> + Send;
 
     fn send_text(&self, request: SendTextRequest<'_>) -> impl Future<Output = Result<SentMessage, MessengerError>> + Send;
@@ -226,6 +224,8 @@ pub trait MessengerPort: Send + Sync {
     fn answer_inline_error(&self, request: AnswerInlineErrorRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
 
     fn answer_inline_query(&self, request: AnswerInlineQueryRequest<'_>) -> impl Future<Output = Result<(), MessengerError>> + Send;
+
+    fn answer_guest(&self, request: AnswerGuestRequest<'_>) -> impl Future<Output = Result<String, MessengerError>> + Send;
 
     fn upload_video(&self, request: UploadVideoRequest<'_>) -> impl Future<Output = Result<Box<str>, MessengerError>> + Send;
 

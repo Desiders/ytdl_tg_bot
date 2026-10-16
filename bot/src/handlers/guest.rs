@@ -13,7 +13,7 @@ use telers::{
 use tracing::instrument;
 use url::Url;
 
-#[instrument(skip_all)]
+#[instrument(skip_all, fields(url = url.as_str()))]
 pub async fn download<Messenger>(
     update: UpdateGuestMessage,
     Extension(url): Extension<Url>,

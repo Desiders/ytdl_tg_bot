@@ -22,7 +22,8 @@ use telers::{
     enums::ParseMode,
     errors::{SessionErrorKind, TelegramErrorKind},
     methods::{
-        self, AnswerCallbackQuery, AnswerInlineQuery, DeleteMessage, EditMessageText, GetMe, SendMediaGroup, SendMessage, TelegramMethod,
+        self, AnswerCallbackQuery, AnswerGuestQuery, AnswerInlineQuery, DeleteMessage, EditMessageText, GetMe, SendMediaGroup, SendMessage,
+        TelegramMethod,
     },
     types::{
         ChatIdKind, InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResult, InlineQueryResultArticle, InputFile, InputMedia,
@@ -118,16 +119,6 @@ impl From<SessionErrorKind> for MessengerError {
 }
 
 impl MessengerPort for TelegramMessenger {
-    async fn answer_guest(&self, request: AnswerGuestRequest<'_>) -> Result<String, MessengerError> {
-        let result = InlineQueryResultArticle::new(
-            "guest",
-            request.text,
-            InputTextMessageContent::new(request.text).link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
-        );
-        let sent = with_retries(self, methods::AnswerGuestQuery::new(request.query_id, result), 0, None).await?;
-        Ok(sent.inline_message_id.into())
-    }
-
     async fn username(&self) -> Result<String, MessengerError> {
         let me = with_retries(self, GetMe {}, 0, None).await?;
         Ok(me.username.expect("Bots always have a username").into())
@@ -268,6 +259,16 @@ impl MessengerPort for TelegramMessenger {
         )
         .await?;
         Ok(())
+    }
+
+    async fn answer_guest(&self, request: AnswerGuestRequest<'_>) -> Result<String, MessengerError> {
+        let result = InlineQueryResultArticle::new(
+            "guest",
+            request.text,
+            InputTextMessageContent::new(request.text).link_preview_options(LinkPreviewOptions::new().is_disabled(true)),
+        );
+        let sent = with_retries(self, AnswerGuestQuery::new(request.query_id, result), 0, None).await?;
+        Ok(sent.inline_message_id.into())
     }
 
     async fn upload_video(&self, request: UploadVideoRequest<'_>) -> Result<Box<str>, MessengerError> {

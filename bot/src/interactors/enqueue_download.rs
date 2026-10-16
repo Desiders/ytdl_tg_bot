@@ -160,13 +160,16 @@ where
 
 pub struct EnqueueGuestDownload<Messenger> {
     messenger: Arc<Messenger>,
-    queue: Arc<RedisJobQueue>,
+    enqueue_download: Arc<EnqueueInlineDownload<Messenger>>,
 }
 
 impl<Messenger> EnqueueGuestDownload<Messenger> {
     #[must_use]
-    pub const fn new(messenger: Arc<Messenger>, queue: Arc<RedisJobQueue>) -> Self {
-        Self { messenger, queue }
+    pub const fn new(messenger: Arc<Messenger>, enqueue_download: Arc<EnqueueInlineDownload<Messenger>>) -> Self {
+        Self {
+            messenger,
+            enqueue_download,
+        }
     }
 }
 
@@ -183,7 +186,7 @@ where
     type Output = ();
     type Err = HandlerError;
 
-    #[instrument(skip_all)]
+    #[instrument(skip_all, fields(query_id = input.query_id, url = input.url.map(Url::as_str)))]
     async fn execute(self, input: EnqueueGuestInput<'_>) -> Result<Self::Output, Self::Err> {
         let text = if input.url.is_some() {
             t!("download.preparing", locale = input.locale.as_str())
@@ -208,39 +211,18 @@ where
             return Ok(());
         };
 
-        let job = DownloadJob::new(
-            MediaType::Video,
-            Some(url.clone()),
-            Params::default(),
-            ChatConfig::new(0, false, input.locale.as_str().to_owned()),
-            false,
-            JobTarget::Inline {
-                inline_message_id: inline_message_id.clone(),
-                result_id: "guest".to_owned(),
-            },
-        )
-        .with_auto(false);
-
-        info!(job_id = %job.job_id, "Enqueueing download job");
-        if let Err(err) = self.queue.enqueue(&job).await {
-            error!(%err, "Enqueue guest download job error");
-            let text = t!("download.error_queue", locale = input.locale.as_str());
-            let text = progress::with_link(&text, url, Some(TextFormat::Html));
-            let _ = self
-                .messenger
-                .edit_text(EditTextRequest {
-                    is_progress: false,
-                    target: EditTarget::InlineMessage {
-                        inline_message_id: &inline_message_id,
-                    },
-                    text: &text,
-                    format: Some(TextFormat::Html),
-                    disable_link_preview: true,
-                    clear_inline_keyboard: false,
-                })
-                .await;
-        }
-
-        Ok(())
+        self.enqueue_download
+            .as_ref()
+            .execute(EnqueueInlineInput {
+                media_type: MediaType::Video,
+                inline_message_id: &inline_message_id,
+                result_id: "guest",
+                url: Some(url),
+                params: &Params::default(),
+                chat_cfg: &ChatConfig::new(0, false, input.locale.as_str().to_owned()),
+                link_is_visible: false,
+                auto: true,
+            })
+            .await
     }
 }

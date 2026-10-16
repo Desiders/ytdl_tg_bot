@@ -241,8 +241,8 @@ registry! {
         ),
         provide(|
             Inject(messenger): Inject<Messenger>,
-            Inject(queue)| async move {
-                Ok(enqueue_download::EnqueueGuestDownload::new(messenger, queue))
+            Inject(enqueue_download)| async move {
+                Ok(enqueue_download::EnqueueGuestDownload::new(messenger, enqueue_download))
             }
         ),
 
