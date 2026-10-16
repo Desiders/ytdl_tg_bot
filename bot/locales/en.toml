@@ -30,7 +30,6 @@ Use the bot in chats where it isn't a member:
 - Send <code>&lt;url&gt; @%{username}</code> as a message.
 - Or reply to a message containing a link with <code>@%{username}</code>.
 
-The media type is detected automatically; one media item is returned per request. \
 Command arguments and your private-chat settings aren't applied.\
 """
 arguments = """
@@ -209,4 +208,4 @@ btn_help_inline = "🔎 Inline mode"
 btn_help_guest = "👋 Guest mode"
 
 [guest]
-help = "Mention me with a media link, or reply to a message containing one. I detect the media type automatically and return one media item per request."
+help = "Mention me with a media link, or in a reply to a message containing one."
