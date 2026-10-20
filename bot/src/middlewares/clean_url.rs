@@ -4,7 +4,7 @@ use froodi::async_impl::Container;
 use telers::{
     errors::EventErrorKind,
     event::telegram::HandlerResponse,
-    middlewares::{inner::Middleware, Next},
+    middlewares::inner::{Middleware, Next},
     Request,
 };
 use url::Url;

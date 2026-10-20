@@ -1267,6 +1267,61 @@ dependencies = [
 ]
 
 [[package]]
+name = "deser"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73f38758df3495e682a29dd0c1a6326fed4ad46a274b85ea36799884127202bf"
+dependencies = [
+ "deser-core",
+ "deser-derive",
+]
+
+[[package]]
+name = "deser-core"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12bd36a68e8d14a98ad4107016d65f3af3e851185f3176f05d873aaec9328472"
+dependencies = [
+ "bigdecimal",
+ "indexmap 2.14.2",
+ "jiff",
+ "num-bigint 0.4.8",
+ "rust_decimal",
+]
+
+[[package]]
+name = "deser-derive"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eca8164527abd9115827cc18284c01ebf597b2f5cf4b2e87f0e56b7654fb1c01"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.9",
+]
+
+[[package]]
+name = "deser-json"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f11fb5ad1e6dd92b89f2083154047651a2cb950f35019e8385a8681352ca6f2"
+dependencies = [
+ "deser-core",
+ "simdutf8",
+ "zmij",
+]
+
+[[package]]
+name = "deser-value"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d92341b8f09ca41e6a5e9f5eed1f7f2c8025cd11922ce9b1cdb2bbe90e5faf7"
+dependencies = [
+ "deser-core",
+ "indexmap 2.14.2",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1536,9 +1591,9 @@ dependencies = [
 
 [[package]]
 name = "froodi"
-version = "1.0.0-beta.19"
+version = "1.0.0-beta.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f8e200fb573b3cdf7cae9dfb19cc640952f4b8f96077cfe43acf846ad2fc585"
+checksum = "481bc3bf41aee2f5b7877c51d24b4c70ef196219fc9d6a101c18344ea5023abc"
 dependencies = [
  "anyhow",
  "froodi-macros",
@@ -4775,14 +4830,17 @@ checksum = "20f34339676cdcab560c9a82300c4c2581f68b9369aedf0fae86f2ff9565ff3e"
 
 [[package]]
 name = "telers"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c924492b5bc8141128542d53cde47e8370976bdb11fadf1a250fbbfd8d9b538c"
+checksum = "b81be11442e07ab8eaa3549c02e7537969f4f187ccced7523d336c6a3ab3c4ac"
 dependencies = [
  "anyhow",
  "backoff",
  "base64 0.22.1",
  "bytes",
+ "deser",
+ "deser-json",
+ "deser-value",
  "futures-util",
  "paste",
  "pathdiff",
@@ -4807,9 +4865,9 @@ dependencies = [
 
 [[package]]
 name = "telers-macros"
-version = "1.0.0-beta.2"
+version = "1.0.0-beta.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "774db3e065324c8bdc20047dedd3a8b8e7b6bbdcb9936bf3ca78f5d2ac8fbe5a"
+checksum = "e5947e03763aa1ef91cf35e2caafceb9d9ed5ae8d1c409c9118755dad02ede14"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",

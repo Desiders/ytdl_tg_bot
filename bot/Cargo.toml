@@ -10,7 +10,7 @@ backoff = { version = "0.4", features = ["tokio"], default-features = false }
 bytes = { version = "1", default-features = false }
 clear-urls = { version = "1.1.0", features = ["std", "embedded-rules"], default-features = false }
 downloader_client = { path = "../downloader_client" }
-froodi = { version = "1.0.0-beta.19", features = ["async", "thread_safe", "telers"], default-features = false }
+froodi = { version = "1.0.0-beta.20", features = ["async", "thread_safe", "telers"], default-features = false }
 futures-util = { version = "0.3", default-features = false }
 mutagen-rs = { version = "0.2.5", default-features = false }
 nix = { version = "0.31", features = ["fs"], default-features = false }
@@ -21,10 +21,10 @@ regex = { version = "1.12", features = ["perf"], default-features = false }
 reqwest = { version = "0.13", features = ["rustls", "charset", "query"], default-features = false }
 rust-i18n = { version = "4", default-features = false }
 sea-orm = { version = "2.0.0-rc.40", features = ["macros", "sqlx-postgres", "runtime-tokio-rustls", "with-time", "with-uuid"], default-features = false }
-serde = { version = "1.0", default-features = false }
+serde = { version = "1.0", features = ["derive"], default-features = false }
 serde_json = { version = "1.0", features = ["std", "float_roundtrip"], default-features = false }
 takecell = "=0.1.1"
-telers = { version = "1.0.0-beta.9", features = ["default-signal", "memory-storage", "rustls-tls"], default-features = false }
+telers = { version = "1.0.0-beta.10", features = ["default-signal", "memory-storage", "rustls-tls", "deser"], default-features = false }
 tempfile = { version = "3.9", default-features = false }
 thiserror = { version = "2.0", default-features = false }
 time = { version = ">=0.3, <0.3.48", features = ["serde-human-readable"], default-features = false }
