@@ -44,6 +44,9 @@ rustfs:
       pullPolicy: IfNotPresent
 
 valkey:
+  image:
+    repository: valkey/valkey
+    tag: "9.0.6-alpine"
   shards: 1
   replicas: 0
   storage: 1Gi

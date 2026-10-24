@@ -70,6 +70,7 @@ The bot chart uses the current CloudNativePG plugin-based backup path.
 ### Valkey Queue
 
 - `charts/bot` creates a `valkey.io/v1alpha1` `ValkeyCluster` named `valkey` with AOF persistence and `maxmemory-policy: noeviction`.
+- Helm pins Valkey to `9.0.6-alpine` to avoid the cluster-mode AOF replay bug fixed in 9.0.2, which can restore acknowledged queue entries.
 - The `admin` user password comes from the `valkey` Secret; bot config `[redis]` must use user `admin` and the same password.
 - Valkey stores the durable queue and short-lived Telegram progress-throttle keys. Do not put caches that may be evicted into the same instance without changing the eviction policy.
 
