@@ -4,6 +4,7 @@ metadata:
   name: valkey
   namespace: {{ .Release.Namespace }}
 spec:
+  image: "{{ .Values.valkey.image.repository }}:{{ .Values.valkey.image.tag }}"
   shards: {{ .Values.valkey.shards }}
   replicas: {{ .Values.valkey.replicas }}
   persistence:

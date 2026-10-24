@@ -2,6 +2,7 @@ FROM rust:1.91-trixie AS songrec-build
 RUN apt update && apt install -y --no-install-recommends \
         pkg-config clang libclang-dev libglib2.0-dev libsoup-3.0-dev gettext libasound2-dev libpipewire-0.3-dev \
     && rm -rf /var/lib/apt/lists/*
+RUN rustup component add rustfmt
 RUN cargo install songrec --no-default-features --root /songrec --locked
 
 FROM debian:trixie-slim AS base
