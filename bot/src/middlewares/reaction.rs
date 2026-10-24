@@ -5,7 +5,7 @@ use telers::{
     errors::EventErrorKind,
     event::telegram::HandlerResponse,
     methods::SetMessageReaction,
-    middlewares::{inner::Middleware, Next},
+    middlewares::inner::{Middleware, Next},
     types::ReactionTypeEmoji,
     Request,
 };

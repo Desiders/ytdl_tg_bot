@@ -1,9 +1,10 @@
 use froodi::async_impl::Container;
 use telers::{
     enums,
-    errors::{EventErrorKind, MiddlewareError},
-    event::EventReturn,
-    middlewares::outer::{Middleware, MiddlewareResponse},
+    errors::MiddlewareError,
+    event::bases::PropagateEventResult,
+    middlewares::outer::{Middleware, MiddlewareResult, Next},
+    router::Response,
     types::Chat::Private,
     Request,
 };
@@ -22,10 +23,10 @@ pub struct CreateChatMiddleware;
 
 impl Middleware for CreateChatMiddleware {
     #[instrument(skip_all)]
-    async fn call(&mut self, mut request: Request) -> Result<MiddlewareResponse, EventErrorKind> {
+    async fn call(&mut self, mut request: Request, next: Next) -> MiddlewareResult {
         // Guest chat IDs live in a separate namespace. Do not look up or persist their settings.
         if request.update.guest_message().is_some() {
-            return Ok((request, EventReturn::Finish));
+            return next(request).await;
         }
         let (chat_id, cmd_random_enabled, username, chat_type) = match (request.update.chat(), request.update.from()) {
             (Some(chat), _) => {
@@ -33,16 +34,16 @@ impl Middleware for CreateChatMiddleware {
                     Ok(chat_type) => chat_type,
                     Err(err) => {
                         warn!(%err, chat_id = chat.id(), "Skipping update");
-                        return Ok((request, EventReturn::Cancel));
+                        return Ok(Response::new(request, PropagateEventResult::Rejected));
                     }
                 };
                 (chat.id(), matches!(chat, Private(_)), chat.username(), chat_type)
             }
             (None, Some(from)) => (from.id, false, from.username.as_deref(), ChatType::Private),
-            _ => return Ok((request, EventReturn::Finish)),
+            _ => return next(request).await,
         };
         let Some(container) = request.extensions.get::<Container>() else {
-            return Ok((request, EventReturn::Finish));
+            return next(request).await;
         };
 
         let language_code = request.update.from().and_then(|user| user.language_code.as_deref());
@@ -67,7 +68,7 @@ impl Middleware for CreateChatMiddleware {
                     _ => match request.update.from() {
                         Some(from) => match get_chat_config.execute(chat::GetChatConfigInput { tg_id: from.id }).await {
                             Ok(chat_config) => chat_config,
-                            Err(err) => return Err(MiddlewareError::new(err).into()),
+                            Err(err) => return Err((MiddlewareError::new(err).into(), request)),
                         },
                         None => None,
                     },
@@ -79,6 +80,60 @@ impl Middleware for CreateChatMiddleware {
             Err(err) => error!(%err, "Save chat error"),
         }
 
-        Ok((request, EventReturn::Finish))
+        next(request).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use telers::{serialization, Bot, Context, Extensions};
+
+    use super::*;
+
+    #[derive(Clone)]
+    struct ReachedNext;
+
+    fn request(kind: &str) -> Request {
+        let query_id = if kind == "guest_message" {
+            r#", "guest_query_id":"synthetic-query""#
+        } else {
+            ""
+        };
+        let update = format!(
+            r#"{{"update_id":1,"{kind}":{{"message_id":2,"date":1,"chat":{{"id":3,"type":"synthetic_unknown"}},"text":"https://example.test/media"{query_id}}}}}"#
+        );
+        Request {
+            bot: Bot::new("1:synthetic"),
+            update: Arc::new(serialization::from_str(&update).unwrap()),
+            context: Context::default(),
+            extensions: Extensions::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn guest_updates_continue_without_creating_chat_settings() {
+        let next: Next = Box::new(|mut request| {
+            Box::pin(async move {
+                assert!(request.extensions.get::<ChatConfig>().is_none());
+                assert!(request.extensions.get::<OwnChatConfig>().is_none());
+                request.extensions.insert(ReachedNext);
+                Ok(Response::new(request, PropagateEventResult::Unhandled))
+            })
+        });
+
+        let response = CreateChatMiddleware.call(request("guest_message"), next).await.unwrap();
+
+        assert!(response.request.extensions.get::<ReachedNext>().is_some());
+    }
+
+    #[tokio::test]
+    async fn unsupported_regular_chats_are_rejected_before_routing() {
+        let next: Next = Box::new(|_| Box::pin(async { panic!("Unsupported chats must not reach a handler") }));
+
+        let response = CreateChatMiddleware.call(request("message"), next).await.unwrap();
+
+        assert!(matches!(response.propagate_result, PropagateEventResult::Rejected));
     }
 }
