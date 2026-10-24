@@ -1,8 +1,9 @@
 FROM rust:1.98-alpine3.24 AS songrec-build
-RUN apk add --no-cache build-base pkgconf clang-dev glib-dev gettext-dev libsoup3-dev alsa-lib-dev pipewire-dev
+RUN apk add --no-cache build-base pkgconf clang-dev glib-dev gettext-dev libsoup3-dev alsa-lib-dev pipewire-dev bash
 # Disable static-musl linking so the pipewire/libspa bindgen build script can dlopen libclang
 # (static musl binaries cannot dlopen), and so the songrec binary links its C libs dynamically.
 ENV RUSTFLAGS="-C target-feature=-crt-static"
+RUN rustup component add rustfmt
 RUN cargo install songrec --no-default-features --root /songrec --locked
 
 FROM alpine:3.24 AS base
