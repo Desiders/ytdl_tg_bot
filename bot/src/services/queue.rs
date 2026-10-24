@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use redis::{
     aio::ConnectionManager,
-    streams::{StreamAutoClaimReply, StreamPendingReply, StreamReadReply},
+    streams::{StreamAutoClaimReply, StreamInfoGroupsReply, StreamReadReply},
     AsyncCommands as _, RedisError,
 };
 use tracing::error;
@@ -31,6 +31,17 @@ redis.call('XCLAIM', KEYS[1], ARGV[1], ARGV[3], 0, ARGV[2], 'JUSTID')
 return 1
 ";
 
+const COUNT_WAITING: &str = r"
+local cursor = '(' .. ARGV[1]
+local count = 0
+while true do
+    local entries = redis.call('XRANGE', KEYS[1], cursor, '+', 'COUNT', 1000)
+    count = count + #entries
+    if #entries < 1000 then return count end
+    cursor = '(' .. entries[#entries][1]
+end
+";
+
 #[derive(Debug, thiserror::Error)]
 pub enum QueueError {
     #[error(transparent)]
@@ -39,6 +50,8 @@ pub enum QueueError {
     Serde(#[from] serde_json::Error),
     #[error("Stream entry {entry_id} is missing the `data` field")]
     MissingPayload { entry_id: String },
+    #[error("Queue consumer group {group} does not exist")]
+    MissingGroup { group: Box<str> },
 }
 
 /// A job read off the stream together with its entry id.
@@ -198,19 +211,33 @@ impl RedisJobQueue {
 
     pub async fn stats(&self) -> Result<QueueStats, QueueError> {
         let mut conn = self.conn.clone();
-        let total: u64 = conn.xlen(&*self.cfg.stream_key).await?;
-        let pending: StreamPendingReply = redis::cmd("XPENDING")
+        let reply: StreamInfoGroupsReply = redis::cmd("XINFO")
+            .arg("GROUPS")
             .arg(&*self.cfg.stream_key)
-            .arg(&*self.cfg.group)
             .query_async(&mut conn)
             .await?;
-        let pending = match pending {
-            StreamPendingReply::Empty => 0,
-            StreamPendingReply::Data(data) => data.count as u64,
+        let group = reply
+            .groups
+            .into_iter()
+            .find(|group| group.name == *self.cfg.group)
+            .ok_or_else(|| QueueError::MissingGroup {
+                group: self.cfg.group.clone(),
+            })?;
+        let waiting = match group.lag {
+            Some(lag) => lag as u64,
+            None => {
+                redis::cmd("EVAL")
+                    .arg(COUNT_WAITING)
+                    .arg(1)
+                    .arg(&*self.cfg.stream_key)
+                    .arg(&group.last_delivered_id)
+                    .query_async(&mut conn)
+                    .await?
+            }
         };
         Ok(QueueStats {
-            waiting: total.saturating_sub(pending),
-            pending,
+            waiting,
+            pending: group.pending as u64,
         })
     }
 }
@@ -414,7 +441,11 @@ mod tests {
         let third = fixture.queue.read_next(&mut conn, "third").await.unwrap().unwrap();
         let fourth = fixture.queue.read_next(&mut conn, "fourth").await.unwrap().unwrap();
 
-        assert!(fixture.queue.ack(&third.entry_id, "third").await.unwrap());
+        let acknowledged: u64 = conn
+            .xack(&*fixture.queue.cfg.stream_key, &*fixture.queue.cfg.group, &[&third.entry_id])
+            .await
+            .unwrap();
+        assert_eq!(acknowledged, 1);
         assert!(fixture.queue.ack(&fourth.entry_id, "fourth").await.unwrap());
         let stats = fixture.queue.stats().await.unwrap();
         assert_eq!((stats.waiting, stats.pending), (1, 2));
@@ -423,6 +454,36 @@ mod tests {
         assert!(fixture.queue.ack(&second.entry_id, "second").await.unwrap());
         let stats = fixture.queue.stats().await.unwrap();
         assert_eq!((stats.waiting, stats.pending), (1, 0));
+
+        let last = fixture.queue.read_next(&mut conn, "first").await.unwrap().unwrap();
+        assert!(fixture.queue.ack(&last.entry_id, "first").await.unwrap());
+        let stats = fixture.queue.stats().await.unwrap();
+        assert_eq!((stats.waiting, stats.pending), (0, 0));
+        let stream_len: u64 = conn.xlen(&*fixture.queue.cfg.stream_key).await.unwrap();
+        assert_eq!(stream_len, 1);
+    }
+
+    #[tokio::test]
+    async fn statistics_count_waiting_entries_when_lag_is_unknown() {
+        let fixture = Fixture::new().await;
+        let completed = fixture.enqueue().await;
+        assert!(fixture.queue.ack(&completed.entry_id, "first").await.unwrap());
+        for _ in 0..1001 {
+            fixture.queue.enqueue(&completed.job).await.unwrap();
+        }
+        let mut conn = fixture.connection();
+        let deleted: String = conn.xadd(&*fixture.queue.cfg.stream_key, "*", &[("data", "{}")]).await.unwrap();
+        let _: u64 = conn.xdel(&*fixture.queue.cfg.stream_key, &[deleted]).await.unwrap();
+        let groups: StreamInfoGroupsReply = conn.xinfo_groups(&*fixture.queue.cfg.stream_key).await.unwrap();
+        assert!(groups.groups[0].lag.is_none());
+        let stats = fixture.queue.stats().await.unwrap();
+        assert_eq!((stats.waiting, stats.pending), (1001, 0));
+
+        let _: u64 = conn
+            .xgroup_destroy(&*fixture.queue.cfg.stream_key, &*fixture.queue.cfg.group)
+            .await
+            .unwrap();
+        assert!(matches!(fixture.queue.stats().await, Err(QueueError::MissingGroup { .. })));
     }
 
     #[tokio::test]
