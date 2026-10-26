@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use migration::{Migrator, MigratorTrait as _};
 use rust_i18n::t;
@@ -8,6 +11,7 @@ use testcontainers_modules::{
     postgres::Postgres,
     testcontainers::{runners::AsyncRunner as _, ContainerAsync, ImageExt as _},
 };
+use tokio::time::{sleep, timeout};
 
 use super::{
     config::MAX_EXCLUDE_DOMAINS,
@@ -295,6 +299,41 @@ impl Fixture {
 
 fn domains(count: usize) -> Vec<String> {
     (0..count).map(|index| format!("site{index}.example")).collect()
+}
+
+#[tokio::test]
+async fn statistics_answer_immediately_and_stay_available_when_redis_stalls() {
+    let fixture = Fixture::new(&[]).await;
+    fixture._redis.queue.ensure_group().await.unwrap();
+    let Saved { config, exclude_domains } = fixture.chat().await;
+    let mut conn = fixture._redis.connection();
+    let _: () = redis::cmd("CLIENT")
+        .arg("PAUSE")
+        .arg(30_000)
+        .arg("ALL")
+        .query_async(&mut conn)
+        .await
+        .unwrap();
+
+    let mut opening = Box::pin(fixture.open_menu.as_ref().execute(OpenMenuInput {
+        target: EDIT,
+        screen: Screen::Stats,
+        notice: None,
+        chat_cfg: &config,
+        exclude_domains: &exclude_domains,
+        fsm: &fixture.fsm,
+    }));
+    tokio::select! {
+        result = &mut opening => panic!("Statistics did not wait for the paused queue: {result:?}"),
+        () = sleep(Duration::from_millis(100)) => {}
+    }
+    assert_eq!(fixture.events(), ["answer None"]);
+
+    timeout(Duration::from_secs(5), opening).await.unwrap().unwrap();
+    let events = fixture.events();
+    assert_eq!(events.len(), 2, "{events:?}");
+    assert!(events[1].starts_with("edit "));
+    assert!(events[1].contains(t!("stats.queue_unavailable", locale = "en").as_ref()));
 }
 
 #[tokio::test]

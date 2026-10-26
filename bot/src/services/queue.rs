@@ -2,17 +2,20 @@
 //!
 //! Known outcomes finish their entry. Abandoned deliveries are discarded, never re-executed.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use redis::{
     aio::ConnectionManager,
     streams::{StreamAutoClaimReply, StreamInfoGroupsReply, StreamReadReply},
     AsyncCommands as _, RedisError,
 };
+use tokio::time::{error::Elapsed, timeout};
 use tracing::error;
 use uuid::Uuid;
 
 use crate::{config::QueueConfig, entities::DownloadJob};
+
+const STATS_TIMEOUT: Duration = Duration::from_secs(2);
 
 const ACK_DELETE: &str = r"
 local pending = redis.call('XPENDING', KEYS[1], ARGV[1], ARGV[2], ARGV[2], 1, ARGV[3])
@@ -52,6 +55,8 @@ pub enum QueueError {
     MissingPayload { entry_id: String },
     #[error("Queue consumer group {group} does not exist")]
     MissingGroup { group: Box<str> },
+    #[error("Queue statistics timed out: {0}")]
+    StatsTimeout(#[from] Elapsed),
 }
 
 /// A job read off the stream together with its entry id.
@@ -210,35 +215,38 @@ impl RedisJobQueue {
     }
 
     pub async fn stats(&self) -> Result<QueueStats, QueueError> {
-        let mut conn = self.conn.clone();
-        let reply: StreamInfoGroupsReply = redis::cmd("XINFO")
-            .arg("GROUPS")
-            .arg(&*self.cfg.stream_key)
-            .query_async(&mut conn)
-            .await?;
-        let group = reply
-            .groups
-            .into_iter()
-            .find(|group| group.name == *self.cfg.group)
-            .ok_or_else(|| QueueError::MissingGroup {
-                group: self.cfg.group.clone(),
-            })?;
-        let waiting = match group.lag {
-            Some(lag) => lag as u64,
-            None => {
-                redis::cmd("EVAL")
-                    .arg(COUNT_WAITING)
-                    .arg(1)
-                    .arg(&*self.cfg.stream_key)
-                    .arg(&group.last_delivered_id)
-                    .query_async(&mut conn)
-                    .await?
-            }
-        };
-        Ok(QueueStats {
-            waiting,
-            pending: group.pending as u64,
+        timeout(STATS_TIMEOUT, async {
+            let mut conn = self.conn.clone();
+            let reply: StreamInfoGroupsReply = redis::cmd("XINFO")
+                .arg("GROUPS")
+                .arg(&*self.cfg.stream_key)
+                .query_async(&mut conn)
+                .await?;
+            let group = reply
+                .groups
+                .into_iter()
+                .find(|group| group.name == *self.cfg.group)
+                .ok_or_else(|| QueueError::MissingGroup {
+                    group: self.cfg.group.clone(),
+                })?;
+            let waiting = match group.lag {
+                Some(lag) => lag as u64,
+                None => {
+                    redis::cmd("EVAL")
+                        .arg(COUNT_WAITING)
+                        .arg(1)
+                        .arg(&*self.cfg.stream_key)
+                        .arg(&group.last_delivered_id)
+                        .query_async(&mut conn)
+                        .await?
+                }
+            };
+            Ok(QueueStats {
+                waiting,
+                pending: group.pending as u64,
+            })
         })
+        .await?
     }
 }
 

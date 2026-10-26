@@ -90,6 +90,9 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: OpenMenuInput<'_>) -> Result<Self::Output, Self::Err> {
+        if let MenuTarget::Edit { callback_id, .. } = &input.target {
+            self.answer(callback_id, input.notice.as_ref()).await;
+        }
         let domains = &input.exclude_domains.0;
         let screen = existing_screen(input.screen, domains);
         track_input(screen, input.fsm).await;
@@ -108,11 +111,7 @@ where
 
         match input.target {
             MenuTarget::Send { chat_id } => self.send(chat_id, view, input.notice).await,
-            MenuTarget::Edit {
-                chat_id,
-                message_id,
-                callback_id,
-            } => self.edit(chat_id, message_id, callback_id, view, input.notice).await,
+            MenuTarget::Edit { chat_id, message_id, .. } => self.edit(chat_id, message_id, view).await,
         }
 
         Ok(())
@@ -139,20 +138,22 @@ where
         }
     }
 
-    async fn edit(&self, chat_id: i64, message_id: i64, callback_id: &str, view: View, notice: Option<Notice>) {
-        // The edit may wait out a Telegram cooldown, and an answer that comes too late is rejected, so answer first.
+    async fn answer(&self, callback_id: &str, notice: Option<&Notice>) {
+        // Preparing the page or editing it may wait on services or a Telegram cooldown, so answer first.
         //  https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L150
         if let Err(err) = self
             .messenger
             .answer_callback(AnswerCallbackRequest {
                 callback_id,
-                text: notice.as_ref().map(|notice| notice.text.as_str()),
+                text: notice.map(|notice| notice.text.as_str()),
             })
             .await
         {
             error!(err = %self.error_formatter.format(&err), "Answer callback error");
         }
+    }
 
+    async fn edit(&self, chat_id: i64, message_id: i64, view: View) {
         if let Err(err) = self
             .messenger
             .edit_menu(EditMenuRequest {
