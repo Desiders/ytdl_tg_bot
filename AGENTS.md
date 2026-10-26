@@ -76,6 +76,7 @@ The bot chart uses the current CloudNativePG plugin-based backup path.
 
 ### Local Telegram Bot API
 
+- Helm and Compose pin the Telegram Bot API server image to `aiogram/telegram-bot-api:10.3`.
 - The bot talks to a self-hosted `telegram-bot-api` in `--local` mode. In local mode `getFile` returns an absolute path and the server does not serve files over HTTP.
 - The chart runs an nginx file server sidecar exposing the bot API work dir, and the bot downloads files from `[telegram_bot_api].file_server_url` by stripping `[telegram_bot_api].work_dir` from the path, then deletes the file over WebDAV `DELETE`.
 - Omit `file_server_url` and `work_dir` when pointing the bot at the cloud API.

@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: telegram-bot-api
-          image: aiogram/telegram-bot-api:latest
+          image: "{{ .Values.telegramBotApi.image.repository }}:{{ .Values.telegramBotApi.image.tag }}"
           imagePullPolicy: {{ .Values.telegramBotApi.image.pullPolicy }}
           ports:
             - containerPort: 8081

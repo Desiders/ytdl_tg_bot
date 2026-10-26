@@ -57,6 +57,8 @@ valkey:
 
 telegramBotApi:
   image:
+    repository: aiogram/telegram-bot-api
+    tag: "10.3"
     pullPolicy: IfNotPresent
   dataDir: /var/lib/telegram-bot-api
   verbosity: 2
