@@ -46,7 +46,7 @@ rustfs:
 valkey:
   image:
     repository: valkey/valkey
-    tag: "9.0.6-alpine"
+    tag: "9.0.6"
   shards: 1
   replicas: 0
   storage: 1Gi
