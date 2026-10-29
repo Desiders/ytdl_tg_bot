@@ -41,11 +41,11 @@ use crate::{
     filters::{
         command_without_args, is_audio_inline_result, is_auto_inline_result, is_command, is_exclude_domain, is_via_bot,
         is_video_inline_result, random_cmd_is_enabled, text_contains_host_with_reply, text_contains_url, text_contains_url_with_reply,
-        text_empty, url_is_blacklisted, url_is_skippable_by_param,
+        text_empty, url_is_blacklisted, url_is_skippable_by_param, GuestMention,
     },
     handlers::{audio, chosen_inline, guest, inline_query, lang, menu, photo, shazam, start, stats, video},
     middlewares::{CleanUrlMiddleware, CreateChatMiddleware, ReactionMiddleware},
-    services::messenger::telegram::TelegramMessenger,
+    services::messenger::{telegram::TelegramMessenger, MessengerPort as _},
     utils::{on_shutdown, on_startup},
     value_objects::menu::{DeleteDomain, MenuState, OpenScreen, SetLanguage, SetLinkVisibility},
 };
@@ -87,17 +87,18 @@ async fn main() {
     let container = di_container::init::<Messenger>(config.clone(), bot.clone(), api_server);
     let node_router = container.get::<NodeRouter>().await.unwrap();
     let cfg = container.get::<config::Config>().await.unwrap();
+    let username = container.get::<Messenger>().await.unwrap().username().await.unwrap();
 
     let download_router = Router::new("download")
         .on_guest_message(|observer| {
             observer
+                .filter(GuestMention::new(bot.id, username))
                 .register_inner_middleware(CleanUrlMiddleware)
                 .register(
                     Handler::new(guest::download::<Messenger>)
                         .filter(text_contains_url_with_reply)
                         .filter(url_is_blacklisted.invert()),
                 )
-                .register(Handler::new(guest::help::<Messenger>))
         })
         .on_message(|observer| {
             observer

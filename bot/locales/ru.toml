@@ -206,6 +206,3 @@ btn_help_commands = "⌨️ Команды"
 btn_help_arguments = "🧩 Аргументы"
 btn_help_inline = "🔎 Inline-режим"
 btn_help_guest = "👋 Гостевой режим"
-
-[guest]
-help = "Упомяните меня со ссылкой на медиа или в ответ на сообщение с ней."

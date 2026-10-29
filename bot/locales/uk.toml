@@ -206,6 +206,3 @@ btn_help_commands = "⌨️ Команди"
 btn_help_arguments = "🧩 Аргументи"
 btn_help_inline = "🔎 Inline-режим"
 btn_help_guest = "👋 Гостьовий режим"
-
-[guest]
-help = "Згадайте мене з посиланням на медіа або у відповіді на повідомлення з ним."

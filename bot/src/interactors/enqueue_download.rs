@@ -175,7 +175,7 @@ impl<Messenger> EnqueueGuestDownload<Messenger> {
 
 pub struct EnqueueGuestInput<'a> {
     pub query_id: &'a str,
-    pub url: Option<&'a Url>,
+    pub url: &'a Url,
     pub locale: Locale,
 }
 
@@ -186,13 +186,9 @@ where
     type Output = ();
     type Err = HandlerError;
 
-    #[instrument(skip_all, fields(query_id = input.query_id, url = input.url.map(Url::as_str)))]
+    #[instrument(skip_all, fields(query_id = input.query_id, url = input.url.as_str()))]
     async fn execute(self, input: EnqueueGuestInput<'_>) -> Result<Self::Output, Self::Err> {
-        let text = if input.url.is_some() {
-            t!("download.preparing", locale = input.locale.as_str())
-        } else {
-            t!("guest.help", locale = input.locale.as_str())
-        };
+        let text = t!("download.preparing", locale = input.locale.as_str());
         let inline_message_id = match self
             .messenger
             .answer_guest(AnswerGuestRequest {
@@ -207,17 +203,13 @@ where
                 return Ok(());
             }
         };
-        let Some(url) = input.url else {
-            return Ok(());
-        };
-
         self.enqueue_download
             .as_ref()
             .execute(EnqueueInlineInput {
                 media_type: MediaType::Video,
                 inline_message_id: &inline_message_id,
                 result_id: "guest",
-                url: Some(url),
+                url: Some(input.url),
                 params: &Params::default(),
                 chat_cfg: &ChatConfig::new(0, false, input.locale.as_str().to_owned()),
                 link_is_visible: false,

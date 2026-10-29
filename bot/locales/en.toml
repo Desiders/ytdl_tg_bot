@@ -206,6 +206,3 @@ btn_help_commands = "⌨️ Commands"
 btn_help_arguments = "🧩 Arguments"
 btn_help_inline = "🔎 Inline mode"
 btn_help_guest = "👋 Guest mode"
-
-[guest]
-help = "Mention me with a media link, or in a reply to a message containing one."
