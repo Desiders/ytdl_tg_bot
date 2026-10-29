@@ -116,9 +116,9 @@ impl DownloaderService {
             "photo" => MediaKind::Photo,
             _ => MediaKind::Video,
         };
-        // Source URLs to fetch info from. Cookie-free Instagram/Facebook resolve to direct CDN URLs
-        // via snapsave (showing the original URL); everything else uses the cookie-aware domain
-        // replacement (vxinstagram fallback). `snapsave_url` is set when we override `webpage_url`.
+        // Cookie-free Instagram/Facebook prefer snapsave CDN URLs. Resolver failures use the
+        // original URL with native extraction; domain replacements apply when snapsave is not
+        // applicable. `snapsave_url` is set when we override `webpage_url`.
         let snapsave_applicable = !has_cookie && self.snapsave.is_supported(&url);
         let snapsave_outcome = if snapsave_applicable {
             self.snapsave.resolve(&url, kind).await
@@ -134,14 +134,8 @@ impl DownloaderService {
                 (items, Some(url.clone()))
             }
             SnapsaveOutcome::WrongKind => return Err(Status::not_found("No media of the requested type")),
-            // snapsave is the only cookie-free path for Instagram/Facebook; when it is down, the
-            // vxinstagram + yt-dlp fallback only 404s, so fail fast instead of tying up a worker on it.
-            // `not_found` (not `unavailable`) so the bot treats it as a per-request miss, not node failover.
-            SnapsaveOutcome::Unavailable if snapsave_applicable => {
-                return Err(Status::not_found("Instagram/Facebook resolver is unavailable"));
-            }
             SnapsaveOutcome::Unavailable => {
-                let source_url = if has_cookie {
+                let source_url = if has_cookie || snapsave_applicable {
                     url.clone()
                 } else {
                     self.domain_replacer.replace_url(&url, kind).unwrap_or_else(|| url.clone())
@@ -1550,6 +1544,78 @@ mod tests {
             cookies: Arc::new(Cookies::new("/tmp/synthetic-unused-cookies")),
             max_concurrent: u32::try_from(capacity).unwrap(),
             semaphore: Arc::new(tokio::sync::Semaphore::new(capacity)),
+        }
+    }
+
+    #[tokio::test]
+    async fn unavailable_snapsave_uses_native_extraction_without_replacing_the_domain() {
+        use crate::{
+            config::{ReplaceDomainsConfig, ReplaceRule, SnapsaveConfig, YtDlpConfig},
+            entities::Cookies,
+            services::{DomainReplacer, SnapsaveResolver},
+        };
+        use proto::downloader::MediaInfoRequest;
+        use std::{fs, sync::Arc};
+        use tonic::Request;
+
+        let original = "https://instagram.com/reel/synthetic/";
+        let replaced = "https://proxy.example.test/reel/synthetic/";
+        for media_type in ["video", "audio"] {
+            for (enabled, has_cookie, expected_url) in [(true, false, original), (false, false, replaced), (true, true, original)] {
+                let directory = tempfile::tempdir().unwrap();
+                let arguments_path = directory.path().join("arguments.json");
+                let mut service = test_service("exit 1", 1);
+                service.yt_dlp_cfg = Arc::new(YtDlpConfig {
+                    command: vec![
+                        "python3".into(),
+                        "-c".into(),
+                        r#"import json, sys
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps(sys.argv[2:]))
+print(json.dumps({"id":"synthetic", "webpage_url":sys.argv[-1], "ext":"mp4", "format_id":"synthetic"}))"#
+                            .into(),
+                        arguments_path.to_string_lossy().into_owned().into(),
+                    ],
+                    max_file_size: 1024 * 1024,
+                    ..YtDlpConfig::default()
+                });
+                service.snapsave = Arc::new(SnapsaveResolver::new(&SnapsaveConfig {
+                    enabled,
+                    // Fail parser construction immediately without contacting snapsave.
+                    proxy: Some("://".into()),
+                }));
+                let rule = ReplaceRule {
+                    from: r"^instagram\.com$".into(),
+                    to: "proxy.example.test".into(),
+                };
+                service.domain_replacer = Arc::new(DomainReplacer::new(&ReplaceDomainsConfig {
+                    video: vec![rule.clone()],
+                    audio: vec![rule],
+                    ..ReplaceDomainsConfig::default()
+                }));
+                service.cookies = Arc::new(Cookies::new(directory.path().join("cookies")));
+                if has_cookie {
+                    service
+                        .cookies
+                        .upsert_cookie("synthetic-cookie", "instagram.com", "# Netscape HTTP Cookie File\n")
+                        .unwrap();
+                }
+
+                let response = service
+                    .get_media_info_inner(Request::new(MediaInfoRequest {
+                        url: original.into(),
+                        media_type: media_type.into(),
+                        ..MediaInfoRequest::default()
+                    }))
+                    .await
+                    .unwrap()
+                    .into_inner();
+                assert_eq!(response.entries.len(), 1);
+                assert_eq!(response.entries[0].webpage_url, expected_url);
+                let arguments: Vec<String> = serde_json::from_slice(&fs::read(&arguments_path).unwrap()).unwrap();
+                assert_eq!(arguments.last().unwrap(), expected_url);
+                assert_eq!(arguments.iter().any(|argument| argument == "--cookies"), has_cookie);
+            }
         }
     }
 

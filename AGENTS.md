@@ -277,7 +277,7 @@ New messenger bots should be separate applications, not modes inside the Telegra
 - media sources by type:
   - video and audio: `yt-dlp`, with `[yt_dlp].extractor_args` and the `yt-pot-provider` sidecar for YouTube; do not add `player_skip=configs`, it breaks adaptive YouTube formats
   - photo: `gallery-dl` metadata only (`GetMediaInfo`); the bot sends the returned `direct_url` to Telegram, which fetches the image itself, so `DownloadMedia` serves video and audio only
-  - Instagram/Facebook without a cookie: snapsave (`[snapsave].enabled`), which yields direct CDN URLs downloaded through `ffmpeg` remux (video), audio extraction (audio), or the CDN URL as the photo `direct_url`; when snapsave is enabled but unreachable those links fail fast with `NOT_FOUND`; only a disabled snapsave falls back to the domain-replace rule
+  - Instagram/Facebook without a cookie: snapsave (`[snapsave].enabled`), which yields direct CDN URLs downloaded through `ffmpeg` remux (video), audio extraction (audio), or the CDN URL as the photo `direct_url`; failed resolution falls back to native `yt-dlp` (video/audio) or `gallery-dl` (photo) on the original URL, bypassing domain replacements. A disabled snapsave still uses the domain-replace rule. A successful resolution without the requested media type remains `NOT_FOUND`
   - Spotify: `spotdl` (`[spotdl].enabled`) resolves a track, album, or playlist to YouTube URLs; the bot then downloads those
   - `/shazam`: `songrec` (`[songrec].enabled`) with `[songrec].max_audio_size` as the gRPC decoding limit
 - applies `[[replace_domains.<video|audio|photo>]]` regex rules only when the node has no cookie for the domain
@@ -451,7 +451,6 @@ These are accepted for now. Do not "fix" them in passing without discussing the 
 - Inbound transport extraction is handler-side; there is no separate inbound adapter layer.
 - Telegram delivery is best-effort. Waiting jobs survive bot restarts while Redis data is retained, but interrupted pending jobs may be lost: stale cleanup discards them without re-execution. Telegram sends can have ambiguous outcomes. Configured-TTL done markers only suppress duplicate handling of the same job ID after they are written; they do not guarantee delivery or exactly-once sends.
 - UUID-based dispatcher consumer names can leave inactive Redis consumer records after process restarts. Monitor Valkey storage; consumer cleanup must not remove consumers that still own pending entries.
-- When snapsave is enabled but unreachable, Instagram/Facebook links without a cookie fail fast with `NOT_FOUND`; only a disabled snapsave falls back to the domain-replace rule.
 
 ## Change Rules
 

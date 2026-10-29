@@ -70,7 +70,8 @@ enabled = false
 command = ["spotdl"]
 
 # Resolve Instagram/Facebook links to direct media via snapsave.app (cookie-free).
-# When enabled, resolver failures fail the request. When disabled, domain replacements apply.
+# Failed media resolution falls back to native extraction of the original URL.
+# When disabled, domain replacements apply.
 [snapsave]
 enabled = false
 # proxy = "socks5://127.0.0.1:1080"
