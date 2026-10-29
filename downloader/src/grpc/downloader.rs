@@ -434,11 +434,14 @@ async fn stream_download(
         return stream_direct_video(&url, &media, &format, &direct_url, effective_max_file_size, tx, guard).await;
     }
     let strategy = parse_format_strategy(&request.media_type, &request.audio_ext)?;
+    let mut duration = resolve_download_duration(media.duration, section.as_ref()).filter(|duration| *duration > 0);
     // Only a single pre-muxed HTTP(S) format is streamable: it's already a faststart MP4, so it
     // plays and seeks on the client. HLS/DASH and merges can't be piped as a seekable file, so they
-    // take the download path (which produces a seekable faststart MP4).
+    // take the download path (which produces a seekable faststart MP4). Missing duration also
+    // requires a finished file so it can be probed before upload.
     let can_stream = matches!(strategy, FormatStrategy::VideoAndAudio)
         && section.is_none()
+        && duration.is_some()
         && media_with_format.is_progressive_streamable()
         && media_with_format
             .filesize_approx
@@ -544,6 +547,10 @@ async fn stream_download(
         try_embed_thumbnail(&url, &media_file_path, &thumb_file_path, guard.clone()).await;
     }
     let file_size = validate_download_file(&url, &media_file_path, effective_max_file_size).await?;
+    if duration.is_none() {
+        let probed = probe_video(&media_file_path, FFPROBE_PATH, THUMBNAIL_TIMEOUT_SECS).await;
+        duration = resolve_download_duration(probed.duration, None);
+    }
 
     send_chunk(
         &tx,
@@ -552,7 +559,7 @@ async fn stream_download(
                 ext,
                 width: format.width,
                 height: format.height,
-                duration: resolve_download_duration(media.duration, section.as_ref()),
+                duration,
                 has_thumbnail: thumbnail_downloaded,
             })),
         },
@@ -1652,6 +1659,57 @@ mod tests {
             .to_string(),
             ..Default::default()
         })
+    }
+
+    #[tokio::test]
+    async fn missing_or_zero_duration_is_probed_before_streaming() {
+        use proto::downloader::downloader_server::Downloader as _;
+        use tokio_stream::StreamExt as _;
+
+        let service = test_service(
+            r#"
+            output=-
+            while [ "$#" -gt 0 ]; do
+                if [ "$1" = --paths ]; then shift; output="$1/media.mp4"; fi
+                shift
+            done
+            exec /usr/bin/ffmpeg -v error -f lavfi -i color=size=16x16:rate=1 \
+                -t 2 -c:v mpeg4 -movflags +frag_keyframe+empty_moov -f mp4 "$output"
+            "#,
+            1,
+        );
+        for (duration, expected_duration) in [(None, 2), (Some(0.0), 2), (Some(7.0), 7)] {
+            let mut request = download_request();
+            let mut info: serde_json::Value = serde_json::from_str(&request.get_ref().raw_info_json).unwrap();
+            info["protocol"] = "https".into();
+            info["vcodec"] = "mpeg4".into();
+            info["acodec"] = "aac".into();
+            info["filesize_approx"] = 1024.into();
+            info["duration"] = duration.into();
+            request.get_mut().raw_info_json = info.to_string();
+
+            let mut stream = service.download_media(request).await.unwrap().into_inner();
+            let mut received_meta = false;
+            let mut received_data = false;
+            let mut completed = false;
+            while let Some(chunk) = stream.next().await {
+                match chunk.unwrap().payload {
+                    Some(Payload::Meta(meta)) => {
+                        assert!(!received_data);
+                        assert_eq!(meta.duration, Some(expected_duration));
+                        received_meta = true;
+                    }
+                    Some(Payload::Data(_)) => {
+                        assert!(received_meta);
+                        received_data = true;
+                    }
+                    Some(Payload::Complete(true)) => completed = true,
+                    _ => {}
+                }
+            }
+            assert!(received_meta && received_data && completed);
+            wait_for_idle(&service, 1).await;
+        }
     }
 
     async fn wait_for_idle(service: &super::DownloaderService, capacity: usize) {
