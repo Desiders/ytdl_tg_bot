@@ -1,6 +1,7 @@
 mod chosen_inline;
 mod exclude_domain;
 mod guest;
+mod menu_access;
 mod menu_input;
 mod random_cmd;
 mod text_empty;
@@ -10,6 +11,7 @@ mod via_bot;
 pub use chosen_inline::{is_audio as is_audio_inline_result, is_auto as is_auto_inline_result, is_video as is_video_inline_result};
 pub use exclude_domain::is_exclude_domain;
 pub use guest::GuestMention;
+pub use menu_access::MenuAccess;
 pub use menu_input::{command_without_args, is_command};
 pub use random_cmd::random_cmd_is_enabled;
 pub use text_empty::text_empty;

@@ -142,8 +142,8 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - downloads media streams from downloader nodes and forwards media plus thumbnail streams to Telegram
 - refreshes node status every 5 seconds and node cookie capabilities every `[download].capabilities_refresh_interval` seconds (0 disables)
 - recognizes songs for `/shazam` by downloading the Telegram file and calling the node `SongRecognizer`, then enqueues the found track as an audio download; in private chats a voice, audio, video or video note without a command runs the same flow
-- serves `en`, `ru`, and `uk` locales; `/lang` switches a chat's locale
-- in private chats `/start`, `/help`, `/stats`, and `/lang` without an argument open an inline-button menu (main, settings, language, help pages, stats, excluded domains) that edits one message per button press; a bare link still downloads, except while the add-domain prompt waits for a typed domain. Groups keep the plain commands, and group `/start` prints all help pages
+- serves `en`, `ru`, and `uk` locales; `/lang` switches the user's preferred locale
+- in private chats `/start`, `/help`, `/stats`, and `/lang` without an argument open an inline-button menu (main, settings, language, help pages, stats, excluded domains) that edits one message per button press. Groups also support the menu through `/start` and `/lang` without arguments; group `/help` and `/stats` keep their plain responses. A bare link still downloads, except while that user's add-domain prompt waits for a typed domain
 
 ### Bot Queue Rules
 
@@ -176,7 +176,10 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - Keep Telegram SDK/API types isolated to the Telegram adapter. Utility string helpers such as HTML escaping may still live elsewhere, but Telegram request construction should have one source of truth.
 - Menus go through `send_menu`, `edit_menu`, and `answer_callback` with the port's own `Keyboard` type. Callback data uses `#[derive(telers::CallbackData)]` structs in `bot/src/value_objects/menu.rs`; domain buttons carry a 64-bit FNV-1a fingerprint of the domain (`DomainKey`), not the domain, to stay under Telegram's 64-byte limit, and not a list position, which an old message would resolve to another domain after the list changes.
 - Menu callbacks are answered before loading page data or editing the menu.
-- The add-domain prompt is `telers` FSM state (`MenuState::DomainInput`) in `MemoryStorage`, armed by the add screen and cleared by every other menu screen. It has no TTL and does not survive a restart; a command typed while it waits still runs as a command.
+- Group menus use Telegram ephemeral messages, addressed only to the initiating user. Group `/start` and `/lang` are registered as ephemeral commands; incoming ephemeral commands authorize a reply through `ReplyParameters.ephemeral_message_id`. Ordinary group `/start` commands are deleted best-effort before preparing the menu; sending an ephemeral menu from an ordinary command requires bot administrator rights. Never fall back to a public menu. Group callbacks require an ephemeral ID and a matching native `receiver_user`; missing metadata is rejected. Personal settings are loaded from `OwnChatConfig` and a missing user profile is created through request-scoped `SaveChat` only when needed. Language (including `/lang <code>`) and caption-link visibility change the user's config, not the group config.
+- Chat resolution for callbacks uses the SDK's prepared `event_chat` context in chat creation and menu access; `Update::chat()` alone does not include callback messages. FSM uses the same SDK context and remains scoped by chat and user.
+- Excluded domains are read and changed for the actual destination chat. Group domain screens, mutations, typed input and legacy `/add_ed`/`/rm_ed` require current administrator rights from `MessengerPort::is_chat_administrator`; API errors deny access. The Telegram adapter uses `getChatAdministrators` with a five-second absolute deadline. Denied domain messages finish handling rather than falling through into automatic downloads.
+- The add-domain prompt is `telers` FSM state (`MenuState::DomainInput`) in `MemoryStorage`, armed by the add screen and cleared by every other menu screen. Group prompts retain their ephemeral message ID so typed input edits the same private menu without a new callback. Callback denials use `answer_callback`; typed-input denials edit the private prompt or send an ephemeral notice. The state has no TTL and does not survive a restart; a command typed while it waits still runs as a command.
 - Current known exceptions that use `telers::Bot` directly: `ReactionMiddleware`, `worker::clear_reaction`, startup `SetMyCommands`, and `TelegramFileDownloader` (`getFile`). Do not add new ones.
 
 ### Bot Handler / Interactor Boundary
@@ -216,7 +219,7 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - Guest updates bypass `CreateChatMiddleware`: guest chat IDs belong to a separate namespace and must not create or look up ordinary chat settings. Use the sender's locale and a default `ChatConfig` with `tg_id: 0` for the queued download.
 - `MessengerPort::answer_guest` sends a text placeholder and returns its confirmed inline message ID. Only then enqueue an ordinary inline auto job; the existing worker handles media, post text and errors. Without an accepted link in the current message or its direct reply, do not answer or enqueue.
 - Guest query IDs are not stored or reserved in Redis. Do not add guest-specific TTLs, retries, media-selection rules or error formatting.
-- Guest usage is documented on the private menu's `HelpGuest` screen and included in the group `/start` help. Keep it alongside the existing inline-mode help in all locales.
+- Guest usage is documented on the menu's `HelpGuest` screen and included in the group `/help` response. Keep it alongside the existing inline-mode help in all locales.
 
 ### Bot DI Style
 

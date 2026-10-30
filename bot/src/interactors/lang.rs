@@ -11,7 +11,7 @@ use crate::{
     locale::Locale,
     services::{
         chat,
-        messenger::{MessengerPort, TextFormat},
+        messenger::{EphemeralMenu, Keyboard, MessengerPort, SendMenuRequest, TextFormat},
     },
     utils::ErrorFormatter,
 };
@@ -38,7 +38,9 @@ impl<Messenger> Lang<Messenger> {
 }
 
 pub struct LangInput<'a> {
+    pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
+    pub ephemeral: Option<EphemeralMenu>,
     pub chat_cfg: &'a ChatConfig,
     pub argument: Option<&'a str>,
 }
@@ -60,7 +62,8 @@ where
                 if let Some(locale) = Locale::parse(val) {
                     locale
                 } else {
-                    self.send_unknown_locale(input, current, val).await?;
+                    let text = t!("lang.unknown", locale = current.as_str(), lang = val);
+                    self.send_text(input, &text).await;
                     return Ok(());
                 }
             }
@@ -83,17 +86,7 @@ where
             }
         };
 
-        if let Err(err) = progress::new(
-            self.messenger.as_ref(),
-            &text,
-            input.chat_cfg.tg_id,
-            input.reply_to_message_id,
-            Some(TextFormat::Html),
-        )
-        .await
-        {
-            error!(err = %self.error_formatter.format(&err), "Send error");
-        }
+        self.send_text(input, &text).await;
 
         Ok(())
     }
@@ -103,19 +96,29 @@ impl<Messenger> Lang<Messenger>
 where
     Messenger: MessengerPort,
 {
-    async fn send_unknown_locale(&self, input: LangInput<'_>, current: Locale, val: &str) -> Result<(), HandlerError> {
-        let text = t!("lang.unknown", locale = current.as_str(), lang = val);
-        if let Err(err) = progress::new(
-            self.messenger.as_ref(),
-            &text,
-            input.chat_cfg.tg_id,
-            input.reply_to_message_id,
-            Some(TextFormat::Html),
-        )
-        .await
-        {
+    async fn send_text(&self, input: LangInput<'_>, text: &str) {
+        let result = if let Some(ephemeral) = input.ephemeral {
+            self.messenger
+                .send_menu(SendMenuRequest {
+                    chat_id: input.chat_id,
+                    ephemeral: Some(ephemeral),
+                    text,
+                    keyboard: &Keyboard { rows: Vec::new() },
+                })
+                .await
+        } else {
+            progress::new(
+                self.messenger.as_ref(),
+                text,
+                input.chat_id,
+                input.reply_to_message_id,
+                Some(TextFormat::Html),
+            )
+            .await
+            .map(|_| ())
+        };
+        if let Err(err) = result {
             error!(err = %self.error_formatter.format(&err), "Send error");
         }
-        Ok(())
     }
 }
