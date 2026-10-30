@@ -219,6 +219,9 @@ impl Drop for OptionalEdit<'_> {
 }
 
 impl MessengerPort for RecordingMessenger {
+    async fn is_chat_administrator(&self, _: i64, _: i64) -> Result<bool, MessengerError> {
+        unreachable!()
+    }
     async fn answer_guest(&self, _: AnswerGuestRequest<'_>) -> Result<String, MessengerError> {
         unreachable!()
     }

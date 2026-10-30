@@ -4,7 +4,7 @@ use rust_i18n::t;
 use telers::{
     callback_data::CallbackData,
     errors::HandlerError,
-    fsm::{Context, MemoryStorage},
+    fsm::{storage::Error as FsmError, Context, MemoryStorage},
     utils::text::{html_code, html_expandable_blockquote, html_quote, html_text_link},
 };
 use tracing::error;
@@ -16,25 +16,40 @@ use crate::{
     locale::Locale,
     services::{
         chat,
-        messenger::{AnswerCallbackRequest, Button, ButtonAction, EditMenuRequest, Keyboard, MessengerPort, SendMenuRequest},
+        messenger::{
+            AnswerCallbackRequest, Button, ButtonAction, DeleteMessageRequest, EditMenuRequest, EphemeralMenu, Keyboard, MenuMessage,
+            MessengerPort, SendMenuRequest,
+        },
     },
     utils::ErrorFormatter,
     value_objects::menu::{DeleteDomain, DomainKey, MenuState, OpenScreen, Screen, SetLanguage, SetLinkVisibility},
 };
 
 const LOCALES: [Locale; 3] = [Locale::En, Locale::Ru, Locale::Uk];
+pub const EPHEMERAL_MESSAGE_ID: &str = "menu_ephemeral_message_id";
 
 pub type Fsm = Context<MemoryStorage>;
 
 pub enum MenuTarget<'a> {
     Send {
         chat_id: i64,
+        ephemeral: Option<EphemeralMenu>,
+        command_message_id: Option<i64>,
     },
     Edit {
-        chat_id: i64,
-        message_id: i64,
-        callback_id: &'a str,
+        message: MenuMessage,
+        callback_id: Option<&'a str>,
     },
+}
+
+impl MenuTarget<'_> {
+    #[must_use]
+    pub const fn chat_id(&self) -> i64 {
+        match self {
+            Self::Send { chat_id, .. } => *chat_id,
+            Self::Edit { message, .. } => message.chat_id(),
+        }
+    }
 }
 
 pub struct OpenMenu<Messenger> {
@@ -90,16 +105,38 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: OpenMenuInput<'_>) -> Result<Self::Output, Self::Err> {
-        if let MenuTarget::Edit { callback_id, .. } = &input.target {
+        if let MenuTarget::Send {
+            chat_id,
+            command_message_id: Some(message_id),
+            ..
+        } = &input.target
+        {
+            if let Err(err) = self
+                .messenger
+                .delete_message(DeleteMessageRequest {
+                    chat_id: *chat_id,
+                    message_id: *message_id,
+                })
+                .await
+            {
+                error!(err = %self.error_formatter.format(&err), "Delete menu command error");
+            }
+        }
+        if let MenuTarget::Edit {
+            callback_id: Some(callback_id),
+            ..
+        } = &input.target
+        {
             self.answer(callback_id, input.notice.as_ref()).await;
         }
         let domains = &input.exclude_domains.0;
         let screen = existing_screen(input.screen, domains);
-        track_input(screen, input.fsm).await;
+        track_input(screen, &input.target, input.fsm).await;
 
         let locale = input.chat_cfg.locale();
         let page = Page {
             locale,
+            is_group: input.target.chat_id() != input.chat_cfg.tg_id,
             link_is_visible: input.chat_cfg.link_is_visible,
             domains,
             max_file_size_in_mb: self.cfg.yt_dlp.max_file_size / 1000 / 1000,
@@ -107,11 +144,16 @@ where
             username: self.username(screen).await,
             stats: self.stats_text(screen, locale).await,
         };
-        let view = render(screen, &page);
+        let mut view = render(screen, &page);
 
         match input.target {
-            MenuTarget::Send { chat_id } => self.send(chat_id, view, input.notice).await,
-            MenuTarget::Edit { chat_id, message_id, .. } => self.edit(chat_id, message_id, view).await,
+            MenuTarget::Send { chat_id, ephemeral, .. } => self.send(chat_id, ephemeral, view, input.notice).await,
+            MenuTarget::Edit { message, callback_id } => {
+                if callback_id.is_none() {
+                    view.text = with_notice(input.notice, view.text);
+                }
+                self.edit(message, view).await;
+            }
         }
 
         Ok(())
@@ -122,13 +164,14 @@ impl<Messenger> OpenMenu<Messenger>
 where
     Messenger: MessengerPort,
 {
-    async fn send(&self, chat_id: i64, view: View, notice: Option<Notice>) {
+    async fn send(&self, chat_id: i64, ephemeral: Option<EphemeralMenu>, view: View, notice: Option<Notice>) {
         // A new message has no callback answer to carry the notice, so the notice heads the text.
         let text = with_notice(notice, view.text);
         if let Err(err) = self
             .messenger
             .send_menu(SendMenuRequest {
                 chat_id,
+                ephemeral,
                 text: &text,
                 keyboard: &view.keyboard,
             })
@@ -153,12 +196,11 @@ where
         }
     }
 
-    async fn edit(&self, chat_id: i64, message_id: i64, view: View) {
+    async fn edit(&self, message: MenuMessage, view: View) {
         if let Err(err) = self
             .messenger
             .edit_menu(EditMenuRequest {
-                chat_id,
-                message_id,
+                message,
                 text: &view.text,
                 keyboard: &view.keyboard,
             })
@@ -344,7 +386,7 @@ impl<Messenger> AddMenuDomain<Messenger> {
 }
 
 pub struct AddMenuDomainInput<'a> {
-    pub chat_id: i64,
+    pub target: MenuTarget<'a>,
     pub host: Option<&'a str>,
     pub chat_cfg: &'a ChatConfig,
     pub exclude_domains: &'a ChatConfigExcludeDomains,
@@ -374,13 +416,16 @@ where
                 Screen::Domains,
                 Notice::new(t!("exclude_domain.limit_reached", locale = locale).into_owned()),
             ),
-            Some(host) => (Screen::Domains, self.add(input.chat_cfg, &mut domains, host).await),
+            Some(host) => (
+                Screen::Domains,
+                self.add(input.target.chat_id(), input.chat_cfg, &mut domains, host).await,
+            ),
         };
 
         self.open_menu
             .as_ref()
             .execute(OpenMenuInput {
-                target: MenuTarget::Send { chat_id: input.chat_id },
+                target: input.target,
                 screen,
                 notice: Some(notice),
                 chat_cfg: input.chat_cfg,
@@ -392,12 +437,12 @@ where
 }
 
 impl<Messenger> AddMenuDomain<Messenger> {
-    async fn add(&self, chat_cfg: &ChatConfig, domains: &mut Vec<String>, host: &str) -> Notice {
+    async fn add(&self, chat_id: i64, chat_cfg: &ChatConfig, domains: &mut Vec<String>, host: &str) -> Notice {
         let locale = chat_cfg.locale().as_str();
         match self
             .add_domain
             .execute(chat::ExcludeDomainInput {
-                dto: ChatConfigExcludeDomain::new(chat_cfg.tg_id, host.to_owned()),
+                dto: ChatConfigExcludeDomain::new(chat_id, host.to_owned()),
             })
             .await
         {
@@ -455,7 +500,9 @@ where
 
     async fn execute(self, input: RemoveMenuDomainInput<'_>) -> Result<Self::Output, Self::Err> {
         let mut domains = input.exclude_domains.0.clone();
-        let notice = self.remove(input.chat_cfg, &mut domains, input.domain).await;
+        let notice = self
+            .remove(input.target.chat_id(), input.chat_cfg, &mut domains, input.domain)
+            .await;
 
         self.open_menu
             .as_ref()
@@ -472,13 +519,13 @@ where
 }
 
 impl<Messenger> RemoveMenuDomain<Messenger> {
-    async fn remove(&self, chat_cfg: &ChatConfig, domains: &mut Vec<String>, domain_key: DomainKey) -> Option<Notice> {
+    async fn remove(&self, chat_id: i64, chat_cfg: &ChatConfig, domains: &mut Vec<String>, domain_key: DomainKey) -> Option<Notice> {
         let locale = chat_cfg.locale().as_str();
         let index = domain_key.position(domains)?;
         match self
             .remove_domain
             .execute(chat::ExcludeDomainInput {
-                dto: ChatConfigExcludeDomain::new(chat_cfg.tg_id, domains[index].clone()),
+                dto: ChatConfigExcludeDomain::new(chat_id, domains[index].clone()),
             })
             .await
         {
@@ -499,11 +546,22 @@ impl<Messenger> RemoveMenuDomain<Messenger> {
 // Only the add-domain prompt waits for typed input; every other screen cancels it. Finishing first keeps the state
 //  stack at one entry, since `set_state` pushes onto it.
 //  https://github.com/Desiders/telers/blob/a14a34520eaeffccd1ebdbb4fffe8e44ead81bb9/telers/src/fsm/storage/memory.rs#L47-L57
-async fn track_input(screen: Screen, fsm: &Fsm) {
-    let result = match fsm.finish().await {
-        Ok(()) if screen == Screen::DomainAdd => fsm.set_state(MenuState::DomainInput).await,
-        result => result,
-    };
+async fn track_input(screen: Screen, target: &MenuTarget<'_>, fsm: &Fsm) {
+    let result: Result<(), FsmError> = async {
+        fsm.finish().await?;
+        if screen == Screen::DomainAdd {
+            fsm.set_state(MenuState::DomainInput).await?;
+            if let MenuTarget::Edit {
+                message: MenuMessage::Ephemeral { ephemeral_message_id, .. },
+                ..
+            } = target
+            {
+                fsm.set_value(EPHEMERAL_MESSAGE_ID, *ephemeral_message_id).await?;
+            }
+        }
+        Ok(())
+    }
+    .await;
     if let Err(err) = result {
         error!(%err, "Menu state error");
     }
@@ -533,6 +591,7 @@ fn existing_screen(screen: Screen, domains: &[String]) -> Screen {
 
 struct Page<'a> {
     locale: Locale,
+    is_group: bool,
     link_is_visible: bool,
     domains: &'a [String],
     max_file_size_in_mb: u64,
@@ -567,7 +626,7 @@ fn render(screen: Screen, page: &Page<'_>) -> View {
             ],
         ),
         Screen::Settings => (
-            label("menu.settings"),
+            label(if page.is_group { "menu.group_settings" } else { "menu.settings" }),
             vec![
                 Button {
                     text: with_tick(&label("menu.btn_link_visibility"), page.link_is_visible),
@@ -702,10 +761,12 @@ fn domain_code(page: &Page<'_>, domain_key: DomainKey) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use telers::fsm::StorageKey;
 
     fn page(domains: &[String]) -> Page<'_> {
         Page {
             locale: Locale::En,
+            is_group: false,
             link_is_visible: true,
             domains,
             max_file_size_in_mb: 50,
@@ -841,13 +902,28 @@ mod tests {
 
     #[tokio::test]
     async fn only_the_add_screen_waits_for_a_domain() {
-        let fsm = Fsm::new(MemoryStorage::new(), telers::fsm::StorageKey::new(1, 2, 2, None, None));
+        let fsm = Fsm::new(MemoryStorage::new(), StorageKey::new(1, 2, 2, None, None));
+        for message in [
+            MenuMessage::Chat { chat_id: 2, message_id: 3 },
+            MenuMessage::Ephemeral {
+                chat_id: -1,
+                receiver_user_id: 2,
+                ephemeral_message_id: 3,
+            },
+        ] {
+            let target = MenuTarget::Edit {
+                message,
+                callback_id: Some("synthetic-callback"),
+            };
+            track_input(Screen::DomainAdd, &target, &fsm).await;
+            track_input(Screen::DomainAdd, &target, &fsm).await;
+            assert_eq!(fsm.get_states().await.unwrap().as_ref(), [MenuState::DomainInput.as_ref().into()]);
+            let expected_id = matches!(message, MenuMessage::Ephemeral { .. }).then_some(3);
+            assert_eq!(fsm.get_value::<_, i64>(EPHEMERAL_MESSAGE_ID).await.unwrap(), expected_id);
 
-        track_input(Screen::DomainAdd, &fsm).await;
-        track_input(Screen::DomainAdd, &fsm).await;
-        assert_eq!(fsm.get_states().await.unwrap().as_ref(), [MenuState::DomainInput.as_ref().into()]);
-
-        track_input(Screen::Domains, &fsm).await;
-        assert_eq!(fsm.get_state().await.unwrap(), None);
+            track_input(Screen::Domains, &target, &fsm).await;
+            assert_eq!(fsm.get_state().await.unwrap(), None);
+            assert_eq!(fsm.get_value::<_, i64>(EPHEMERAL_MESSAGE_ID).await.unwrap(), None);
+        }
     }
 }

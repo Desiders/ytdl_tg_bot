@@ -22,16 +22,20 @@ use telers::{
     enums::ParseMode,
     errors::{SessionErrorKind, TelegramErrorKind},
     methods::{
-        self, AnswerCallbackQuery, AnswerGuestQuery, AnswerInlineQuery, DeleteMessage, EditMessageText, GetMe, SendMediaGroup, SendMessage,
-        TelegramMethod,
+        self, AnswerCallbackQuery, AnswerGuestQuery, AnswerInlineQuery, DeleteMessage, EditEphemeralMessageText, EditMessageText,
+        GetChatAdministrators, GetMe, SendMediaGroup, SendMessage, TelegramMethod,
     },
     types::{
-        ChatIdKind, InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResult, InlineQueryResultArticle, InputFile, InputMedia,
-        InputMediaAudio, InputMediaPhoto, InputMediaVideo, InputTextMessageContent, LinkPreviewOptions, Message, ReplyParameters,
+        ChatIdKind, ChatMember, EphemeralMessageParameters, InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResult,
+        InlineQueryResultArticle, InputFile, InputMedia, InputMediaAudio, InputMediaPhoto, InputMediaVideo, InputTextMessageContent,
+        LinkPreviewOptions, Message, ReplyParameters,
     },
     Bot,
 };
-use tokio::{sync::Mutex, time::Instant};
+use tokio::{
+    sync::Mutex,
+    time::{timeout, Instant},
+};
 use tracing::{error, warn};
 
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(proto::MEDIA_EXECUTION_LIMIT_SECS);
@@ -39,12 +43,13 @@ const PROGRESS_EDIT_INTERVAL: Duration = Duration::from_secs(5);
 const INLINE_PROGRESS_EDIT_INTERVAL: Duration = Duration::from_secs(15);
 const WAIT_LIVENESS_INTERVAL: Duration = Duration::from_secs(30);
 const REQUEST_INTERVAL: Duration = Duration::from_millis(100);
+const ADMIN_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
 use super::{
     AnswerCallbackRequest, AnswerGuestRequest, AnswerInlineErrorRequest, AnswerInlineQueryRequest, ButtonAction, DeleteMessageRequest,
-    EditCaptionRequest, EditMediaByIdRequest, EditMenuRequest, EditTarget, EditTextRequest, InlineQueryArticle, Keyboard, MessengerError,
-    SendMediaByIdRequest, SendMediaGroupRequest, SendMenuRequest, SendTextRequest, SentMessage, TextFormat, UploadAudioRequest,
-    UploadPhotoRequest, UploadPhotoUrlRequest, UploadVideoRequest,
+    EditCaptionRequest, EditMediaByIdRequest, EditMenuRequest, EditTarget, EditTextRequest, InlineQueryArticle, Keyboard, MenuMessage,
+    MessengerError, SendMediaByIdRequest, SendMediaGroupRequest, SendMenuRequest, SendTextRequest, SentMessage, TextFormat,
+    UploadAudioRequest, UploadPhotoRequest, UploadPhotoUrlRequest, UploadVideoRequest,
 };
 
 #[derive(Clone)]
@@ -122,6 +127,23 @@ impl MessengerPort for TelegramMessenger {
     async fn username(&self) -> Result<String, MessengerError> {
         let me = with_retries(self, GetMe {}, 0, None).await?;
         Ok(me.username.expect("Bots always have a username").into())
+    }
+
+    async fn is_chat_administrator(&self, chat_id: i64, user_id: i64) -> Result<bool, MessengerError> {
+        let administrators = timeout(
+            ADMIN_CHECK_TIMEOUT,
+            with_retries(
+                self,
+                GetChatAdministrators::new(chat_id),
+                0,
+                Some(ADMIN_CHECK_TIMEOUT.as_secs_f32()),
+            ),
+        )
+        .await
+        .map_err(|err| MessengerError::new(err.to_string()))??;
+        Ok(administrators
+            .iter()
+            .any(|member| matches!(member, ChatMember::Creator(_) | ChatMember::Administrator(_)) && member.user().id == user_id))
     }
 
     async fn send_text(&self, request: SendTextRequest<'_>) -> Result<SentMessage, MessengerError> {
@@ -212,6 +234,17 @@ impl MessengerPort for TelegramMessenger {
             SendMessage::new(request.chat_id, request.text)
                 .parse_mode(ParseMode::HTML)
                 .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
+                .ephemeral_message_parameters_option(
+                    request
+                        .ephemeral
+                        .map(|target| EphemeralMessageParameters::new(target.receiver_user_id)),
+                )
+                .reply_parameters_option(
+                    request
+                        .ephemeral
+                        .and_then(|target| target.reply_to_ephemeral_message_id)
+                        .map(|id| ReplyParameters::new().ephemeral_message_id(id)),
+                )
                 .reply_markup(InlineKeyboardMarkup::from(request.keyboard)),
             0,
             None,
@@ -221,15 +254,32 @@ impl MessengerPort for TelegramMessenger {
     }
 
     async fn edit_menu(&self, request: EditMenuRequest<'_>) -> Result<(), MessengerError> {
-        let method = EditMessageText::new()
-            .chat_id(request.chat_id)
-            .message_id(request.message_id)
-            .text(request.text)
-            .parse_mode(ParseMode::HTML)
-            .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
-            .reply_markup(InlineKeyboardMarkup::from(request.keyboard));
+        let result = match request.message {
+            MenuMessage::Chat { chat_id, message_id } => {
+                let method = EditMessageText::new()
+                    .chat_id(chat_id)
+                    .message_id(message_id)
+                    .text(request.text)
+                    .parse_mode(ParseMode::HTML)
+                    .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
+                    .reply_markup(InlineKeyboardMarkup::from(request.keyboard));
+                with_retries(self, method, 0, None).await.map(|_| ())
+            }
+            MenuMessage::Ephemeral {
+                chat_id,
+                receiver_user_id,
+                ephemeral_message_id,
+            } => {
+                let method = EditEphemeralMessageText::new(chat_id, receiver_user_id, ephemeral_message_id)
+                    .text(request.text)
+                    .parse_mode(ParseMode::HTML)
+                    .link_preview_options(LinkPreviewOptions::new().is_disabled(true))
+                    .reply_markup(InlineKeyboardMarkup::from(request.keyboard));
+                with_retries(self, method, 0, None).await.map(|_| ())
+            }
+        };
 
-        match with_retries(self, method, 0, None).await {
+        match result {
             Err(err) if !is_message_not_modified(&err) => Err(err.into()),
             _ => Ok(()),
         }
@@ -1048,7 +1098,7 @@ mod upload_deadline_tests {
 mod rate_limit_tests {
     use super::*;
     use crate::services::{
-        messenger::{Button, MediaGroupItem},
+        messenger::{Button, EphemeralMenu, MediaGroupItem},
         queue::test_support::Fixture,
     };
     use futures_util::stream;
@@ -1061,6 +1111,7 @@ mod rate_limit_tests {
     use tokio::{
         io::{AsyncReadExt as _, AsyncWriteExt as _},
         net::{TcpListener, TcpStream},
+        time::{pause, resume},
     };
     use url::Url;
 
@@ -1365,13 +1416,131 @@ mod rate_limit_tests {
     }
 
     #[tokio::test]
-    async fn edit_menu_ignores_an_unchanged_message_and_sends_the_keyboard() {
+    async fn administrator_checks_accept_owners_and_administrators_and_reject_other_users() {
+        let fixture = Fixture::new().await;
+        let body = r#"{"ok":true,"result":[
+            {"status":"creator","user":{"id":1,"is_bot":false,"first_name":"Synthetic owner"},"is_anonymous":false},
+            {"status":"administrator","user":{"id":2,"is_bot":false,"first_name":"Synthetic administrator"},
+             "can_be_edited":false,"is_anonymous":false,"can_manage_chat":true,"can_delete_messages":false,
+             "can_manage_video_chats":false,"can_restrict_members":false,"can_promote_members":false,
+             "can_change_info":false,"can_invite_users":false,"can_post_stories":false,"can_edit_stories":false,
+             "can_delete_stories":false,"can_send_welcome_messages":false}
+        ]}"#;
+        for (user_id, expected) in [(1, true), (2, true), (3, false)] {
+            let server = reply_once("200 OK", body).await;
+            let actual = test_messenger(server.address, &fixture)
+                .is_chat_administrator(-100, user_id)
+                .await
+                .unwrap();
+            assert_eq!(actual, expected);
+            let request = server.request.await.unwrap();
+            assert!(request.contains("/getChatAdministrators "));
+            assert!(request.contains("name=\"chat_id\"\r\n\r\n-100"));
+        }
+
+        let server = reply_once(
+            "400 Bad Request",
+            r#"{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}"#,
+        )
+        .await;
+        assert!(test_messenger(server.address, &fixture)
+            .is_chat_administrator(-100, 1)
+            .await
+            .is_err());
+        server.request.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn administrator_checks_have_a_deadline_while_telegram_is_in_cooldown() {
+        let fixture = Fixture::new().await;
+        let messenger = test_messenger("127.0.0.1:1".parse().unwrap(), &fixture);
+        pause();
+        messenger.limits.lock().await.cooldown_until = Instant::now() + Duration::from_secs(60);
+        let started = Instant::now();
+        assert!(messenger.is_chat_administrator(-100, 1).await.is_err());
+        assert!(started.elapsed() >= ADMIN_CHECK_TIMEOUT);
+        assert!(started.elapsed() < Duration::from_secs(6));
+        resume();
+    }
+
+    #[tokio::test]
+    async fn menus_send_privately_or_to_the_ephemeral_receiver() {
+        let fixture = Fixture::new().await;
+        for ephemeral in [
+            None,
+            Some(EphemeralMenu {
+                receiver_user_id: 1,
+                reply_to_ephemeral_message_id: None,
+            }),
+            Some(EphemeralMenu {
+                receiver_user_id: 1,
+                reply_to_ephemeral_message_id: Some(7),
+            }),
+        ] {
+            let (chat_id, body) = if ephemeral.is_some() {
+                (
+                    -100,
+                    r#"{"ok":true,"result":{"message_id":0,"date":1,"chat":{"id":-100,"type":"group","title":"Synthetic group"},"receiver_user":{"id":1,"is_bot":false,"first_name":"Synthetic user"},"ephemeral_message_id":8,"text":"Synthetic menu"}}"#,
+                )
+            } else {
+                (
+                    1,
+                    r#"{"ok":true,"result":{"message_id":8,"date":1,"chat":{"id":1,"type":"private"},"text":"Synthetic menu"}}"#,
+                )
+            };
+            let server = reply_once("200 OK", body).await;
+            test_messenger(server.address, &fixture)
+                .send_menu(SendMenuRequest {
+                    chat_id,
+                    ephemeral,
+                    text: "Synthetic menu",
+                    keyboard: &Keyboard { rows: Vec::new() },
+                })
+                .await
+                .unwrap();
+            let request = server.request.await.unwrap();
+            assert!(request.contains("/sendMessage "));
+            assert!(request.contains(&format!("name=\"chat_id\"\r\n\r\n{chat_id}")));
+            assert_eq!(request.contains("name=\"ephemeral_message_parameters\""), ephemeral.is_some());
+            assert_eq!(request.contains(r#""receiver_user_id":1"#), ephemeral.is_some());
+            assert_eq!(
+                request.contains(r#""ephemeral_message_id":7"#),
+                ephemeral.and_then(|target| target.reply_to_ephemeral_message_id).is_some()
+            );
+            assert!(!request.contains(r#""message_id":"#));
+            assert!(!request.contains("allow_sending_without_reply"));
+        }
+    }
+
+    #[tokio::test]
+    async fn ephemeral_menu_rejections_do_not_send_a_public_menu() {
         let fixture = Fixture::new().await;
         let server = reply_once(
             "400 Bad Request",
-            r#"{"ok":false,"error_code":400,"description":"Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message"}"#,
+            r#"{"ok":false,"error_code":400,"description":"Bad Request: ephemeral messages are unavailable"}"#,
         )
         .await;
+        let error = test_messenger(server.address, &fixture)
+            .send_menu(SendMenuRequest {
+                chat_id: -100,
+                ephemeral: Some(EphemeralMenu {
+                    receiver_user_id: 1,
+                    reply_to_ephemeral_message_id: None,
+                }),
+                text: "Synthetic menu",
+                keyboard: &Keyboard { rows: Vec::new() },
+            })
+            .await
+            .unwrap_err();
+        let request = server.request.await.unwrap();
+        assert!(request.contains("/sendMessage "));
+        assert!(request.contains(r#""receiver_user_id":1"#));
+        assert!(error.to_string().contains("ephemeral messages are unavailable"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn menu_edits_keep_the_keyboard_and_accept_unchanged_messages() {
+        let fixture = Fixture::new().await;
         let keyboard = Keyboard {
             rows: vec![
                 vec![Button {
@@ -1385,43 +1554,89 @@ mod rate_limit_tests {
             ],
         };
 
-        test_messenger(server.address, &fixture)
-            .edit_menu(EditMenuRequest {
-                chat_id: 1,
-                message_id: 2,
-                text: "Synthetic menu",
-                keyboard: &keyboard,
-            })
-            .await
-            .unwrap();
+        for message in [
+            MenuMessage::Chat { chat_id: 1, message_id: 2 },
+            MenuMessage::Ephemeral {
+                chat_id: -100,
+                receiver_user_id: 1,
+                ephemeral_message_id: 2,
+            },
+        ] {
+            for (status, body) in [
+                ("200 OK", r#"{"ok":true,"result":true}"#),
+                (
+                    "400 Bad Request",
+                    r#"{"ok":false,"error_code":400,"description":"Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message"}"#,
+                ),
+            ] {
+                let server = reply_once(status, body).await;
+                test_messenger(server.address, &fixture)
+                    .edit_menu(EditMenuRequest {
+                        message,
+                        text: "Synthetic menu",
+                        keyboard: &keyboard,
+                    })
+                    .await
+                    .unwrap();
 
-        let request = server.request.await.unwrap();
-        assert!(request.contains("/editMessageText "));
-        assert!(request.contains(r#""callback_data":"open:synthetic""#), "{request}");
-        assert!(request.contains(r#""url":"https://example.com/""#), "{request}");
+                let request = server.request.await.unwrap();
+                match message {
+                    MenuMessage::Chat { chat_id, message_id } => {
+                        assert!(request.contains("/editMessageText "));
+                        assert!(request.contains(&format!("name=\"chat_id\"\r\n\r\n{chat_id}")));
+                        assert!(request.contains(&format!("name=\"message_id\"\r\n\r\n{message_id}")));
+                        assert!(!request.contains("name=\"receiver_user_id\""));
+                        assert!(!request.contains("name=\"ephemeral_message_id\""));
+                    }
+                    MenuMessage::Ephemeral {
+                        chat_id,
+                        receiver_user_id,
+                        ephemeral_message_id,
+                    } => {
+                        assert!(request.contains("/editEphemeralMessageText "));
+                        assert!(request.contains(&format!("name=\"chat_id\"\r\n\r\n{chat_id}")));
+                        assert!(request.contains(&format!("name=\"receiver_user_id\"\r\n\r\n{receiver_user_id}")));
+                        assert!(request.contains(&format!("name=\"ephemeral_message_id\"\r\n\r\n{ephemeral_message_id}")));
+                        assert!(!request.contains("name=\"message_id\""));
+                    }
+                }
+                assert!(request.contains(r#""callback_data":"open:synthetic""#), "{request}");
+                assert!(request.contains(r#""url":"https://example.com/""#), "{request}");
+                assert!(request.contains("name=\"parse_mode\"\r\n\r\nHTML"));
+                assert!(request.contains(r#""is_disabled":true"#));
+            }
+        }
     }
 
     #[tokio::test]
     async fn edit_menu_reports_other_rejections() {
         let fixture = Fixture::new().await;
-        let server = reply_once(
-            "400 Bad Request",
-            r#"{"ok":false,"error_code":400,"description":"Bad Request: message to edit not found"}"#,
-        )
-        .await;
+        for message in [
+            MenuMessage::Chat { chat_id: 1, message_id: 2 },
+            MenuMessage::Ephemeral {
+                chat_id: -100,
+                receiver_user_id: 1,
+                ephemeral_message_id: 2,
+            },
+        ] {
+            let server = reply_once(
+                "400 Bad Request",
+                r#"{"ok":false,"error_code":400,"description":"Bad Request: message to edit not found"}"#,
+            )
+            .await;
 
-        let error = test_messenger(server.address, &fixture)
-            .edit_menu(EditMenuRequest {
-                chat_id: 1,
-                message_id: 2,
-                text: "Synthetic menu",
-                keyboard: &Keyboard { rows: Vec::new() },
-            })
-            .await
-            .unwrap_err();
+            let error = test_messenger(server.address, &fixture)
+                .edit_menu(EditMenuRequest {
+                    message,
+                    text: "Synthetic menu",
+                    keyboard: &Keyboard { rows: Vec::new() },
+                })
+                .await
+                .unwrap_err();
 
-        server.request.await.unwrap();
-        assert!(error.to_string().contains("message to edit not found"), "{error}");
+            server.request.await.unwrap();
+            assert!(error.to_string().contains("message to edit not found"), "{error}");
+        }
     }
 
     #[tokio::test]

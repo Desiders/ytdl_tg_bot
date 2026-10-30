@@ -3,7 +3,7 @@ use std::{env, sync::Arc, time::Duration};
 use telers::{
     event::simple::HandlerResult,
     methods::SetMyCommands,
-    types::{BotCommand, BotCommandScopeAllPrivateChats},
+    types::{BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats},
     Bot,
 };
 use tokio::fs;
@@ -32,6 +32,14 @@ fn build_commands(locale: &str) -> Vec<BotCommand> {
         .collect()
 }
 
+fn build_group_commands(locale: &str) -> Vec<BotCommand> {
+    build_commands(locale)
+        .into_iter()
+        .filter(|command| matches!(command.command.as_ref(), "start" | "lang"))
+        .map(|command| command.is_ephemeral(true))
+        .collect()
+}
+
 async fn set_my_commands(bot: Bot) -> HandlerResult {
     bot.send(SetMyCommands::new(build_commands(Locale::En.as_str())).scope(BotCommandScopeAllPrivateChats {}))
         .await?;
@@ -44,6 +52,20 @@ async fn set_my_commands(bot: Bot) -> HandlerResult {
     bot.send(
         SetMyCommands::new(build_commands(Locale::Uk.as_str()))
             .scope(BotCommandScopeAllPrivateChats {})
+            .language_code(Locale::Uk.as_str()),
+    )
+    .await?;
+    bot.send(SetMyCommands::new(build_group_commands(Locale::En.as_str())).scope(BotCommandScopeAllGroupChats {}))
+        .await?;
+    bot.send(
+        SetMyCommands::new(build_group_commands(Locale::Ru.as_str()))
+            .scope(BotCommandScopeAllGroupChats {})
+            .language_code(Locale::Ru.as_str()),
+    )
+    .await?;
+    bot.send(
+        SetMyCommands::new(build_group_commands(Locale::Uk.as_str()))
+            .scope(BotCommandScopeAllGroupChats {})
             .language_code(Locale::Uk.as_str()),
     )
     .await?;
@@ -118,4 +140,28 @@ pub async fn on_startup(bot: Bot, node_router: Arc<NodeRouter>, cfg: Arc<Config>
 
     info!("Startup sequence completed");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_group_commands_are_ephemeral_and_keep_private_commands_unchanged() {
+        for locale in [Locale::En, Locale::Ru, Locale::Uk] {
+            let private_commands = build_commands(locale.as_str());
+            let group_commands = build_group_commands(locale.as_str());
+
+            assert!(private_commands.iter().all(|command| command.is_ephemeral.is_none()));
+            assert_eq!(
+                group_commands.iter().map(|command| command.command.as_ref()).collect::<Vec<_>>(),
+                ["start", "lang"],
+            );
+            assert!(group_commands.iter().all(|command| command.is_ephemeral == Some(true)));
+            for command in group_commands {
+                let private_command = private_commands.iter().find(|other| other.command == command.command).unwrap();
+                assert_eq!(command.description, private_command.description);
+            }
+        }
+    }
 }

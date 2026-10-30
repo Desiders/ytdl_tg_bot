@@ -30,9 +30,9 @@ use crate::{
         chat, downloaded_media,
         messenger::{
             AnswerCallbackRequest, AnswerGuestRequest, AnswerInlineErrorRequest, AnswerInlineQueryRequest, ButtonAction,
-            DeleteMessageRequest, EditCaptionRequest, EditMediaByIdRequest, EditMenuRequest, EditTextRequest, Keyboard, MessengerError,
-            MessengerPort, SendMediaByIdRequest, SendMediaGroupRequest, SendMenuRequest, SendTextRequest, SentMessage, UploadAudioRequest,
-            UploadPhotoRequest, UploadPhotoUrlRequest, UploadVideoRequest,
+            DeleteMessageRequest, EditCaptionRequest, EditMediaByIdRequest, EditMenuRequest, EditTextRequest, EphemeralMenu, Keyboard,
+            MenuMessage, MessengerError, MessengerPort, SendMediaByIdRequest, SendMediaGroupRequest, SendMenuRequest, SendTextRequest,
+            SentMessage, UploadAudioRequest, UploadPhotoRequest, UploadPhotoUrlRequest, UploadVideoRequest,
         },
         node_router, queue,
     },
@@ -46,9 +46,11 @@ use crate::{
 const CHAT_ID: i64 = 1;
 const CALLBACK_ID: &str = "synthetic-callback";
 const EDIT: MenuTarget<'static> = MenuTarget::Edit {
-    chat_id: CHAT_ID,
-    message_id: 2,
-    callback_id: CALLBACK_ID,
+    message: MenuMessage::Chat {
+        chat_id: CHAT_ID,
+        message_id: 2,
+    },
+    callback_id: Some(CALLBACK_ID),
 };
 
 struct RecordingMessenger(Arc<Mutex<Vec<String>>>);
@@ -60,6 +62,9 @@ impl RecordingMessenger {
 }
 
 impl MessengerPort for RecordingMessenger {
+    async fn is_chat_administrator(&self, _: i64, _: i64) -> Result<bool, MessengerError> {
+        unreachable!()
+    }
     async fn answer_guest(&self, _: AnswerGuestRequest<'_>) -> Result<String, MessengerError> {
         unreachable!()
     }
@@ -67,10 +72,24 @@ impl MessengerPort for RecordingMessenger {
         Ok("test_bot".into())
     }
     async fn send_menu(&self, request: SendMenuRequest<'_>) -> Result<(), MessengerError> {
+        if let Some(ephemeral) = request.ephemeral {
+            self.record(format!(
+                "ephemeral send {}:{}:{:?}",
+                request.chat_id, ephemeral.receiver_user_id, ephemeral.reply_to_ephemeral_message_id
+            ));
+        }
         self.record(format!("send {}", menu(request.text, request.keyboard)));
         Ok(())
     }
     async fn edit_menu(&self, request: EditMenuRequest<'_>) -> Result<(), MessengerError> {
+        if let MenuMessage::Ephemeral {
+            chat_id,
+            receiver_user_id,
+            ephemeral_message_id,
+        } = request.message
+        {
+            self.record(format!("ephemeral edit {chat_id}:{receiver_user_id}:{ephemeral_message_id}"));
+        }
         self.record(format!("edit {}", menu(request.text, request.keyboard)));
         Ok(())
     }
@@ -88,8 +107,9 @@ impl MessengerPort for RecordingMessenger {
     async fn edit_caption(&self, _: EditCaptionRequest<'_>) -> Result<(), MessengerError> {
         unreachable!()
     }
-    async fn delete_message(&self, _: DeleteMessageRequest) -> Result<(), MessengerError> {
-        unreachable!()
+    async fn delete_message(&self, request: DeleteMessageRequest) -> Result<(), MessengerError> {
+        self.record(format!("delete {}:{}", request.chat_id, request.message_id));
+        Err(MessengerError::new("Synthetic delete failure"))
     }
     async fn answer_inline_error(&self, _: AnswerInlineErrorRequest<'_>) -> Result<(), MessengerError> {
         unreachable!()
@@ -229,10 +249,14 @@ impl Fixture {
     }
 
     async fn chat(&self) -> Saved {
+        self.chat_by_id(CHAT_ID).await
+    }
+
+    async fn chat_by_id(&self, chat_id: i64) -> Saved {
         let reader = self.tx_manager.chat_config_reader();
         Saved {
-            config: reader.get(CHAT_ID).await.unwrap().unwrap(),
-            exclude_domains: reader.get_exclude_domains(CHAT_ID).await.unwrap(),
+            config: reader.get(chat_id).await.unwrap().unwrap(),
+            exclude_domains: reader.get_exclude_domains(chat_id).await.unwrap(),
         }
     }
 
@@ -268,7 +292,11 @@ impl Fixture {
             self.open_menu.clone(),
         )
         .execute(AddMenuDomainInput {
-            chat_id: CHAT_ID,
+            target: MenuTarget::Send {
+                chat_id: CHAT_ID,
+                ephemeral: None,
+                command_message_id: None,
+            },
             host: Some(host),
             chat_cfg: &config,
             exclude_domains: &exclude_domains,
@@ -488,4 +516,140 @@ async fn toggling_link_visibility_saves_it_and_redraws_the_settings() {
 
     let edit = fixture.events().remove(1);
     assert_eq!(edit, format!("edit {}", fixture.saved_menu(Screen::Settings).await));
+}
+
+#[tokio::test]
+async fn group_menu_keeps_personal_settings_separate_from_chat_domains() {
+    const GROUP_ID: i64 = -2;
+    let fixture = Fixture::new(&[]).await;
+    chat::SaveChat::new(fixture.tx_manager.clone())
+        .execute(chat::SaveChatInput {
+            chat: Chat::new(GROUP_ID, None, ChatType::Group),
+            chat_config: ChatConfig::new(GROUP_ID, false, "en".into()),
+        })
+        .await
+        .unwrap();
+    let group = fixture.chat_by_id(GROUP_ID).await;
+    let fsm = Fsm::new(MemoryStorage::new(), StorageKey::new(1, GROUP_ID, CHAT_ID, None, None));
+    let message = MenuMessage::Ephemeral {
+        chat_id: GROUP_ID,
+        receiver_user_id: CHAT_ID,
+        ephemeral_message_id: 2,
+    };
+    let target = || MenuTarget::Edit {
+        message,
+        callback_id: Some(CALLBACK_ID),
+    };
+    let mut personal = fixture.chat().await.config;
+    let update_chat_cfg = Arc::new(chat::UpdateChatConfig::new(fixture.tx_manager.clone()));
+
+    SetMenuLanguage::new(fixture.formatter.clone(), update_chat_cfg.clone(), fixture.open_menu.clone())
+        .execute(SetMenuLanguageInput {
+            target: target(),
+            locale: Locale::Ru,
+            chat_cfg: &personal,
+            exclude_domains: &group.exclude_domains,
+            fsm: &fsm,
+        })
+        .await
+        .unwrap();
+    personal = fixture.chat().await.config;
+
+    SetMenuLinkVisibility::new(fixture.formatter.clone(), update_chat_cfg, fixture.open_menu.clone())
+        .execute(SetMenuLinkVisibilityInput {
+            target: target(),
+            link_is_visible: true,
+            chat_cfg: &personal,
+            exclude_domains: &group.exclude_domains,
+            fsm: &fsm,
+        })
+        .await
+        .unwrap();
+    personal = fixture.chat().await.config;
+    assert!(fixture
+        .events()
+        .last()
+        .unwrap()
+        .contains(t!("menu.group_settings", locale = "ru").as_ref()));
+
+    fixture.events.lock().unwrap().clear();
+    AddMenuDomain::new(
+        fixture.formatter.clone(),
+        Arc::new(chat::AddExcludeDomain::new(fixture.tx_manager.clone())),
+        fixture.open_menu.clone(),
+    )
+    .execute(AddMenuDomainInput {
+        target: MenuTarget::Edit {
+            message,
+            callback_id: None,
+        },
+        host: Some("group.example"),
+        chat_cfg: &personal,
+        exclude_domains: &group.exclude_domains,
+        fsm: &fsm,
+    })
+    .await
+    .unwrap();
+    let changed = fixture.chat_by_id(GROUP_ID).await;
+    assert_eq!(changed.exclude_domains.0, ["group.example"]);
+    assert!(fixture.chat().await.exclude_domains.0.is_empty());
+    let events = fixture.events();
+    assert_eq!(events.len(), 2, "{events:?}");
+    assert_eq!(events[0], "ephemeral edit -2:1:2");
+    assert!(events[1].contains(t!("menu.domain_added", locale = "ru", domain = "group.example").as_ref()));
+
+    RemoveMenuDomain::new(
+        fixture.formatter.clone(),
+        Arc::new(chat::RemoveExcludeDomain::new(fixture.tx_manager.clone())),
+        fixture.open_menu.clone(),
+    )
+    .execute(RemoveMenuDomainInput {
+        target: target(),
+        domain: DomainKey::new("group.example"),
+        chat_cfg: &personal,
+        exclude_domains: &changed.exclude_domains,
+        fsm: &fsm,
+    })
+    .await
+    .unwrap();
+    let after = fixture.chat_by_id(GROUP_ID).await;
+    assert!(after.exclude_domains.0.is_empty());
+    assert_eq!(after.config.language, group.config.language);
+    assert_eq!(after.config.link_is_visible, group.config.link_is_visible);
+    let personal = fixture.chat().await;
+    assert_eq!(personal.config.locale(), Locale::Ru);
+    assert!(personal.config.link_is_visible);
+    assert!(personal.exclude_domains.0.is_empty());
+}
+
+#[tokio::test]
+async fn a_failed_command_cleanup_still_opens_an_ephemeral_group_menu() {
+    let fixture = Fixture::new(&[]).await;
+    let Saved { config, exclude_domains } = fixture.chat().await;
+    fixture
+        .open_menu
+        .as_ref()
+        .execute(OpenMenuInput {
+            target: MenuTarget::Send {
+                chat_id: -2,
+                ephemeral: Some(EphemeralMenu {
+                    receiver_user_id: CHAT_ID,
+                    reply_to_ephemeral_message_id: None,
+                }),
+                command_message_id: Some(7),
+            },
+            screen: Screen::Main,
+            notice: None,
+            chat_cfg: &config,
+            exclude_domains: &exclude_domains,
+            fsm: &fixture.fsm,
+        })
+        .await
+        .unwrap();
+
+    let events = fixture.events();
+    assert_eq!(events.len(), 3, "{events:?}");
+    assert_eq!(events[0], "delete -2:7");
+    assert_eq!(events[1], "ephemeral send -2:1:None");
+    assert!(events[2].starts_with("send "));
 }
