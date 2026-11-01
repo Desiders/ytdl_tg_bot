@@ -14,7 +14,6 @@ pub mod enqueue_download;
 pub mod inline_query;
 pub mod lang;
 pub mod menu;
-pub mod menu_access;
 pub mod photo;
 pub mod post;
 pub mod shazam;

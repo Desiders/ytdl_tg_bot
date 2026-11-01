@@ -67,6 +67,7 @@ in a Telegram client supporting ephemeral commands to keep the command private t
 requires the bot to be an administrator. Language and caption-link visibility are personal settings.
 Managing the group's excluded domains also requires current administrator permissions, checked
 again when a domain is submitted. Button notifications are visible only to the person who clicked.
+If the menu context expires, the bot tries to send the result in a private chat.
 
 A bare link in a private chat is downloaded automatically with media-type detection; in groups the same happens silently. In groups, add `yv2t_bot=false` to the URL query to skip automatic downloading.
 

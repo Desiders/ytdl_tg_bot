@@ -1,7 +1,7 @@
 use super::menu::message_access_input;
 
 use crate::entities::{ChatConfig, ChatConfigExcludeDomains, OwnChatConfig};
-use crate::interactors::{config, menu, menu_access::CheckMenuAccess, Interactor as _};
+use crate::interactors::{config, Interactor as _};
 use crate::services::messenger::{MessengerPort, SendTextRequest};
 
 use froodi::Inject;
@@ -60,8 +60,6 @@ pub async fn add_exclude_domain<Messenger>(
     Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(chat_cfg_domains): Extension<ChatConfigExcludeDomains>,
     Extension(host): Extension<Host>,
-    fsm: menu::Fsm,
-    Inject(access): Inject<CheckMenuAccess<Messenger>>,
     Inject(interactor): Inject<config::AddExcludeDomain<Messenger>>,
 ) -> HandlerResult
 where
@@ -71,13 +69,10 @@ where
         return Ok(EventReturn::Finish);
     };
 
-    if !access.execute(message_access_input(&message, chat_cfg, &fsm, true)).await? {
-        return Ok(EventReturn::Finish);
-    }
-
     let host = host.to_string();
     interactor
         .execute(config::AddExcludeDomainInput {
+            access: message_access_input(&message),
             chat_id: message.chat().id(),
             reply_to_message_id: message.reply_to_message().as_ref().map(|message| message.message_id()),
             host: &host,
@@ -94,8 +89,6 @@ pub async fn remove_exclude_domain<Messenger>(
     Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(chat_cfg_domains): Extension<ChatConfigExcludeDomains>,
     Extension(host): Extension<Host>,
-    fsm: menu::Fsm,
-    Inject(access): Inject<CheckMenuAccess<Messenger>>,
     Inject(interactor): Inject<config::RemoveExcludeDomain<Messenger>>,
 ) -> HandlerResult
 where
@@ -105,13 +98,10 @@ where
         return Ok(EventReturn::Finish);
     };
 
-    if !access.execute(message_access_input(&message, chat_cfg, &fsm, true)).await? {
-        return Ok(EventReturn::Finish);
-    }
-
     let host = host.to_string();
     interactor
         .execute(config::RemoveExcludeDomainInput {
+            access: message_access_input(&message),
             chat_id: message.chat().id(),
             reply_to_message_id: message.reply_to_message().as_ref().map(|message| message.message_id()),
             host: &host,

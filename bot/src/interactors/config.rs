@@ -13,6 +13,7 @@ use crate::{
     interactors::Interactor,
     services::{
         chat,
+        menu_access::{MenuAccess, MenuAccessInput},
         messenger::{MessengerPort, TextFormat},
     },
     utils::ErrorFormatter,
@@ -100,20 +101,28 @@ pub struct AddExcludeDomain<Messenger> {
     error_formatter: Arc<ErrorFormatter>,
     messenger: Arc<Messenger>,
     add_domain: Arc<chat::AddExcludeDomain>,
+    access: Arc<MenuAccess<Messenger>>,
 }
 
 impl<Messenger> AddExcludeDomain<Messenger> {
     #[must_use]
-    pub const fn new(error_formatter: Arc<ErrorFormatter>, messenger: Arc<Messenger>, add_domain: Arc<chat::AddExcludeDomain>) -> Self {
+    pub const fn new(
+        error_formatter: Arc<ErrorFormatter>,
+        messenger: Arc<Messenger>,
+        add_domain: Arc<chat::AddExcludeDomain>,
+        access: Arc<MenuAccess<Messenger>>,
+    ) -> Self {
         Self {
             error_formatter,
             messenger,
             add_domain,
+            access,
         }
     }
 }
 
 pub struct AddExcludeDomainInput<'a> {
+    pub access: MenuAccessInput<'a>,
     pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
     pub host: &'a str,
@@ -129,6 +138,10 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: AddExcludeDomainInput<'_>) -> Result<Self::Output, Self::Err> {
+        if !self.access.check(&input.access, input.chat_cfg, true, None).await {
+            return Ok(());
+        }
+
         let locale = input.chat_cfg.locale().as_str();
         if input.exclude_domains.0.contains(&input.host.to_owned()) {
             if let Err(err) = progress::new(
@@ -214,6 +227,7 @@ pub struct RemoveExcludeDomain<Messenger> {
     error_formatter: Arc<ErrorFormatter>,
     messenger: Arc<Messenger>,
     remove_domain: Arc<chat::RemoveExcludeDomain>,
+    access: Arc<MenuAccess<Messenger>>,
 }
 
 impl<Messenger> RemoveExcludeDomain<Messenger> {
@@ -222,16 +236,19 @@ impl<Messenger> RemoveExcludeDomain<Messenger> {
         error_formatter: Arc<ErrorFormatter>,
         messenger: Arc<Messenger>,
         remove_domain: Arc<chat::RemoveExcludeDomain>,
+        access: Arc<MenuAccess<Messenger>>,
     ) -> Self {
         Self {
             error_formatter,
             messenger,
             remove_domain,
+            access,
         }
     }
 }
 
 pub struct RemoveExcludeDomainInput<'a> {
+    pub access: MenuAccessInput<'a>,
     pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
     pub host: &'a str,
@@ -247,6 +264,10 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: RemoveExcludeDomainInput<'_>) -> Result<Self::Output, Self::Err> {
+        if !self.access.check(&input.access, input.chat_cfg, true, None).await {
+            return Ok(());
+        }
+
         let locale = input.chat_cfg.locale().as_str();
         if !input.exclude_domains.0.contains(&input.host.to_owned()) {
             if let Err(err) = progress::new(

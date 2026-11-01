@@ -2,7 +2,7 @@ use super::menu::message_access_input;
 
 use crate::{
     entities::OwnChatConfig,
-    interactors::{lang, menu, menu_access::CheckMenuAccess, Interactor as _},
+    interactors::{lang, Interactor as _},
     services::messenger::{EphemeralMessage, MessengerPort},
 };
 
@@ -20,8 +20,6 @@ pub async fn lang<Messenger>(
     message: Message,
     command: CommandObject,
     Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
-    fsm: menu::Fsm,
-    Inject(access): Inject<CheckMenuAccess<Messenger>>,
     Inject(interactor): Inject<lang::Lang<Messenger>>,
 ) -> HandlerResult
 where
@@ -31,14 +29,9 @@ where
         return Ok(EventReturn::Finish);
     };
 
-    if !access.execute(message_access_input(&message, chat_cfg, &fsm, false)).await? {
-        return Ok(EventReturn::Finish);
-    }
-
     let argument = command.args.iter().map(AsRef::as_ref).collect::<Vec<_>>().join(" ");
     let ephemeral = if matches!(message.chat(), Chat::Group(_) | Chat::Supergroup(_)) {
-        let user = message.from().unwrap();
-        Some(EphemeralMessage {
+        message.from().map(|user| EphemeralMessage {
             receiver_user_id: user.id,
             reply_to_ephemeral_message_id: message.ephemeral_message_id(),
         })
@@ -47,6 +40,7 @@ where
     };
     interactor
         .execute(lang::LangInput {
+            access: message_access_input(&message),
             chat_id: message.chat().id(),
             reply_to_message_id: message.reply_to_message().map(Message::message_id).filter(|&id| id > 0),
             ephemeral,

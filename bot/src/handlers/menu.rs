@@ -1,17 +1,20 @@
 use crate::{
-    entities::{ChatConfig, ChatConfigExcludeDomains, OwnChatConfig},
+    entities::{ChatConfigExcludeDomains, OwnChatConfig},
     filters::get_host_from_text,
-    interactors::{
-        menu,
-        menu_access::{CheckMenuAccess, CheckMenuAccessInput},
-        Interactor as _,
+    interactors::{menu, Interactor as _},
+    services::{
+        menu_access::MenuAccessInput,
+        messenger::{EphemeralMessage, MenuMessage, MessengerPort},
     },
-    services::messenger::{EphemeralMessage, MenuMessage, MessengerPort},
-    value_objects::menu::{DeleteDomain, OpenScreen, Screen, SetLanguage, SetLinkVisibility},
+    value_objects::{
+        menu::{DeleteDomain, OpenScreen, Screen, SetLanguage, SetLinkVisibility},
+        ChatType,
+    },
 };
 
 use froodi::Inject;
 use telers::{
+    enums,
     event::{telegram::HandlerResult, EventReturn},
     types::{CallbackQuery, Chat, Message},
     Extension,
@@ -24,7 +27,6 @@ pub async fn open_main<Messenger>(
     Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
     fsm: menu::Fsm,
-    Inject(access): Inject<CheckMenuAccess<Messenger>>,
     Inject(interactor): Inject<menu::OpenMenu<Messenger>>,
 ) -> HandlerResult
 where
@@ -34,12 +36,9 @@ where
         return Ok(EventReturn::Finish);
     };
 
-    if !access.execute(message_access_input(&message, chat_cfg, &fsm, false)).await? {
-        return Ok(EventReturn::Finish);
-    }
-
     interactor
         .execute(menu::OpenMenuInput {
+            access: message_access_input(&message),
             target: send_target(&message),
             screen: Screen::Main,
             notice: None,
@@ -57,7 +56,6 @@ pub async fn open_help<Messenger>(
     Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
     fsm: menu::Fsm,
-    Inject(access): Inject<CheckMenuAccess<Messenger>>,
     Inject(interactor): Inject<menu::OpenMenu<Messenger>>,
 ) -> HandlerResult
 where
@@ -67,12 +65,9 @@ where
         return Ok(EventReturn::Finish);
     };
 
-    if !access.execute(message_access_input(&message, chat_cfg, &fsm, false)).await? {
-        return Ok(EventReturn::Finish);
-    }
-
     interactor
         .execute(menu::OpenMenuInput {
+            access: message_access_input(&message),
             target: send_target(&message),
             screen: Screen::Help,
             notice: None,
@@ -90,7 +85,6 @@ pub async fn open_stats<Messenger>(
     Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
     fsm: menu::Fsm,
-    Inject(access): Inject<CheckMenuAccess<Messenger>>,
     Inject(interactor): Inject<menu::OpenMenu<Messenger>>,
 ) -> HandlerResult
 where
@@ -100,12 +94,9 @@ where
         return Ok(EventReturn::Finish);
     };
 
-    if !access.execute(message_access_input(&message, chat_cfg, &fsm, false)).await? {
-        return Ok(EventReturn::Finish);
-    }
-
     interactor
         .execute(menu::OpenMenuInput {
+            access: message_access_input(&message),
             target: send_target(&message),
             screen: Screen::Stats,
             notice: None,
@@ -123,7 +114,6 @@ pub async fn open_language<Messenger>(
     Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
     fsm: menu::Fsm,
-    Inject(access): Inject<CheckMenuAccess<Messenger>>,
     Inject(interactor): Inject<menu::OpenMenu<Messenger>>,
 ) -> HandlerResult
 where
@@ -133,12 +123,9 @@ where
         return Ok(EventReturn::Finish);
     };
 
-    if !access.execute(message_access_input(&message, chat_cfg, &fsm, false)).await? {
-        return Ok(EventReturn::Finish);
-    }
-
     interactor
         .execute(menu::OpenMenuInput {
+            access: message_access_input(&message),
             target: send_target(&message),
             screen: Screen::Language,
             notice: None,
@@ -156,7 +143,6 @@ pub async fn add_domain<Messenger>(
     Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
     fsm: menu::Fsm,
-    Inject(access): Inject<CheckMenuAccess<Messenger>>,
     Inject(interactor): Inject<menu::AddMenuDomain<Messenger>>,
 ) -> HandlerResult
 where
@@ -166,13 +152,10 @@ where
         return Ok(EventReturn::Finish);
     };
 
-    if !access.execute(message_access_input(&message, chat_cfg, &fsm, true)).await? {
-        return Ok(EventReturn::Finish);
-    }
-
     let host = message.text().and_then(get_host_from_text).map(|host| host.to_string());
     interactor
         .execute(menu::AddMenuDomainInput {
+            access: message_access_input(&message),
             target: send_target(&message),
             host: host.as_deref(),
             chat_cfg,
@@ -190,7 +173,6 @@ pub async fn open_screen<Messenger>(
     Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
     fsm: menu::Fsm,
-    Inject(access): Inject<CheckMenuAccess<Messenger>>,
     Inject(interactor): Inject<menu::OpenMenu<Messenger>>,
 ) -> HandlerResult
 where
@@ -200,26 +182,15 @@ where
         return Ok(EventReturn::Finish);
     };
 
-    let Some(input) = callback_access_input(
-        &query,
-        chat_cfg,
-        &fsm,
-        matches!(
-            data.screen,
-            Screen::Domains | Screen::DomainAdd | Screen::Domain { .. } | Screen::DomainDelete { .. }
-        ),
-    ) else {
+    let Some(access) = callback_access_input(&query) else {
         return Ok(EventReturn::Finish);
     };
-    if !access.execute(input).await? {
-        return Ok(EventReturn::Finish);
-    }
-
     let Some(target) = edit_target(&query) else {
         return Ok(EventReturn::Finish);
     };
     interactor
         .execute(menu::OpenMenuInput {
+            access,
             target,
             screen: data.screen,
             notice: None,
@@ -238,7 +209,6 @@ pub async fn set_language<Messenger>(
     Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
     fsm: menu::Fsm,
-    Inject(access): Inject<CheckMenuAccess<Messenger>>,
     Inject(interactor): Inject<menu::SetMenuLanguage<Messenger>>,
 ) -> HandlerResult
 where
@@ -248,18 +218,15 @@ where
         return Ok(EventReturn::Finish);
     };
 
-    let Some(input) = callback_access_input(&query, chat_cfg, &fsm, false) else {
+    let Some(access) = callback_access_input(&query) else {
         return Ok(EventReturn::Finish);
     };
-    if !access.execute(input).await? {
-        return Ok(EventReturn::Finish);
-    }
-
     let Some(target) = edit_target(&query) else {
         return Ok(EventReturn::Finish);
     };
     interactor
         .execute(menu::SetMenuLanguageInput {
+            access,
             target,
             locale: data.locale,
             chat_cfg,
@@ -277,7 +244,6 @@ pub async fn set_link_visibility<Messenger>(
     Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
     fsm: menu::Fsm,
-    Inject(access): Inject<CheckMenuAccess<Messenger>>,
     Inject(interactor): Inject<menu::SetMenuLinkVisibility<Messenger>>,
 ) -> HandlerResult
 where
@@ -287,18 +253,15 @@ where
         return Ok(EventReturn::Finish);
     };
 
-    let Some(input) = callback_access_input(&query, chat_cfg, &fsm, false) else {
+    let Some(access) = callback_access_input(&query) else {
         return Ok(EventReturn::Finish);
     };
-    if !access.execute(input).await? {
-        return Ok(EventReturn::Finish);
-    }
-
     let Some(target) = edit_target(&query) else {
         return Ok(EventReturn::Finish);
     };
     interactor
         .execute(menu::SetMenuLinkVisibilityInput {
+            access,
             target,
             link_is_visible: data.visible,
             chat_cfg,
@@ -316,7 +279,6 @@ pub async fn remove_domain<Messenger>(
     Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
     fsm: menu::Fsm,
-    Inject(access): Inject<CheckMenuAccess<Messenger>>,
     Inject(interactor): Inject<menu::RemoveMenuDomain<Messenger>>,
 ) -> HandlerResult
 where
@@ -326,18 +288,15 @@ where
         return Ok(EventReturn::Finish);
     };
 
-    let Some(input) = callback_access_input(&query, chat_cfg, &fsm, true) else {
+    let Some(access) = callback_access_input(&query) else {
         return Ok(EventReturn::Finish);
     };
-    if !access.execute(input).await? {
-        return Ok(EventReturn::Finish);
-    }
-
     let Some(target) = edit_target(&query) else {
         return Ok(EventReturn::Finish);
     };
     interactor
         .execute(menu::RemoveMenuDomainInput {
+            access,
             target,
             domain: data.domain,
             chat_cfg,
@@ -350,10 +309,14 @@ where
 
 fn send_target(message: &Message) -> menu::MenuTarget<'static> {
     let is_group = matches!(message.chat(), Chat::Group(_) | Chat::Supergroup(_));
-    let ephemeral = is_group.then(|| EphemeralMessage {
-        receiver_user_id: message.from().unwrap().id,
-        reply_to_ephemeral_message_id: message.ephemeral_message_id(),
-    });
+    let ephemeral = if is_group {
+        message.from().map(|user| EphemeralMessage {
+            receiver_user_id: user.id,
+            reply_to_ephemeral_message_id: message.ephemeral_message_id(),
+        })
+    } else {
+        None
+    };
     menu::MenuTarget::Send {
         chat_id: message.chat().id(),
         ephemeral,
@@ -363,20 +326,16 @@ fn send_target(message: &Message) -> menu::MenuTarget<'static> {
 
 fn edit_target(query: &CallbackQuery) -> Option<menu::MenuTarget<'_>> {
     let message = query.message.as_deref()?;
-    let target = if let Some(ephemeral_message_id) = message.ephemeral_message_id() {
-        let receiver = message.receiver_user()?;
-        MenuMessage::EphemeralMessage {
+    let target = match (message.ephemeral_message_id(), message.receiver_user()) {
+        (Some(ephemeral_message_id), Some(receiver)) => MenuMessage::EphemeralMessage {
             chat_id: message.chat().id(),
             receiver_user_id: receiver.id,
             ephemeral_message_id,
-        }
-    } else if matches!(message.chat(), Chat::Private(_)) {
-        MenuMessage::ChatMessage {
+        },
+        _ => MenuMessage::ChatMessage {
             chat_id: message.chat().id(),
             message_id: message.message_id(),
-        }
-    } else {
-        return None;
+        },
     };
     Some(menu::MenuTarget::Edit {
         message: target,
@@ -384,56 +343,37 @@ fn edit_target(query: &CallbackQuery) -> Option<menu::MenuTarget<'_>> {
     })
 }
 
-pub(super) fn message_access_input<'a>(
-    message: &Message,
-    chat_cfg: &'a ChatConfig,
-    fsm: &'a menu::Fsm,
-    require_admin: bool,
-) -> CheckMenuAccessInput<'a> {
-    let supported = matches!(message.chat(), Chat::Private(_) | Chat::Group(_) | Chat::Supergroup(_));
-    let user_id = message
-        .from()
-        .filter(|user| supported && !user.is_bot && message.sender_chat().is_none())
-        .map(|user| user.id);
-    CheckMenuAccessInput {
+pub(super) fn message_access_input(message: &Message) -> MenuAccessInput<'static> {
+    MenuAccessInput {
         chat_id: message.chat().id(),
-        user_id,
+        chat_type: ChatType::try_from(enums::ChatType::from(message.chat())).unwrap(),
+        user_id: message.from().map(|user| user.id),
+        is_bot: message.from().is_some_and(|user| user.is_bot),
+        sender_chat_id: message.sender_chat().map(Chat::id),
         menu_owner_id: None,
         callback_id: None,
         ephemeral_message_id: message.ephemeral_message_id(),
-        require_admin,
-        chat_cfg,
-        fsm,
     }
 }
 
-fn callback_access_input<'a>(
-    query: &'a CallbackQuery,
-    chat_cfg: &'a ChatConfig,
-    fsm: &'a menu::Fsm,
-    require_admin: bool,
-) -> Option<CheckMenuAccessInput<'a>> {
+fn callback_access_input(query: &CallbackQuery) -> Option<MenuAccessInput<'_>> {
     let message = query.message.as_deref()?;
-    let supported = matches!(message.chat(), Chat::Private(_) | Chat::Group(_) | Chat::Supergroup(_));
-    Some(CheckMenuAccessInput {
+    Some(MenuAccessInput {
         chat_id: message.chat().id(),
-        user_id: (supported && !query.from.is_bot).then_some(query.from.id),
+        chat_type: ChatType::try_from(enums::ChatType::from(message.chat())).unwrap(),
+        user_id: Some(query.from.id),
+        is_bot: query.from.is_bot,
+        sender_chat_id: None,
         menu_owner_id: message.receiver_user().map(|user| user.id),
         callback_id: Some(&query.id),
         ephemeral_message_id: message.ephemeral_message_id(),
-        require_admin,
-        chat_cfg,
-        fsm,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use telers::{
-        fsm::{MemoryStorage, StorageKey},
-        types::{ChatGroup, ChatPrivate, MessageText, User},
-    };
+    use telers::types::{ChatGroup, ChatPrivate, MessageText, User};
 
     #[test]
     fn group_menus_use_ephemeral_ids_and_only_delete_visible_commands() {
@@ -478,10 +418,8 @@ mod tests {
                 callback_id: Some("synthetic"),
             })
         ));
-        let config = ChatConfig::new(2, true, "en".into());
-        let fsm = menu::Fsm::new(MemoryStorage::new(), StorageKey::new(1, -1, 2, None, None));
         let foreign = query.from(User::new(3, false, "Other"));
-        let access = callback_access_input(&foreign, &config, &fsm, false).unwrap();
+        let access = callback_access_input(&foreign).unwrap();
         assert_eq!(access.menu_owner_id, Some(2));
         assert_eq!(access.user_id, Some(3));
 
@@ -497,17 +435,15 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_and_anonymous_menu_senders_are_rejected() {
-        let fsm = menu::Fsm::new(MemoryStorage::new(), StorageKey::new(1, -1, 2, None, None));
-        let config = ChatConfig::new(2, true, "en".into());
+    fn message_access_preserves_anonymous_sender_facts() {
         let user = User::new(2, false, "Owner");
         let message = Message::Text(MessageText::new(7, 1, ChatGroup::new(-1), "/start").from(user.clone()));
-        assert_eq!(message_access_input(&message, &config, &fsm, false).user_id, Some(2));
+        assert_eq!(message_access_input(&message).user_id, Some(2));
         let anonymous = Message::Text(
             MessageText::new(7, 1, ChatGroup::new(-1), "/start")
                 .from(user)
                 .sender_chat(ChatGroup::new(-1)),
         );
-        assert_eq!(message_access_input(&anonymous, &config, &fsm, false).user_id, None);
+        assert_eq!(message_access_input(&anonymous).sender_chat_id, Some(-1));
     }
 }

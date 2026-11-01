@@ -22,13 +22,13 @@ use crate::{
     },
     database::{SeaOrmTxManager, TxManager, TxManagerFactories},
     interactors::{
-        audio, auto, chosen_inline, config, enqueue_download, inline_query, lang, menu, menu_access, photo, post, shazam, start, stats,
-        video,
+        audio, auto, chosen_inline, config, enqueue_download, inline_query, lang, menu, photo, post, shazam, start, stats, video,
     },
     services::{
         chat,
         download::media,
-        downloaded_media, file_download, get_media,
+        downloaded_media, file_download, get_media, menu_access,
+        menu_message_cache::MenuMessageCache,
         messenger::telegram::TelegramMessenger,
         node_router::{self, DownloaderServiceTarget, NodeRouter},
         progress_throttle::ProgressThrottle,
@@ -166,6 +166,10 @@ registry! {
     provide(
         App,
         |Inject(conn): Inject<ConnectionManager>| async move { Ok(ProgressThrottle::new((*conn).clone())) },
+    ),
+    provide(
+        App,
+        |Inject(conn): Inject<ConnectionManager>| async move { Ok(MenuMessageCache::new((*conn).clone())) },
     ),
 }
 
@@ -312,64 +316,74 @@ registry! {
         provide(|
             Inject(error_formatter),
             Inject(messenger): Inject<Messenger>,
-            Inject(update_chat_cfg)| async move {
-                Ok(lang::Lang::new(error_formatter, messenger, update_chat_cfg))
+            Inject(update_chat_cfg),
+            Inject(access)| async move {
+                Ok(lang::Lang::new(error_formatter, messenger, update_chat_cfg, access))
             }
         ),
         provide(|
             Inject(cfg),
             Inject(error_formatter),
             Inject(messenger): Inject<Messenger>,
-            Inject(stats)| async move {
-                Ok(menu::OpenMenu::new(cfg, error_formatter, messenger, stats))
+            Inject(stats),
+            Inject(access),
+            Inject(menu_message_cache)| async move {
+                Ok(menu::OpenMenu::new(cfg, error_formatter, messenger, stats, access, menu_message_cache))
             }
         ),
         provide(|
             Inject(messenger): Inject<Messenger>,
             Inject(error_formatter)| async move {
-                Ok(menu_access::CheckMenuAccess::new(messenger, error_formatter))
+                Ok(menu_access::MenuAccess::new(messenger, error_formatter))
             }
         ),
         provide(|
             Inject(error_formatter),
             Inject(update_chat_cfg),
-            Inject(open_menu)| async move {
-                Ok(menu::SetMenuLanguage::<Messenger>::new(error_formatter, update_chat_cfg, open_menu))
+            Inject(open_menu),
+            Inject(access)| async move {
+                Ok(menu::SetMenuLanguage::<Messenger>::new(error_formatter, update_chat_cfg, open_menu, access))
             }
         ),
         provide(|
             Inject(error_formatter),
             Inject(update_chat_cfg),
-            Inject(open_menu)| async move {
-                Ok(menu::SetMenuLinkVisibility::<Messenger>::new(error_formatter, update_chat_cfg, open_menu))
+            Inject(open_menu),
+            Inject(access)| async move {
+                Ok(menu::SetMenuLinkVisibility::<Messenger>::new(error_formatter, update_chat_cfg, open_menu, access))
             }
         ),
         provide(|
             Inject(error_formatter),
             Inject(add_domain),
-            Inject(open_menu)| async move {
-                Ok(menu::AddMenuDomain::<Messenger>::new(error_formatter, add_domain, open_menu))
+            Inject(open_menu),
+            Inject(access),
+            Inject(menu_message_cache)| async move {
+                Ok(menu::AddMenuDomain::<Messenger>::new(error_formatter, add_domain, open_menu, access, menu_message_cache))
             }
         ),
         provide(|
             Inject(error_formatter),
             Inject(remove_domain),
-            Inject(open_menu)| async move {
-                Ok(menu::RemoveMenuDomain::<Messenger>::new(error_formatter, remove_domain, open_menu))
+            Inject(open_menu),
+            Inject(access)| async move {
+                Ok(menu::RemoveMenuDomain::<Messenger>::new(error_formatter, remove_domain, open_menu, access))
             }
         ),
         provide(|
             Inject(error_formatter),
             Inject(messenger): Inject<Messenger>,
-            Inject(add_domain)| async move {
-                Ok(config::AddExcludeDomain::new(error_formatter, messenger, add_domain))
+            Inject(add_domain),
+            Inject(access)| async move {
+                Ok(config::AddExcludeDomain::new(error_formatter, messenger, add_domain, access))
             }
         ),
         provide(|
             Inject(error_formatter),
             Inject(messenger): Inject<Messenger>,
-            Inject(remove_domain)| async move {
-                Ok(config::RemoveExcludeDomain::new(error_formatter, messenger, remove_domain))
+            Inject(remove_domain),
+            Inject(access)| async move {
+                Ok(config::RemoveExcludeDomain::new(error_formatter, messenger, remove_domain, access))
             }
         ),
 

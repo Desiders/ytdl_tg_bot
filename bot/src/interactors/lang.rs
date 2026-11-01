@@ -10,6 +10,7 @@ use crate::{
     locale::Locale,
     services::{
         chat,
+        menu_access::{MenuAccess, MenuAccessInput},
         messenger::{EphemeralMessage, MessengerPort, SendTextRequest, TextFormat},
     },
     utils::ErrorFormatter,
@@ -19,6 +20,7 @@ pub struct Lang<Messenger> {
     error_formatter: Arc<ErrorFormatter>,
     messenger: Arc<Messenger>,
     update_chat_cfg: Arc<chat::UpdateChatConfig>,
+    access: Arc<MenuAccess<Messenger>>,
 }
 
 impl<Messenger> Lang<Messenger> {
@@ -27,16 +29,19 @@ impl<Messenger> Lang<Messenger> {
         error_formatter: Arc<ErrorFormatter>,
         messenger: Arc<Messenger>,
         update_chat_cfg: Arc<chat::UpdateChatConfig>,
+        access: Arc<MenuAccess<Messenger>>,
     ) -> Self {
         Self {
             error_formatter,
             messenger,
             update_chat_cfg,
+            access,
         }
     }
 }
 
 pub struct LangInput<'a> {
+    pub access: MenuAccessInput<'a>,
     pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
     pub ephemeral: Option<EphemeralMessage>,
@@ -52,6 +57,10 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: LangInput<'_>) -> Result<Self::Output, Self::Err> {
+        if !self.access.check(&input.access, input.chat_cfg, false, None).await {
+            return Ok(());
+        }
+
         let current = input.chat_cfg.locale();
         let arg = input.argument.map(str::trim).filter(|s| !s.is_empty());
 
