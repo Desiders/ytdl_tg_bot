@@ -17,7 +17,7 @@ use crate::{
     services::{
         chat,
         messenger::{
-            AnswerCallbackRequest, Button, ButtonAction, DeleteMessageRequest, EditMenuRequest, EphemeralMenu, Keyboard, MenuMessage,
+            AnswerCallbackRequest, Button, ButtonAction, DeleteMessageRequest, EditMenuRequest, EphemeralMessage, Keyboard, MenuMessage,
             MessengerPort, SendMenuRequest,
         },
     },
@@ -33,7 +33,7 @@ pub type Fsm = Context<MemoryStorage>;
 pub enum MenuTarget<'a> {
     Send {
         chat_id: i64,
-        ephemeral: Option<EphemeralMenu>,
+        ephemeral: Option<EphemeralMessage>,
         command_message_id: Option<i64>,
     },
     Edit {
@@ -105,22 +105,24 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: OpenMenuInput<'_>) -> Result<Self::Output, Self::Err> {
-        if let MenuTarget::Send {
-            chat_id,
-            command_message_id: Some(message_id),
-            ..
-        } = &input.target
-        {
-            if let Err(err) = self
-                .messenger
-                .delete_message(DeleteMessageRequest {
-                    chat_id: *chat_id,
-                    message_id: *message_id,
-                })
-                .await
-            {
-                error!(err = %self.error_formatter.format(&err), "Delete menu command error");
+        match &input.target {
+            MenuTarget::Send {
+                chat_id,
+                command_message_id: Some(message_id),
+                ..
+            } if input.screen == Screen::Main => {
+                if let Err(err) = self
+                    .messenger
+                    .delete_message(DeleteMessageRequest {
+                        chat_id: *chat_id,
+                        message_id: *message_id,
+                    })
+                    .await
+                {
+                    error!(err = %self.error_formatter.format(&err), "Delete menu command error");
+                }
             }
+            _ => {}
         }
         if let MenuTarget::Edit {
             callback_id: Some(callback_id),
@@ -131,7 +133,9 @@ where
         }
         let domains = &input.exclude_domains.0;
         let screen = existing_screen(input.screen, domains);
-        track_input(screen, &input.target, input.fsm).await;
+        if let Err(err) = track_input(screen, &input.target, input.fsm).await {
+            error!(%err, "Menu state error");
+        }
 
         let locale = input.chat_cfg.locale();
         let page = Page {
@@ -164,7 +168,7 @@ impl<Messenger> OpenMenu<Messenger>
 where
     Messenger: MessengerPort,
 {
-    async fn send(&self, chat_id: i64, ephemeral: Option<EphemeralMenu>, view: View, notice: Option<Notice>) {
+    async fn send(&self, chat_id: i64, ephemeral: Option<EphemeralMessage>, view: View, notice: Option<Notice>) {
         // A new message has no callback answer to carry the notice, so the notice heads the text.
         let text = with_notice(notice, view.text);
         if let Err(err) = self
@@ -200,7 +204,7 @@ where
         if let Err(err) = self
             .messenger
             .edit_menu(EditMenuRequest {
-                message,
+                target: message,
                 text: &view.text,
                 keyboard: &view.keyboard,
             })
@@ -401,6 +405,29 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: AddMenuDomainInput<'_>) -> Result<Self::Output, Self::Err> {
+        let target = match input.target {
+            MenuTarget::Send {
+                chat_id,
+                ephemeral: Some(ephemeral),
+                ..
+            } => {
+                let ephemeral_message_id = input
+                    .fsm
+                    .get_value::<_, i64>(EPHEMERAL_MESSAGE_ID)
+                    .await
+                    .map_err(HandlerError::new)?
+                    .ok_or_else(|| HandlerError::from_display("Missing menu message"))?;
+                MenuTarget::Edit {
+                    message: MenuMessage::EphemeralMessage {
+                        chat_id,
+                        receiver_user_id: ephemeral.receiver_user_id,
+                        ephemeral_message_id,
+                    },
+                    callback_id: None,
+                }
+            }
+            target => target,
+        };
         let locale = input.chat_cfg.locale().as_str();
         let mut domains = input.exclude_domains.0.clone();
         let (screen, notice) = match input.host {
@@ -418,14 +445,14 @@ where
             ),
             Some(host) => (
                 Screen::Domains,
-                self.add(input.target.chat_id(), input.chat_cfg, &mut domains, host).await,
+                self.add(target.chat_id(), input.chat_cfg, &mut domains, host).await,
             ),
         };
 
         self.open_menu
             .as_ref()
             .execute(OpenMenuInput {
-                target: input.target,
+                target,
                 screen,
                 notice: Some(notice),
                 chat_cfg: input.chat_cfg,
@@ -546,25 +573,19 @@ impl<Messenger> RemoveMenuDomain<Messenger> {
 // Only the add-domain prompt waits for typed input; every other screen cancels it. Finishing first keeps the state
 //  stack at one entry, since `set_state` pushes onto it.
 //  https://github.com/Desiders/telers/blob/a14a34520eaeffccd1ebdbb4fffe8e44ead81bb9/telers/src/fsm/storage/memory.rs#L47-L57
-async fn track_input(screen: Screen, target: &MenuTarget<'_>, fsm: &Fsm) {
-    let result: Result<(), FsmError> = async {
-        fsm.finish().await?;
-        if screen == Screen::DomainAdd {
-            fsm.set_state(MenuState::DomainInput).await?;
-            if let MenuTarget::Edit {
-                message: MenuMessage::Ephemeral { ephemeral_message_id, .. },
-                ..
-            } = target
-            {
-                fsm.set_value(EPHEMERAL_MESSAGE_ID, *ephemeral_message_id).await?;
-            }
+async fn track_input(screen: Screen, target: &MenuTarget<'_>, fsm: &Fsm) -> Result<(), FsmError> {
+    fsm.finish().await?;
+    if screen == Screen::DomainAdd {
+        fsm.set_state(MenuState::DomainInput).await?;
+        if let MenuTarget::Edit {
+            message: MenuMessage::EphemeralMessage { ephemeral_message_id, .. },
+            ..
+        } = target
+        {
+            fsm.set_value(EPHEMERAL_MESSAGE_ID, *ephemeral_message_id).await?;
         }
-        Ok(())
     }
-    .await;
-    if let Err(err) = result {
-        error!(%err, "Menu state error");
-    }
+    Ok(())
 }
 
 fn with_notice(notice: Option<Notice>, text: String) -> String {
@@ -904,8 +925,8 @@ mod tests {
     async fn only_the_add_screen_waits_for_a_domain() {
         let fsm = Fsm::new(MemoryStorage::new(), StorageKey::new(1, 2, 2, None, None));
         for message in [
-            MenuMessage::Chat { chat_id: 2, message_id: 3 },
-            MenuMessage::Ephemeral {
+            MenuMessage::ChatMessage { chat_id: 2, message_id: 3 },
+            MenuMessage::EphemeralMessage {
                 chat_id: -1,
                 receiver_user_id: 2,
                 ephemeral_message_id: 3,
@@ -915,13 +936,13 @@ mod tests {
                 message,
                 callback_id: Some("synthetic-callback"),
             };
-            track_input(Screen::DomainAdd, &target, &fsm).await;
-            track_input(Screen::DomainAdd, &target, &fsm).await;
+            track_input(Screen::DomainAdd, &target, &fsm).await.unwrap();
+            track_input(Screen::DomainAdd, &target, &fsm).await.unwrap();
             assert_eq!(fsm.get_states().await.unwrap().as_ref(), [MenuState::DomainInput.as_ref().into()]);
-            let expected_id = matches!(message, MenuMessage::Ephemeral { .. }).then_some(3);
+            let expected_id = matches!(message, MenuMessage::EphemeralMessage { .. }).then_some(3);
             assert_eq!(fsm.get_value::<_, i64>(EPHEMERAL_MESSAGE_ID).await.unwrap(), expected_id);
 
-            track_input(Screen::Domains, &target, &fsm).await;
+            track_input(Screen::Domains, &target, &fsm).await.unwrap();
             assert_eq!(fsm.get_state().await.unwrap(), None);
             assert_eq!(fsm.get_value::<_, i64>(EPHEMERAL_MESSAGE_ID).await.unwrap(), None);
         }

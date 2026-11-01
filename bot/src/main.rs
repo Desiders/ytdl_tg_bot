@@ -41,12 +41,12 @@ use crate::{
     filters::{
         command_without_args, is_audio_inline_result, is_auto_inline_result, is_command, is_exclude_domain, is_via_bot,
         is_video_inline_result, random_cmd_is_enabled, text_contains_host_with_reply, text_contains_url, text_contains_url_with_reply,
-        text_empty, url_is_blacklisted, url_is_skippable_by_param, GuestMention, MenuAccess,
+        text_empty, url_is_blacklisted, url_is_skippable_by_param, GuestMention,
     },
     handlers::{audio, chosen_inline, guest, inline_query, lang, menu, photo, shazam, start, stats, video},
     middlewares::{CleanUrlMiddleware, CreateChatMiddleware, ReactionMiddleware},
     services::messenger::{telegram::TelegramMessenger, MessengerPort as _},
-    utils::{on_shutdown, on_startup, ErrorFormatter},
+    utils::{on_shutdown, on_startup},
     value_objects::menu::{DeleteDomain, MenuState, OpenScreen, SetLanguage, SetLinkVisibility},
 };
 
@@ -87,35 +87,8 @@ async fn main() {
     let container = di_container::init::<Messenger>(config.clone(), bot.clone(), api_server);
     let node_router = container.get::<NodeRouter>().await.unwrap();
     let cfg = container.get::<config::Config>().await.unwrap();
-    let messenger = container.get::<Messenger>().await.unwrap();
-    let username = messenger.username().await.unwrap();
-    let menu_access = MenuAccess::new(messenger, container.get::<ErrorFormatter>().await.unwrap());
-    let domain_access = menu_access.clone().require_admin();
+    let username = container.get::<Messenger>().await.unwrap().username().await.unwrap();
     let fsm_storage = MemoryStorage::new();
-
-    let domain_router = Router::new("domains").on_message(|observer| {
-        observer
-            .register_outer_middleware(FSMContext::new(fsm_storage.clone()))
-            .register_inner_middleware(domain_access)
-            .register(
-                Handler::new(handlers::config::add_exclude_domain::<Messenger>)
-                    .filter(MessageType::one(Text))
-                    .filter(Command::many(["add_ed", "add_exclude_domain"]))
-                    .filter(text_contains_host_with_reply),
-            )
-            .register(
-                Handler::new(handlers::config::remove_exclude_domain::<Messenger>)
-                    .filter(MessageType::one(Text))
-                    .filter(Command::many(["rm_ed", "remove_ed", "rm_exclude_domain", "remove_exclude_domain"]))
-                    .filter(text_contains_host_with_reply),
-            )
-            .register(
-                Handler::new(menu::add_domain::<Messenger>)
-                    .filter(MessageType::one(Text))
-                    .filter(State::one(MenuState::DomainInput))
-                    .filter(is_command.invert()),
-            )
-    });
 
     let download_router = Router::new("download")
         .on_guest_message(|observer| {
@@ -130,6 +103,7 @@ async fn main() {
         })
         .on_message(|observer| {
             observer
+                .register_outer_middleware(FSMContext::new(fsm_storage.clone()))
                 .register_inner_middleware(CleanUrlMiddleware)
                 .register_inner_middleware(ReactionMiddleware)
                 .register(
@@ -164,6 +138,18 @@ async fn main() {
                         .filter(MessageType::one(Text))
                         .filter(Command::many(["ra", "random_audio"]))
                         .filter(random_cmd_is_enabled),
+                )
+                .register(
+                    Handler::new(handlers::config::add_exclude_domain::<Messenger>)
+                        .filter(MessageType::one(Text))
+                        .filter(Command::many(["add_ed", "add_exclude_domain"]))
+                        .filter(text_contains_host_with_reply),
+                )
+                .register(
+                    Handler::new(handlers::config::remove_exclude_domain::<Messenger>)
+                        .filter(MessageType::one(Text))
+                        .filter(Command::many(["rm_ed", "remove_ed", "rm_exclude_domain", "remove_exclude_domain"]))
+                        .filter(text_contains_host_with_reply),
                 )
                 .register(
                     Handler::new(handlers::config::change_link_visibility::<Messenger>)
@@ -229,36 +215,31 @@ async fn main() {
         .on_message(|observer| {
             observer
                 .register_outer_middleware(FSMContext::new(fsm_storage.clone()))
-                .register(
-                    Handler::new(menu::open_main::<Messenger>)
-                        .filter(Command::one("start"))
-                        .filter(menu_access.clone()),
-                )
+                .register(Handler::new(menu::open_main::<Messenger>).filter(Command::one("start")))
                 .register(
                     Handler::new(menu::open_help::<Messenger>)
                         .filter(ChatType::one(Private))
-                        .filter(Command::one("help"))
-                        .filter(menu_access.clone()),
+                        .filter(Command::one("help")),
                 )
                 .register(
                     Handler::new(menu::open_stats::<Messenger>)
                         .filter(ChatType::one(Private))
-                        .filter(Command::one("stats"))
-                        .filter(menu_access.clone()),
+                        .filter(Command::one("stats")),
                 )
                 .register(
                     Handler::new(menu::open_language::<Messenger>)
                         .filter(Command::many(["lang", "language"]))
-                        .filter(command_without_args)
-                        .filter(menu_access.clone()),
+                        .filter(command_without_args),
                 )
                 .register(Handler::new(start::<Messenger>).filter(Command::one("help")))
                 .register(Handler::new(stats::<Messenger>).filter(Command::one("stats")))
                 .register(Handler::new(shazam::<Messenger>).filter(Command::many(["shazam", "sh"])))
+                .register(Handler::new(lang::<Messenger>).filter(Command::many(["lang", "language"])))
                 .register(
-                    Handler::new(lang::<Messenger>)
-                        .filter(Command::many(["lang", "language"]))
-                        .filter(menu_access.clone()),
+                    Handler::new(menu::add_domain::<Messenger>)
+                        .filter(MessageType::one(Text))
+                        .filter(State::one(MenuState::DomainInput))
+                        .filter(is_command.invert()),
                 )
                 .register(
                     Handler::new(shazam::<Messenger>)
@@ -269,7 +250,6 @@ async fn main() {
         })
         .on_callback_query(|observer| {
             observer
-                .filter(menu_access)
                 .register_outer_middleware(FSMContext::new(fsm_storage))
                 .register(Handler::new(menu::open_screen::<Messenger>).filter(CallbackData::<OpenScreen>::new()))
                 .register(Handler::new(menu::set_language::<Messenger>).filter(CallbackData::<SetLanguage>::new()))
@@ -278,7 +258,6 @@ async fn main() {
         })
         .on_startup(|observer| observer.register(SimpleHandler::new(on_startup, (bot.clone(), node_router.clone(), cfg.clone()))))
         .on_shutdown(|observer| observer.register(SimpleHandler::new(on_shutdown, ())))
-        .include(domain_router)
         .include(download_router);
 
     let dispatcher = Dispatcher::builder()

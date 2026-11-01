@@ -37,6 +37,7 @@ pub struct SendTextRequest<'a> {
     pub chat_id: i64,
     pub text: &'a str,
     pub reply_to_message_id: Option<i64>,
+    pub ephemeral: Option<EphemeralMessage>,
     pub format: Option<TextFormat>,
     pub disable_link_preview: bool,
 }
@@ -80,24 +81,24 @@ pub struct Keyboard {
 /// Menu text is always HTML without a link preview.
 pub struct SendMenuRequest<'a> {
     pub chat_id: i64,
-    pub ephemeral: Option<EphemeralMenu>,
+    pub ephemeral: Option<EphemeralMessage>,
     pub text: &'a str,
     pub keyboard: &'a Keyboard,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EphemeralMenu {
+pub struct EphemeralMessage {
     pub receiver_user_id: i64,
     pub reply_to_ephemeral_message_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuMessage {
-    Chat {
+    ChatMessage {
         chat_id: i64,
         message_id: i64,
     },
-    Ephemeral {
+    EphemeralMessage {
         chat_id: i64,
         receiver_user_id: i64,
         ephemeral_message_id: i64,
@@ -108,13 +109,13 @@ impl MenuMessage {
     #[must_use]
     pub const fn chat_id(self) -> i64 {
         match self {
-            Self::Chat { chat_id, .. } | Self::Ephemeral { chat_id, .. } => chat_id,
+            Self::ChatMessage { chat_id, .. } | Self::EphemeralMessage { chat_id, .. } => chat_id,
         }
     }
 }
 
 pub struct EditMenuRequest<'a> {
-    pub message: MenuMessage,
+    pub target: MenuMessage,
     pub text: &'a str,
     pub keyboard: &'a Keyboard,
 }

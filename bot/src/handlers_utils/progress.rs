@@ -61,6 +61,7 @@ pub async fn new(
             chat_id,
             text,
             reply_to_message_id,
+            ephemeral: None,
             format,
             disable_link_preview: true,
         })

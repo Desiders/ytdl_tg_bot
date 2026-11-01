@@ -152,11 +152,19 @@ impl MessengerPort for TelegramMessenger {
             SendMessage::new(request.chat_id, request.text)
                 .parse_mode_option(request.format.map(ParseMode::from))
                 .link_preview_options(LinkPreviewOptions::new().is_disabled(request.disable_link_preview))
-                .reply_parameters_option(
+                .ephemeral_message_parameters_option(
                     request
+                        .ephemeral
+                        .map(|target| EphemeralMessageParameters::new(target.receiver_user_id)),
+                )
+                .reply_parameters_option(match request.ephemeral {
+                    Some(target) => target
+                        .reply_to_ephemeral_message_id
+                        .map(|id| ReplyParameters::new().ephemeral_message_id(id)),
+                    None => request
                         .reply_to_message_id
                         .map(|id| ReplyParameters::new().message_id(id).allow_sending_without_reply(true)),
-                ),
+                }),
             0,
             None,
         )
@@ -254,8 +262,8 @@ impl MessengerPort for TelegramMessenger {
     }
 
     async fn edit_menu(&self, request: EditMenuRequest<'_>) -> Result<(), MessengerError> {
-        let result = match request.message {
-            MenuMessage::Chat { chat_id, message_id } => {
+        let result = match request.target {
+            MenuMessage::ChatMessage { chat_id, message_id } => {
                 let method = EditMessageText::new()
                     .chat_id(chat_id)
                     .message_id(message_id)
@@ -265,7 +273,7 @@ impl MessengerPort for TelegramMessenger {
                     .reply_markup(InlineKeyboardMarkup::from(request.keyboard));
                 with_retries(self, method, 0, None).await.map(|_| ())
             }
-            MenuMessage::Ephemeral {
+            MenuMessage::EphemeralMessage {
                 chat_id,
                 receiver_user_id,
                 ephemeral_message_id,
@@ -1098,7 +1106,7 @@ mod upload_deadline_tests {
 mod rate_limit_tests {
     use super::*;
     use crate::services::{
-        messenger::{Button, EphemeralMenu, MediaGroupItem},
+        messenger::{Button, EphemeralMessage, MediaGroupItem},
         queue::test_support::Fixture,
     };
     use futures_util::stream;
@@ -1334,6 +1342,7 @@ mod rate_limit_tests {
                 chat_id: 1,
                 reply_to_message_id: Some(7),
                 text,
+                ephemeral: None,
                 format: Some(TextFormat::Html),
                 disable_link_preview: true,
             })
@@ -1464,15 +1473,15 @@ mod rate_limit_tests {
     }
 
     #[tokio::test]
-    async fn menus_send_privately_or_to_the_ephemeral_receiver() {
+    async fn text_and_menus_send_privately_or_to_the_ephemeral_receiver() {
         let fixture = Fixture::new().await;
         for ephemeral in [
             None,
-            Some(EphemeralMenu {
+            Some(EphemeralMessage {
                 receiver_user_id: 1,
                 reply_to_ephemeral_message_id: None,
             }),
-            Some(EphemeralMenu {
+            Some(EphemeralMessage {
                 receiver_user_id: 1,
                 reply_to_ephemeral_message_id: Some(7),
             }),
@@ -1488,27 +1497,45 @@ mod rate_limit_tests {
                     r#"{"ok":true,"result":{"message_id":8,"date":1,"chat":{"id":1,"type":"private"},"text":"Synthetic menu"}}"#,
                 )
             };
-            let server = reply_once("200 OK", body).await;
-            test_messenger(server.address, &fixture)
-                .send_menu(SendMenuRequest {
-                    chat_id,
-                    ephemeral,
-                    text: "Synthetic menu",
-                    keyboard: &Keyboard { rows: Vec::new() },
-                })
-                .await
-                .unwrap();
-            let request = server.request.await.unwrap();
-            assert!(request.contains("/sendMessage "));
-            assert!(request.contains(&format!("name=\"chat_id\"\r\n\r\n{chat_id}")));
-            assert_eq!(request.contains("name=\"ephemeral_message_parameters\""), ephemeral.is_some());
-            assert_eq!(request.contains(r#""receiver_user_id":1"#), ephemeral.is_some());
-            assert_eq!(
-                request.contains(r#""ephemeral_message_id":7"#),
-                ephemeral.and_then(|target| target.reply_to_ephemeral_message_id).is_some()
-            );
-            assert!(!request.contains(r#""message_id":"#));
-            assert!(!request.contains("allow_sending_without_reply"));
+            for is_menu in [true, false] {
+                let server = reply_once("200 OK", body).await;
+                let messenger = test_messenger(server.address, &fixture);
+                if is_menu {
+                    messenger
+                        .send_menu(SendMenuRequest {
+                            chat_id,
+                            ephemeral,
+                            text: "Synthetic menu",
+                            keyboard: &Keyboard { rows: Vec::new() },
+                        })
+                        .await
+                        .unwrap();
+                } else {
+                    messenger
+                        .send_text(SendTextRequest {
+                            chat_id,
+                            ephemeral,
+                            reply_to_message_id: ephemeral.map(|_| 9),
+                            text: "Synthetic notice",
+                            format: Some(TextFormat::Html),
+                            disable_link_preview: true,
+                        })
+                        .await
+                        .unwrap();
+                }
+                let request = server.request.await.unwrap();
+                assert!(request.contains("/sendMessage "));
+                assert!(request.contains(&format!("name=\"chat_id\"\r\n\r\n{chat_id}")));
+                assert_eq!(request.contains("name=\"ephemeral_message_parameters\""), ephemeral.is_some());
+                assert_eq!(request.contains(r#""receiver_user_id":1"#), ephemeral.is_some());
+                assert_eq!(
+                    request.contains(r#""ephemeral_message_id":7"#),
+                    ephemeral.and_then(|target| target.reply_to_ephemeral_message_id).is_some()
+                );
+                assert_eq!(request.contains("name=\"reply_markup\""), is_menu);
+                assert!(!request.contains(r#""message_id":"#));
+                assert!(!request.contains("allow_sending_without_reply"));
+            }
         }
     }
 
@@ -1523,7 +1550,7 @@ mod rate_limit_tests {
         let error = test_messenger(server.address, &fixture)
             .send_menu(SendMenuRequest {
                 chat_id: -100,
-                ephemeral: Some(EphemeralMenu {
+                ephemeral: Some(EphemeralMessage {
                     receiver_user_id: 1,
                     reply_to_ephemeral_message_id: None,
                 }),
@@ -1555,8 +1582,8 @@ mod rate_limit_tests {
         };
 
         for message in [
-            MenuMessage::Chat { chat_id: 1, message_id: 2 },
-            MenuMessage::Ephemeral {
+            MenuMessage::ChatMessage { chat_id: 1, message_id: 2 },
+            MenuMessage::EphemeralMessage {
                 chat_id: -100,
                 receiver_user_id: 1,
                 ephemeral_message_id: 2,
@@ -1572,7 +1599,7 @@ mod rate_limit_tests {
                 let server = reply_once(status, body).await;
                 test_messenger(server.address, &fixture)
                     .edit_menu(EditMenuRequest {
-                        message,
+                        target: message,
                         text: "Synthetic menu",
                         keyboard: &keyboard,
                     })
@@ -1581,14 +1608,14 @@ mod rate_limit_tests {
 
                 let request = server.request.await.unwrap();
                 match message {
-                    MenuMessage::Chat { chat_id, message_id } => {
+                    MenuMessage::ChatMessage { chat_id, message_id } => {
                         assert!(request.contains("/editMessageText "));
                         assert!(request.contains(&format!("name=\"chat_id\"\r\n\r\n{chat_id}")));
                         assert!(request.contains(&format!("name=\"message_id\"\r\n\r\n{message_id}")));
                         assert!(!request.contains("name=\"receiver_user_id\""));
                         assert!(!request.contains("name=\"ephemeral_message_id\""));
                     }
-                    MenuMessage::Ephemeral {
+                    MenuMessage::EphemeralMessage {
                         chat_id,
                         receiver_user_id,
                         ephemeral_message_id,
@@ -1612,8 +1639,8 @@ mod rate_limit_tests {
     async fn edit_menu_reports_other_rejections() {
         let fixture = Fixture::new().await;
         for message in [
-            MenuMessage::Chat { chat_id: 1, message_id: 2 },
-            MenuMessage::Ephemeral {
+            MenuMessage::ChatMessage { chat_id: 1, message_id: 2 },
+            MenuMessage::EphemeralMessage {
                 chat_id: -100,
                 receiver_user_id: 1,
                 ephemeral_message_id: 2,
@@ -1627,7 +1654,7 @@ mod rate_limit_tests {
 
             let error = test_messenger(server.address, &fixture)
                 .edit_menu(EditMenuRequest {
-                    message,
+                    target: message,
                     text: "Synthetic menu",
                     keyboard: &Keyboard { rows: Vec::new() },
                 })

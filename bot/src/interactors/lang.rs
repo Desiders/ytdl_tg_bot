@@ -6,12 +6,11 @@ use tracing::error;
 
 use crate::{
     entities::{ChatConfig, ChatConfigUpdate},
-    handlers_utils::progress,
     interactors::Interactor,
     locale::Locale,
     services::{
         chat,
-        messenger::{EphemeralMenu, Keyboard, MessengerPort, SendMenuRequest, TextFormat},
+        messenger::{EphemeralMessage, MessengerPort, SendTextRequest, TextFormat},
     },
     utils::ErrorFormatter,
 };
@@ -40,7 +39,7 @@ impl<Messenger> Lang<Messenger> {
 pub struct LangInput<'a> {
     pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
-    pub ephemeral: Option<EphemeralMenu>,
+    pub ephemeral: Option<EphemeralMessage>,
     pub chat_cfg: &'a ChatConfig,
     pub argument: Option<&'a str>,
 }
@@ -97,27 +96,18 @@ where
     Messenger: MessengerPort,
 {
     async fn send_text(&self, input: LangInput<'_>, text: &str) {
-        let result = if let Some(ephemeral) = input.ephemeral {
-            self.messenger
-                .send_menu(SendMenuRequest {
-                    chat_id: input.chat_id,
-                    ephemeral: Some(ephemeral),
-                    text,
-                    keyboard: &Keyboard { rows: Vec::new() },
-                })
-                .await
-        } else {
-            progress::new(
-                self.messenger.as_ref(),
+        if let Err(err) = self
+            .messenger
+            .send_text(SendTextRequest {
+                chat_id: input.chat_id,
                 text,
-                input.chat_id,
-                input.reply_to_message_id,
-                Some(TextFormat::Html),
-            )
+                reply_to_message_id: input.reply_to_message_id,
+                ephemeral: input.ephemeral,
+                format: Some(TextFormat::Html),
+                disable_link_preview: true,
+            })
             .await
-            .map(|_| ())
-        };
-        if let Err(err) = result {
+        {
             error!(err = %self.error_formatter.format(&err), "Send error");
         }
     }

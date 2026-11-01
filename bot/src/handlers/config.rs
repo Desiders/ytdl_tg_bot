@@ -1,5 +1,7 @@
-use crate::entities::{ChatConfig, ChatConfigExcludeDomains};
-use crate::interactors::{config, Interactor as _};
+use super::menu::message_access_input;
+
+use crate::entities::{ChatConfig, ChatConfigExcludeDomains, OwnChatConfig};
+use crate::interactors::{config, menu, menu_access::CheckMenuAccess, Interactor as _};
 use crate::services::messenger::{MessengerPort, SendTextRequest};
 
 use froodi::Inject;
@@ -43,6 +45,7 @@ where
             chat_id: message.chat().id(),
             text: &text,
             reply_to_message_id: Some(message.message_id()),
+            ephemeral: None,
             format: None,
             disable_link_preview: true,
         })
@@ -54,14 +57,24 @@ where
 #[instrument(skip_all, fields(%message_id = message.message_id(), %host))]
 pub async fn add_exclude_domain<Messenger>(
     message: Message,
-    Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(chat_cfg_domains): Extension<ChatConfigExcludeDomains>,
     Extension(host): Extension<Host>,
+    fsm: menu::Fsm,
+    Inject(access): Inject<CheckMenuAccess<Messenger>>,
     Inject(interactor): Inject<config::AddExcludeDomain<Messenger>>,
 ) -> HandlerResult
 where
     Messenger: MessengerPort,
 {
+    let Some(chat_cfg) = own_chat_cfg.as_ref() else {
+        return Ok(EventReturn::Finish);
+    };
+
+    if !access.execute(message_access_input(&message, chat_cfg, &fsm, true)).await? {
+        return Ok(EventReturn::Finish);
+    }
+
     let host = host.to_string();
     interactor
         .execute(config::AddExcludeDomainInput {
@@ -69,7 +82,7 @@ where
             reply_to_message_id: message.reply_to_message().as_ref().map(|message| message.message_id()),
             host: &host,
             exclude_domains: &chat_cfg_domains,
-            chat_cfg: &chat_cfg,
+            chat_cfg,
         })
         .await?;
     Ok(EventReturn::Finish)
@@ -78,14 +91,24 @@ where
 #[instrument(skip_all, fields(%message_id = message.message_id(), %host))]
 pub async fn remove_exclude_domain<Messenger>(
     message: Message,
-    Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(chat_cfg_domains): Extension<ChatConfigExcludeDomains>,
     Extension(host): Extension<Host>,
+    fsm: menu::Fsm,
+    Inject(access): Inject<CheckMenuAccess<Messenger>>,
     Inject(interactor): Inject<config::RemoveExcludeDomain<Messenger>>,
 ) -> HandlerResult
 where
     Messenger: MessengerPort,
 {
+    let Some(chat_cfg) = own_chat_cfg.as_ref() else {
+        return Ok(EventReturn::Finish);
+    };
+
+    if !access.execute(message_access_input(&message, chat_cfg, &fsm, true)).await? {
+        return Ok(EventReturn::Finish);
+    }
+
     let host = host.to_string();
     interactor
         .execute(config::RemoveExcludeDomainInput {
@@ -93,7 +116,7 @@ where
             reply_to_message_id: message.reply_to_message().as_ref().map(|message| message.message_id()),
             host: &host,
             exclude_domains: &chat_cfg_domains,
-            chat_cfg: &chat_cfg,
+            chat_cfg,
         })
         .await?;
     Ok(EventReturn::Finish)

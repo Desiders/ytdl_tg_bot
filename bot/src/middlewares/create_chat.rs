@@ -68,7 +68,24 @@ impl Middleware for CreateChatMiddleware {
                     ChatType::Private => Some(chat_config.clone()),
                     _ => match request.update.from() {
                         Some(from) => match get_chat_config.execute(chat::GetChatConfigInput { tg_id: from.id }).await {
-                            Ok(chat_config) => chat_config,
+                            Ok(Some(chat_config)) => Some(chat_config),
+                            Ok(None)
+                                if matches!(chat_type, ChatType::Group | ChatType::Supergroup)
+                                    && !from.is_bot
+                                    && request.update.sender_chat().is_none() =>
+                            {
+                                match save_chat
+                                    .execute(chat::SaveChatInput {
+                                        chat: Chat::new(from.id, from.username.as_deref().map(ToOwned::to_owned), ChatType::Private),
+                                        chat_config: ChatConfig::new(from.id, true, locale.as_str().to_owned()),
+                                    })
+                                    .await
+                                {
+                                    Ok((_, chat_config, _)) => Some(chat_config),
+                                    Err(err) => return Err((MiddlewareError::new(err).into(), request)),
+                                }
+                            }
+                            Ok(None) => None,
                             Err(err) => return Err((MiddlewareError::new(err).into(), request)),
                         },
                         None => None,

@@ -22,7 +22,8 @@ use crate::{
     },
     database::{SeaOrmTxManager, TxManager, TxManagerFactories},
     interactors::{
-        audio, auto, chosen_inline, config, enqueue_download, inline_query, lang, menu, photo, post, shazam, start, stats, video,
+        audio, auto, chosen_inline, config, enqueue_download, inline_query, lang, menu, menu_access, photo, post, shazam, start, stats,
+        video,
     },
     services::{
         chat,
@@ -321,6 +322,12 @@ registry! {
             Inject(messenger): Inject<Messenger>,
             Inject(stats)| async move {
                 Ok(menu::OpenMenu::new(cfg, error_formatter, messenger, stats))
+            }
+        ),
+        provide(|
+            Inject(messenger): Inject<Messenger>,
+            Inject(error_formatter)| async move {
+                Ok(menu_access::CheckMenuAccess::new(messenger, error_formatter))
             }
         ),
         provide(|

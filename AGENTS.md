@@ -176,9 +176,9 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - Keep Telegram SDK/API types isolated to the Telegram adapter. Utility string helpers such as HTML escaping may still live elsewhere, but Telegram request construction should have one source of truth.
 - Menus go through `send_menu`, `edit_menu`, and `answer_callback` with the port's own `Keyboard` type. Callback data uses `#[derive(telers::CallbackData)]` structs in `bot/src/value_objects/menu.rs`; domain buttons carry a 64-bit FNV-1a fingerprint of the domain (`DomainKey`), not the domain, to stay under Telegram's 64-byte limit, and not a list position, which an old message would resolve to another domain after the list changes.
 - Menu callbacks are answered before loading page data or editing the menu.
-- Group menus use Telegram ephemeral messages, addressed only to the initiating user. Group `/start` and `/lang` are registered as ephemeral commands; incoming ephemeral commands authorize a reply through `ReplyParameters.ephemeral_message_id`. Ordinary group `/start` commands are deleted best-effort before preparing the menu; sending an ephemeral menu from an ordinary command requires bot administrator rights. Never fall back to a public menu. Group callbacks require an ephemeral ID and a matching native `receiver_user`; missing metadata is rejected. Personal settings are loaded from `OwnChatConfig` and a missing user profile is created through request-scoped `SaveChat` only when needed. Language (including `/lang <code>`) and caption-link visibility change the user's config, not the group config.
+- Group menus use Telegram ephemeral messages, addressed only to the initiating user. Group `/start` and `/lang` are registered as ephemeral commands; incoming ephemeral commands authorize a reply through `ReplyParameters.ephemeral_message_id`. Ordinary group `/start` commands are deleted best-effort before preparing the menu; sending an ephemeral menu from an ordinary command requires bot administrator rights. Never fall back to a public menu. Group callbacks require an ephemeral ID and a matching native `receiver_user`; missing metadata is rejected. Personal settings are loaded from `OwnChatConfig`; `CreateChatMiddleware` creates missing personal profiles for ordinary group users through the existing `SaveChat` path. Language (including `/lang <code>`) and caption-link visibility change the user's config, not the group config.
 - Chat resolution for callbacks uses the SDK's prepared `event_chat` context in chat creation and menu access; `Update::chat()` alone does not include callback messages. FSM uses the same SDK context and remains scoped by chat and user.
-- Excluded domains are read and changed for the actual destination chat. Group domain screens, mutations, typed input and legacy `/add_ed`/`/rm_ed` require current administrator rights from `MessengerPort::is_chat_administrator`; API errors deny access. The Telegram adapter uses `getChatAdministrators` with a five-second absolute deadline. Denied domain messages finish handling rather than falling through into automatic downloads.
+- Excluded domains are read and changed for the actual destination chat. Menu and domain handlers explicitly call `CheckMenuAccess` before their action interactor. Group domain screens, mutations, typed input and legacy `/add_ed`/`/rm_ed` require current administrator rights from `MessengerPort::is_chat_administrator`; API errors deny access. The Telegram adapter uses `getChatAdministrators` with a five-second absolute deadline. Denied domain handlers return `Finish` rather than falling through into automatic downloads.
 - The add-domain prompt is `telers` FSM state (`MenuState::DomainInput`) in `MemoryStorage`, armed by the add screen and cleared by every other menu screen. Group prompts retain their ephemeral message ID so typed input edits the same private menu without a new callback. Callback denials use `answer_callback`; typed-input denials edit the private prompt or send an ephemeral notice. The state has no TTL and does not survive a restart; a command typed while it waits still runs as a command.
 - Current known exceptions that use `telers::Bot` directly: `ReactionMiddleware`, `worker::clear_reaction`, startup `SetMyCommands`, and `TelegramFileDownloader` (`getFile`). Do not add new ones.
 
@@ -187,12 +187,14 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - Handlers are Telegram inbound adapters.
 - A handler should:
   - extract Telegram input
-  - inject one top-level interactor
+  - check access when the action requires it
+  - inject the action interactor
   - call it
   - return `EventReturn::Finish`
+- Access decisions and their user-facing denials belong to handler-invoked logic. Filters and middleware only retrieve data or filter updates; the existing `CreateChatMiddleware` persistence is an exception. Do not combine authorization, persistence, filters, and middleware in one object.
 - Do not let handlers orchestrate business flow across multiple top-level interactors or services again.
 - Handler-facing orchestration lives in `bot/src/interactors/`:
-  - `start`, `stats`, `config`, `lang`, `menu`, `inline_query`, `shazam`
+  - `start`, `stats`, `config`, `lang`, `menu`, `menu_access`, `inline_query`, `shazam`
   - `enqueue_download` (the only download interactors handlers call)
   - `video`, `audio`, `photo`, `auto`, `chosen_inline` (run by the worker, not by handlers)
 - Lower-level reusable building blocks live under `bot/src/services/`, not in the interactor namespace:
@@ -224,6 +226,7 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 ### Bot DI Style
 
 - Keep the current generic DI style around `Messenger`.
+- Required request-container extensions and registered dependencies are invariants: retrieve them with `unwrap()`. Handle failures of the operations themselves separately.
 - The composition root (`bot/src/di_container.rs`) uses Froodi fragments for configuration, Telegram messenger, node router, interactors, database, and queue providers; `init::<Messenger>` composes them into one registry.
 - The composition root builds `TelegramMessenger`, but top-level interactors should be wired generically over `Messenger` rather than directly against the concrete adapter type.
 - If you add a new top-level interactor, register it in the `interactors_registry` fragment and keep the same generic pattern.

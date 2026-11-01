@@ -1,12 +1,13 @@
+use super::menu::message_access_input;
+
 use crate::{
-    entities::{ChatConfig, OwnChatConfig},
-    interactors::{lang, Interactor as _},
-    services::messenger::{EphemeralMenu, MessengerPort},
+    entities::OwnChatConfig,
+    interactors::{lang, menu, menu_access::CheckMenuAccess, Interactor as _},
+    services::messenger::{EphemeralMessage, MessengerPort},
 };
 
 use froodi::Inject;
 use telers::{
-    errors::HandlerError,
     event::{telegram::HandlerResult, EventReturn},
     filters::CommandObject,
     types::{Chat, Message},
@@ -18,17 +19,26 @@ use tracing::instrument;
 pub async fn lang<Messenger>(
     message: Message,
     command: CommandObject,
-    Extension(chat_cfg): Extension<ChatConfig>,
     Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
+    fsm: menu::Fsm,
+    Inject(access): Inject<CheckMenuAccess<Messenger>>,
     Inject(interactor): Inject<lang::Lang<Messenger>>,
 ) -> HandlerResult
 where
     Messenger: MessengerPort,
 {
+    let Some(chat_cfg) = own_chat_cfg.as_ref() else {
+        return Ok(EventReturn::Finish);
+    };
+
+    if !access.execute(message_access_input(&message, chat_cfg, &fsm, false)).await? {
+        return Ok(EventReturn::Finish);
+    }
+
     let argument = command.args.iter().map(AsRef::as_ref).collect::<Vec<_>>().join(" ");
     let ephemeral = if matches!(message.chat(), Chat::Group(_) | Chat::Supergroup(_)) {
-        let user = message.from().ok_or_else(|| HandlerError::from_display("Missing menu owner"))?;
-        Some(EphemeralMenu {
+        let user = message.from().unwrap();
+        Some(EphemeralMessage {
             receiver_user_id: user.id,
             reply_to_ephemeral_message_id: message.ephemeral_message_id(),
         })
@@ -40,7 +50,7 @@ where
             chat_id: message.chat().id(),
             reply_to_message_id: message.reply_to_message().map(Message::message_id).filter(|&id| id > 0),
             ephemeral,
-            chat_cfg: own_chat_cfg.as_ref().unwrap_or(&chat_cfg),
+            chat_cfg,
             argument: (!argument.is_empty()).then_some(argument.as_str()),
         })
         .await?;
