@@ -1,5 +1,8 @@
 use std::{
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
 
@@ -69,7 +72,7 @@ fn access_input(chat_id: i64, callback_id: Option<&'static str>) -> MenuAccessIn
     }
 }
 
-struct RecordingMessenger(Arc<Mutex<Vec<String>>>);
+struct RecordingMessenger(Arc<Mutex<Vec<String>>>, Arc<AtomicBool>);
 
 impl RecordingMessenger {
     fn record(&self, event: String) {
@@ -95,7 +98,11 @@ impl MessengerPort for RecordingMessenger {
             ));
         }
         self.record(format!("send {}", menu(request.text, request.keyboard)));
-        Ok(())
+        if self.1.load(Ordering::Relaxed) {
+            Err(MessengerError::new("Synthetic menu send failure"))
+        } else {
+            Ok(())
+        }
     }
     async fn edit_menu(&self, request: EditMenuRequest<'_>) -> Result<(), MessengerError> {
         if let MenuMessage::EphemeralMessage {
@@ -192,6 +199,7 @@ fn menu(text: &str, keyboard: &Keyboard) -> String {
 
 struct Fixture {
     events: Arc<Mutex<Vec<String>>>,
+    fail_menu_send: Arc<AtomicBool>,
     tx_manager: Arc<Box<dyn TxManager>>,
     formatter: Arc<ErrorFormatter>,
     open_menu: Arc<OpenMenu<RecordingMessenger>>,
@@ -243,8 +251,9 @@ impl Fixture {
         let message_cache = Arc::new(MenuMessageCache::new(redis.connection()));
 
         let events = Arc::new(Mutex::new(Vec::new()));
+        let fail_menu_send = Arc::new(AtomicBool::new(false));
         let formatter = Arc::new(ErrorFormatter::new("test"));
-        let messenger = Arc::new(RecordingMessenger(events.clone()));
+        let messenger = Arc::new(RecordingMessenger(events.clone(), fail_menu_send.clone()));
         let access = Arc::new(MenuAccess::new(messenger.clone(), formatter.clone()));
         let stats = Stats::new(
             formatter.clone(),
@@ -256,6 +265,7 @@ impl Fixture {
 
         Self {
             events,
+            fail_menu_send,
             open_menu: Arc::new(OpenMenu::new(
                 Arc::new(test_support::config()),
                 formatter.clone(),
@@ -802,11 +812,12 @@ async fn a_missing_cached_group_menu_sends_a_notice_without_changing_its_scope()
 }
 
 #[tokio::test]
-async fn only_the_main_menu_cleans_up_its_command_and_ignores_delete_errors() {
+async fn only_successful_main_menu_delivery_cleans_up_the_command() {
     let fixture = Fixture::new(&[]).await;
     let Saved { config, exclude_domains } = fixture.chat().await;
-    for screen in [Screen::Main, Screen::Language] {
+    for (screen, fail_send) in [(Screen::Main, false), (Screen::Language, false), (Screen::Main, true)] {
         fixture.events.lock().unwrap().clear();
+        fixture.fail_menu_send.store(fail_send, Ordering::Relaxed);
         fixture
             .open_menu
             .as_ref()
@@ -830,12 +841,12 @@ async fn only_the_main_menu_cleans_up_its_command_and_ignores_delete_errors() {
             .unwrap();
 
         let events = fixture.events();
-        let sent = usize::from(screen == Screen::Main);
-        assert_eq!(events.len(), sent + 2, "{events:?}");
-        if screen == Screen::Main {
-            assert_eq!(events[0], "delete -2:7");
+        let should_delete = screen == Screen::Main && !fail_send;
+        assert_eq!(events.len(), 2 + usize::from(should_delete), "{events:?}");
+        assert_eq!(events[0], "ephemeral send -2:1:None");
+        assert!(events[1].starts_with("send "));
+        if should_delete {
+            assert_eq!(events[2], "delete -2:7");
         }
-        assert_eq!(events[sent], "ephemeral send -2:1:None");
-        assert!(events[sent + 1].starts_with("send "));
     }
 }

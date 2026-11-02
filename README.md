@@ -63,7 +63,8 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 
 Commands are registered only for private chats. In groups, send `/start` or `/lang`
 manually to open a menu visible only to you. The bot must be an administrator to send
-this private response; an ordinary `/start` is deleted when permissions allow.
+this private response; an ordinary `/start` is deleted after successful menu delivery
+when permissions allow.
 Language and caption-link visibility are personal settings.
 Managing the group's excluded domains also requires current administrator permissions, checked
 again when a domain is submitted. Button notifications are visible only to the person who clicked.

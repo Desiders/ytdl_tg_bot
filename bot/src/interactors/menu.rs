@@ -140,25 +140,6 @@ where
     Messenger: MessengerPort,
 {
     async fn show(&self, input: OpenMenuInput<'_>) -> Result<(), HandlerError> {
-        match &input.target {
-            MenuTarget::Send {
-                chat_id,
-                command_message_id: Some(message_id),
-                ..
-            } if input.screen == Screen::Main => {
-                if let Err(err) = self
-                    .messenger
-                    .delete_message(DeleteMessageRequest {
-                        chat_id: *chat_id,
-                        message_id: *message_id,
-                    })
-                    .await
-                {
-                    error!(err = %self.error_formatter.format(&err), "Delete menu command error");
-                }
-            }
-            _ => {}
-        }
         if let MenuTarget::Edit {
             callback_id: Some(callback_id),
             ..
@@ -204,7 +185,20 @@ where
         let mut view = render(screen, &page);
 
         match input.target {
-            MenuTarget::Send { chat_id, ephemeral, .. } => self.send(chat_id, ephemeral, view, input.notice).await,
+            MenuTarget::Send {
+                chat_id,
+                ephemeral,
+                command_message_id,
+            } => {
+                self.send(
+                    chat_id,
+                    ephemeral,
+                    command_message_id.filter(|_| screen == Screen::Main),
+                    view,
+                    input.notice,
+                )
+                .await;
+            }
             MenuTarget::Edit { message, callback_id } => {
                 if callback_id.is_none() {
                     view.text = with_notice(input.notice, view.text);
@@ -216,7 +210,14 @@ where
         Ok(())
     }
 
-    async fn send(&self, chat_id: i64, ephemeral: Option<EphemeralMessage>, view: View, notice: Option<Notice>) {
+    async fn send(
+        &self,
+        chat_id: i64,
+        ephemeral: Option<EphemeralMessage>,
+        command_message_id: Option<i64>,
+        view: View,
+        notice: Option<Notice>,
+    ) {
         // A new message has no callback answer to carry the notice, so the notice heads the text.
         let text = with_notice(notice, view.text);
         if let Err(err) = self
@@ -230,6 +231,12 @@ where
             .await
         {
             error!(err = %self.error_formatter.format(&err), "Send menu error");
+            return;
+        }
+        if let Some(message_id) = command_message_id {
+            if let Err(err) = self.messenger.delete_message(DeleteMessageRequest { chat_id, message_id }).await {
+                error!(err = %self.error_formatter.format(&err), "Delete menu command error");
+            }
         }
     }
 
