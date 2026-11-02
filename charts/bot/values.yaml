@@ -1,7 +1,7 @@
 bot:
   image:
     repository: ghcr.io/desiders/ytdl_tg_bot
-    tag: "5.10.0"
+    tag: "5.10.1"
     pullPolicy: Always
 
 postgres:

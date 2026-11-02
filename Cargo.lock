@@ -681,7 +681,7 @@ dependencies = [
 
 [[package]]
 name = "bot"
-version = "5.10.0"
+version = "5.10.1"
 dependencies = [
  "async-trait",
  "backoff",
