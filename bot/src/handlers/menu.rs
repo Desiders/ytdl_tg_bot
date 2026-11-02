@@ -1,15 +1,22 @@
 use crate::{
-    entities::{ChatConfig, ChatConfigExcludeDomains},
+    entities::{ChatConfigExcludeDomains, OwnChatConfig},
     filters::get_host_from_text,
     interactors::{menu, Interactor as _},
-    services::messenger::MessengerPort,
-    value_objects::menu::{DeleteDomain, OpenScreen, Screen, SetLanguage, SetLinkVisibility},
+    services::{
+        menu_access::MenuAccessInput,
+        messenger::{EphemeralMessage, MenuMessage, MessengerPort},
+    },
+    value_objects::{
+        menu::{DeleteDomain, OpenScreen, Screen, SetLanguage, SetLinkVisibility},
+        ChatType,
+    },
 };
 
 use froodi::Inject;
 use telers::{
+    enums,
     event::{telegram::HandlerResult, EventReturn},
-    types::{CallbackQuery, Message},
+    types::{CallbackQuery, Chat, Message},
     Extension,
 };
 use tracing::instrument;
@@ -17,7 +24,7 @@ use tracing::instrument;
 #[instrument(skip_all)]
 pub async fn open_main<Messenger>(
     message: Message,
-    Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
     fsm: menu::Fsm,
     Inject(interactor): Inject<menu::OpenMenu<Messenger>>,
@@ -25,14 +32,17 @@ pub async fn open_main<Messenger>(
 where
     Messenger: MessengerPort,
 {
+    let Some(chat_cfg) = own_chat_cfg.as_ref() else {
+        return Ok(EventReturn::Finish);
+    };
+
     interactor
         .execute(menu::OpenMenuInput {
-            target: menu::MenuTarget::Send {
-                chat_id: message.chat().id(),
-            },
+            access: message_access_input(&message),
+            target: send_target(&message),
             screen: Screen::Main,
             notice: None,
-            chat_cfg: &chat_cfg,
+            chat_cfg,
             exclude_domains: &exclude_domains,
             fsm: &fsm,
         })
@@ -43,7 +53,7 @@ where
 #[instrument(skip_all)]
 pub async fn open_help<Messenger>(
     message: Message,
-    Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
     fsm: menu::Fsm,
     Inject(interactor): Inject<menu::OpenMenu<Messenger>>,
@@ -51,14 +61,17 @@ pub async fn open_help<Messenger>(
 where
     Messenger: MessengerPort,
 {
+    let Some(chat_cfg) = own_chat_cfg.as_ref() else {
+        return Ok(EventReturn::Finish);
+    };
+
     interactor
         .execute(menu::OpenMenuInput {
-            target: menu::MenuTarget::Send {
-                chat_id: message.chat().id(),
-            },
+            access: message_access_input(&message),
+            target: send_target(&message),
             screen: Screen::Help,
             notice: None,
-            chat_cfg: &chat_cfg,
+            chat_cfg,
             exclude_domains: &exclude_domains,
             fsm: &fsm,
         })
@@ -69,7 +82,7 @@ where
 #[instrument(skip_all)]
 pub async fn open_stats<Messenger>(
     message: Message,
-    Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
     fsm: menu::Fsm,
     Inject(interactor): Inject<menu::OpenMenu<Messenger>>,
@@ -77,14 +90,17 @@ pub async fn open_stats<Messenger>(
 where
     Messenger: MessengerPort,
 {
+    let Some(chat_cfg) = own_chat_cfg.as_ref() else {
+        return Ok(EventReturn::Finish);
+    };
+
     interactor
         .execute(menu::OpenMenuInput {
-            target: menu::MenuTarget::Send {
-                chat_id: message.chat().id(),
-            },
+            access: message_access_input(&message),
+            target: send_target(&message),
             screen: Screen::Stats,
             notice: None,
-            chat_cfg: &chat_cfg,
+            chat_cfg,
             exclude_domains: &exclude_domains,
             fsm: &fsm,
         })
@@ -95,7 +111,7 @@ where
 #[instrument(skip_all)]
 pub async fn open_language<Messenger>(
     message: Message,
-    Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
     fsm: menu::Fsm,
     Inject(interactor): Inject<menu::OpenMenu<Messenger>>,
@@ -103,14 +119,17 @@ pub async fn open_language<Messenger>(
 where
     Messenger: MessengerPort,
 {
+    let Some(chat_cfg) = own_chat_cfg.as_ref() else {
+        return Ok(EventReturn::Finish);
+    };
+
     interactor
         .execute(menu::OpenMenuInput {
-            target: menu::MenuTarget::Send {
-                chat_id: message.chat().id(),
-            },
+            access: message_access_input(&message),
+            target: send_target(&message),
             screen: Screen::Language,
             notice: None,
-            chat_cfg: &chat_cfg,
+            chat_cfg,
             exclude_domains: &exclude_domains,
             fsm: &fsm,
         })
@@ -121,7 +140,7 @@ where
 #[instrument(skip_all)]
 pub async fn add_domain<Messenger>(
     message: Message,
-    Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
     fsm: menu::Fsm,
     Inject(interactor): Inject<menu::AddMenuDomain<Messenger>>,
@@ -129,12 +148,17 @@ pub async fn add_domain<Messenger>(
 where
     Messenger: MessengerPort,
 {
+    let Some(chat_cfg) = own_chat_cfg.as_ref() else {
+        return Ok(EventReturn::Finish);
+    };
+
     let host = message.text().and_then(get_host_from_text).map(|host| host.to_string());
     interactor
         .execute(menu::AddMenuDomainInput {
-            chat_id: message.chat().id(),
+            access: message_access_input(&message),
+            target: send_target(&message),
             host: host.as_deref(),
-            chat_cfg: &chat_cfg,
+            chat_cfg,
             exclude_domains: &exclude_domains,
             fsm: &fsm,
         })
@@ -146,7 +170,7 @@ where
 pub async fn open_screen<Messenger>(
     query: CallbackQuery,
     data: OpenScreen,
-    Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
     fsm: menu::Fsm,
     Inject(interactor): Inject<menu::OpenMenu<Messenger>>,
@@ -154,19 +178,23 @@ pub async fn open_screen<Messenger>(
 where
     Messenger: MessengerPort,
 {
-    let Some(message) = query.message.as_deref() else {
+    let Some(chat_cfg) = own_chat_cfg.as_ref() else {
+        return Ok(EventReturn::Finish);
+    };
+
+    let Some(access) = callback_access_input(&query) else {
+        return Ok(EventReturn::Finish);
+    };
+    let Some(target) = edit_target(&query) else {
         return Ok(EventReturn::Finish);
     };
     interactor
         .execute(menu::OpenMenuInput {
-            target: menu::MenuTarget::Edit {
-                chat_id: message.chat().id(),
-                message_id: message.message_id(),
-                callback_id: &query.id,
-            },
+            access,
+            target,
             screen: data.screen,
             notice: None,
-            chat_cfg: &chat_cfg,
+            chat_cfg,
             exclude_domains: &exclude_domains,
             fsm: &fsm,
         })
@@ -178,7 +206,7 @@ where
 pub async fn set_language<Messenger>(
     query: CallbackQuery,
     data: SetLanguage,
-    Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
     fsm: menu::Fsm,
     Inject(interactor): Inject<menu::SetMenuLanguage<Messenger>>,
@@ -186,18 +214,22 @@ pub async fn set_language<Messenger>(
 where
     Messenger: MessengerPort,
 {
-    let Some(message) = query.message.as_deref() else {
+    let Some(chat_cfg) = own_chat_cfg.as_ref() else {
+        return Ok(EventReturn::Finish);
+    };
+
+    let Some(access) = callback_access_input(&query) else {
+        return Ok(EventReturn::Finish);
+    };
+    let Some(target) = edit_target(&query) else {
         return Ok(EventReturn::Finish);
     };
     interactor
         .execute(menu::SetMenuLanguageInput {
-            target: menu::MenuTarget::Edit {
-                chat_id: message.chat().id(),
-                message_id: message.message_id(),
-                callback_id: &query.id,
-            },
+            access,
+            target,
             locale: data.locale,
-            chat_cfg: &chat_cfg,
+            chat_cfg,
             exclude_domains: &exclude_domains,
             fsm: &fsm,
         })
@@ -209,7 +241,7 @@ where
 pub async fn set_link_visibility<Messenger>(
     query: CallbackQuery,
     data: SetLinkVisibility,
-    Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
     fsm: menu::Fsm,
     Inject(interactor): Inject<menu::SetMenuLinkVisibility<Messenger>>,
@@ -217,18 +249,22 @@ pub async fn set_link_visibility<Messenger>(
 where
     Messenger: MessengerPort,
 {
-    let Some(message) = query.message.as_deref() else {
+    let Some(chat_cfg) = own_chat_cfg.as_ref() else {
+        return Ok(EventReturn::Finish);
+    };
+
+    let Some(access) = callback_access_input(&query) else {
+        return Ok(EventReturn::Finish);
+    };
+    let Some(target) = edit_target(&query) else {
         return Ok(EventReturn::Finish);
     };
     interactor
         .execute(menu::SetMenuLinkVisibilityInput {
-            target: menu::MenuTarget::Edit {
-                chat_id: message.chat().id(),
-                message_id: message.message_id(),
-                callback_id: &query.id,
-            },
+            access,
+            target,
             link_is_visible: data.visible,
-            chat_cfg: &chat_cfg,
+            chat_cfg,
             exclude_domains: &exclude_domains,
             fsm: &fsm,
         })
@@ -240,7 +276,7 @@ where
 pub async fn remove_domain<Messenger>(
     query: CallbackQuery,
     data: DeleteDomain,
-    Extension(chat_cfg): Extension<ChatConfig>,
+    Extension(OwnChatConfig(own_chat_cfg)): Extension<OwnChatConfig>,
     Extension(exclude_domains): Extension<ChatConfigExcludeDomains>,
     fsm: menu::Fsm,
     Inject(interactor): Inject<menu::RemoveMenuDomain<Messenger>>,
@@ -248,21 +284,153 @@ pub async fn remove_domain<Messenger>(
 where
     Messenger: MessengerPort,
 {
-    let Some(message) = query.message.as_deref() else {
+    let Some(chat_cfg) = own_chat_cfg.as_ref() else {
+        return Ok(EventReturn::Finish);
+    };
+
+    let Some(access) = callback_access_input(&query) else {
+        return Ok(EventReturn::Finish);
+    };
+    let Some(target) = edit_target(&query) else {
         return Ok(EventReturn::Finish);
     };
     interactor
         .execute(menu::RemoveMenuDomainInput {
-            target: menu::MenuTarget::Edit {
-                chat_id: message.chat().id(),
-                message_id: message.message_id(),
-                callback_id: &query.id,
-            },
+            access,
+            target,
             domain: data.domain,
-            chat_cfg: &chat_cfg,
+            chat_cfg,
             exclude_domains: &exclude_domains,
             fsm: &fsm,
         })
         .await?;
     Ok(EventReturn::Finish)
+}
+
+fn send_target(message: &Message) -> menu::MenuTarget<'static> {
+    let is_group = matches!(message.chat(), Chat::Group(_) | Chat::Supergroup(_));
+    let ephemeral = if is_group {
+        message.from().map(|user| EphemeralMessage {
+            receiver_user_id: user.id,
+            reply_to_ephemeral_message_id: message.ephemeral_message_id(),
+        })
+    } else {
+        None
+    };
+    menu::MenuTarget::Send {
+        chat_id: message.chat().id(),
+        ephemeral,
+        command_message_id: (is_group && message.message_id() > 0).then_some(message.message_id()),
+    }
+}
+
+fn edit_target(query: &CallbackQuery) -> Option<menu::MenuTarget<'_>> {
+    let message = query.message.as_deref()?;
+    let target = match (message.ephemeral_message_id(), message.receiver_user()) {
+        (Some(ephemeral_message_id), Some(receiver)) => MenuMessage::EphemeralMessage {
+            chat_id: message.chat().id(),
+            receiver_user_id: receiver.id,
+            ephemeral_message_id,
+        },
+        _ => MenuMessage::ChatMessage {
+            chat_id: message.chat().id(),
+            message_id: message.message_id(),
+        },
+    };
+    Some(menu::MenuTarget::Edit {
+        message: target,
+        callback_id: Some(&query.id),
+    })
+}
+
+pub(super) fn message_access_input(message: &Message) -> MenuAccessInput<'static> {
+    MenuAccessInput {
+        chat_id: message.chat().id(),
+        chat_type: ChatType::try_from(enums::ChatType::from(message.chat())).unwrap(),
+        user_id: message.from().map(|user| user.id),
+        is_bot: message.from().is_some_and(|user| user.is_bot),
+        sender_chat_id: message.sender_chat().map(Chat::id),
+        menu_owner_id: None,
+        callback_id: None,
+        ephemeral_message_id: message.ephemeral_message_id(),
+    }
+}
+
+fn callback_access_input(query: &CallbackQuery) -> Option<MenuAccessInput<'_>> {
+    let message = query.message.as_deref()?;
+    Some(MenuAccessInput {
+        chat_id: message.chat().id(),
+        chat_type: ChatType::try_from(enums::ChatType::from(message.chat())).unwrap(),
+        user_id: Some(query.from.id),
+        is_bot: query.from.is_bot,
+        sender_chat_id: None,
+        menu_owner_id: message.receiver_user().map(|user| user.id),
+        callback_id: Some(&query.id),
+        ephemeral_message_id: message.ephemeral_message_id(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use telers::types::{ChatGroup, ChatPrivate, MessageText, User};
+
+    #[test]
+    fn group_menus_use_ephemeral_ids_and_only_delete_visible_commands() {
+        let user = User::new(2, false, "Owner");
+        let command = Message::Text(MessageText::new(7, 1, ChatGroup::new(-1), "/start").from(user.clone()));
+        assert!(matches!(
+            send_target(&command),
+            menu::MenuTarget::Send {
+                chat_id: -1,
+                command_message_id: Some(7),
+                ephemeral: Some(EphemeralMessage {
+                    receiver_user_id: 2,
+                    reply_to_ephemeral_message_id: None,
+                }),
+            }
+        ));
+
+        let ephemeral = MessageText::new(0, 1, ChatGroup::new(-1), "/start")
+            .from(user.clone())
+            .receiver_user(user.clone())
+            .ephemeral_message_id(9);
+        assert!(matches!(
+            send_target(&Message::Text(ephemeral.clone())),
+            menu::MenuTarget::Send {
+                command_message_id: None,
+                ephemeral: Some(EphemeralMessage {
+                    reply_to_ephemeral_message_id: Some(9),
+                    ..
+                }),
+                ..
+            }
+        ));
+        let query = CallbackQuery::new("synthetic", user.clone(), "synthetic").message(Message::Text(ephemeral));
+        assert!(matches!(
+            edit_target(&query),
+            Some(menu::MenuTarget::Edit {
+                message: MenuMessage::EphemeralMessage {
+                    chat_id: -1,
+                    receiver_user_id: 2,
+                    ephemeral_message_id: 9,
+                },
+                callback_id: Some("synthetic"),
+            })
+        ));
+        let foreign = query.from(User::new(3, false, "Other"));
+        let access = callback_access_input(&foreign).unwrap();
+        assert_eq!(access.menu_owner_id, Some(2));
+        assert_eq!(access.user_id, Some(3));
+
+        let private = Message::Text(MessageText::new(7, 1, ChatPrivate::new(2), "/start").from(user));
+        assert!(matches!(
+            send_target(&private),
+            menu::MenuTarget::Send {
+                ephemeral: None,
+                command_message_id: None,
+                ..
+            }
+        ));
+    }
 }

@@ -54,11 +54,20 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 | `/pd`, `/photo` | Download photo |
 | `/rv`, `/ra` | Random video or audio from the configured domains |
 | `/shazam`, `/sh` | Recognize a song from a voice, audio, video or video note, using a reply or media caption, then download it |
-| `/add_ed`, `/rm_ed` | Exclude or re-include a domain for the current chat |
+| `/add_ed`, `/rm_ed` | Exclude or re-include a domain for the current chat; administrators only in groups |
 | `/change_link_visibility` | Show or hide the source link in captions (private chats) |
 | `/stats` | Cache, node, queue and chat statistics |
-| `/lang` | Switch interface language |
-| `/start`, `/help` | In a private chat, a button menu for settings, language, excluded domains, help and stats; in groups, help text with all arguments |
+| `/lang` | Change your interface language; without an argument, open the language menu |
+| `/start` | Open the button menu for settings, language, excluded domains, help and stats |
+| `/help` | In a private chat, open the help menu; in groups, show help text with all arguments |
+
+Commands are registered only for private chats. In groups, send `/start` or `/lang`
+manually to open a menu visible only to you. The bot must be an administrator to send
+this private response; an ordinary `/start` is deleted when permissions allow.
+Language and caption-link visibility are personal settings.
+Managing the group's excluded domains also requires current administrator permissions, checked
+again when a domain is submitted. Button notifications are visible only to the person who clicked.
+If the menu context expires, the bot tries to send the result in a private chat.
 
 A bare link in a private chat is downloaded automatically with media-type detection; in groups the same happens silently. In groups, add `yv2t_bot=false` to the URL query to skip automatic downloading.
 
@@ -71,7 +80,7 @@ currently unsupported.
 Enable **Guest Mode** in BotFather to accept mentions in chats where the bot is not a member.
 Mention the bot with a media URL, or mention it in a reply to a message containing one; the
 bot uses automatic detection and sends one media item through the inline delivery flow.
-The private-chat menu explains this under **Help → Guest mode**.
+The menu explains this under **Help → Guest mode**.
 
 Arguments go in square brackets after the command, for example `/vd [lang=ru,items=1:3:1,crop=00:01:30-,overwrite=true]`. Inline mode (`@bot <url>` or `@bot <title>`) supports `lang` and `overwrite`.
 

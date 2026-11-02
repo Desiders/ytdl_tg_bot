@@ -2,7 +2,7 @@ use telers::{CallbackData, CallbackDataError, CallbackDataValue};
 
 use crate::locale::Locale;
 
-/// A private-chat menu screen.
+/// A chat menu screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
     Main,

@@ -109,6 +109,7 @@ where
                             chat_id: *chat_id,
                             reply_to_message_id: Some(*message_id),
                             text: &text,
+                            ephemeral: None,
                             format: Some(TextFormat::Html),
                             disable_link_preview: true,
                         })

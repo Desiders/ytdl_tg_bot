@@ -88,6 +88,7 @@ async fn main() {
     let node_router = container.get::<NodeRouter>().await.unwrap();
     let cfg = container.get::<config::Config>().await.unwrap();
     let username = container.get::<Messenger>().await.unwrap().username().await.unwrap();
+    let fsm_storage = MemoryStorage::new();
 
     let download_router = Router::new("download")
         .on_guest_message(|observer| {
@@ -102,6 +103,7 @@ async fn main() {
         })
         .on_message(|observer| {
             observer
+                .register_outer_middleware(FSMContext::new(fsm_storage.clone()))
                 .register_inner_middleware(CleanUrlMiddleware)
                 .register_inner_middleware(ReactionMiddleware)
                 .register(
@@ -208,17 +210,12 @@ async fn main() {
                 )
         });
 
-    let fsm_storage = MemoryStorage::new();
     let router = setup_async_default(Router::new("main"), container.clone())
         .on_update(|observer| observer.register_outer_middleware(CreateChatMiddleware))
         .on_message(|observer| {
             observer
                 .register_outer_middleware(FSMContext::new(fsm_storage.clone()))
-                .register(
-                    Handler::new(menu::open_main::<Messenger>)
-                        .filter(ChatType::one(Private))
-                        .filter(Command::one("start")),
-                )
+                .register(Handler::new(menu::open_main::<Messenger>).filter(Command::one("start")))
                 .register(
                     Handler::new(menu::open_help::<Messenger>)
                         .filter(ChatType::one(Private))
@@ -231,20 +228,17 @@ async fn main() {
                 )
                 .register(
                     Handler::new(menu::open_language::<Messenger>)
-                        .filter(ChatType::one(Private))
                         .filter(Command::many(["lang", "language"]))
                         .filter(command_without_args),
                 )
-                .register(Handler::new(start::<Messenger>).filter(Command::many(["start", "help"])))
+                .register(Handler::new(start::<Messenger>).filter(Command::one("help")))
                 .register(Handler::new(stats::<Messenger>).filter(Command::one("stats")))
                 .register(Handler::new(shazam::<Messenger>).filter(Command::many(["shazam", "sh"])))
                 .register(Handler::new(lang::<Messenger>).filter(Command::many(["lang", "language"])))
                 .register(
                     Handler::new(menu::add_domain::<Messenger>)
-                        .filter(ChatType::one(Private))
                         .filter(MessageType::one(Text))
                         .filter(State::one(MenuState::DomainInput))
-                        // Download commands are handled by `download_router`, tried after this one.
                         .filter(is_command.invert()),
                 )
                 .register(

@@ -5,7 +5,7 @@ use telers::{
     event::bases::PropagateEventResult,
     middlewares::outer::{Middleware, MiddlewareResult, Next},
     router::Response,
-    types::Chat::Private,
+    types::Chat as TelegramChat,
     Request,
 };
 use tracing::{error, instrument, warn};
@@ -28,7 +28,8 @@ impl Middleware for CreateChatMiddleware {
         if request.update.guest_message().is_some() {
             return next(request).await;
         }
-        let (chat_id, cmd_random_enabled, username, chat_type) = match (request.update.chat(), request.update.from()) {
+        let event_chat = request.context.get::<TelegramChat>("event_chat").or_else(|| request.update.chat());
+        let (chat_id, cmd_random_enabled, username, chat_type) = match (event_chat, request.update.from()) {
             (Some(chat), _) => {
                 let chat_type = match ChatType::try_from(enums::ChatType::from(chat)) {
                     Ok(chat_type) => chat_type,
@@ -37,7 +38,7 @@ impl Middleware for CreateChatMiddleware {
                         return Ok(Response::new(request, PropagateEventResult::Rejected));
                     }
                 };
-                (chat.id(), matches!(chat, Private(_)), chat.username(), chat_type)
+                (chat.id(), matches!(chat, TelegramChat::Private(_)), chat.username(), chat_type)
             }
             (None, Some(from)) => (from.id, false, from.username.as_deref(), ChatType::Private),
             _ => return next(request).await,
@@ -67,7 +68,24 @@ impl Middleware for CreateChatMiddleware {
                     ChatType::Private => Some(chat_config.clone()),
                     _ => match request.update.from() {
                         Some(from) => match get_chat_config.execute(chat::GetChatConfigInput { tg_id: from.id }).await {
-                            Ok(chat_config) => chat_config,
+                            Ok(Some(chat_config)) => Some(chat_config),
+                            Ok(None)
+                                if matches!(chat_type, ChatType::Group | ChatType::Supergroup)
+                                    && !from.is_bot
+                                    && request.update.sender_chat().is_none() =>
+                            {
+                                match save_chat
+                                    .execute(chat::SaveChatInput {
+                                        chat: Chat::new(from.id, from.username.as_deref().map(ToOwned::to_owned), ChatType::Private),
+                                        chat_config: ChatConfig::new(from.id, true, locale.as_str().to_owned()),
+                                    })
+                                    .await
+                                {
+                                    Ok((_, chat_config, _)) => Some(chat_config),
+                                    Err(err) => return Err((MiddlewareError::new(err).into(), request)),
+                                }
+                            }
+                            Ok(None) => None,
                             Err(err) => return Err((MiddlewareError::new(err).into(), request)),
                         },
                         None => None,
@@ -86,9 +104,14 @@ impl Middleware for CreateChatMiddleware {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{convert::Infallible, sync::Arc};
 
-    use telers::{serialization, Bot, Context, Extensions};
+    use telers::{
+        enums::UpdateType,
+        event::{telegram::Handler, EventReturn},
+        router::{PropagateEvent as _, Router},
+        serialization, Bot, Context, Extensions,
+    };
 
     use super::*;
 
@@ -96,17 +119,19 @@ mod tests {
     struct ReachedNext;
 
     fn request(kind: &str) -> Request {
-        let query_id = if kind == "guest_message" {
-            r#", "guest_query_id":"synthetic-query""#
-        } else {
-            ""
-        };
-        let update = format!(
-            r#"{{"update_id":1,"{kind}":{{"message_id":2,"date":1,"chat":{{"id":3,"type":"synthetic_unknown"}},"text":"https://example.test/media"{query_id}}}}}"#
-        );
+        let mut message = serde_json::json!({
+            "message_id": 2,
+            "date": 1,
+            "chat": {"id": 3, "type": "synthetic_unknown"},
+            "text": "https://example.test/media",
+        });
+        if kind == "guest_message" {
+            message["guest_query_id"] = serde_json::json!("synthetic-query");
+        }
+        let update = serde_json::json!({"update_id": 1, (kind): message});
         Request {
             bot: Bot::new("1:synthetic"),
-            update: Arc::new(serialization::from_str(&update).unwrap()),
+            update: Arc::new(serialization::from_str(&update.to_string()).unwrap()),
             context: Context::default(),
             extensions: Extensions::default(),
         }
@@ -135,5 +160,50 @@ mod tests {
         let response = CreateChatMiddleware.call(request("message"), next).await.unwrap();
 
         assert!(matches!(response.propagate_result, PropagateEventResult::Rejected));
+    }
+
+    #[tokio::test]
+    async fn callback_chats_use_the_sdk_context_before_resolving_chat_settings() {
+        let mut router = Router::new("synthetic")
+            .on_update(|observer| observer.register_outer_middleware(CreateChatMiddleware))
+            .on_callback_query(|observer| {
+                observer.register(Handler::new(|context: Context| async move {
+                    let chat = context.get::<TelegramChat>("event_chat").unwrap();
+                    assert_eq!(chat.id(), -100);
+                    assert!(!matches!(chat, TelegramChat::Private(_)));
+                    Ok::<_, Infallible>(EventReturn::Finish)
+                }))
+            })
+            .configure_default();
+
+        for (kind, supported) in [("group", true), ("supergroup", true), ("synthetic_unknown", false)] {
+            let update = serde_json::json!({
+                "update_id": 1,
+                "callback_query": {
+                    "id": "synthetic-query",
+                    "chat_instance": "synthetic-chat",
+                    "from": {"id": 4, "is_bot": false, "first_name": "Synthetic user"},
+                    "data": "open:main",
+                    "message": {
+                        "message_id": 2,
+                        "date": 1,
+                        "chat": {"id": -100, "type": kind, "title": "Synthetic group"},
+                        "text": "Menu",
+                    },
+                },
+            });
+            let request = Request {
+                bot: Bot::new("1:synthetic"),
+                update: Arc::new(serialization::from_str(&update.to_string()).unwrap()),
+                context: Context::default(),
+                extensions: Extensions::default(),
+            };
+            assert!(request.update.chat().is_none());
+            let response = router.propagate_event(UpdateType::CallbackQuery, request).await.unwrap();
+            assert_eq!(matches!(response.propagate_result, PropagateEventResult::Handled(_)), supported);
+            if !supported {
+                assert!(matches!(response.propagate_result, PropagateEventResult::Rejected));
+            }
+        }
     }
 }

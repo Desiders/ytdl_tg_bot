@@ -72,7 +72,7 @@ The bot chart uses the current CloudNativePG plugin-based backup path.
 - `charts/bot` creates a `valkey.io/v1alpha1` `ValkeyCluster` named `valkey` with AOF persistence and `maxmemory-policy: noeviction`.
 - Helm pins Valkey to `9.0.6` to avoid the cluster-mode AOF replay bug fixed in 9.0.2, which can restore acknowledged queue entries. Keep the Debian image variant for compatibility with Bash-based probes in older Valkey operators.
 - The `admin` user password comes from the `valkey` Secret; bot config `[redis]` must use user `admin` and the same password.
-- Valkey stores the durable queue and short-lived Telegram progress-throttle keys. Do not put caches that may be evicted into the same instance without changing the eviction policy.
+- Valkey stores the durable queue, short-lived Telegram progress-throttle keys, and expiring group-menu message IDs. Do not put caches that may be evicted into the same instance without changing the eviction policy.
 
 ### Local Telegram Bot API
 
@@ -142,8 +142,8 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - downloads media streams from downloader nodes and forwards media plus thumbnail streams to Telegram
 - refreshes node status every 5 seconds and node cookie capabilities every `[download].capabilities_refresh_interval` seconds (0 disables)
 - recognizes songs for `/shazam` by downloading the Telegram file and calling the node `SongRecognizer`, then enqueues the found track as an audio download; in private chats a voice, audio, video or video note without a command runs the same flow
-- serves `en`, `ru`, and `uk` locales; `/lang` switches a chat's locale
-- in private chats `/start`, `/help`, `/stats`, and `/lang` without an argument open an inline-button menu (main, settings, language, help pages, stats, excluded domains) that edits one message per button press; a bare link still downloads, except while the add-domain prompt waits for a typed domain. Groups keep the plain commands, and group `/start` prints all help pages
+- serves `en`, `ru`, and `uk` locales; `/lang` switches the user's preferred locale
+- in private chats `/start`, `/help`, `/stats`, and `/lang` without an argument open an inline-button menu (main, settings, language, help pages, stats, excluded domains) that edits one message per button press. Groups also support the menu through `/start` and `/lang` without arguments; group `/help` and `/stats` keep their plain responses. A bare link still downloads, except while that user's add-domain prompt waits for a typed domain
 
 ### Bot Queue Rules
 
@@ -176,7 +176,10 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - Keep Telegram SDK/API types isolated to the Telegram adapter. Utility string helpers such as HTML escaping may still live elsewhere, but Telegram request construction should have one source of truth.
 - Menus go through `send_menu`, `edit_menu`, and `answer_callback` with the port's own `Keyboard` type. Callback data uses `#[derive(telers::CallbackData)]` structs in `bot/src/value_objects/menu.rs`; domain buttons carry a 64-bit FNV-1a fingerprint of the domain (`DomainKey`), not the domain, to stay under Telegram's 64-byte limit, and not a list position, which an old message would resolve to another domain after the list changes.
 - Menu callbacks are answered before loading page data or editing the menu.
-- The add-domain prompt is `telers` FSM state (`MenuState::DomainInput`) in `MemoryStorage`, armed by the add screen and cleared by every other menu screen. It has no TTL and does not survive a restart; a command typed while it waits still runs as a command.
+- Group menus use Telegram ephemeral messages, addressed only to the initiating user. Register commands only for private chats, never for group scopes. Ordinary group `/start` and `/lang` require bot administrator rights for a private response. Incoming ephemeral messages can authorize a reply through `ReplyParameters.ephemeral_message_id`. Ordinary group `/start` commands are deleted best-effort before preparing the menu. Never fall back to a public menu. Group callbacks require an ephemeral ID and a matching native `receiver_user`; missing metadata is rejected. Personal settings are loaded from `OwnChatConfig`; `CreateChatMiddleware` creates missing personal profiles for ordinary group users through the existing `SaveChat` path. Language (including `/lang <code>`) and caption-link visibility change the user's config, not the group config.
+- Chat resolution for callbacks uses the SDK's prepared `event_chat` context in chat creation and menu access; `Update::chat()` alone does not include callback messages. FSM uses the same SDK context and remains scoped by chat and user.
+- Excluded domains are read and changed for the actual destination chat. Each menu or domain action interactor checks `MenuAccess` before performing its action; handlers call only their action interactor. Group domain screens, mutations, typed input and legacy `/add_ed`/`/rm_ed` require current administrator rights from `MessengerPort::is_chat_administrator`; API errors deny access. The Telegram adapter uses `getChatAdministrators` with a five-second absolute deadline. Denied actions return without mutation; handlers still return `Finish` rather than falling through into automatic downloads.
+- The add-domain prompt is `telers` FSM state (`MenuState::DomainInput`) in `MemoryStorage`, armed by the add screen and cleared by every other menu screen. FSM stores only the waiting state. `MenuMessageCache` keeps the group prompt ID in Redis, scoped by chat and user, with a fifteen-minute TTL and a two-second I/O deadline. Typed input edits the cached private menu. A cache miss or cache error sends a plain result notice to the user in a private chat if possible; domain mutations always retain the original group ID. Do not send a group-domain keyboard into that private chat. Callback denials use `answer_callback`; failed private delivery is logged without a public group fallback. The state has no TTL and does not survive a restart; a command typed while it waits still runs as a command.
 - Current known exceptions that use `telers::Bot` directly: `ReactionMiddleware`, `worker::clear_reaction`, startup `SetMyCommands`, and `TelegramFileDownloader` (`getFile`). Do not add new ones.
 
 ### Bot Handler / Interactor Boundary
@@ -184,9 +187,10 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - Handlers are Telegram inbound adapters.
 - A handler should:
   - extract Telegram input
-  - inject one top-level interactor
+  - inject one action interactor
   - call it
   - return `EventReturn::Finish`
+- Access decisions and their user-facing denials belong inside the action interactor. A handler must not invoke a preliminary authorization interactor before its action. Filters and middleware only retrieve data or filter updates; the existing `CreateChatMiddleware` persistence is an exception. Do not combine authorization, persistence, filters, and middleware in one object.
 - Do not let handlers orchestrate business flow across multiple top-level interactors or services again.
 - Handler-facing orchestration lives in `bot/src/interactors/`:
   - `start`, `stats`, `config`, `lang`, `menu`, `inline_query`, `shazam`
@@ -199,6 +203,8 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
   - `file_download`
   - `get_media`
   - `messenger`
+  - `menu_access`
+  - `menu_message_cache`
   - `node_router`
   - `progress_throttle`
   - `queue`
@@ -216,11 +222,12 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - Guest updates bypass `CreateChatMiddleware`: guest chat IDs belong to a separate namespace and must not create or look up ordinary chat settings. Use the sender's locale and a default `ChatConfig` with `tg_id: 0` for the queued download.
 - `MessengerPort::answer_guest` sends a text placeholder and returns its confirmed inline message ID. Only then enqueue an ordinary inline auto job; the existing worker handles media, post text and errors. Without an accepted link in the current message or its direct reply, do not answer or enqueue.
 - Guest query IDs are not stored or reserved in Redis. Do not add guest-specific TTLs, retries, media-selection rules or error formatting.
-- Guest usage is documented on the private menu's `HelpGuest` screen and included in the group `/start` help. Keep it alongside the existing inline-mode help in all locales.
+- Guest usage is documented on the menu's `HelpGuest` screen and included in the group `/help` response. Keep it alongside the existing inline-mode help in all locales.
 
 ### Bot DI Style
 
 - Keep the current generic DI style around `Messenger`.
+- Required request-container extensions and registered dependencies are invariants: retrieve them with `unwrap()`. Handle failures of the operations themselves separately.
 - The composition root (`bot/src/di_container.rs`) uses Froodi fragments for configuration, Telegram messenger, node router, interactors, database, and queue providers; `init::<Messenger>` composes them into one registry.
 - The composition root builds `TelegramMessenger`, but top-level interactors should be wired generically over `Messenger` rather than directly against the concrete adapter type.
 - If you add a new top-level interactor, register it in the `interactors_registry` fragment and keep the same generic pattern.
@@ -440,6 +447,8 @@ Avoid variants such as `invalid token`.
 - `just lint` runs clippy with `clippy::pedantic`; `just fmt` uses nightly `rustfmt` with the repo `rustfmt.toml`.
 - Bot database tests use `testcontainers` to start PostgreSQL and apply `migration`, so they need a working Docker socket.
 - Tests must use synthetic fixtures. Never copy production domains, ids, or titles into tests.
+- Add tests for meaningful behavior and regressions; avoid tests that only repeat constants or field assignments.
+- Construct JSON with `serde_json::json!`, including test fixtures; serialize it only where a string is required. Do not assemble JSON objects with string literals or `format!`.
 - Do not name custom entity fields after keys `yt-dlp` or `gallery-dl` already emit (for example `direct`); they collide when the raw info JSON is merged.
 
 ## Known Limitations

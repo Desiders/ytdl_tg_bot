@@ -4,7 +4,7 @@ use rust_i18n::t;
 use telers::{
     callback_data::CallbackData,
     errors::HandlerError,
-    fsm::{Context, MemoryStorage},
+    fsm::{storage::Error as FsmError, Context, MemoryStorage},
     utils::text::{html_code, html_expandable_blockquote, html_quote, html_text_link},
 };
 use tracing::error;
@@ -16,7 +16,12 @@ use crate::{
     locale::Locale,
     services::{
         chat,
-        messenger::{AnswerCallbackRequest, Button, ButtonAction, EditMenuRequest, Keyboard, MessengerPort, SendMenuRequest},
+        menu_access::{MenuAccess, MenuAccessInput},
+        menu_message_cache::MenuMessageCache,
+        messenger::{
+            AnswerCallbackRequest, Button, ButtonAction, DeleteMessageRequest, EditMenuRequest, EphemeralMessage, Keyboard, MenuMessage,
+            MessengerPort, SendMenuRequest, SendTextRequest, TextFormat,
+        },
     },
     utils::ErrorFormatter,
     value_objects::menu::{DeleteDomain, DomainKey, MenuState, OpenScreen, Screen, SetLanguage, SetLinkVisibility},
@@ -29,12 +34,30 @@ pub type Fsm = Context<MemoryStorage>;
 pub enum MenuTarget<'a> {
     Send {
         chat_id: i64,
+        ephemeral: Option<EphemeralMessage>,
+        command_message_id: Option<i64>,
     },
     Edit {
-        chat_id: i64,
-        message_id: i64,
-        callback_id: &'a str,
+        message: MenuMessage,
+        callback_id: Option<&'a str>,
     },
+}
+
+impl MenuTarget<'_> {
+    #[must_use]
+    pub const fn chat_id(&self) -> i64 {
+        match self {
+            Self::Send { chat_id, .. } => *chat_id,
+            Self::Edit { message, .. } => message.chat_id(),
+        }
+    }
+
+    const fn message(&self) -> Option<MenuMessage> {
+        match self {
+            Self::Edit { message, .. } => Some(*message),
+            Self::Send { .. } => None,
+        }
+    }
 }
 
 pub struct OpenMenu<Messenger> {
@@ -42,6 +65,8 @@ pub struct OpenMenu<Messenger> {
     error_formatter: Arc<ErrorFormatter>,
     messenger: Arc<Messenger>,
     stats: Arc<stats::Stats<Messenger>>,
+    access: Arc<MenuAccess<Messenger>>,
+    message_cache: Arc<MenuMessageCache>,
 }
 
 impl<Messenger> OpenMenu<Messenger> {
@@ -51,12 +76,16 @@ impl<Messenger> OpenMenu<Messenger> {
         error_formatter: Arc<ErrorFormatter>,
         messenger: Arc<Messenger>,
         stats: Arc<stats::Stats<Messenger>>,
+        access: Arc<MenuAccess<Messenger>>,
+        message_cache: Arc<MenuMessageCache>,
     ) -> Self {
         Self {
             cfg,
             error_formatter,
             messenger,
             stats,
+            access,
+            message_cache,
         }
     }
 }
@@ -80,6 +109,7 @@ pub struct OpenMenuInput<'a> {
     pub chat_cfg: &'a ChatConfig,
     pub exclude_domains: &'a ChatConfigExcludeDomains,
     pub fsm: &'a Fsm,
+    pub access: MenuAccessInput<'a>,
 }
 
 impl<Messenger> Interactor<OpenMenuInput<'_>> for &OpenMenu<Messenger>
@@ -90,31 +120,18 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: OpenMenuInput<'_>) -> Result<Self::Output, Self::Err> {
-        if let MenuTarget::Edit { callback_id, .. } = &input.target {
-            self.answer(callback_id, input.notice.as_ref()).await;
+        let require_admin = matches!(
+            input.screen,
+            Screen::Domains | Screen::DomainAdd | Screen::Domain { .. } | Screen::DomainDelete { .. }
+        );
+        if !self
+            .access
+            .check(&input.access, input.chat_cfg, require_admin, input.target.message())
+            .await
+        {
+            return Ok(());
         }
-        let domains = &input.exclude_domains.0;
-        let screen = existing_screen(input.screen, domains);
-        track_input(screen, input.fsm).await;
-
-        let locale = input.chat_cfg.locale();
-        let page = Page {
-            locale,
-            link_is_visible: input.chat_cfg.link_is_visible,
-            domains,
-            max_file_size_in_mb: self.cfg.yt_dlp.max_file_size / 1000 / 1000,
-            src_url: &self.cfg.bot.src_url,
-            username: self.username(screen).await,
-            stats: self.stats_text(screen, locale).await,
-        };
-        let view = render(screen, &page);
-
-        match input.target {
-            MenuTarget::Send { chat_id } => self.send(chat_id, view, input.notice).await,
-            MenuTarget::Edit { chat_id, message_id, .. } => self.edit(chat_id, message_id, view).await,
-        }
-
-        Ok(())
+        self.show(input).await
     }
 }
 
@@ -122,19 +139,115 @@ impl<Messenger> OpenMenu<Messenger>
 where
     Messenger: MessengerPort,
 {
-    async fn send(&self, chat_id: i64, view: View, notice: Option<Notice>) {
+    async fn show(&self, input: OpenMenuInput<'_>) -> Result<(), HandlerError> {
+        match &input.target {
+            MenuTarget::Send {
+                chat_id,
+                command_message_id: Some(message_id),
+                ..
+            } if input.screen == Screen::Main => {
+                if let Err(err) = self
+                    .messenger
+                    .delete_message(DeleteMessageRequest {
+                        chat_id: *chat_id,
+                        message_id: *message_id,
+                    })
+                    .await
+                {
+                    error!(err = %self.error_formatter.format(&err), "Delete menu command error");
+                }
+            }
+            _ => {}
+        }
+        if let MenuTarget::Edit {
+            callback_id: Some(callback_id),
+            ..
+        } = &input.target
+        {
+            self.answer(callback_id, input.notice.as_ref()).await;
+        }
+        let domains = &input.exclude_domains.0;
+        let screen = existing_screen(input.screen, domains);
+        if let Err(err) = track_input(screen, input.fsm).await {
+            error!(%err, "Menu state error");
+        }
+
+        if input.target.chat_id() != input.chat_cfg.tg_id {
+            let result = match &input.target {
+                MenuTarget::Edit {
+                    message:
+                        MenuMessage::EphemeralMessage {
+                            chat_id,
+                            receiver_user_id,
+                            ephemeral_message_id,
+                        },
+                    ..
+                } if screen == Screen::DomainAdd => self.message_cache.set(*chat_id, *receiver_user_id, *ephemeral_message_id).await,
+                _ => self.message_cache.remove(input.access.chat_id, input.chat_cfg.tg_id).await,
+            };
+            if let Err(err) = result {
+                error!(%err, "Cache menu message error");
+            }
+        }
+
+        let locale = input.chat_cfg.locale();
+        let page = Page {
+            locale,
+            is_group: input.target.chat_id() != input.chat_cfg.tg_id,
+            link_is_visible: input.chat_cfg.link_is_visible,
+            domains,
+            max_file_size_in_mb: self.cfg.yt_dlp.max_file_size / 1000 / 1000,
+            src_url: &self.cfg.bot.src_url,
+            username: self.username(screen).await,
+            stats: self.stats_text(screen, locale).await,
+        };
+        let mut view = render(screen, &page);
+
+        match input.target {
+            MenuTarget::Send { chat_id, ephemeral, .. } => self.send(chat_id, ephemeral, view, input.notice).await,
+            MenuTarget::Edit { message, callback_id } => {
+                if callback_id.is_none() {
+                    view.text = with_notice(input.notice, view.text);
+                }
+                self.edit(message, view).await;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn send(&self, chat_id: i64, ephemeral: Option<EphemeralMessage>, view: View, notice: Option<Notice>) {
         // A new message has no callback answer to carry the notice, so the notice heads the text.
         let text = with_notice(notice, view.text);
         if let Err(err) = self
             .messenger
             .send_menu(SendMenuRequest {
                 chat_id,
+                ephemeral,
                 text: &text,
                 keyboard: &view.keyboard,
             })
             .await
         {
             error!(err = %self.error_formatter.format(&err), "Send menu error");
+        }
+    }
+
+    async fn send_notice(&self, user_id: i64, notice: Notice) {
+        let text = with_notice(Some(notice), String::new());
+        if let Err(err) = self
+            .messenger
+            .send_text(SendTextRequest {
+                chat_id: user_id,
+                text: text.trim_end(),
+                reply_to_message_id: None,
+                ephemeral: None,
+                format: Some(TextFormat::Html),
+                disable_link_preview: true,
+            })
+            .await
+        {
+            error!(err = %self.error_formatter.format(&err), "Send menu notice error");
         }
     }
 
@@ -153,12 +266,11 @@ where
         }
     }
 
-    async fn edit(&self, chat_id: i64, message_id: i64, view: View) {
+    async fn edit(&self, message: MenuMessage, view: View) {
         if let Err(err) = self
             .messenger
             .edit_menu(EditMenuRequest {
-                chat_id,
-                message_id,
+                target: message,
                 text: &view.text,
                 keyboard: &view.keyboard,
             })
@@ -194,6 +306,7 @@ pub struct SetMenuLanguage<Messenger> {
     error_formatter: Arc<ErrorFormatter>,
     update_chat_cfg: Arc<chat::UpdateChatConfig>,
     open_menu: Arc<OpenMenu<Messenger>>,
+    access: Arc<MenuAccess<Messenger>>,
 }
 
 impl<Messenger> SetMenuLanguage<Messenger> {
@@ -202,11 +315,13 @@ impl<Messenger> SetMenuLanguage<Messenger> {
         error_formatter: Arc<ErrorFormatter>,
         update_chat_cfg: Arc<chat::UpdateChatConfig>,
         open_menu: Arc<OpenMenu<Messenger>>,
+        access: Arc<MenuAccess<Messenger>>,
     ) -> Self {
         Self {
             error_formatter,
             update_chat_cfg,
             open_menu,
+            access,
         }
     }
 }
@@ -217,6 +332,7 @@ pub struct SetMenuLanguageInput<'a> {
     pub chat_cfg: &'a ChatConfig,
     pub exclude_domains: &'a ChatConfigExcludeDomains,
     pub fsm: &'a Fsm,
+    pub access: MenuAccessInput<'a>,
 }
 
 impl<Messenger> Interactor<SetMenuLanguageInput<'_>> for &SetMenuLanguage<Messenger>
@@ -227,6 +343,13 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: SetMenuLanguageInput<'_>) -> Result<Self::Output, Self::Err> {
+        if !self
+            .access
+            .check(&input.access, input.chat_cfg, false, input.target.message())
+            .await
+        {
+            return Ok(());
+        }
         let (chat_cfg, notice) = match self
             .update_chat_cfg
             .execute(chat::UpdateChatConfigInput {
@@ -244,13 +367,14 @@ where
 
         self.open_menu
             .as_ref()
-            .execute(OpenMenuInput {
+            .show(OpenMenuInput {
                 target: input.target,
                 screen: Screen::Language,
                 notice,
                 chat_cfg: &chat_cfg,
                 exclude_domains: input.exclude_domains,
                 fsm: input.fsm,
+                access: input.access,
             })
             .await
     }
@@ -260,6 +384,7 @@ pub struct SetMenuLinkVisibility<Messenger> {
     error_formatter: Arc<ErrorFormatter>,
     update_chat_cfg: Arc<chat::UpdateChatConfig>,
     open_menu: Arc<OpenMenu<Messenger>>,
+    access: Arc<MenuAccess<Messenger>>,
 }
 
 impl<Messenger> SetMenuLinkVisibility<Messenger> {
@@ -268,11 +393,13 @@ impl<Messenger> SetMenuLinkVisibility<Messenger> {
         error_formatter: Arc<ErrorFormatter>,
         update_chat_cfg: Arc<chat::UpdateChatConfig>,
         open_menu: Arc<OpenMenu<Messenger>>,
+        access: Arc<MenuAccess<Messenger>>,
     ) -> Self {
         Self {
             error_formatter,
             update_chat_cfg,
             open_menu,
+            access,
         }
     }
 }
@@ -283,6 +410,7 @@ pub struct SetMenuLinkVisibilityInput<'a> {
     pub chat_cfg: &'a ChatConfig,
     pub exclude_domains: &'a ChatConfigExcludeDomains,
     pub fsm: &'a Fsm,
+    pub access: MenuAccessInput<'a>,
 }
 
 impl<Messenger> Interactor<SetMenuLinkVisibilityInput<'_>> for &SetMenuLinkVisibility<Messenger>
@@ -293,6 +421,13 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: SetMenuLinkVisibilityInput<'_>) -> Result<Self::Output, Self::Err> {
+        if !self
+            .access
+            .check(&input.access, input.chat_cfg, false, input.target.message())
+            .await
+        {
+            return Ok(());
+        }
         let (chat_cfg, notice) = match self
             .update_chat_cfg
             .execute(chat::UpdateChatConfigInput {
@@ -310,13 +445,14 @@ where
 
         self.open_menu
             .as_ref()
-            .execute(OpenMenuInput {
+            .show(OpenMenuInput {
                 target: input.target,
                 screen: Screen::Settings,
                 notice,
                 chat_cfg: &chat_cfg,
                 exclude_domains: input.exclude_domains,
                 fsm: input.fsm,
+                access: input.access,
             })
             .await
     }
@@ -326,6 +462,8 @@ pub struct AddMenuDomain<Messenger> {
     error_formatter: Arc<ErrorFormatter>,
     add_domain: Arc<chat::AddExcludeDomain>,
     open_menu: Arc<OpenMenu<Messenger>>,
+    access: Arc<MenuAccess<Messenger>>,
+    message_cache: Arc<MenuMessageCache>,
 }
 
 impl<Messenger> AddMenuDomain<Messenger> {
@@ -334,21 +472,26 @@ impl<Messenger> AddMenuDomain<Messenger> {
         error_formatter: Arc<ErrorFormatter>,
         add_domain: Arc<chat::AddExcludeDomain>,
         open_menu: Arc<OpenMenu<Messenger>>,
+        access: Arc<MenuAccess<Messenger>>,
+        message_cache: Arc<MenuMessageCache>,
     ) -> Self {
         Self {
             error_formatter,
             add_domain,
             open_menu,
+            access,
+            message_cache,
         }
     }
 }
 
 pub struct AddMenuDomainInput<'a> {
-    pub chat_id: i64,
+    pub target: MenuTarget<'a>,
     pub host: Option<&'a str>,
     pub chat_cfg: &'a ChatConfig,
     pub exclude_domains: &'a ChatConfigExcludeDomains,
     pub fsm: &'a Fsm,
+    pub access: MenuAccessInput<'a>,
 }
 
 impl<Messenger> Interactor<AddMenuDomainInput<'_>> for &AddMenuDomain<Messenger>
@@ -359,6 +502,21 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: AddMenuDomainInput<'_>) -> Result<Self::Output, Self::Err> {
+        let chat_id = input.target.chat_id();
+        let (target, private_notice) = self.cached_target(input.target).await;
+        if !self.access.check(&input.access, input.chat_cfg, true, target.message()).await {
+            if input.fsm.get_state().await.ok().flatten().as_deref() == Some(MenuState::DomainInput.as_ref()) {
+                if let Err(err) = input.fsm.finish().await {
+                    error!(%err, "Menu state error");
+                }
+            }
+            if chat_id != input.chat_cfg.tg_id {
+                if let Err(err) = self.message_cache.remove(chat_id, input.chat_cfg.tg_id).await {
+                    error!(%err, "Remove cached menu message error");
+                }
+            }
+            return Ok(());
+        }
         let locale = input.chat_cfg.locale().as_str();
         let mut domains = input.exclude_domains.0.clone();
         let (screen, notice) = match input.host {
@@ -374,30 +532,85 @@ where
                 Screen::Domains,
                 Notice::new(t!("exclude_domain.limit_reached", locale = locale).into_owned()),
             ),
-            Some(host) => (Screen::Domains, self.add(input.chat_cfg, &mut domains, host).await),
+            Some(host) => (Screen::Domains, self.add(chat_id, input.chat_cfg, &mut domains, host).await),
         };
+
+        if private_notice {
+            if let Err(err) = input.fsm.finish().await {
+                error!(%err, "Menu state error");
+            }
+            if let Err(err) = self.message_cache.remove(chat_id, input.chat_cfg.tg_id).await {
+                error!(%err, "Remove cached menu message error");
+            }
+            self.open_menu.send_notice(input.chat_cfg.tg_id, notice).await;
+            return Ok(());
+        }
 
         self.open_menu
             .as_ref()
-            .execute(OpenMenuInput {
-                target: MenuTarget::Send { chat_id: input.chat_id },
+            .show(OpenMenuInput {
+                target,
                 screen,
                 notice: Some(notice),
                 chat_cfg: input.chat_cfg,
                 exclude_domains: &ChatConfigExcludeDomains(domains),
                 fsm: input.fsm,
+                access: input.access,
             })
             .await
     }
 }
 
-impl<Messenger> AddMenuDomain<Messenger> {
-    async fn add(&self, chat_cfg: &ChatConfig, domains: &mut Vec<String>, host: &str) -> Notice {
+impl<Messenger> AddMenuDomain<Messenger>
+where
+    Messenger: MessengerPort,
+{
+    async fn cached_target<'a>(&self, target: MenuTarget<'a>) -> (MenuTarget<'a>, bool) {
+        match target {
+            MenuTarget::Send {
+                chat_id,
+                ephemeral: Some(ephemeral),
+                ..
+            } => {
+                let message_id = match self.message_cache.get(chat_id, ephemeral.receiver_user_id).await {
+                    Ok(message_id) => message_id,
+                    Err(err) => {
+                        error!(%err, "Read cached menu message error");
+                        None
+                    }
+                };
+                match message_id {
+                    Some(ephemeral_message_id) => (
+                        MenuTarget::Edit {
+                            message: MenuMessage::EphemeralMessage {
+                                chat_id,
+                                receiver_user_id: ephemeral.receiver_user_id,
+                                ephemeral_message_id,
+                            },
+                            callback_id: None,
+                        },
+                        false,
+                    ),
+                    None => (
+                        MenuTarget::Send {
+                            chat_id: ephemeral.receiver_user_id,
+                            ephemeral: None,
+                            command_message_id: None,
+                        },
+                        true,
+                    ),
+                }
+            }
+            target => (target, false),
+        }
+    }
+
+    async fn add(&self, chat_id: i64, chat_cfg: &ChatConfig, domains: &mut Vec<String>, host: &str) -> Notice {
         let locale = chat_cfg.locale().as_str();
         match self
             .add_domain
             .execute(chat::ExcludeDomainInput {
-                dto: ChatConfigExcludeDomain::new(chat_cfg.tg_id, host.to_owned()),
+                dto: ChatConfigExcludeDomain::new(chat_id, host.to_owned()),
             })
             .await
         {
@@ -421,6 +634,7 @@ pub struct RemoveMenuDomain<Messenger> {
     error_formatter: Arc<ErrorFormatter>,
     remove_domain: Arc<chat::RemoveExcludeDomain>,
     open_menu: Arc<OpenMenu<Messenger>>,
+    access: Arc<MenuAccess<Messenger>>,
 }
 
 impl<Messenger> RemoveMenuDomain<Messenger> {
@@ -429,11 +643,13 @@ impl<Messenger> RemoveMenuDomain<Messenger> {
         error_formatter: Arc<ErrorFormatter>,
         remove_domain: Arc<chat::RemoveExcludeDomain>,
         open_menu: Arc<OpenMenu<Messenger>>,
+        access: Arc<MenuAccess<Messenger>>,
     ) -> Self {
         Self {
             error_formatter,
             remove_domain,
             open_menu,
+            access,
         }
     }
 }
@@ -444,6 +660,7 @@ pub struct RemoveMenuDomainInput<'a> {
     pub chat_cfg: &'a ChatConfig,
     pub exclude_domains: &'a ChatConfigExcludeDomains,
     pub fsm: &'a Fsm,
+    pub access: MenuAccessInput<'a>,
 }
 
 impl<Messenger> Interactor<RemoveMenuDomainInput<'_>> for &RemoveMenuDomain<Messenger>
@@ -454,31 +671,37 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: RemoveMenuDomainInput<'_>) -> Result<Self::Output, Self::Err> {
+        if !self.access.check(&input.access, input.chat_cfg, true, input.target.message()).await {
+            return Ok(());
+        }
         let mut domains = input.exclude_domains.0.clone();
-        let notice = self.remove(input.chat_cfg, &mut domains, input.domain).await;
+        let notice = self
+            .remove(input.target.chat_id(), input.chat_cfg, &mut domains, input.domain)
+            .await;
 
         self.open_menu
             .as_ref()
-            .execute(OpenMenuInput {
+            .show(OpenMenuInput {
                 target: input.target,
                 screen: Screen::Domains,
                 notice,
                 chat_cfg: input.chat_cfg,
                 exclude_domains: &ChatConfigExcludeDomains(domains),
                 fsm: input.fsm,
+                access: input.access,
             })
             .await
     }
 }
 
 impl<Messenger> RemoveMenuDomain<Messenger> {
-    async fn remove(&self, chat_cfg: &ChatConfig, domains: &mut Vec<String>, domain_key: DomainKey) -> Option<Notice> {
+    async fn remove(&self, chat_id: i64, chat_cfg: &ChatConfig, domains: &mut Vec<String>, domain_key: DomainKey) -> Option<Notice> {
         let locale = chat_cfg.locale().as_str();
         let index = domain_key.position(domains)?;
         match self
             .remove_domain
             .execute(chat::ExcludeDomainInput {
-                dto: ChatConfigExcludeDomain::new(chat_cfg.tg_id, domains[index].clone()),
+                dto: ChatConfigExcludeDomain::new(chat_id, domains[index].clone()),
             })
             .await
         {
@@ -499,14 +722,12 @@ impl<Messenger> RemoveMenuDomain<Messenger> {
 // Only the add-domain prompt waits for typed input; every other screen cancels it. Finishing first keeps the state
 //  stack at one entry, since `set_state` pushes onto it.
 //  https://github.com/Desiders/telers/blob/a14a34520eaeffccd1ebdbb4fffe8e44ead81bb9/telers/src/fsm/storage/memory.rs#L47-L57
-async fn track_input(screen: Screen, fsm: &Fsm) {
-    let result = match fsm.finish().await {
-        Ok(()) if screen == Screen::DomainAdd => fsm.set_state(MenuState::DomainInput).await,
-        result => result,
-    };
-    if let Err(err) = result {
-        error!(%err, "Menu state error");
+async fn track_input(screen: Screen, fsm: &Fsm) -> Result<(), FsmError> {
+    fsm.finish().await?;
+    if screen == Screen::DomainAdd {
+        fsm.set_state(MenuState::DomainInput).await?;
     }
+    Ok(())
 }
 
 fn with_notice(notice: Option<Notice>, text: String) -> String {
@@ -533,6 +754,7 @@ fn existing_screen(screen: Screen, domains: &[String]) -> Screen {
 
 struct Page<'a> {
     locale: Locale,
+    is_group: bool,
     link_is_visible: bool,
     domains: &'a [String],
     max_file_size_in_mb: u64,
@@ -567,7 +789,7 @@ fn render(screen: Screen, page: &Page<'_>) -> View {
             ],
         ),
         Screen::Settings => (
-            label("menu.settings"),
+            label(if page.is_group { "menu.group_settings" } else { "menu.settings" }),
             vec![
                 Button {
                     text: with_tick(&label("menu.btn_link_visibility"), page.link_is_visible),
@@ -702,10 +924,12 @@ fn domain_code(page: &Page<'_>, domain_key: DomainKey) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use telers::fsm::StorageKey;
 
     fn page(domains: &[String]) -> Page<'_> {
         Page {
             locale: Locale::En,
+            is_group: false,
             link_is_visible: true,
             domains,
             max_file_size_in_mb: 50,
@@ -841,13 +1065,11 @@ mod tests {
 
     #[tokio::test]
     async fn only_the_add_screen_waits_for_a_domain() {
-        let fsm = Fsm::new(MemoryStorage::new(), telers::fsm::StorageKey::new(1, 2, 2, None, None));
-
-        track_input(Screen::DomainAdd, &fsm).await;
-        track_input(Screen::DomainAdd, &fsm).await;
+        let fsm = Fsm::new(MemoryStorage::new(), StorageKey::new(1, 2, 2, None, None));
+        track_input(Screen::DomainAdd, &fsm).await.unwrap();
+        track_input(Screen::DomainAdd, &fsm).await.unwrap();
         assert_eq!(fsm.get_states().await.unwrap().as_ref(), [MenuState::DomainInput.as_ref().into()]);
-
-        track_input(Screen::Domains, &fsm).await;
+        track_input(Screen::Domains, &fsm).await.unwrap();
         assert_eq!(fsm.get_state().await.unwrap(), None);
     }
 }

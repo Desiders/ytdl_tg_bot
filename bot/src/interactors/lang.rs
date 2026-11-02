@@ -6,12 +6,12 @@ use tracing::error;
 
 use crate::{
     entities::{ChatConfig, ChatConfigUpdate},
-    handlers_utils::progress,
     interactors::Interactor,
     locale::Locale,
     services::{
         chat,
-        messenger::{MessengerPort, TextFormat},
+        menu_access::{MenuAccess, MenuAccessInput},
+        messenger::{EphemeralMessage, MessengerPort, SendTextRequest, TextFormat},
     },
     utils::ErrorFormatter,
 };
@@ -20,6 +20,7 @@ pub struct Lang<Messenger> {
     error_formatter: Arc<ErrorFormatter>,
     messenger: Arc<Messenger>,
     update_chat_cfg: Arc<chat::UpdateChatConfig>,
+    access: Arc<MenuAccess<Messenger>>,
 }
 
 impl<Messenger> Lang<Messenger> {
@@ -28,17 +29,22 @@ impl<Messenger> Lang<Messenger> {
         error_formatter: Arc<ErrorFormatter>,
         messenger: Arc<Messenger>,
         update_chat_cfg: Arc<chat::UpdateChatConfig>,
+        access: Arc<MenuAccess<Messenger>>,
     ) -> Self {
         Self {
             error_formatter,
             messenger,
             update_chat_cfg,
+            access,
         }
     }
 }
 
 pub struct LangInput<'a> {
+    pub access: MenuAccessInput<'a>,
+    pub chat_id: i64,
     pub reply_to_message_id: Option<i64>,
+    pub ephemeral: Option<EphemeralMessage>,
     pub chat_cfg: &'a ChatConfig,
     pub argument: Option<&'a str>,
 }
@@ -51,6 +57,10 @@ where
     type Err = HandlerError;
 
     async fn execute(self, input: LangInput<'_>) -> Result<Self::Output, Self::Err> {
+        if !self.access.check(&input.access, input.chat_cfg, false, None).await {
+            return Ok(());
+        }
+
         let current = input.chat_cfg.locale();
         let arg = input.argument.map(str::trim).filter(|s| !s.is_empty());
 
@@ -60,7 +70,8 @@ where
                 if let Some(locale) = Locale::parse(val) {
                     locale
                 } else {
-                    self.send_unknown_locale(input, current, val).await?;
+                    let text = t!("lang.unknown", locale = current.as_str(), lang = val);
+                    self.send_text(input, &text).await;
                     return Ok(());
                 }
             }
@@ -83,17 +94,7 @@ where
             }
         };
 
-        if let Err(err) = progress::new(
-            self.messenger.as_ref(),
-            &text,
-            input.chat_cfg.tg_id,
-            input.reply_to_message_id,
-            Some(TextFormat::Html),
-        )
-        .await
-        {
-            error!(err = %self.error_formatter.format(&err), "Send error");
-        }
+        self.send_text(input, &text).await;
 
         Ok(())
     }
@@ -103,19 +104,20 @@ impl<Messenger> Lang<Messenger>
 where
     Messenger: MessengerPort,
 {
-    async fn send_unknown_locale(&self, input: LangInput<'_>, current: Locale, val: &str) -> Result<(), HandlerError> {
-        let text = t!("lang.unknown", locale = current.as_str(), lang = val);
-        if let Err(err) = progress::new(
-            self.messenger.as_ref(),
-            &text,
-            input.chat_cfg.tg_id,
-            input.reply_to_message_id,
-            Some(TextFormat::Html),
-        )
-        .await
+    async fn send_text(&self, input: LangInput<'_>, text: &str) {
+        if let Err(err) = self
+            .messenger
+            .send_text(SendTextRequest {
+                chat_id: input.chat_id,
+                text,
+                reply_to_message_id: input.reply_to_message_id,
+                ephemeral: input.ephemeral,
+                format: Some(TextFormat::Html),
+                disable_link_preview: true,
+            })
+            .await
         {
             error!(err = %self.error_formatter.format(&err), "Send error");
         }
-        Ok(())
     }
 }

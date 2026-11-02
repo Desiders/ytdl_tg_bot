@@ -37,6 +37,7 @@ pub struct SendTextRequest<'a> {
     pub chat_id: i64,
     pub text: &'a str,
     pub reply_to_message_id: Option<i64>,
+    pub ephemeral: Option<EphemeralMessage>,
     pub format: Option<TextFormat>,
     pub disable_link_preview: bool,
 }
@@ -80,13 +81,41 @@ pub struct Keyboard {
 /// Menu text is always HTML without a link preview.
 pub struct SendMenuRequest<'a> {
     pub chat_id: i64,
+    pub ephemeral: Option<EphemeralMessage>,
     pub text: &'a str,
     pub keyboard: &'a Keyboard,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EphemeralMessage {
+    pub receiver_user_id: i64,
+    pub reply_to_ephemeral_message_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MenuMessage {
+    ChatMessage {
+        chat_id: i64,
+        message_id: i64,
+    },
+    EphemeralMessage {
+        chat_id: i64,
+        receiver_user_id: i64,
+        ephemeral_message_id: i64,
+    },
+}
+
+impl MenuMessage {
+    #[must_use]
+    pub const fn chat_id(self) -> i64 {
+        match self {
+            Self::ChatMessage { chat_id, .. } | Self::EphemeralMessage { chat_id, .. } => chat_id,
+        }
+    }
+}
+
 pub struct EditMenuRequest<'a> {
-    pub chat_id: i64,
-    pub message_id: i64,
+    pub target: MenuMessage,
     pub text: &'a str,
     pub keyboard: &'a Keyboard,
 }
@@ -205,6 +234,8 @@ pub struct SendMediaGroupRequest {
 
 pub trait MessengerPort: Send + Sync {
     fn username(&self) -> impl Future<Output = Result<String, MessengerError>> + Send;
+
+    fn is_chat_administrator(&self, chat_id: i64, user_id: i64) -> impl Future<Output = Result<bool, MessengerError>> + Send;
 
     fn send_text(&self, request: SendTextRequest<'_>) -> impl Future<Output = Result<SentMessage, MessengerError>> + Send;
 
