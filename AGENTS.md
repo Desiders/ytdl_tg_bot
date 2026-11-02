@@ -447,6 +447,8 @@ Avoid variants such as `invalid token`.
 - `just lint` runs clippy with `clippy::pedantic`; `just fmt` uses nightly `rustfmt` with the repo `rustfmt.toml`.
 - Bot database tests use `testcontainers` to start PostgreSQL and apply `migration`, so they need a working Docker socket.
 - Tests must use synthetic fixtures. Never copy production domains, ids, or titles into tests.
+- Add tests for meaningful behavior and regressions; avoid tests that only repeat constants or field assignments.
+- Construct JSON with `serde_json::json!`, including test fixtures; serialize it only where a string is required. Do not assemble JSON objects with string literals or `format!`.
 - Do not name custom entity fields after keys `yt-dlp` or `gallery-dl` already emit (for example `direct`); they collide when the raw info JSON is merged.
 
 ## Known Limitations

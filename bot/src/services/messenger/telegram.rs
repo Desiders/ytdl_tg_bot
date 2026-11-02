@@ -1110,6 +1110,7 @@ mod rate_limit_tests {
         queue::test_support::Fixture,
     };
     use futures_util::stream;
+    use serde_json::json;
     use std::{borrow::Cow, net::SocketAddr};
     use telers::client::{
         telegram::{APIServer, BareFilesPathWrapper},
@@ -1427,16 +1428,43 @@ mod rate_limit_tests {
     #[tokio::test]
     async fn administrator_checks_accept_owners_and_administrators_and_reject_other_users() {
         let fixture = Fixture::new().await;
-        let body = r#"{"ok":true,"result":[
-            {"status":"creator","user":{"id":1,"is_bot":false,"first_name":"Synthetic owner"},"is_anonymous":false},
-            {"status":"administrator","user":{"id":2,"is_bot":false,"first_name":"Synthetic administrator"},
-             "can_be_edited":false,"is_anonymous":false,"can_manage_chat":true,"can_delete_messages":false,
-             "can_manage_video_chats":false,"can_restrict_members":false,"can_promote_members":false,
-             "can_change_info":false,"can_invite_users":false,"can_post_stories":false,"can_edit_stories":false,
-             "can_delete_stories":false,"can_send_welcome_messages":false}
-        ]}"#;
+        let body = json!({
+            "ok": true,
+            "result": [
+                {
+                    "status": "creator",
+                    "user": {
+                        "id": 1,
+                        "is_bot": false,
+                        "first_name": "Synthetic owner"
+                    },
+                    "is_anonymous": false
+                },
+                {
+                    "status": "administrator",
+                    "user": {
+                        "id": 2,
+                        "is_bot": false,
+                        "first_name": "Synthetic administrator"
+                    },
+                    "can_be_edited": false,
+                    "is_anonymous": false,
+                    "can_manage_chat": true,
+                    "can_delete_messages": false,
+                    "can_manage_video_chats": false,
+                    "can_restrict_members": false,
+                    "can_promote_members": false,
+                    "can_change_info": false,
+                    "can_invite_users": false,
+                    "can_post_stories": false,
+                    "can_edit_stories": false,
+                    "can_delete_stories": false,
+                    "can_send_welcome_messages": false
+                }
+            ]
+        });
         for (user_id, expected) in [(1, true), (2, true), (3, false)] {
-            let server = reply_once("200 OK", body).await;
+            let server = reply_once("200 OK", &body.to_string()).await;
             let actual = test_messenger(server.address, &fixture)
                 .is_chat_administrator(-100, user_id)
                 .await
@@ -1449,7 +1477,12 @@ mod rate_limit_tests {
 
         let server = reply_once(
             "400 Bad Request",
-            r#"{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}"#,
+            &json!({
+                "ok": false,
+                "error_code": 400,
+                "description": "Bad Request: chat not found"
+            })
+            .to_string(),
         )
         .await;
         assert!(test_messenger(server.address, &fixture)
@@ -1489,16 +1522,45 @@ mod rate_limit_tests {
             let (chat_id, body) = if ephemeral.is_some() {
                 (
                     -100,
-                    r#"{"ok":true,"result":{"message_id":0,"date":1,"chat":{"id":-100,"type":"group","title":"Synthetic group"},"receiver_user":{"id":1,"is_bot":false,"first_name":"Synthetic user"},"ephemeral_message_id":8,"text":"Synthetic menu"}}"#,
+                    json!({
+                        "ok": true,
+                        "result": {
+                            "message_id": 0,
+                            "date": 1,
+                            "chat": {
+                                "id": -100,
+                                "type": "group",
+                                "title": "Synthetic group"
+                            },
+                            "receiver_user": {
+                                "id": 1,
+                                "is_bot": false,
+                                "first_name": "Synthetic user"
+                            },
+                            "ephemeral_message_id": 8,
+                            "text": "Synthetic menu"
+                        }
+                    }),
                 )
             } else {
                 (
                     1,
-                    r#"{"ok":true,"result":{"message_id":8,"date":1,"chat":{"id":1,"type":"private"},"text":"Synthetic menu"}}"#,
+                    json!({
+                        "ok": true,
+                        "result": {
+                            "message_id": 8,
+                            "date": 1,
+                            "chat": {
+                                "id": 1,
+                                "type": "private"
+                            },
+                            "text": "Synthetic menu"
+                        }
+                    }),
                 )
             };
             for is_menu in [true, false] {
-                let server = reply_once("200 OK", body).await;
+                let server = reply_once("200 OK", &body.to_string()).await;
                 let messenger = test_messenger(server.address, &fixture);
                 if is_menu {
                     messenger
@@ -1544,7 +1606,12 @@ mod rate_limit_tests {
         let fixture = Fixture::new().await;
         let server = reply_once(
             "400 Bad Request",
-            r#"{"ok":false,"error_code":400,"description":"Bad Request: ephemeral messages are unavailable"}"#,
+            &json!({
+                "ok": false,
+                "error_code": 400,
+                "description": "Bad Request: ephemeral messages are unavailable"
+            })
+            .to_string(),
         )
         .await;
         let error = test_messenger(server.address, &fixture)
@@ -1590,13 +1657,23 @@ mod rate_limit_tests {
             },
         ] {
             for (status, body) in [
-                ("200 OK", r#"{"ok":true,"result":true}"#),
+                (
+                    "200 OK",
+                    json!({
+                        "ok": true,
+                        "result": true
+                    }),
+                ),
                 (
                     "400 Bad Request",
-                    r#"{"ok":false,"error_code":400,"description":"Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message"}"#,
+                    json!({
+                        "ok": false,
+                        "error_code": 400,
+                        "description": "Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message"
+                    }),
                 ),
             ] {
-                let server = reply_once(status, body).await;
+                let server = reply_once(status, &body.to_string()).await;
                 test_messenger(server.address, &fixture)
                     .edit_menu(EditMenuRequest {
                         target: message,
@@ -1648,7 +1725,12 @@ mod rate_limit_tests {
         ] {
             let server = reply_once(
                 "400 Bad Request",
-                r#"{"ok":false,"error_code":400,"description":"Bad Request: message to edit not found"}"#,
+                &json!({
+                    "ok": false,
+                    "error_code": 400,
+                    "description": "Bad Request: message to edit not found"
+                })
+                .to_string(),
             )
             .await;
 
@@ -1690,9 +1772,10 @@ mod rate_limit_tests {
         request: tokio::task::JoinHandle<String>,
     }
 
-    async fn reply_once(status: &'static str, body: &'static str) -> FakeServer {
+    async fn reply_once(status: &'static str, body: &str) -> FakeServer {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
+        let body = body.to_owned();
 
         let request = tokio::spawn(async move {
             let (mut socket, _) = listener.accept().await.unwrap();

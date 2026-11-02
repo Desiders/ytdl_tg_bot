@@ -433,17 +433,4 @@ mod tests {
             }
         ));
     }
-
-    #[test]
-    fn message_access_preserves_anonymous_sender_facts() {
-        let user = User::new(2, false, "Owner");
-        let message = Message::Text(MessageText::new(7, 1, ChatGroup::new(-1), "/start").from(user.clone()));
-        assert_eq!(message_access_input(&message).user_id, Some(2));
-        let anonymous = Message::Text(
-            MessageText::new(7, 1, ChatGroup::new(-1), "/start")
-                .from(user)
-                .sender_chat(ChatGroup::new(-1)),
-        );
-        assert_eq!(message_access_input(&anonymous).sender_chat_id, Some(-1));
-    }
 }

@@ -119,17 +119,19 @@ mod tests {
     struct ReachedNext;
 
     fn request(kind: &str) -> Request {
-        let query_id = if kind == "guest_message" {
-            r#", "guest_query_id":"synthetic-query""#
-        } else {
-            ""
-        };
-        let update = format!(
-            r#"{{"update_id":1,"{kind}":{{"message_id":2,"date":1,"chat":{{"id":3,"type":"synthetic_unknown"}},"text":"https://example.test/media"{query_id}}}}}"#
-        );
+        let mut message = serde_json::json!({
+            "message_id": 2,
+            "date": 1,
+            "chat": {"id": 3, "type": "synthetic_unknown"},
+            "text": "https://example.test/media",
+        });
+        if kind == "guest_message" {
+            message["guest_query_id"] = serde_json::json!("synthetic-query");
+        }
+        let update = serde_json::json!({"update_id": 1, (kind): message});
         Request {
             bot: Bot::new("1:synthetic"),
-            update: Arc::new(serialization::from_str(&update).unwrap()),
+            update: Arc::new(serialization::from_str(&update.to_string()).unwrap()),
             context: Context::default(),
             extensions: Extensions::default(),
         }
@@ -175,12 +177,24 @@ mod tests {
             .configure_default();
 
         for (kind, supported) in [("group", true), ("supergroup", true), ("synthetic_unknown", false)] {
-            let update = format!(
-                r#"{{"update_id":1,"callback_query":{{"id":"synthetic-query","chat_instance":"synthetic-chat", "from":{{"id":4,"is_bot":false,"first_name":"Synthetic user"}},"data":"open:main","message":{{"message_id":2,"date":1,"chat":{{"id":-100,"type":"{kind}","title":"Synthetic group"}},"text":"Menu"}}}}}}"#
-            );
+            let update = serde_json::json!({
+                "update_id": 1,
+                "callback_query": {
+                    "id": "synthetic-query",
+                    "chat_instance": "synthetic-chat",
+                    "from": {"id": 4, "is_bot": false, "first_name": "Synthetic user"},
+                    "data": "open:main",
+                    "message": {
+                        "message_id": 2,
+                        "date": 1,
+                        "chat": {"id": -100, "type": kind, "title": "Synthetic group"},
+                        "text": "Menu",
+                    },
+                },
+            });
             let request = Request {
                 bot: Bot::new("1:synthetic"),
-                update: Arc::new(serialization::from_str(&update).unwrap()),
+                update: Arc::new(serialization::from_str(&update.to_string()).unwrap()),
                 context: Context::default(),
                 extensions: Extensions::default(),
             };
