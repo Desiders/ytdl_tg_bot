@@ -119,6 +119,11 @@ impl TelegramMessenger {
 
 impl From<SessionErrorKind> for MessengerError {
     fn from(value: SessionErrorKind) -> Self {
+        if let SessionErrorKind::Telegram(TelegramErrorKind::BadRequest { message }) = &value {
+            if message.strip_prefix("Bad Request: ").unwrap_or(message) == "BOT_NOT_ADMIN" {
+                return Self::AdministratorRequired(value.to_string().into());
+            }
+        }
         Self::new(value.to_string())
     }
 }
@@ -1604,32 +1609,39 @@ mod rate_limit_tests {
     #[tokio::test]
     async fn ephemeral_menu_rejections_do_not_send_a_public_menu() {
         let fixture = Fixture::new().await;
-        let server = reply_once(
-            "400 Bad Request",
-            &json!({
-                "ok": false,
-                "error_code": 400,
-                "description": "Bad Request: ephemeral messages are unavailable"
-            })
-            .to_string(),
-        )
-        .await;
-        let error = test_messenger(server.address, &fixture)
-            .send_menu(SendMenuRequest {
-                chat_id: -100,
-                ephemeral: Some(EphemeralMessage {
-                    receiver_user_id: 1,
-                    reply_to_ephemeral_message_id: None,
-                }),
-                text: "Synthetic menu",
-                keyboard: &Keyboard { rows: Vec::new() },
-            })
-            .await
-            .unwrap_err();
-        let request = server.request.await.unwrap();
-        assert!(request.contains("/sendMessage "));
-        assert!(request.contains(r#""receiver_user_id":1"#));
-        assert!(error.to_string().contains("ephemeral messages are unavailable"), "{error}");
+        for (description, administrator_required) in [
+            ("ephemeral messages are unavailable", false),
+            ("BOT_NOT_ADMIN", true),
+            ("BOT_NOT_ADMIN: synthetic other failure", false),
+        ] {
+            let server = reply_once(
+                "400 Bad Request",
+                &json!({
+                    "ok": false,
+                    "error_code": 400,
+                    "description": format!("Bad Request: {description}")
+                })
+                .to_string(),
+            )
+            .await;
+            let error = test_messenger(server.address, &fixture)
+                .send_menu(SendMenuRequest {
+                    chat_id: -100,
+                    ephemeral: Some(EphemeralMessage {
+                        receiver_user_id: 1,
+                        reply_to_ephemeral_message_id: None,
+                    }),
+                    text: "Synthetic menu",
+                    keyboard: &Keyboard { rows: Vec::new() },
+                })
+                .await
+                .unwrap_err();
+            let request = server.request.await.unwrap();
+            assert!(request.contains("/sendMessage "));
+            assert!(request.contains(r#""receiver_user_id":1"#));
+            assert!(error.to_string().contains(description), "{error}");
+            assert_eq!(matches!(error, MessengerError::AdministratorRequired(_)), administrator_required);
+        }
     }
 
     #[tokio::test]

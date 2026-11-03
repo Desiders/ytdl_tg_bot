@@ -20,7 +20,7 @@ use crate::{
         menu_message_cache::MenuMessageCache,
         messenger::{
             AnswerCallbackRequest, Button, ButtonAction, DeleteMessageRequest, EditMenuRequest, EphemeralMessage, Keyboard, MenuMessage,
-            MessengerPort, SendMenuRequest, SendTextRequest, TextFormat,
+            MessengerError, MessengerPort, SendMenuRequest, SendTextRequest, TextFormat,
         },
     },
     utils::ErrorFormatter,
@@ -196,6 +196,7 @@ where
                     command_message_id.filter(|_| screen == Screen::Main),
                     view,
                     input.notice,
+                    locale,
                 )
                 .await;
             }
@@ -217,6 +218,7 @@ where
         command_message_id: Option<i64>,
         view: View,
         notice: Option<Notice>,
+        locale: Locale,
     ) {
         // A new message has no callback answer to carry the notice, so the notice heads the text.
         let text = with_notice(notice, view.text);
@@ -230,7 +232,17 @@ where
             })
             .await
         {
-            error!(err = %self.error_formatter.format(&err), "Send menu error");
+            match err {
+                MessengerError::AdministratorRequired(_) if ephemeral.is_some() => {
+                    self.send_notice(
+                        chat_id,
+                        command_message_id,
+                        Notice::new(t!("menu.bot_admin_required", locale = locale.as_str()).into_owned()),
+                    )
+                    .await;
+                }
+                err => error!(err = %self.error_formatter.format(&err), "Send menu error"),
+            }
             return;
         }
         if let Some(message_id) = command_message_id {
@@ -240,14 +252,14 @@ where
         }
     }
 
-    async fn send_notice(&self, user_id: i64, notice: Notice) {
+    async fn send_notice(&self, chat_id: i64, reply_to_message_id: Option<i64>, notice: Notice) {
         let text = with_notice(Some(notice), String::new());
         if let Err(err) = self
             .messenger
             .send_text(SendTextRequest {
-                chat_id: user_id,
+                chat_id,
                 text: text.trim_end(),
-                reply_to_message_id: None,
+                reply_to_message_id,
                 ephemeral: None,
                 format: Some(TextFormat::Html),
                 disable_link_preview: true,
@@ -549,7 +561,7 @@ where
             if let Err(err) = self.message_cache.remove(chat_id, input.chat_cfg.tg_id).await {
                 error!(%err, "Remove cached menu message error");
             }
-            self.open_menu.send_notice(input.chat_cfg.tg_id, notice).await;
+            self.open_menu.send_notice(input.chat_cfg.tg_id, None, notice).await;
             return Ok(());
         }
 

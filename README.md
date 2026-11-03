@@ -65,6 +65,8 @@ Commands are registered only for private chats. In groups, send `/start` or `/la
 manually to open a menu visible only to you. The bot must be an administrator to send
 this private response; an ordinary `/start` is deleted after successful menu delivery
 when permissions allow.
+If the bot lacks administrator rights, it replies in the group explaining that they
+are required to open the menu.
 Language and caption-link visibility are personal settings.
 Managing the group's excluded domains also requires current administrator permissions, checked
 again when a domain is submitted. Button notifications are visible only to the person who clicked.

@@ -12,14 +12,16 @@ pub enum TextFormat {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Messenger error: {message}")]
-pub struct MessengerError {
-    message: Box<str>,
+pub enum MessengerError {
+    #[error("Messenger error: {0}")]
+    AdministratorRequired(Box<str>),
+    #[error("Messenger error: {0}")]
+    Other(Box<str>),
 }
 
 impl MessengerError {
     pub fn new(message: impl Into<Box<str>>) -> Self {
-        Self { message: message.into() }
+        Self::Other(message.into())
     }
 }
 

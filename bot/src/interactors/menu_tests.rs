@@ -1,8 +1,5 @@
 use std::{
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
-    },
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -72,7 +69,7 @@ fn access_input(chat_id: i64, callback_id: Option<&'static str>) -> MenuAccessIn
     }
 }
 
-struct RecordingMessenger(Arc<Mutex<Vec<String>>>, Arc<AtomicBool>);
+struct RecordingMessenger(Arc<Mutex<Vec<String>>>, Arc<Mutex<Option<MessengerError>>>);
 
 impl RecordingMessenger {
     fn record(&self, event: String) {
@@ -98,10 +95,9 @@ impl MessengerPort for RecordingMessenger {
             ));
         }
         self.record(format!("send {}", menu(request.text, request.keyboard)));
-        if self.1.load(Ordering::Relaxed) {
-            Err(MessengerError::new("Synthetic menu send failure"))
-        } else {
-            Ok(())
+        match self.1.lock().unwrap().take() {
+            Some(error) => Err(error),
+            None => Ok(()),
         }
     }
     async fn edit_menu(&self, request: EditMenuRequest<'_>) -> Result<(), MessengerError> {
@@ -124,6 +120,9 @@ impl MessengerPort for RecordingMessenger {
     async fn send_text(&self, request: SendTextRequest<'_>) -> Result<SentMessage, MessengerError> {
         assert!(request.ephemeral.is_none());
         self.record(format!("notice {} {}", request.chat_id, request.text));
+        if let Some(message_id) = request.reply_to_message_id {
+            self.record(format!("reply {message_id}"));
+        }
         Ok(SentMessage { message_id: 3 })
     }
     async fn edit_text(&self, _: EditTextRequest<'_>) -> Result<(), MessengerError> {
@@ -199,7 +198,7 @@ fn menu(text: &str, keyboard: &Keyboard) -> String {
 
 struct Fixture {
     events: Arc<Mutex<Vec<String>>>,
-    fail_menu_send: Arc<AtomicBool>,
+    menu_send_error: Arc<Mutex<Option<MessengerError>>>,
     tx_manager: Arc<Box<dyn TxManager>>,
     formatter: Arc<ErrorFormatter>,
     open_menu: Arc<OpenMenu<RecordingMessenger>>,
@@ -251,9 +250,9 @@ impl Fixture {
         let message_cache = Arc::new(MenuMessageCache::new(redis.connection()));
 
         let events = Arc::new(Mutex::new(Vec::new()));
-        let fail_menu_send = Arc::new(AtomicBool::new(false));
+        let menu_send_error = Arc::new(Mutex::new(None));
         let formatter = Arc::new(ErrorFormatter::new("test"));
-        let messenger = Arc::new(RecordingMessenger(events.clone(), fail_menu_send.clone()));
+        let messenger = Arc::new(RecordingMessenger(events.clone(), menu_send_error.clone()));
         let access = Arc::new(MenuAccess::new(messenger.clone(), formatter.clone()));
         let stats = Stats::new(
             formatter.clone(),
@@ -265,7 +264,7 @@ impl Fixture {
 
         Self {
             events,
-            fail_menu_send,
+            menu_send_error,
             open_menu: Arc::new(OpenMenu::new(
                 Arc::new(test_support::config()),
                 formatter.clone(),
@@ -812,12 +811,32 @@ async fn a_missing_cached_group_menu_sends_a_notice_without_changing_its_scope()
 }
 
 #[tokio::test]
-async fn only_successful_main_menu_delivery_cleans_up_the_command() {
+async fn menu_delivery_keeps_failed_commands_and_reports_missing_permissions() {
     let fixture = Fixture::new(&[]).await;
-    let Saved { config, exclude_domains } = fixture.chat().await;
-    for (screen, fail_send) in [(Screen::Main, false), (Screen::Language, false), (Screen::Main, true)] {
+    let Saved {
+        mut config,
+        exclude_domains,
+    } = fixture.chat().await;
+    for (screen, send_error, locale) in [
+        (Screen::Main, None, Locale::En),
+        (Screen::Language, None, Locale::En),
+        (Screen::Main, Some(MessengerError::new("Synthetic menu send failure")), Locale::En),
+        (
+            Screen::Main,
+            Some(MessengerError::AdministratorRequired("Synthetic permission failure".into())),
+            Locale::Ru,
+        ),
+        (
+            Screen::Language,
+            Some(MessengerError::AdministratorRequired("Synthetic permission failure".into())),
+            Locale::Uk,
+        ),
+    ] {
         fixture.events.lock().unwrap().clear();
-        fixture.fail_menu_send.store(fail_send, Ordering::Relaxed);
+        let should_delete = screen == Screen::Main && send_error.is_none();
+        let should_notify = matches!(&send_error, Some(MessengerError::AdministratorRequired(_)));
+        *fixture.menu_send_error.lock().unwrap() = send_error;
+        config.language = locale.as_str().to_owned();
         fixture
             .open_menu
             .as_ref()
@@ -841,12 +860,24 @@ async fn only_successful_main_menu_delivery_cleans_up_the_command() {
             .unwrap();
 
         let events = fixture.events();
-        let should_delete = screen == Screen::Main && !fail_send;
-        assert_eq!(events.len(), 2 + usize::from(should_delete), "{events:?}");
+        let notice_events = if should_notify {
+            1 + usize::from(screen == Screen::Main)
+        } else {
+            0
+        };
+        assert_eq!(events.len(), 2 + usize::from(should_delete) + notice_events, "{events:?}");
         assert_eq!(events[0], "ephemeral send -2:1:None");
         assert!(events[1].starts_with("send "));
         if should_delete {
             assert_eq!(events[2], "delete -2:7");
+        } else if should_notify {
+            assert_eq!(
+                events[2],
+                format!("notice -2 {}", t!("menu.bot_admin_required", locale = locale.as_str()))
+            );
+            if screen == Screen::Main {
+                assert_eq!(events[3], "reply 7");
+            }
         }
     }
 }
