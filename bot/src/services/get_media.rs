@@ -58,12 +58,26 @@ pub struct GetMediaByURLInput<'a> {
 }
 
 pub enum GetMediaByURLKind {
-    SingleCached(String),
+    SingleCached(String, Option<String>),
     Playlist {
         cached: Vec<MediaInPlaylist>,
         uncached: Vec<(Media, Vec<(MediaFormat, RawMediaWithFormat)>)>,
     },
     Empty,
+}
+
+impl GetMediaByURLKind {
+    pub fn description(&self) -> Option<String> {
+        let description = match self {
+            Self::SingleCached(_, description) => description.as_deref(),
+            Self::Playlist { cached, uncached } if cached.len() + uncached.len() == 1 => cached
+                .first()
+                .and_then(|media| media.description.as_deref())
+                .or_else(|| uncached.first().and_then(|(media, _)| media.description.as_deref())),
+            Self::Playlist { .. } | Self::Empty => None,
+        };
+        description.filter(|text| !text.trim().is_empty()).map(ToOwned::to_owned)
+    }
 }
 
 pub struct GetVideoByURL {
@@ -341,7 +355,7 @@ async fn get_media_by_url(
             .await?
         {
             info!("Got cached media");
-            return Ok(GetMediaByURLKind::SingleCached(media.file_id));
+            return Ok(GetMediaByURLKind::SingleCached(media.file_id, media.description));
         }
     }
 
@@ -403,12 +417,13 @@ async fn get_media_by_url(
         media.clean_webpage_url(url_cleaner);
         let domain = media.webpage_url.host_str();
         if !overwrite_cache {
-            if let Some(DownloadedMedia { file_id, .. }) = reader
+            if let Some(DownloadedMedia { file_id, description, .. }) = reader
                 .get(&media.id, domain, audio_language.language.as_deref(), media_type, start, end)
                 .await?
             {
                 cached.push(MediaInPlaylist {
                     file_id,
+                    description: description.or(media.description),
                     playlist_index: media.playlist_index,
                     webpage_url: Some(media.webpage_url.clone()),
                 });
@@ -452,6 +467,7 @@ fn playlist_from_response(response: proto::downloader::MediaInfoResponse) -> Res
             let media = Media {
                 id: entry.id,
                 display_id: entry.display_id,
+                description: entry.description,
                 webpage_url: Url::parse(&entry.webpage_url)?,
                 direct_url,
                 title: entry.title,

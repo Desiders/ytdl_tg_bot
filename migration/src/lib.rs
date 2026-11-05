@@ -10,6 +10,7 @@ mod m20260228_070901_add_chat_config_link_is_visible;
 mod m20260301_120000_add_chat_config_language;
 mod m20260427_120000_add_chat_type_to_chats;
 mod m20260501_000000_add_photo_media_type;
+mod m20261105_000000_add_downloaded_media_description;
 
 pub struct Migrator;
 
@@ -27,6 +28,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260301_120000_add_chat_config_language::Migration),
             Box::new(m20260427_120000_add_chat_type_to_chats::Migration),
             Box::new(m20260501_000000_add_photo_media_type::Migration),
+            Box::new(m20261105_000000_add_downloaded_media_description::Migration),
         ]
     }
 }

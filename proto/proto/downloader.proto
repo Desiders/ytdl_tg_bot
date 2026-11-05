@@ -47,6 +47,7 @@ message MediaEntry {
   repeated MediaFormatEntry formats = 10;
   optional string direct_url = 11;
   string raw_info_json = 12;
+  optional string description = 13;
 }
 
 message PostEntry {

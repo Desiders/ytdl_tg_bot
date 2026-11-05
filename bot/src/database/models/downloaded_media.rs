@@ -12,6 +12,7 @@ pub struct Model {
     #[sea_orm(unique_key = "idx_downloaded_media_id_domain_type_lang_sections")]
     pub id: String,
     pub display_id: Option<String>,
+    pub description: Option<String>,
     #[sea_orm(unique_key = "idx_downloaded_media_id_domain_type_lang_sections")]
     pub domain: Option<String>,
     #[sea_orm(unique_key = "idx_downloaded_media_id_domain_type_lang_sections")]

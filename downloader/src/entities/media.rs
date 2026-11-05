@@ -80,6 +80,7 @@ impl fmt::Display for Thumbnail {
 pub struct Media {
     pub id: String,
     pub display_id: Option<String>,
+    pub description: Option<String>,
     pub webpage_url: Url,
     pub direct_url: Option<Url>,
     pub title: Option<String>,
@@ -162,6 +163,7 @@ impl fmt::Display for Media {
 pub struct MediaWithFormat {
     pub id: String,
     pub display_id: Option<String>,
+    pub description: Option<String>,
     pub webpage_url: Url,
     #[serde(default)]
     pub direct_url: Option<Url>,
@@ -257,6 +259,7 @@ impl From<MediaWithFormat> for Media {
         MediaWithFormat {
             id,
             display_id,
+            description,
             webpage_url,
             direct_url,
             title,
@@ -274,6 +277,7 @@ impl From<MediaWithFormat> for Media {
         Self {
             id,
             display_id,
+            description,
             webpage_url,
             direct_url,
             title,
@@ -321,6 +325,7 @@ mod tests {
 
     fn media(live_status: Option<&str>, is_live: bool) -> Media {
         Media {
+            description: None,
             id: "id".into(),
             display_id: None,
             webpage_url: Url::parse("https://www.youtube.com/watch?v=test").unwrap(),

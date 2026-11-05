@@ -95,6 +95,7 @@ impl fmt::Display for Thumbnail {
 pub struct Media {
     pub id: String,
     pub display_id: Option<String>,
+    pub description: Option<String>,
     pub webpage_url: Url,
     pub direct_url: Option<Url>,
     pub title: Option<String>,
@@ -203,6 +204,7 @@ impl From<Media> for ShortMedia {
 pub struct MediaWithFormat {
     pub id: String,
     pub display_id: Option<String>,
+    pub description: Option<String>,
     pub webpage_url: Url,
     pub title: Option<String>,
     pub language: Option<String>,
@@ -274,6 +276,7 @@ impl Playlist {
 #[derive(Debug)]
 pub struct MediaInPlaylist {
     pub file_id: String,
+    pub description: Option<String>,
     pub playlist_index: i16,
     pub webpage_url: Option<Url>,
 }
@@ -312,6 +315,7 @@ impl From<MediaWithFormat> for Media {
         MediaWithFormat {
             id,
             display_id,
+            description,
             webpage_url,
             title,
             language,
@@ -326,6 +330,7 @@ impl From<MediaWithFormat> for Media {
         Self {
             id,
             display_id,
+            description,
             webpage_url,
             direct_url: None,
             title,

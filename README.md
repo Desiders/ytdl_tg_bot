@@ -76,6 +76,10 @@ A bare link in a private chat is downloaded automatically with media-type detect
 
 Automatic downloads add available post text and context after sending media; explicit media
 commands skip this step. Long text is truncated to Telegram limits and uses expandable quotes.
+Descriptions returned by yt-dlp are saved with cached media and used for automatic
+single-media captions when native post text is unavailable. Existing cached files
+without descriptions are kept; `overwrite=true` refreshes them. Apply database
+migrations before deploying a bot version that uses the description column.
 Photo requests select up to ten images by default; video and audio requests select one unless
 an `items` range is specified. Inline mode sends one media item. Mixed photo/video albums are
 currently unsupported.

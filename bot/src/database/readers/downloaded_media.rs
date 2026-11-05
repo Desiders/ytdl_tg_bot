@@ -250,6 +250,7 @@ mod tests {
 
     fn video(file_id: &str, id: &str, display_id: Option<&str>, domain: Option<&str>) -> DownloadedMedia {
         DownloadedMedia {
+            description: None,
             file_id: file_id.to_owned(),
             id: id.to_owned(),
             display_id: display_id.map(ToOwned::to_owned),
@@ -264,6 +265,32 @@ mod tests {
 
     fn long_free_text_id() -> String {
         format!("{}tail", "[Part-9] (x)*.+?|{2}\\ ".repeat(60))
+    }
+
+    #[tokio::test]
+    async fn descriptions_are_nullable_and_replaced_with_cached_media() {
+        let mut original = video("original", "synthetic-id", None, EXAMPLE);
+        original.audio_language = Some("en".to_owned());
+        original.crop_start_time = Some(0);
+        original.crop_end_time = Some(10);
+        let db = Db::with_rows(vec![original]).await;
+        let reader = SeaOrmDownloadedMediaReader::new(&db.conn);
+        let mut cached = reader
+            .get("synthetic-id", EXAMPLE, Some("en"), MediaType::Video, Some(0), Some(10))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(cached.description.is_none());
+        cached.file_id = "replacement".to_owned();
+        cached.description = Some("Synthetic <description> & опис".to_owned());
+        SeaOrmDownloadedMediaRepo::new(&db.conn).insert_or_replace(cached).await.unwrap();
+        let cached = reader
+            .get("synthetic-id", EXAMPLE, Some("en"), MediaType::Video, Some(0), Some(10))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(cached.file_id, "replacement");
+        assert_eq!(cached.description.as_deref(), Some("Synthetic <description> & опис"));
     }
 
     #[tokio::test]

@@ -355,20 +355,22 @@ async fn run_in_scope(child: &Container, job: &DownloadJob, current_message: &wa
         };
         let display = child.get::<post::Display<TelegramMessenger>>().await.unwrap();
         match result {
-            auto::AutoResult::Sent(message) => {
+            auto::AutoResult::Sent(message, description) => {
                 Box::pin(display.execute(post::DisplayInput {
                     job,
                     message: Some(&message),
                     has_media: true,
+                    description: description.as_deref(),
                 }))
                 .await?;
                 return Ok(());
             }
-            auto::AutoResult::SentInline => {
+            auto::AutoResult::SentInline(description) => {
                 Box::pin(display.execute(post::DisplayInput {
                     job,
                     message: None,
                     has_media: true,
+                    description: description.as_deref(),
                 }))
                 .await?;
                 return Ok(());
@@ -379,6 +381,7 @@ async fn run_in_scope(child: &Container, job: &DownloadJob, current_message: &wa
                     job,
                     message: None,
                     has_media: false,
+                    description: None,
                 }))
                 .await?
                     || job.quiet

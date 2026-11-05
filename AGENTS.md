@@ -315,6 +315,8 @@ Auto jobs first use the existing media classification, cache and delivery path. 
 9. The downloader streams progress, then thumbnail and media bytes back to the bot.
 10. The bot forwards media and thumbnail streams to Telegram, stores the returned `file_id` in the cache, and clears the acknowledgment reaction.
 
+Media metadata includes an optional `description` from yt-dlp. It is stored as nullable text in `downloaded_media` alongside the file ID, including explicit downloads, and carried through cache hits. For automatic single-media deliveries, the saved description is a fallback when native post extraction returns no text or fails; native post context keeps priority. Reuse the existing HTML escaping, truncation and caption editing. Never attach one playlist item's description to an entire multi-item delivery. Existing cache rows remain nullable and acquire a description on a fresh download or `overwrite=true`; do not redownload media just to fill old rows. Apply the description migration before deploying the updated bot. Native post chains and text-only posts still use the existing uncached post extraction.
+
 ## Current Stream Contract
 
 Proto file: [proto/proto/downloader.proto](proto/proto/downloader.proto)

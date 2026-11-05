@@ -619,6 +619,7 @@ fn playlist(count: i16) -> GetMediaByURLKind {
             .map(|index| {
                 (
                     Media {
+                        description: None,
                         id: index.to_string(),
                         display_id: None,
                         webpage_url: Url::parse(&format!("https://example.test/watch?v={index}&list=synthetic")).unwrap(),
@@ -660,6 +661,7 @@ async fn single_media_replaces_progress_while_albums_send_new_messages() {
         let cached = |count| GetMediaByURLKind::Playlist {
             cached: (0..count)
                 .map(|index| MediaInPlaylist {
+                    description: None,
                     file_id: "synthetic-file-id".into(),
                     playlist_index: index,
                     webpage_url: None,
@@ -668,7 +670,7 @@ async fn single_media_replaces_progress_while_albums_send_new_messages() {
             uncached: vec![],
         };
         for (message_id, metadata) in [
-            (1, GetMediaByURLKind::SingleCached("synthetic-file-id".into())),
+            (1, GetMediaByURLKind::SingleCached("synthetic-file-id".into(), None)),
             (1, cached(1)),
             (1, playlist(1)),
             (42, cached(2)),
@@ -710,7 +712,7 @@ async fn failed_media_edit_keeps_progress_and_reports_the_error() {
             ..Default::default()
         })
         .await;
-        for metadata in [GetMediaByURLKind::SingleCached("synthetic-file-id".into()), playlist(1)] {
+        for metadata in [GetMediaByURLKind::SingleCached("synthetic-file-id".into(), None), playlist(1)] {
             assert!(fixture.command_media(media_type, metadata, None).await.is_none());
             assert!(fixture
                 .state
@@ -731,7 +733,7 @@ async fn failed_media_edit_keeps_progress_and_reports_the_error() {
 async fn audio_replaces_supplied_progress_and_keeps_recognition_text() {
     let fixture = Fixture::new(State::default()).await;
     let text = "<b>Synthetic artist — Synthetic song</b>";
-    for metadata in [GetMediaByURLKind::SingleCached("synthetic-file-id".into()), playlist(1)] {
+    for metadata in [GetMediaByURLKind::SingleCached("synthetic-file-id".into(), None), playlist(1)] {
         let message = fixture.command_media(MediaType::Audio, metadata, Some((17, text))).await.unwrap();
         assert_eq!(message.message_id, 17);
         assert_eq!(
@@ -1103,6 +1105,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
                 response(short),
                 response(short),
                 Err(Status::not_found("Synthetic metadata failure")),
+                Err(Status::not_found("Synthetic metadata failure")),
                 response(&long),
                 response(short),
                 response(&long),
@@ -1133,6 +1136,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
         assert_eq!(message.message_id, 1);
         assert!(display
             .execute(post::DisplayInput {
+                description: Some("Synthetic fallback should not replace native context"),
                 job: &job,
                 message: Some(&message),
                 has_media: true
@@ -1148,6 +1152,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
         *fixture.state.post_edit_error.lock().unwrap() = Some(MessengerError::new("Synthetic caption edit failure"));
         assert!(display
             .execute(post::DisplayInput {
+                description: None,
                 job: &job,
                 message: Some(&message),
                 has_media: true
@@ -1159,6 +1164,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
 
         assert!(!display
             .execute(post::DisplayInput {
+                description: None,
                 job: &job,
                 message: Some(&message),
                 has_media: true
@@ -1170,6 +1176,20 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
 
         assert!(display
             .execute(post::DisplayInput {
+                description: Some("Synthetic <description> & text"),
+                job: &job,
+                message: Some(&message),
+                has_media: true,
+            })
+            .await
+            .unwrap());
+        let text = fixture.state.edits.lock().unwrap().last().unwrap().clone();
+        assert!(text.contains("Synthetic &lt;description&gt; &amp; text"));
+        assert!(text.contains("https://example.test/playlist"));
+
+        assert!(display
+            .execute(post::DisplayInput {
+                description: None,
                 job: &job,
                 message: Some(&message),
                 has_media: true
@@ -1189,6 +1209,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
         };
         assert!(display
             .execute(post::DisplayInput {
+                description: None,
                 job: &job,
                 message: None,
                 has_media: true
@@ -1201,6 +1222,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
         );
         assert!(display
             .execute(post::DisplayInput {
+                description: None,
                 job: &job,
                 message: None,
                 has_media: true
@@ -1215,6 +1237,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
 
         assert!(display
             .execute(post::DisplayInput {
+                description: None,
                 job: &job,
                 message: None,
                 has_media: false
@@ -1227,6 +1250,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
         );
         assert!(display
             .execute(post::DisplayInput {
+                description: None,
                 job: &job,
                 message: None,
                 has_media: false
@@ -1242,6 +1266,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
         job.target = JobTarget::Command { chat_id: 1, message_id: 9 };
         assert!(display
             .execute(post::DisplayInput {
+                description: None,
                 job: &job,
                 message: None,
                 has_media: false
@@ -1254,6 +1279,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
         );
         assert!(display
             .execute(post::DisplayInput {
+                description: None,
                 job: &job,
                 message: None,
                 has_media: false
@@ -1269,6 +1295,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
         job.link_is_visible = false;
         assert!(display
             .execute(post::DisplayInput {
+                description: None,
                 job: &job,
                 message: Some(&message),
                 has_media: true
@@ -1285,6 +1312,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
         *fixture.state.post_send_error.lock().unwrap() = Some(MessengerError::new("Synthetic <delivery> failure & text token=test"));
         let error = display
             .execute(post::DisplayInput {
+                description: None,
                 job: &job,
                 message: None,
                 has_media: false,
@@ -1305,6 +1333,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
         *fixture.state.post_edit_error.lock().unwrap() = Some(MessengerError::new("Synthetic <edit> failure & text"));
         assert!(display
             .execute(post::DisplayInput {
+                description: None,
                 job: &job,
                 message: None,
                 has_media: false
@@ -1321,6 +1350,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
         *fixture.state.post_send_error.lock().unwrap() = Some(MessengerError::new("Synthetic quiet delivery failure"));
         assert!(display
             .execute(post::DisplayInput {
+                description: None,
                 job: &job,
                 message: None,
                 has_media: false
@@ -1334,7 +1364,7 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
         assert!(!events
             .iter()
             .any(|event| event.starts_with("post text 1 reply=Some(1):") || event.starts_with("post text 1 reply=None:")));
-        assert_eq!(events.iter().filter(|event| *event == "post metadata").count(), 14);
+        assert_eq!(events.iter().filter(|event| *event == "post metadata").count(), 15);
         assert_eq!(events.iter().filter(|event| event.starts_with("download ")).count(), 2);
         assert_eq!(events.iter().filter(|event| *event == "upload finished").count(), 2);
         assert_eq!(events.iter().filter(|event| *event == "final command edit").count(), 1);

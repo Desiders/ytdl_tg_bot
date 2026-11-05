@@ -30,6 +30,7 @@ impl RawPhotoInfo {
 impl From<RawPhotoInfo> for MediaWithFormat {
     fn from(raw_info: RawPhotoInfo) -> Self {
         MediaWithFormat {
+            description: None,
             id: raw_info.id,
             display_id: raw_info.display_id,
             webpage_url: raw_info.webpage_url,

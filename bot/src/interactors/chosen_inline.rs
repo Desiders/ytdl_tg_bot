@@ -239,7 +239,7 @@ where
         }
     };
     match result {
-        Ok(SingleCached(file_id)) => {
+        Ok(SingleCached(file_id, _)) => {
             if let Err(err) = interactor
                 .edit_media_by_id
                 .execute(send_media::id::EditMediaInput {
@@ -429,6 +429,7 @@ where
                     file_id,
                     id: media.id.clone(),
                     display_id: media.display_id.clone(),
+                    description: media.description.clone(),
                     domain: media.webpage_url.host_str().map(ToOwned::to_owned),
                     audio_language: audio_language.clone(),
                     sections: sections.clone(),
@@ -529,7 +530,7 @@ where
         }
     };
     match result {
-        Ok(SingleCached(file_id)) => {
+        Ok(SingleCached(file_id, _)) => {
             if let Err(err) = interactor
                 .edit_media_by_id
                 .execute(send_media::id::EditMediaInput {
@@ -719,6 +720,7 @@ where
                     file_id,
                     id: media.id.clone(),
                     display_id: media.display_id.clone(),
+                    description: media.description.clone(),
                     domain: media.webpage_url.host_str().map(ToOwned::to_owned),
                     audio_language: audio_language.clone(),
                     sections: sections.clone(),
@@ -792,7 +794,7 @@ where
         }
     };
     match result {
-        Ok(SingleCached(file_id)) => {
+        Ok(SingleCached(file_id, _)) => {
             if let Err(err) = interactor
                 .edit_media_by_id
                 .execute(send_media::id::EditMediaInput {
@@ -930,6 +932,7 @@ where
                     file_id,
                     id: media.id.clone(),
                     display_id: media.display_id.clone(),
+                    description: media.description.clone(),
                     domain: media.webpage_url.host_str().map(ToOwned::to_owned),
                     audio_language: Language::default(),
                     sections: None,
@@ -1063,6 +1066,7 @@ where
             return Ok(auto::AutoResult::NoMedia);
         }
 
+        let description = prefetched.as_ref().and_then(GetMediaByURLKind::description);
         let input = DownloadInput { prefetched, ..input };
         let sent = match media_type {
             MediaType::Video => self.video.execute(input).await?,
@@ -1070,7 +1074,7 @@ where
             MediaType::Photo => self.photo.execute(input).await?,
         };
         Ok(if sent {
-            auto::AutoResult::SentInline
+            auto::AutoResult::SentInline(description)
         } else {
             auto::AutoResult::Failed
         })

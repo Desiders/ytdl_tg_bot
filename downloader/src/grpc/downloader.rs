@@ -949,6 +949,7 @@ fn map_playlist_response(playlist: Playlist, max_file_size: u64) -> Result<Media
         entries.push(MediaEntry {
             id: media.id,
             display_id: media.display_id,
+            description: media.description,
             webpage_url: media.webpage_url.to_string(),
             direct_url: media.direct_url.map(|url| url.to_string()),
             title: media.title,
@@ -1008,6 +1009,7 @@ fn map_snapsave_post(data: snapsave_parser::SnapSaveDownloaderData, webpage_url:
 fn synthesize_direct(item: &ResolvedMedia, webpage_url: &Url, ext: &str) -> Result<Playlist, Status> {
     let name = snapsave_name(webpage_url);
     let media = MediaWithFormat {
+        description: None,
         id: name.clone(),
         display_id: None,
         webpage_url: webpage_url.clone(),
@@ -2033,6 +2035,7 @@ print(json.dumps({"id":"synthetic", "webpage_url":sys.argv[-1], "ext":"mp4", "fo
         let playlist = Playlist {
             inner: vec![(
                 Media {
+                    description: None,
                     id: "id".into(),
                     display_id: None,
                     webpage_url: Url::parse("https://www.youtube.com/watch?v=test").unwrap(),
@@ -2062,6 +2065,7 @@ print(json.dumps({"id":"synthetic", "webpage_url":sys.argv[-1], "ext":"mp4", "fo
         let playlist = Playlist {
             inner: vec![(
                 Media {
+                    description: None,
                     id: "id".into(),
                     display_id: None,
                     webpage_url: Url::parse("https://www.youtube.com/watch?v=test").unwrap(),
@@ -2097,6 +2101,7 @@ print(json.dumps({"id":"synthetic", "webpage_url":sys.argv[-1], "ext":"mp4", "fo
         let playlist = Playlist {
             inner: vec![(
                 Media {
+                    description: None,
                     id: "id".into(),
                     display_id: None,
                     webpage_url: Url::parse("https://media.example.test/test").unwrap(),

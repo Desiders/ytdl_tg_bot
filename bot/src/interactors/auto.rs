@@ -25,8 +25,8 @@ use crate::{
 };
 
 pub enum AutoResult {
-    Sent(SentMessage),
-    SentInline,
+    Sent(SentMessage, Option<String>),
+    SentInline(Option<String>),
     NoMedia,
     Failed,
 }
@@ -83,7 +83,7 @@ where
     pub async fn fulfill(&self, result: GetMediaByURLKind, ctx: &FulfillCtx<'_>) -> Option<SentMessage> {
         let mut sent_message = None;
         match result {
-            SingleCached(file_id) => {
+            SingleCached(file_id, _) => {
                 if let Err(err) = self
                     .send_media_by_id
                     .execute(send_media::id::SendMediaInput {
@@ -146,6 +146,7 @@ where
                     };
 
                     downloaded_playlist.push(MediaInPlaylist {
+                        description: media.description.clone(),
                         file_id: file_id.clone(),
                         playlist_index: media.playlist_index,
                         webpage_url: Some(media.webpage_url.clone()),
@@ -157,6 +158,7 @@ where
                             file_id,
                             id: media.id.clone(),
                             display_id: media.display_id.clone(),
+                            description: media.description.clone(),
                             domain: media.webpage_url.host_str().map(ToOwned::to_owned),
                             audio_language: ctx.audio_language.clone(),
                             sections: ctx.sections.cloned(),
@@ -229,7 +231,7 @@ where
     pub async fn fulfill(&self, result: GetMediaByURLKind, ctx: &FulfillCtx<'_>) -> Option<SentMessage> {
         let mut sent_message = None;
         match result {
-            SingleCached(file_id) => {
+            SingleCached(file_id, _) => {
                 if let Err(err) = self
                     .send_media_by_id
                     .execute(send_media::id::SendMediaInput {
@@ -276,6 +278,7 @@ where
                     };
 
                     downloaded_playlist.push(MediaInPlaylist {
+                        description: media.description.clone(),
                         file_id: file_id.clone(),
                         playlist_index: media.playlist_index,
                         webpage_url: Some(media.webpage_url.clone()),
@@ -287,6 +290,7 @@ where
                             file_id,
                             id: media.id.clone(),
                             display_id: media.display_id.clone(),
+                            description: media.description.clone(),
                             domain: media.webpage_url.host_str().map(ToOwned::to_owned),
                             audio_language: Language::default(),
                             sections: None,
@@ -430,13 +434,14 @@ where
             debug!("Auto found no downloadable media");
             return Ok(AutoResult::NoMedia);
         };
+        let description = result.description();
         let sent_message = match media_type {
             MediaType::Video => self.video.fulfill(result, &ctx).await,
             MediaType::Audio => self.audio.fulfill(result, &ctx).await,
             MediaType::Photo => self.photo.fulfill(result, &ctx).await,
         };
 
-        Ok(sent_message.map_or(AutoResult::Failed, AutoResult::Sent))
+        Ok(sent_message.map_or(AutoResult::Failed, |message| AutoResult::Sent(message, description)))
     }
 }
 
@@ -494,7 +499,7 @@ async fn probe_video(
         .await
         .ok()?
     {
-        SingleCached(file_id) => Some((MediaType::Video, SingleCached(file_id))),
+        SingleCached(file_id, description) => Some((MediaType::Video, SingleCached(file_id, description))),
         Playlist { cached, uncached } if has_video_stream(&cached, &uncached) => Some((MediaType::Video, Playlist { cached, uncached })),
         _ => None,
     }
@@ -694,6 +699,7 @@ where
             return Ok(AutoResult::NoMedia);
         }
 
+        let description = prefetched.as_ref().and_then(GetMediaByURLKind::description);
         let sent_message = match media_type {
             MediaType::Video => {
                 self.video
@@ -740,7 +746,7 @@ where
                     .await
             }
         }?;
-        Ok(sent_message.map_or(AutoResult::Failed, AutoResult::Sent))
+        Ok(sent_message.map_or(AutoResult::Failed, |message| AutoResult::Sent(message, description)))
     }
 }
 
@@ -770,6 +776,7 @@ mod tests {
 
     fn entry(ext: &str) -> (Media, Vec<(MediaFormat, RawMediaWithFormat)>) {
         let media = Media {
+            description: None,
             id: "0".into(),
             display_id: None,
             webpage_url: Url::parse("https://example.test/0").unwrap(),

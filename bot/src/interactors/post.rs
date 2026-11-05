@@ -34,6 +34,7 @@ pub struct DisplayInput<'a> {
     pub job: &'a DownloadJob,
     pub message: Option<&'a SentMessage>,
     pub has_media: bool,
+    pub description: Option<&'a str>,
 }
 
 impl<Messenger> Display<Messenger> {
@@ -59,6 +60,16 @@ where
     async fn execute(self, input: DisplayInput<'_>) -> Result<Self::Output, Self::Err> {
         let job = input.job;
         let Some(url) = job.url.as_ref() else { return Ok(false) };
+        let fallback = || {
+            input.description.filter(|text| !text.trim().is_empty()).map(|text| {
+                vec![PostEntry {
+                    text: text.to_owned(),
+                    author: None,
+                    author_handle: None,
+                    webpage_url: url.to_string(),
+                }]
+            })
+        };
         let posts = match tokio::time::timeout(
             POST_INFO_TIMEOUT,
             get_media_info(
@@ -75,17 +86,19 @@ where
         )
         .await
         {
-            Ok(Ok(response)) if response.posts.iter().any(|post| !post.text.trim().is_empty()) => response.posts,
+            Ok(Ok(response)) if response.posts.iter().any(|post| !post.text.trim().is_empty()) => Some(response.posts),
             Ok(Err(err)) => {
                 debug!(err = %self.error_formatter.format(&err), "Post metadata is unavailable");
-                return Ok(false);
+                None
             }
             Err(err) => {
                 debug!(%err, "Post metadata timed out");
-                return Ok(false);
+                None
             }
-            Ok(Ok(_)) => return Ok(false),
-        };
+            Ok(Ok(_)) => None,
+        }
+        .or_else(fallback);
+        let Some(posts) = posts else { return Ok(false) };
         let limit = if input.has_media { CAPTION_UNITS } else { BODY_UNITS };
         let text = render(&posts, url, limit, job.link_is_visible);
         let delivered = match &job.target {

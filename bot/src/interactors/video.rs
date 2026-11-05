@@ -183,7 +183,7 @@ where
         };
         let mut sent_message = None;
         match result {
-            Ok(SingleCached(file_id)) => {
+            Ok(SingleCached(file_id, _)) => {
                 if let Err(err) = self
                     .send_media_by_id
                     .execute(send_media::id::SendMediaInput {
@@ -310,6 +310,7 @@ where
                     };
 
                     downloaded_playlist.push(MediaInPlaylist {
+                        description: media.description.clone(),
                         file_id: file_id.clone(),
                         playlist_index: media.playlist_index,
                         webpage_url: Some(media.webpage_url.clone()),
@@ -321,6 +322,7 @@ where
                             file_id,
                             id: media.id.clone(),
                             display_id: media.display_id.clone(),
+                            description: media.description.clone(),
                             domain: media.webpage_url.host_str().map(ToOwned::to_owned),
                             audio_language: audio_language.clone(),
                             sections: sections.clone(),
@@ -539,7 +541,7 @@ where
     pub async fn fulfill(&self, result: GetMediaByURLKind, ctx: &FulfillCtx<'_>) -> Option<SentMessage> {
         let mut sent_message = None;
         match result {
-            SingleCached(file_id) => {
+            SingleCached(file_id, _) => {
                 if let Err(err) = self
                     .send_media_by_id
                     .execute(send_media::id::SendMediaInput {
@@ -602,6 +604,7 @@ where
                     };
 
                     downloaded_playlist.push(MediaInPlaylist {
+                        description: media.description.clone(),
                         file_id: file_id.clone(),
                         playlist_index: media.playlist_index,
                         webpage_url: Some(media.webpage_url.clone()),
@@ -613,6 +616,7 @@ where
                             file_id,
                             id: media.id.clone(),
                             display_id: media.display_id.clone(),
+                            description: media.description.clone(),
                             domain: media.webpage_url.host_str().map(ToOwned::to_owned),
                             audio_language: ctx.audio_language.clone(),
                             sections: ctx.sections.cloned(),
@@ -706,6 +710,7 @@ where
                             .into_iter()
                             .enumerate()
                             .map(|(index, media)| MediaInPlaylist {
+                                description: media.description,
                                 file_id: media.file_id,
                                 playlist_index: index.try_into().unwrap(),
                                 webpage_url: None,
