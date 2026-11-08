@@ -50,6 +50,7 @@ Telegram: [@yv2t_bot](https://t.me/yv2t_bot)
 | --- | --- |
 | `@bot <url>` or a mention in a reply | Download one file in guest mode with automatic media-type detection |
 | `/vd`, `/video` | Download video with progress messages |
+| `/quality <url>` | Choose video quality in private chat; also works in a reply to a link |
 | `/ad`, `/audio` | Download audio |
 | `/pd`, `/photo` | Download photo |
 | `/rv`, `/ra` | Random video or audio from the configured domains |
@@ -73,6 +74,14 @@ again when a domain is submitted. Button notifications are visible only to the p
 If the menu context expires, the bot tries to send the result in a private chat.
 
 A bare link in a private chat is downloaded automatically with media-type detection; in groups the same happens silently. In groups, add `yv2t_bot=false` to the URL query to skip automatic downloading.
+
+Use `/quality <url>` in a private chat to choose an available resolution and frame rate.
+Sizes include audio when known. Choose **Best available** to use the usual automatic selection.
+The choice expires after 15 minutes; a selected quality that becomes unavailable fails instead
+of downloading a lower quality. This mode uses yt-dlp's format list and supports one video;
+links, `/vd`, playlists and inline mode keep their existing behavior. Sources downloaded through
+snapsave may not expose a yt-dlp quality list. Apply database migrations before deploying the
+updated bot; the quality cache is separate from the automatic cache.
 
 Automatic downloads add available post text and context after sending media; explicit media
 commands skip this step. Long text is truncated to Telegram limits and uses expandable quotes.

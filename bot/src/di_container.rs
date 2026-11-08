@@ -22,7 +22,7 @@ use crate::{
     },
     database::{SeaOrmTxManager, TxManager, TxManagerFactories},
     interactors::{
-        audio, auto, chosen_inline, config, enqueue_download, inline_query, lang, menu, photo, post, shazam, start, stats, video,
+        audio, auto, chosen_inline, config, enqueue_download, inline_query, lang, menu, photo, post, quality, shazam, start, stats, video,
     },
     services::{
         chat,
@@ -32,6 +32,7 @@ use crate::{
         messenger::telegram::TelegramMessenger,
         node_router::{self, DownloaderServiceTarget, NodeRouter},
         progress_throttle::ProgressThrottle,
+        quality_selection_cache::QualitySelectionCache,
         queue::RedisJobQueue,
         send_media,
     },
@@ -169,6 +170,10 @@ registry! {
     ),
     provide(
         App,
+        |Inject(conn): Inject<ConnectionManager>| async move { Ok(QualitySelectionCache::new((*conn).clone())) },
+    ),
+    provide(
+        App,
         |Inject(conn): Inject<ConnectionManager>| async move { Ok(MenuMessageCache::new((*conn).clone())) },
     ),
 }
@@ -268,6 +273,12 @@ registry! {
     ],
 
     scope(Request) [
+        provide(|Inject(messenger): Inject<Messenger>, Inject(node_router), Inject(cache), Inject(error_formatter)| async move {
+            Ok(quality::Open::new(messenger, node_router, cache, error_formatter))
+        }),
+        provide(|Inject(messenger): Inject<Messenger>, Inject(cache), Inject(queue)| async move {
+            Ok(quality::Select::new(messenger, cache, queue))
+        }),
         provide(|Inject(tx_manager)| async move { Ok(chat::SaveChat::new(tx_manager)) }),
         provide(|Inject(tx_manager)| async move { Ok(chat::GetChatConfig::new(tx_manager)) }),
         provide(|Inject(tx_manager)| async move { Ok(chat::AddExcludeDomain::new(tx_manager)) }),

@@ -26,6 +26,7 @@ use crate::{
         send_media,
     },
     utils::ErrorFormatter,
+    value_objects::VideoQuality,
 };
 
 pub struct Download<Messenger> {
@@ -77,6 +78,8 @@ pub struct DownloadInput<'a> {
     pub chat_cfg: &'a ChatConfig,
     pub link_is_visible: bool,
     pub prefetched: Option<GetMediaByURLKind>,
+    pub video_quality: Option<&'a VideoQuality>,
+    pub progress_message_id: Option<i64>,
 }
 
 impl<Messenger> Interactor<DownloadInput<'_>> for &Download<Messenger>
@@ -91,22 +94,27 @@ where
         debug!("Got url");
         let locale = input.chat_cfg.locale();
 
-        let progress_message = match progress::new(
-            self.messenger.as_ref(),
-            t!("download.preparing", locale = locale.as_str()).as_ref(),
-            input.chat_id,
-            Some(input.message_id),
-            None,
-        )
-        .await
-        {
-            Ok(progress_message) => progress_message,
-            Err(err) => {
-                error!(err = %self.error_formatter.format(&err), "Send progress error");
-                return Ok(None);
-            }
+        let progress_message_id = if let Some(message_id) = input.progress_message_id {
+            let _ = progress::is_preparing(self.messenger.as_ref(), input.chat_id, message_id, locale.as_str(), None).await;
+            message_id
+        } else {
+            let progress_message = match progress::new(
+                self.messenger.as_ref(),
+                t!("download.preparing", locale = locale.as_str()).as_ref(),
+                input.chat_id,
+                Some(input.message_id),
+                None,
+            )
+            .await
+            {
+                Ok(progress_message) => progress_message,
+                Err(err) => {
+                    error!(err = %self.error_formatter.format(&err), "Send progress error");
+                    return Ok(None);
+                }
+            };
+            progress_message.message_id
         };
-        let progress_message_id = progress_message.message_id;
         input.current_message.send_replace(Some((input.chat_id, progress_message_id)));
 
         let playlist_range = match input.params.0.get("items") {
@@ -177,6 +185,7 @@ where
                         audio_language: &audio_language,
                         sections: sections.as_ref(),
                         overwrite_cache,
+                        video_quality: input.video_quality,
                     })
                     .await
             }
@@ -271,6 +280,17 @@ where
                         }
                     };
 
+                    if input
+                        .video_quality
+                        .is_some_and(|quality| VideoQuality::new(format.width, format.height, format.fps).as_ref() != Some(quality))
+                    {
+                        failed_media.push(progress::FailedMedia {
+                            webpage_url: media.webpage_url.clone(),
+                            errs: vec![t!("quality.selected_unavailable", locale = locale.as_str()).into_owned()],
+                        });
+                        break;
+                    }
+
                     let file_id = match progress::while_sending(
                         self.upload_media.execute(send_media::upload::SendVideoInput {
                             chat_id: self.cfg.chat.receiver_chat_id,
@@ -323,6 +343,7 @@ where
                             id: media.id.clone(),
                             display_id: media.display_id.clone(),
                             description: media.description.clone(),
+                            video_quality: input.video_quality.map_or_else(String::new, VideoQuality::cache_key),
                             domain: media.webpage_url.host_str().map(ToOwned::to_owned),
                             audio_language: audio_language.clone(),
                             sections: sections.clone(),
@@ -518,6 +539,7 @@ where
                 audio_language: &audio_language,
                 sections: sections.as_ref(),
                 overwrite_cache,
+                video_quality: None,
             })
             .await
         {
@@ -617,6 +639,7 @@ where
                             id: media.id.clone(),
                             display_id: media.display_id.clone(),
                             description: media.description.clone(),
+                            video_quality: String::new(),
                             domain: media.webpage_url.host_str().map(ToOwned::to_owned),
                             audio_language: ctx.audio_language.clone(),
                             sections: ctx.sections.cloned(),

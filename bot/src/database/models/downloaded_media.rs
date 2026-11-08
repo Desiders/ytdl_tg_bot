@@ -9,20 +9,23 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub file_id: String,
-    #[sea_orm(unique_key = "idx_downloaded_media_id_domain_type_lang_sections")]
+    #[sea_orm(unique_key = "idx_downloaded_media_id_domain_type_lang_sections_quality")]
     pub id: String,
     pub display_id: Option<String>,
     pub description: Option<String>,
-    #[sea_orm(unique_key = "idx_downloaded_media_id_domain_type_lang_sections")]
+    #[sea_orm(unique_key = "idx_downloaded_media_id_domain_type_lang_sections_quality")]
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub video_quality: String,
+    #[sea_orm(unique_key = "idx_downloaded_media_id_domain_type_lang_sections_quality")]
     pub domain: Option<String>,
-    #[sea_orm(unique_key = "idx_downloaded_media_id_domain_type_lang_sections")]
+    #[sea_orm(unique_key = "idx_downloaded_media_id_domain_type_lang_sections_quality")]
     pub media_type: MediaType,
     pub created_at: TimeDateTimeWithTimeZone,
-    #[sea_orm(unique_key = "idx_downloaded_media_id_domain_type_lang_sections")]
+    #[sea_orm(unique_key = "idx_downloaded_media_id_domain_type_lang_sections_quality")]
     pub audio_language: Option<String>,
-    #[sea_orm(unique_key = "idx_downloaded_media_id_domain_type_lang_sections")]
+    #[sea_orm(unique_key = "idx_downloaded_media_id_domain_type_lang_sections_quality")]
     pub crop_start_time: Option<i32>,
-    #[sea_orm(unique_key = "idx_downloaded_media_id_domain_type_lang_sections")]
+    #[sea_orm(unique_key = "idx_downloaded_media_id_domain_type_lang_sections_quality")]
     pub crop_end_time: Option<i32>,
 }
 

@@ -45,14 +45,16 @@ impl<Conn: ConnectionTrait> DownloadedMediaReader for SeaOrmDownloadedMediaReade
         media_type: MediaType,
         crop_start_time: Option<i32>,
         crop_end_time: Option<i32>,
+        video_quality: &str,
     ) -> Result<Option<DownloadedMedia>, ErrorKind<Infallible>> {
         use downloaded_media::{
-            Column::{AudioLanguage, CropEndTime, CropStartTime, DisplayId, Domain, Id, MediaType},
+            Column::{AudioLanguage, CropEndTime, CropStartTime, DisplayId, Domain, Id, MediaType, VideoQuality},
             Entity,
         };
 
         let mut query = Entity::find()
             .filter(MediaType.eq(sea_orm_active_enums::MediaType::from(media_type)))
+            .filter(VideoQuality.eq(video_quality))
             .filter(
                 // if `search` is ID
                 Expr::col(Id)
@@ -235,7 +237,7 @@ mod tests {
             crop_end_time: Option<i32>,
         ) -> Option<String> {
             SeaOrmDownloadedMediaReader::new(&self.conn)
-                .get(search, domain, audio_language, media_type, crop_start_time, crop_end_time)
+                .get(search, domain, audio_language, media_type, crop_start_time, crop_end_time, "")
                 .await
                 .unwrap()
                 .map(|media| media.file_id)
@@ -251,6 +253,7 @@ mod tests {
     fn video(file_id: &str, id: &str, display_id: Option<&str>, domain: Option<&str>) -> DownloadedMedia {
         DownloadedMedia {
             description: None,
+            video_quality: String::new(),
             file_id: file_id.to_owned(),
             id: id.to_owned(),
             display_id: display_id.map(ToOwned::to_owned),
@@ -268,6 +271,66 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn video_quality_does_not_replace_the_automatic_cache_or_another_frame_rate() {
+        let automatic = video("automatic", "synthetic-id", None, EXAMPLE);
+        let mut hd30 = video("hd30", "synthetic-id", None, EXAMPLE);
+        hd30.video_quality = "1276x718@30".into();
+        let mut hd60 = video("automatic", "synthetic-id", None, EXAMPLE);
+        hd60.video_quality = "1276x718@59.94".into();
+        let mut rows = vec![automatic, hd30, hd60];
+        for row in &mut rows {
+            row.audio_language = Some("en".into());
+            row.crop_start_time = Some(0);
+            row.crop_end_time = Some(10);
+        }
+        let db = Db::with_rows(rows).await;
+        let reader = SeaOrmDownloadedMediaReader::new(&db.conn);
+        for (quality, expected) in [("", "automatic"), ("1276x718@30", "hd30"), ("1276x718@59.94", "automatic")] {
+            let cached = reader
+                .get("synthetic-id", EXAMPLE, Some("en"), MediaType::Video, Some(0), Some(10), quality)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(cached.file_id, expected);
+            assert_eq!(cached.video_quality, quality);
+        }
+        assert!(reader
+            .get(
+                "synthetic-id",
+                EXAMPLE,
+                Some("en"),
+                MediaType::Video,
+                Some(0),
+                Some(10),
+                "1920x1080@30"
+            )
+            .await
+            .unwrap()
+            .is_none());
+        Migrator::down(&db.conn, Some(1)).await.unwrap();
+        Migrator::up(&db.conn, Some(1)).await.unwrap();
+        let automatic = reader
+            .get("synthetic-id", EXAMPLE, Some("en"), MediaType::Video, Some(0), Some(10), "")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(automatic.file_id, "automatic");
+        assert!(reader
+            .get(
+                "synthetic-id",
+                EXAMPLE,
+                Some("en"),
+                MediaType::Video,
+                Some(0),
+                Some(10),
+                "1276x718@30"
+            )
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
     async fn descriptions_are_nullable_and_replaced_with_cached_media() {
         let mut original = video("original", "synthetic-id", None, EXAMPLE);
         original.audio_language = Some("en".to_owned());
@@ -276,7 +339,7 @@ mod tests {
         let db = Db::with_rows(vec![original]).await;
         let reader = SeaOrmDownloadedMediaReader::new(&db.conn);
         let mut cached = reader
-            .get("synthetic-id", EXAMPLE, Some("en"), MediaType::Video, Some(0), Some(10))
+            .get("synthetic-id", EXAMPLE, Some("en"), MediaType::Video, Some(0), Some(10), "")
             .await
             .unwrap()
             .unwrap();
@@ -285,7 +348,7 @@ mod tests {
         cached.description = Some("Synthetic <description> & опис".to_owned());
         SeaOrmDownloadedMediaRepo::new(&db.conn).insert_or_replace(cached).await.unwrap();
         let cached = reader
-            .get("synthetic-id", EXAMPLE, Some("en"), MediaType::Video, Some(0), Some(10))
+            .get("synthetic-id", EXAMPLE, Some("en"), MediaType::Video, Some(0), Some(10), "")
             .await
             .unwrap()
             .unwrap();

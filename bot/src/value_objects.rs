@@ -4,3 +4,6 @@ pub mod menu;
 
 pub use chat_type::ChatType;
 pub use media_type::MediaType;
+pub mod video_quality;
+pub use video_quality::VideoQuality;
+pub mod quality;

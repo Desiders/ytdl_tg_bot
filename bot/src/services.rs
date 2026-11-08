@@ -8,6 +8,7 @@ pub mod menu_message_cache;
 pub mod messenger;
 pub mod node_router;
 pub mod progress_throttle;
+pub mod quality_selection_cache;
 pub mod queue;
 pub mod send_media;
 pub mod yt_toolkit;

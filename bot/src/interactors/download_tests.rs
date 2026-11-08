@@ -482,6 +482,8 @@ impl Fixture {
                     chat_cfg: &chat,
                     link_is_visible: false,
                     prefetched: Some(prefetched),
+                    video_quality: None,
+                    progress_message_id: progress.map(|(message_id, _)| message_id),
                 })
                 .await
                 .unwrap()
@@ -639,6 +641,7 @@ fn playlist(count: i16) -> GetMediaByURLKind {
                             ext: "mp4".into(),
                             width: None,
                             height: None,
+                            fps: None,
                             aspect_ratio: None,
                             filesize_approx: None,
                         },

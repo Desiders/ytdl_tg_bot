@@ -3,6 +3,7 @@ use crate::{
     entities::{language::Language, Playlist, Range, Sections},
     utils::{process_exit_error, ProcessGroup},
 };
+use proto::downloader::VideoQuality;
 
 use serde::de::DeserializeOwned;
 use std::{
@@ -238,6 +239,25 @@ pub fn build_formats_string(strategy: &FormatStrategy, heights: &[u32], audio_la
     formats.join(",")
 }
 
+pub fn video_quality_formats(quality: Option<&VideoQuality>, audio_language: &Language) -> String {
+    let video = if let Some(quality) = quality {
+        let fps = quality.fps.map_or_else(|| "[fps<=?0]".to_owned(), |fps| format!("[fps={fps}]"));
+        format!("[width={}][height={}]{fps}[vcodec!*=av01]", quality.width, quality.height)
+    } else {
+        "[vcodec!=none][vcodec!*=av01]".to_owned()
+    };
+    let (selector, fallback) = if quality.is_some() {
+        ("bv", format!("b{video}/bv{video}"))
+    } else {
+        ("all", format!("all{video}"))
+    };
+    let preferred_audio = audio_language
+        .language
+        .as_deref()
+        .map_or_else(String::new, |lang| format!("{selector}{video}+ba[language^={lang}]/"));
+    format!("{preferred_audio}{selector}{video}+ba/{fallback}")
+}
+
 #[instrument(skip_all)]
 #[allow(clippy::too_many_arguments)]
 pub async fn get_media_info(
@@ -251,6 +271,7 @@ pub async fn get_media_info(
     timeout: u64,
     cookie_path: Option<&Path>,
     user_agent: Option<&str>,
+    video_formats: Option<&str>,
 ) -> Result<Playlist, GetInfoErrorKind> {
     use tokio::time;
 
@@ -258,7 +279,7 @@ pub async fn get_media_info(
     let extractor_arg = format!("youtubepot-bgutilhttp:base_url={pot_provider_url}");
 
     let heights = [2160, 1440, 1080, 720, 480, 360, 240, 144];
-    let formats = build_formats_string(strategy, &heights, audio_language);
+    let formats = video_formats.map_or_else(|| build_formats_string(strategy, &heights, audio_language), ToOwned::to_owned);
 
     let mut args = vec![
         "--js-runtimes",

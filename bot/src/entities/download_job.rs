@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::{
     entities::{ChatConfig, Params},
-    value_objects::MediaType,
+    value_objects::{MediaType, VideoQuality},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,6 +34,8 @@ pub struct DownloadJob {
     /// For auto jobs: run silently (no progress message). Set for group chats.
     #[serde(default)]
     pub quiet: bool,
+    #[serde(default)]
+    pub video_quality: Option<VideoQuality>,
 }
 
 impl DownloadJob {
@@ -59,6 +61,7 @@ impl DownloadJob {
             base_text: None,
             auto: false,
             quiet: false,
+            video_quality: None,
         }
     }
 
@@ -100,8 +103,10 @@ mod tests {
         );
         let mut payload = serde_json::to_value(&job).unwrap();
         payload["attempts"] = 2.into();
+        payload.as_object_mut().unwrap().remove("video_quality");
         let decoded: DownloadJob = serde_json::from_value(payload).unwrap();
         assert_eq!(decoded.job_id, job.job_id);
+        assert!(decoded.video_quality.is_none());
         assert_eq!(decoded.url, job.url);
         assert!(serde_json::to_value(decoded).unwrap().get("attempts").is_none());
     }

@@ -43,11 +43,14 @@ use crate::{
         is_video_inline_result, random_cmd_is_enabled, text_contains_host_with_reply, text_contains_url, text_contains_url_with_reply,
         text_empty, url_is_blacklisted, url_is_skippable_by_param, GuestMention,
     },
-    handlers::{audio, chosen_inline, guest, inline_query, lang, menu, photo, shazam, start, stats, video},
+    handlers::{audio, chosen_inline, guest, inline_query, lang, menu, photo, quality, shazam, start, stats, video},
     middlewares::{CleanUrlMiddleware, CreateChatMiddleware, ReactionMiddleware},
     services::messenger::{telegram::TelegramMessenger, MessengerPort as _},
     utils::{on_shutdown, on_startup},
-    value_objects::menu::{DeleteDomain, MenuState, OpenScreen, SetLanguage, SetLinkVisibility},
+    value_objects::{
+        menu::{DeleteDomain, MenuState, OpenScreen, SetLanguage, SetLinkVisibility},
+        quality::SelectQuality,
+    },
 };
 
 type Messenger = TelegramMessenger;
@@ -89,6 +92,23 @@ async fn main() {
     let cfg = container.get::<config::Config>().await.unwrap();
     let username = container.get::<Messenger>().await.unwrap().username().await.unwrap();
     let fsm_storage = MemoryStorage::new();
+
+    let quality_router = Router::new("quality").on_message(|observer| {
+        observer
+            .register_inner_middleware(CleanUrlMiddleware)
+            .register(
+                Handler::new(quality::open::<Messenger>)
+                    .filter(MessageType::one(Text))
+                    .filter(Command::one("quality"))
+                    .filter(text_contains_url_with_reply)
+                    .filter(url_is_blacklisted.invert()),
+            )
+            .register(
+                Handler::new(quality::open::<Messenger>)
+                    .filter(Command::one("quality"))
+                    .filter(text_contains_url_with_reply.invert()),
+            )
+    });
 
     let download_router = Router::new("download")
         .on_guest_message(|observer| {
@@ -251,6 +271,7 @@ async fn main() {
         .on_callback_query(|observer| {
             observer
                 .register_outer_middleware(FSMContext::new(fsm_storage))
+                .register(Handler::new(quality::select::<Messenger>).filter(CallbackData::<SelectQuality>::new()))
                 .register(Handler::new(menu::open_screen::<Messenger>).filter(CallbackData::<OpenScreen>::new()))
                 .register(Handler::new(menu::set_language::<Messenger>).filter(CallbackData::<SetLanguage>::new()))
                 .register(Handler::new(menu::set_link_visibility::<Messenger>).filter(CallbackData::<SetLinkVisibility>::new()))
@@ -258,6 +279,7 @@ async fn main() {
         })
         .on_startup(|observer| observer.register(SimpleHandler::new(on_startup, (bot.clone(), node_router.clone(), cfg.clone()))))
         .on_shutdown(|observer| observer.register(SimpleHandler::new(on_shutdown, ())))
+        .include(quality_router)
         .include(download_router);
 
     let dispatcher = Dispatcher::builder()

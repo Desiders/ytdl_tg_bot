@@ -15,6 +15,7 @@ pub struct MediaFormat {
     pub ext: String,
     pub width: Option<i64>,
     pub height: Option<i64>,
+    pub fps: Option<f64>,
     pub aspect_ratio: Option<f32>,
     pub filesize_approx: Option<u64>,
 }
@@ -183,8 +184,10 @@ pub struct MediaWithFormat {
     pub ext: String,
     pub width: Option<i64>,
     pub height: Option<i64>,
+    pub fps: Option<f64>,
     pub aspect_ratio: Option<f32>,
     pub filesize_approx: Option<u64>,
+    pub filesize: Option<u64>,
     pub playlist_index: Option<i16>,
     #[serde(default)]
     pub protocol: Option<String>,
@@ -301,8 +304,10 @@ impl From<MediaWithFormat> for MediaFormat {
             ext,
             width,
             height,
+            fps,
             aspect_ratio,
             filesize_approx,
+            filesize,
             ..
         }: MediaWithFormat,
     ) -> Self {
@@ -312,8 +317,9 @@ impl From<MediaWithFormat> for MediaFormat {
             ext,
             width,
             height,
+            fps,
             aspect_ratio,
-            filesize_approx,
+            filesize_approx: filesize_approx.or(filesize),
         }
     }
 }

@@ -22,7 +22,7 @@ use crate::{
         yt_toolkit::{get_video_info, search_video, GetVideoInfoErrorKind, SearchVideoErrorKind},
     },
     utils::UrlCleaner,
-    value_objects::MediaType,
+    value_objects::{MediaType, VideoQuality},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -55,6 +55,7 @@ pub struct GetMediaByURLInput<'a> {
     pub audio_language: &'a Language,
     pub sections: Option<&'a Sections>,
     pub overwrite_cache: bool,
+    pub video_quality: Option<&'a VideoQuality>,
 }
 
 pub enum GetMediaByURLKind {
@@ -112,6 +113,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
             audio_language,
             sections,
             overwrite_cache,
+            video_quality,
         }: GetMediaByURLInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         get_media_by_url(
@@ -127,6 +129,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetVideoByURL {
             MediaType::Video,
             "video",
             &**self.tx_manager,
+            video_quality,
         )
         .await
     }
@@ -164,6 +167,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
             audio_language,
             sections,
             overwrite_cache,
+            video_quality,
         }: GetMediaByURLInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         get_media_by_url(
@@ -179,6 +183,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetAudioByURL {
             MediaType::Audio,
             "audio",
             &**self.tx_manager,
+            video_quality,
         )
         .await
     }
@@ -216,6 +221,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetPhotoByURL {
             audio_language,
             sections,
             overwrite_cache,
+            video_quality,
         }: GetMediaByURLInput<'_>,
     ) -> Result<Self::Output, Self::Err> {
         get_media_by_url(
@@ -231,6 +237,7 @@ impl Interactor<GetMediaByURLInput<'_>> for &GetPhotoByURL {
             MediaType::Photo,
             "photo",
             &**self.tx_manager,
+            video_quality,
         )
         .await
     }
@@ -308,6 +315,7 @@ async fn get_media_by_url(
     media_type: MediaType,
     media_type_str: &str,
     tx_manager: &dyn TxManager,
+    video_quality: Option<&VideoQuality>,
 ) -> Result<GetMediaByURLKind, GetMediaByURLErrorKind> {
     // A photo post is an album by default: with no explicit `items=`, request every image up to the
     // playlist cap (the single-element default would otherwise return only the first photo).
@@ -340,6 +348,7 @@ async fn get_media_by_url(
     let domain = single_resolved.map_or(domain, |url: &Url| url.domain());
     let cache_search = single_resolved.map_or(cache_search, Url::as_str);
 
+    let quality_key = video_quality.map_or_else(String::new, VideoQuality::cache_key);
     let reader = tx_manager.downloaded_media_reader();
     let is_single_media = playlist_range.is_single_element();
     let (start, end) = if let Some(sections) = sections {
@@ -351,7 +360,15 @@ async fn get_media_by_url(
 
     if is_single_media && !overwrite_cache {
         if let Some(media) = reader
-            .get(cache_search, domain, audio_language.language.as_deref(), media_type, start, end)
+            .get(
+                cache_search,
+                domain,
+                audio_language.language.as_deref(),
+                media_type,
+                start,
+                end,
+                &quality_key,
+            )
             .await?
         {
             info!("Got cached media");
@@ -380,6 +397,8 @@ async fn get_media_by_url(
                         playlist_range: Some(Range::default().into()),
                         media_type: media_type_str.to_owned(),
                         max_file_size: router.max_file_size(),
+                        video_quality: video_quality.map(Into::into),
+                        ..Default::default()
                     },
                 )
                 .await
@@ -403,12 +422,14 @@ async fn get_media_by_url(
                 playlist_range: Some(request_range.into()),
                 media_type: media_type_str.to_owned(),
                 max_file_size: router.max_file_size(),
+                video_quality: video_quality.map(Into::into),
+                ..Default::default()
             },
         )
         .await
         .map_err(map_get_info_err)?,
     };
-    let playlist = playlist_from_response(response)?;
+    let playlist = playlist_from_response(response, video_quality)?;
     let playlist_len = playlist.inner.len();
 
     let mut cached = vec![];
@@ -418,7 +439,15 @@ async fn get_media_by_url(
         let domain = media.webpage_url.host_str();
         if !overwrite_cache {
             if let Some(DownloadedMedia { file_id, description, .. }) = reader
-                .get(&media.id, domain, audio_language.language.as_deref(), media_type, start, end)
+                .get(
+                    &media.id,
+                    domain,
+                    audio_language.language.as_deref(),
+                    media_type,
+                    start,
+                    end,
+                    &quality_key,
+                )
                 .await?
             {
                 cached.push(MediaInPlaylist {
@@ -458,7 +487,20 @@ fn select_by_range(urls: Vec<Url>, range: Range) -> Vec<Url> {
 }
 
 #[allow(clippy::result_large_err)]
-fn playlist_from_response(response: proto::downloader::MediaInfoResponse) -> Result<Playlist, GetInfoErrorKind> {
+fn playlist_from_response(response: MediaInfoResponse, video_quality: Option<&VideoQuality>) -> Result<Playlist, GetInfoErrorKind> {
+    if let Some(quality) = video_quality {
+        if !response.video_quality_supported
+            || response.entries.len() != 1
+            || response.entries[0].formats.is_empty()
+            || response.entries[0]
+                .formats
+                .iter()
+                .any(|format| VideoQuality::new(format.width, format.height, format.fps).as_ref() != Some(quality))
+        {
+            return Err(GetInfoErrorKind::InvalidResponse("Selected video quality is unavailable".into()));
+        }
+    }
+
     let inner = response
         .entries
         .into_iter()
@@ -498,6 +540,7 @@ fn playlist_from_response(response: proto::downloader::MediaInfoResponse) -> Res
                             ext: format.ext,
                             width: format.width,
                             height: format.height,
+                            fps: format.fps,
                             aspect_ratio: format.aspect_ratio,
                             filesize_approx: format.filesize_approx,
                         },
@@ -527,6 +570,46 @@ mod tests {
     use super::playlist_from_response;
 
     #[test]
+    fn exact_quality_rejects_legacy_nodes_and_changed_resolution_or_frame_rate() {
+        use crate::value_objects::VideoQuality;
+        let quality = VideoQuality::new(Some(1276), Some(718), Some(59.94)).unwrap();
+        let entry = MediaEntry {
+            id: "synthetic".into(),
+            webpage_url: "https://source.example.test/video".into(),
+            playlist_index: 1,
+            formats: vec![MediaFormatEntry {
+                width: Some(1276),
+                height: Some(718),
+                fps: Some(59.94),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let response = MediaInfoResponse {
+            entries: vec![entry],
+            video_quality_supported: true,
+            ..Default::default()
+        };
+        assert!(playlist_from_response(response.clone(), Some(&quality)).is_ok());
+        assert!(playlist_from_response(
+            MediaInfoResponse {
+                video_quality_supported: false,
+                ..response.clone()
+            },
+            Some(&quality)
+        )
+        .is_err());
+        for (width, height, fps) in [(640, 360, Some(59.94)), (1276, 718, Some(30.0)), (1276, 718, None)] {
+            let mut changed = response.clone();
+            let format = &mut changed.entries[0].formats[0];
+            format.width = Some(width);
+            format.height = Some(height);
+            format.fps = fps;
+            assert!(playlist_from_response(changed, Some(&quality)).is_err());
+        }
+    }
+
+    #[test]
     fn merges_shared_info_json_into_each_format() {
         let format = MediaFormatEntry {
             format_id: "1".to_owned(),
@@ -545,7 +628,7 @@ mod tests {
             ..Default::default()
         };
 
-        let playlist = playlist_from_response(response).unwrap();
+        let playlist = playlist_from_response(response, None).unwrap();
 
         assert_eq!(
             playlist.inner[0].1[0].1,
@@ -571,7 +654,7 @@ mod tests {
             ..Default::default()
         };
 
-        let playlist = playlist_from_response(response).unwrap();
+        let playlist = playlist_from_response(response, None).unwrap();
 
         assert_eq!(playlist.inner[0].1[0].1, r#"{"id":"id", "format_id":"1"}"#);
     }

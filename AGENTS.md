@@ -72,7 +72,7 @@ The bot chart uses the current CloudNativePG plugin-based backup path.
 - `charts/bot` creates a `valkey.io/v1alpha1` `ValkeyCluster` named `valkey` with AOF persistence and `maxmemory-policy: noeviction`.
 - Helm pins Valkey to `9.0.6` to avoid the cluster-mode AOF replay bug fixed in 9.0.2, which can restore acknowledged queue entries. Keep the Debian image variant for compatibility with Bash-based probes in older Valkey operators.
 - The `admin` user password comes from the `valkey` Secret; bot config `[redis]` must use user `admin` and the same password.
-- Valkey stores the durable queue, short-lived Telegram progress-throttle keys, and expiring group-menu message IDs. Do not put caches that may be evicted into the same instance without changing the eviction policy.
+- Valkey stores the durable queue, short-lived Telegram progress-throttle keys, expiring group-menu message IDs, and temporary video-quality choices. Do not put caches that may be evicted into the same instance without changing the eviction policy.
 
 ### Local Telegram Bot API
 
@@ -214,6 +214,16 @@ Client channels also use HTTP/2 keepalive (30s interval, 20s timeout, while idle
 - Top-level interactors may call these services.
 - Services must not call top-level interactors.
 - `auto` classifies a bare link video -> audio -> photo, or audio -> video -> photo for `[audio_first].domains`, and reuses the type-specific interactors through `prefetched` metadata; `AutoQuiet` is the group-chat variant with no progress messages.
+
+### Video Quality Selection
+
+- `/quality <url>` or `/quality` in a reply opens a one-video chooser in private chats. Ordinary links, `/vd`, auto mode, playlists and inline mode keep their existing format strategy.
+- The chooser uses native yt-dlp metadata through `GetMediaInfo.list_video_formats`; this explicitly bypasses snapsave. Existing cookie, user-agent, domain replacement, PO-token and node routing rules still apply. Do not add extractor-specific quality rules.
+- `video_quality_supported` acknowledges a catalog or exact-selection request; older nodes ignore the new request fields and must not be trusted for this flow. `MediaFormatEntry.fps` carries native fractional frame rates. Buttons group formats by exact width, height and FPS, keep native audio merging and size estimates, and omit incomplete track-size totals.
+- Short callback data points to a user-scoped `QualitySelectionCache` entry in Redis with a 15-minute TTL and a two-second I/O deadline. Store no selection context in FSM. `GETDEL` consumes a choice before enqueueing, so duplicate clicks and uncertain queue writes cannot replay the selection. Expired menus ask the user to send `/quality` again.
+- Selection enqueues the normal durable video job and reuses the chooser message as progress. `DownloadJob.video_quality` defaults to `None` for old jobs. Explicit choices fetch fresh metadata on a cache miss and constrain every native selector branch to the selected dimensions/FPS; the bot validates the response and delivered dimensions before upload. Missing FPS selects only unknown/zero FPS, not an arbitrary known frame rate. Do not silently fall back to another quality.
+- `downloaded_media.video_quality` is empty for the existing automatic cache and identifies exact dimensions/FPS for explicit variants. Include it in reads, the file-ID primary key and the composite cache uniqueness constraint so a chosen lower quality cannot replace an automatic download, while Telegram may reuse one file ID in both modes. Apply the quality migration before running the updated bot. Rolling back it drops explicit variant cache rows and preserves the automatic cache.
+- Keep quality handlers thin and authorization in the action interactor. The separate quality router avoids leaving a download acknowledgment reaction when a chooser is cancelled or expires. Register the command only in the private command scope and add its help text to all locales.
 
 ### Telegram Guest Mode
 

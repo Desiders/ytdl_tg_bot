@@ -16,3 +16,4 @@ pub use lang::lang;
 pub use shazam::shazam;
 pub use start::start;
 pub use stats::stats;
+pub mod quality;

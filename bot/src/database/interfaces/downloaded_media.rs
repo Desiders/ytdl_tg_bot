@@ -9,6 +9,7 @@ use crate::{
 
 #[async_trait]
 pub trait DownloadedMediaReader: Send + Sync {
+    #[allow(clippy::too_many_arguments)]
     async fn get(
         &self,
         search: &str,
@@ -17,6 +18,7 @@ pub trait DownloadedMediaReader: Send + Sync {
         media_type: MediaType,
         crop_start_time: Option<i32>,
         crop_end_time: Option<i32>,
+        video_quality: &str,
     ) -> Result<Option<DownloadedMedia>, ErrorKind<Infallible>>;
     async fn get_random(
         &self,

@@ -28,6 +28,7 @@ impl<Conn: ConnectionTrait> DownloadedMediaRepo for SeaOrmDownloadedMediaRepo<'_
             domain,
             display_id,
             description,
+            video_quality,
             media_type,
             created_at,
             audio_language,
@@ -37,7 +38,7 @@ impl<Conn: ConnectionTrait> DownloadedMediaRepo for SeaOrmDownloadedMediaRepo<'_
     ) -> Result<(), ErrorKind<Infallible>> {
         use downloaded_media::{
             ActiveModel,
-            Column::{AudioLanguage, CropEndTime, CropStartTime, Domain, Id, MediaType},
+            Column::{AudioLanguage, CropEndTime, CropStartTime, Domain, Id, MediaType, VideoQuality},
             Entity,
         };
 
@@ -46,6 +47,7 @@ impl<Conn: ConnectionTrait> DownloadedMediaRepo for SeaOrmDownloadedMediaRepo<'_
             id: Set(id),
             display_id: Set(display_id),
             description: Set(description),
+            video_quality: Set(video_quality),
             domain: Set(domain),
             media_type: Set(media_type.into()),
             created_at: Set(created_at),
@@ -56,7 +58,7 @@ impl<Conn: ConnectionTrait> DownloadedMediaRepo for SeaOrmDownloadedMediaRepo<'_
 
         Entity::insert(model)
             .on_conflict(
-                OnConflict::columns([Id, Domain, MediaType, AudioLanguage, CropStartTime, CropEndTime])
+                OnConflict::columns([Id, Domain, MediaType, AudioLanguage, CropStartTime, CropEndTime, VideoQuality])
                     .do_nothing()
                     .to_owned(),
             )
@@ -74,6 +76,7 @@ impl<Conn: ConnectionTrait> DownloadedMediaRepo for SeaOrmDownloadedMediaRepo<'_
             domain,
             display_id,
             description,
+            video_quality,
             media_type,
             created_at,
             audio_language,
@@ -83,7 +86,9 @@ impl<Conn: ConnectionTrait> DownloadedMediaRepo for SeaOrmDownloadedMediaRepo<'_
     ) -> Result<(), ErrorKind<Infallible>> {
         use downloaded_media::{
             ActiveModel,
-            Column::{AudioLanguage, CreatedAt, CropEndTime, CropStartTime, Description, DisplayId, Domain, FileId, Id, MediaType},
+            Column::{
+                AudioLanguage, CreatedAt, CropEndTime, CropStartTime, Description, DisplayId, Domain, FileId, Id, MediaType, VideoQuality,
+            },
             Entity,
         };
 
@@ -92,6 +97,7 @@ impl<Conn: ConnectionTrait> DownloadedMediaRepo for SeaOrmDownloadedMediaRepo<'_
             id: Set(id),
             display_id: Set(display_id),
             description: Set(description),
+            video_quality: Set(video_quality),
             domain: Set(domain),
             media_type: Set(media_type.into()),
             created_at: Set(created_at),
@@ -102,7 +108,7 @@ impl<Conn: ConnectionTrait> DownloadedMediaRepo for SeaOrmDownloadedMediaRepo<'_
 
         Entity::insert(model)
             .on_conflict(
-                OnConflict::columns([Id, Domain, MediaType, AudioLanguage, CropStartTime, CropEndTime])
+                OnConflict::columns([Id, Domain, MediaType, AudioLanguage, CropStartTime, CropEndTime, VideoQuality])
                     .update_columns([FileId, DisplayId, CreatedAt, Description])
                     .to_owned(),
             )

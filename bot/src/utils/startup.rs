@@ -14,6 +14,7 @@ use crate::{config::Config, locale::Locale, services::node_router::NodeRouter};
 const COMMAND_KEYS: &[&str] = &[
     "start",
     "vd",
+    "quality",
     "ad",
     "rv",
     "ra",

@@ -12,6 +12,8 @@ mod m20260427_120000_add_chat_type_to_chats;
 mod m20260501_000000_add_photo_media_type;
 mod m20261105_000000_add_downloaded_media_description;
 
+mod m20261107_000000_add_downloaded_media_quality;
+
 pub struct Migrator;
 
 #[async_trait::async_trait]
@@ -29,6 +31,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260427_120000_add_chat_type_to_chats::Migration),
             Box::new(m20260501_000000_add_photo_media_type::Migration),
             Box::new(m20261105_000000_add_downloaded_media_description::Migration),
+            Box::new(m20261107_000000_add_downloaded_media_quality::Migration),
         ]
     }
 }

@@ -20,6 +20,14 @@ message MediaInfoRequest {
   Range playlist_range = 3;
   string media_type = 4;
   uint64 max_file_size = 5;
+  bool list_video_formats = 6;
+  VideoQuality video_quality = 7;
+}
+
+message VideoQuality {
+  int64 width = 1;
+  int64 height = 2;
+  optional double fps = 3;
 }
 
 message MediaFormatEntry {
@@ -32,6 +40,7 @@ message MediaFormatEntry {
   // Filled only by an older downloader.
   string raw_info_json = 7;
   string raw_format_json = 8;
+  optional double fps = 9;
 }
 
 message MediaEntry {
@@ -60,6 +69,7 @@ message PostEntry {
 message MediaInfoResponse {
   repeated MediaEntry entries = 1;
   repeated PostEntry posts = 2;
+  bool video_quality_supported = 3;
 }
 
 message DownloadRequest {

@@ -881,3 +881,110 @@ async fn menu_delivery_keeps_failed_commands_and_reports_missing_permissions() {
         }
     }
 }
+
+#[tokio::test]
+async fn quality_choices_are_private_consumed_once_and_can_be_cancelled() {
+    use crate::{
+        entities::{DownloadJob, JobTarget, Params},
+        interactors::quality::{Select, SelectInput},
+        services::quality_selection_cache::{QualityOption, QualitySelection, QualitySelectionCache},
+        value_objects::{
+            quality::{QualityAction, SelectQuality},
+            MediaType, VideoQuality,
+        },
+    };
+
+    let fixture = queue::test_support::Fixture::new().await;
+    fixture.queue.ensure_group().await.unwrap();
+    let cache = Arc::new(QualitySelectionCache::new(fixture.connection()));
+    let events = Arc::new(Mutex::new(vec![]));
+    let messenger = Arc::new(RecordingMessenger(events.clone(), Arc::new(Mutex::new(None))));
+    let interactor = Select::new(messenger, cache.clone(), fixture.queue.clone());
+    let quality = VideoQuality::new(Some(1276), Some(718), Some(59.94)).unwrap();
+    let selection = QualitySelection {
+        job: DownloadJob::new(
+            MediaType::Video,
+            Some("https://source.example.test/video".parse().unwrap()),
+            Params::default(),
+            ChatConfig::new(CHAT_ID, false, "en".into()),
+            true,
+            JobTarget::Command {
+                chat_id: CHAT_ID,
+                message_id: 10,
+            },
+        ),
+        title: "Synthetic video".into(),
+        options: vec![QualityOption {
+            quality: quality.clone(),
+            filesize_approx: None,
+        }],
+    };
+    cache.set(CHAT_ID, "synthetic", &selection).await.unwrap();
+    let ttl: i64 = redis::cmd("TTL")
+        .arg("tg:quality:1:synthetic")
+        .query_async(&mut fixture.connection())
+        .await
+        .unwrap();
+    assert!(ttl > 0 && ttl <= 900);
+    let data = SelectQuality {
+        session: "synthetic".into(),
+        action: QualityAction::Video(0),
+    };
+    let input = |user_id| SelectInput {
+        chat_id: user_id,
+        user_id,
+        message_id: 20,
+        callback_id: CALLBACK_ID,
+        data: &data,
+        locale: Locale::En,
+    };
+    interactor.execute(input(2)).await.unwrap();
+    assert_eq!(fixture.queue.stats().await.unwrap().waiting, 0);
+    let (first, second) = tokio::join!(interactor.execute(input(CHAT_ID)), interactor.execute(input(CHAT_ID)));
+    first.unwrap();
+    second.unwrap();
+    let job = fixture
+        .queue
+        .read_next(&mut fixture.connection(), "test")
+        .await
+        .unwrap()
+        .unwrap()
+        .job;
+    assert_eq!(job.video_quality, Some(quality));
+    assert_eq!(job.progress_message_id, Some(20));
+    assert!(matches!(
+        job.target,
+        JobTarget::Command {
+            chat_id: CHAT_ID,
+            message_id: 10
+        }
+    ));
+    assert!(fixture.queue.read_next(&mut fixture.connection(), "test").await.unwrap().is_none());
+    assert!(cache.get(CHAT_ID, "synthetic").await.unwrap().is_none());
+
+    cache.set(CHAT_ID, "synthetic", &selection).await.unwrap();
+    let cancel = SelectQuality {
+        action: QualityAction::Cancel,
+        ..data.clone()
+    };
+    interactor
+        .execute(SelectInput {
+            data: &cancel,
+            ..input(CHAT_ID)
+        })
+        .await
+        .unwrap();
+    assert!(cache.get(CHAT_ID, "synthetic").await.unwrap().is_none());
+    assert!(fixture.queue.read_next(&mut fixture.connection(), "test").await.unwrap().is_none());
+
+    cache.set(CHAT_ID, "synthetic", &selection).await.unwrap();
+    let _: () = redis::cmd("PEXPIRE")
+        .arg("tg:quality:1:synthetic")
+        .arg(0)
+        .query_async(&mut fixture.connection())
+        .await
+        .unwrap();
+    interactor.execute(input(CHAT_ID)).await.unwrap();
+    assert!(fixture.queue.read_next(&mut fixture.connection(), "test").await.unwrap().is_none());
+    assert!(events.lock().unwrap().iter().any(|event| event.contains("expired")));
+}

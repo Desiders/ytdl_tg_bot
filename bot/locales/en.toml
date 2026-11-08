@@ -8,6 +8,7 @@ commands = """
 <b>Commands</b>
 - <code>/vd</code> — download video. Use this command to track download progress; \
 otherwise, downloading happens in silent mode.
+- <code>/quality</code> — choose video quality in private chat
 - <code>/ad</code> — download audio
 - <code>/pd</code> — download photo
 - <code>/rv</code>, <code>/ra</code> — random video or audio
@@ -152,6 +153,7 @@ download_photo = "Click to download photo"
 error_search_media = "Sorry, an error to search media"
 
 [bot_commands]
+quality = "Choose video quality"
 start = "Show help"
 vd = "Download video"
 ad = "Download audio"
@@ -211,3 +213,18 @@ btn_help_commands = "⌨️ Commands"
 btn_help_arguments = "🧩 Arguments"
 btn_help_inline = "🔎 Inline mode"
 btn_help_guest = "👋 Guest mode"
+
+[quality]
+choose = "Choose video quality:"
+best = "Best available"
+cancel = "Cancel"
+cancelled = "Cancelled"
+previous = "Previous"
+next = "Next"
+expired = "This choice has expired or was already used. Send /quality again."
+unavailable = "No video quality options are available for this link. Try /vd."
+error = "Failed to get video quality options. Try again later."
+private_only = "Use /quality in private chat."
+single_video = "Quality selection supports one video. Remove the items argument."
+usage = "Send /quality with a link, or reply to a message containing one."
+selected_unavailable = "The selected video quality is no longer available. Send /quality again."

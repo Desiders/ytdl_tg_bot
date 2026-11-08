@@ -408,6 +408,8 @@ async fn run_in_scope(child: &Container, job: &DownloadJob, current_message: &wa
                         chat_cfg: &job.chat_cfg,
                         link_is_visible: job.link_is_visible,
                         prefetched: None,
+                        video_quality: job.video_quality.as_ref(),
+                        progress_message_id: job.progress_message_id,
                     }))
                     .await?;
                 }

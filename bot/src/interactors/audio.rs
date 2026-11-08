@@ -188,6 +188,7 @@ where
                         audio_language: &audio_language,
                         sections: sections.as_ref(),
                         overwrite_cache,
+                        video_quality: None,
                     })
                     .await
             }
@@ -334,6 +335,7 @@ where
                             id: media.id.clone(),
                             display_id: media.display_id.clone(),
                             description: media.description.clone(),
+                            video_quality: String::new(),
                             domain: media.webpage_url.host_str().map(ToOwned::to_owned),
                             audio_language: audio_language.clone(),
                             sections: sections.clone(),

@@ -159,6 +159,7 @@ where
                             id: media.id.clone(),
                             display_id: media.display_id.clone(),
                             description: media.description.clone(),
+                            video_quality: String::new(),
                             domain: media.webpage_url.host_str().map(ToOwned::to_owned),
                             audio_language: ctx.audio_language.clone(),
                             sections: ctx.sections.cloned(),
@@ -291,6 +292,7 @@ where
                             id: media.id.clone(),
                             display_id: media.display_id.clone(),
                             description: media.description.clone(),
+                            video_quality: String::new(),
                             domain: media.webpage_url.host_str().map(ToOwned::to_owned),
                             audio_language: Language::default(),
                             sections: None,
@@ -495,6 +497,7 @@ async fn probe_video(
             audio_language,
             sections,
             overwrite_cache,
+            video_quality: None,
         })
         .await
         .ok()?
@@ -522,6 +525,7 @@ async fn probe_audio(
             audio_language,
             sections,
             overwrite_cache,
+            video_quality: None,
         })
         .await
         .ok()?
@@ -547,6 +551,7 @@ async fn probe_photo(
             audio_language: &Language::default(),
             sections: None,
             overwrite_cache,
+            video_quality: None,
         })
         .await
         .ok()?;
@@ -712,6 +717,8 @@ where
                         chat_cfg: input.chat_cfg,
                         link_is_visible: input.link_is_visible,
                         prefetched,
+                        video_quality: None,
+                        progress_message_id: None,
                     })
                     .await
             }
@@ -795,6 +802,7 @@ mod tests {
             ext: ext.into(),
             width: None,
             height: None,
+            fps: None,
             aspect_ratio: None,
             filesize_approx: None,
         };

@@ -22,3 +22,4 @@ pub mod stats;
 pub mod video;
 
 pub(super) use base::Interactor;
+pub mod quality;

@@ -116,10 +116,20 @@ impl DownloaderService {
             "photo" => MediaKind::Photo,
             _ => MediaKind::Video,
         };
+        let quality_selection = request.list_video_formats || request.video_quality.is_some();
+        if quality_selection && (request.media_type != "video" || allow_playlist) {
+            return Err(Status::invalid_argument("Quality selection requires a single video"));
+        }
+        if let Some(quality) = &request.video_quality {
+            if quality.width <= 0 || quality.height <= 0 || quality.fps.is_some_and(|fps| !fps.is_finite() || fps <= 0.0) {
+                return Err(Status::invalid_argument("Invalid video quality"));
+            }
+        }
+        let video_formats = quality_selection.then(|| ytdl::video_quality_formats(request.video_quality.as_ref(), &audio_language));
         // Cookie-free Instagram/Facebook prefer snapsave CDN URLs. Resolver failures use the
         // original URL with native extraction; domain replacements apply when snapsave is not
         // applicable. `snapsave_url` is set when we override `webpage_url`.
-        let snapsave_applicable = !has_cookie && self.snapsave.is_supported(&url);
+        let snapsave_applicable = !quality_selection && !has_cookie && self.snapsave.is_supported(&url);
         let snapsave_outcome = if snapsave_applicable {
             self.snapsave.resolve(&url, kind).await
         } else {
@@ -204,6 +214,7 @@ impl DownloaderService {
                     GET_INFO_TIMEOUT_SECS,
                     source_cookie,
                     self.user_agents.resolve(source_url),
+                    video_formats.as_deref(),
                 )
                 .await?;
                 reject_active_livestreams(&part)?;
@@ -251,7 +262,37 @@ impl DownloaderService {
             "Fetched media info"
         );
 
-        Ok(Response::new(map_playlist_response(playlist, effective_max_file_size)?))
+        let mut response = map_playlist_response(playlist, effective_max_file_size)?;
+        if request.list_video_formats {
+            for entry in &mut response.entries {
+                let shared: serde_json::Value =
+                    serde_json::from_str(&entry.raw_info_json).map_err(|err| Status::internal(format!("Info JSON error: {err}")))?;
+                for format in &mut entry.formats {
+                    let raw: serde_json::Value =
+                        serde_json::from_str(&format.raw_format_json).map_err(|err| Status::internal(format!("Info JSON error: {err}")))?;
+                    // yt-dlp sums known track sizes even if another track's size is missing.
+                    // Keep the size filter above, but hide incomplete totals from the chooser.
+                    if raw
+                        .get("requested_formats")
+                        .or_else(|| shared.get("requested_formats"))
+                        .and_then(serde_json::Value::as_array)
+                        .is_some_and(|tracks| {
+                            tracks.iter().any(|track| {
+                                track
+                                    .get("filesize")
+                                    .and_then(serde_json::Value::as_u64)
+                                    .or_else(|| track.get("filesize_approx").and_then(serde_json::Value::as_u64))
+                                    .is_none_or(|size| size == 0)
+                            })
+                        })
+                    {
+                        format.filesize_approx = None;
+                    }
+                }
+            }
+        }
+        response.video_quality_supported = quality_selection;
+        Ok(Response::new(response))
     }
 
     async fn get_post_info(&self, url: &Url, cookie_path: Option<&Path>) -> Result<MediaInfoResponse, Status> {
@@ -282,7 +323,11 @@ impl DownloaderService {
         if posts.iter().all(|post| post.text.trim().is_empty()) {
             return Err(Status::not_found("No post content was found"));
         }
-        Ok(MediaInfoResponse { entries: vec![], posts })
+        Ok(MediaInfoResponse {
+            entries: vec![],
+            posts,
+            ..Default::default()
+        })
     }
 
     #[allow(clippy::too_many_lines)]
@@ -966,6 +1011,7 @@ fn map_playlist_response(playlist: Playlist, max_file_size: u64) -> Result<Media
                     ext: format.ext,
                     width: format.width,
                     height: format.height,
+                    fps: format.fps,
                     aspect_ratio: format.aspect_ratio,
                     filesize_approx: format.filesize_approx,
                     raw_info_json: String::new(),
@@ -976,7 +1022,11 @@ fn map_playlist_response(playlist: Playlist, max_file_size: u64) -> Result<Media
         });
     }
 
-    Ok(MediaInfoResponse { entries, posts: vec![] })
+    Ok(MediaInfoResponse {
+        entries,
+        posts: vec![],
+        ..Default::default()
+    })
 }
 
 #[allow(clippy::result_large_err)]
@@ -1000,6 +1050,7 @@ fn map_snapsave_post(data: snapsave_parser::SnapSaveDownloaderData, webpage_url:
             author_handle: None,
             webpage_url: webpage_url.to_string(),
         }],
+        ..Default::default()
     })
 }
 
@@ -1027,7 +1078,9 @@ fn synthesize_direct(item: &ResolvedMedia, webpage_url: &Url, ext: &str) -> Resu
         ext: ext.to_owned(),
         width: None,
         height: None,
+        fps: None,
         aspect_ratio: None,
+        filesize: None,
         filesize_approx: None,
         playlist_index: Some(1),
         protocol: None,
@@ -1547,6 +1600,64 @@ mod tests {
             max_concurrent: u32::try_from(capacity).unwrap(),
             semaphore: Arc::new(tokio::sync::Semaphore::new(capacity)),
         }
+    }
+
+    #[tokio::test]
+    async fn quality_catalog_preserves_native_fps_and_hides_incomplete_track_sizes() {
+        use crate::config::YtDlpConfig;
+        use proto::downloader::{MediaInfoRequest, Range};
+        use std::sync::Arc;
+        use tonic::Request;
+        let entry = serde_json::json!({
+            "id": "synthetic", "webpage_url": "https://source.example.test/video",
+            "format_id": "video60+audio", "ext": "mp4", "width": 1276, "height": 718,
+            "fps": 59.94, "filesize_approx": 80,
+            "requested_formats": [{"filesize": 60}, {"filesize": null, "filesize_approx": 20}]
+        });
+        let mut partial = entry.clone();
+        partial["format_id"] = "video30+audio".into();
+        partial["fps"] = 30.into();
+        partial["requested_formats"][1] = serde_json::json!({});
+        let mut oversized = partial.clone();
+        oversized["format_id"] = "oversized+audio".into();
+        oversized["filesize_approx"] = 2000.into();
+        let data = serde_json::json!([entry, partial, oversized]);
+        let mut service = test_service("exit 1", 1);
+        service.yt_dlp_cfg = Arc::new(YtDlpConfig {
+            command: vec![
+                "python3".into(),
+                "-c".into(),
+                "import json,sys; [print(json.dumps(entry)) for entry in json.loads(sys.argv[1])]".into(),
+                data.to_string().into(),
+            ],
+            max_file_size: 1000,
+            ..Default::default()
+        });
+        let response = service
+            .get_media_info_inner(Request::new(MediaInfoRequest {
+                url: "https://source.example.test/video".into(),
+                media_type: "video".into(),
+                playlist_range: Some(Range {
+                    start: 1,
+                    count: 1,
+                    step: 1,
+                }),
+                list_video_formats: true,
+                ..Default::default()
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(response.video_quality_supported);
+        let formats = &response.entries[0].formats;
+        assert_eq!(formats.len(), 2);
+        assert_eq!(
+            (formats[0].width, formats[0].height, formats[0].fps),
+            (Some(1276), Some(718), Some(59.94))
+        );
+        assert_eq!(formats[0].filesize_approx, Some(80));
+        assert_eq!(formats[1].fps, Some(30.0));
+        assert!(formats[1].filesize_approx.is_none());
     }
 
     #[tokio::test]
@@ -2095,6 +2206,7 @@ print(json.dumps({"id":"synthetic", "webpage_url":sys.argv[-1], "ext":"mp4", "fo
             ext: "mp4".into(),
             width: None,
             height: None,
+            fps: None,
             aspect_ratio: None,
             filesize_approx: None,
         };
