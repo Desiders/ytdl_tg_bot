@@ -4,22 +4,19 @@ use uuid::Uuid;
 use crate::entities::MediaFormat;
 
 #[derive(Debug, Clone)]
-pub struct MediaCatalog {
+pub struct CachedMedia {
     pub id: Uuid,
     pub url: String,
     pub audio_language: String,
     pub max_file_size: i64,
-    pub media_id: String,
-    pub webpage_url: String,
     pub title: String,
     pub description: Option<String>,
-    pub duration: Option<f32>,
     pub updated_at: OffsetDateTime,
-    pub formats: Vec<MediaCatalogFormat>,
+    pub formats: Vec<CachedMediaFormat>,
 }
 
 #[derive(Debug, Clone)]
-pub struct MediaCatalogFormat {
+pub struct CachedMediaFormat {
     pub id: i64,
     pub format: MediaFormat,
 }

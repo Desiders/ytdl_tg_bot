@@ -885,10 +885,10 @@ async fn menu_delivery_keeps_failed_commands_and_reports_missing_permissions() {
 #[tokio::test]
 async fn quality_choices_are_private_consumed_once_and_can_be_cancelled() {
     use crate::{
-        entities::{DownloadJob, JobTarget, MediaCatalog, MediaCatalogFormat, MediaFormat, Params},
+        entities::{CachedMedia, CachedMediaFormat, DownloadJob, JobTarget, MediaFormat, Params},
         interactors::quality::{Open, OpenInput, Select, SelectInput},
         services::{
-            media_catalog_cache::MediaCatalogCache,
+            media_cache::MediaCache,
             quality_selection_cache::{QualitySelection, QualitySelectionCache},
         },
         value_objects::{
@@ -906,20 +906,17 @@ async fn quality_choices_are_private_consumed_once_and_can_be_cancelled() {
     let cache = Arc::new(QualitySelectionCache::new(fixture.connection()));
     let events = Arc::new(Mutex::new(vec![]));
     let messenger = Arc::new(RecordingMessenger(events.clone(), Arc::new(Mutex::new(None))));
-    let catalogs = Arc::new(MediaCatalogCache::new(db.tx_manager.clone()));
-    let catalog = MediaCatalog {
+    let media_cache = Arc::new(MediaCache::new(db.tx_manager.clone()));
+    let media = CachedMedia {
         id: Uuid::now_v7(),
         url: "https://source.example.test/video".into(),
         audio_language: String::new(),
         max_file_size: 1_000_000,
-        media_id: "synthetic".into(),
-        webpage_url: "https://source.example.test/video".into(),
         title: "Synthetic video".into(),
         description: Some("Synthetic description".into()),
-        duration: Some(12.0),
         updated_at: OffsetDateTime::now_utc(),
         formats: vec![
-            MediaCatalogFormat {
+            CachedMediaFormat {
                 id: 0,
                 format: MediaFormat {
                     format_id: "video1+audio1".into(),
@@ -934,7 +931,7 @@ async fn quality_choices_are_private_consumed_once_and_can_be_cancelled() {
                     filesize_approx: None,
                 },
             },
-            MediaCatalogFormat {
+            CachedMediaFormat {
                 id: 0,
                 format: MediaFormat {
                     format_id: "video2+audio2".into(),
@@ -951,16 +948,16 @@ async fn quality_choices_are_private_consumed_once_and_can_be_cancelled() {
             },
         ],
     };
-    let catalog = catalogs.set(catalog).await.unwrap();
+    let media = media_cache.set(media).await.unwrap();
     let opener = Arc::new(Open::new(
         messenger.clone(),
         test_support::router(1),
         cache.clone(),
-        catalogs.clone(),
+        media_cache.clone(),
         db.formatter.clone(),
     ));
-    let interactor = Select::new(messenger, cache.clone(), catalogs.clone(), opener.clone(), fixture.queue.clone());
-    let url = catalog.url.parse().unwrap();
+    let interactor = Select::new(messenger, cache.clone(), media_cache.clone(), opener.clone(), fixture.queue.clone());
+    let url = media.url.parse().unwrap();
     let chat_cfg = ChatConfig::new(CHAT_ID, false, "en".into());
     timeout(
         Duration::from_secs(5),
@@ -978,7 +975,7 @@ async fn quality_choices_are_private_consumed_once_and_can_be_cancelled() {
     .await
     .unwrap()
     .unwrap();
-    let quality = catalog.formats[1].format.video_quality().unwrap();
+    let quality = media.formats[1].format.video_quality().unwrap();
     let selection = QualitySelection {
         job: DownloadJob::new(
             MediaType::Video,
@@ -991,7 +988,7 @@ async fn quality_choices_are_private_consumed_once_and_can_be_cancelled() {
                 message_id: 10,
             },
         ),
-        catalog_id: catalog.id,
+        media_id: media.id,
     };
     cache.set(CHAT_ID, "synthetic", &selection).await.unwrap();
     let ttl: i64 = redis::cmd("TTL")
@@ -1002,7 +999,7 @@ async fn quality_choices_are_private_consumed_once_and_can_be_cancelled() {
     assert!(ttl > 0 && ttl <= 900);
     let data = SelectQuality {
         session: "synthetic".into(),
-        action: QualityAction::Video(catalog.formats[1].id),
+        action: QualityAction::Video(media.formats[1].id),
     };
     let input = |user_id| SelectInput {
         chat_id: user_id,
@@ -1013,7 +1010,7 @@ async fn quality_choices_are_private_consumed_once_and_can_be_cancelled() {
         locale: Locale::En,
     };
     let resolution = SelectQuality {
-        action: QualityAction::Resolution(catalog.formats[0].id),
+        action: QualityAction::Resolution(media.formats[0].id),
         ..data.clone()
     };
     interactor
@@ -1090,7 +1087,7 @@ async fn quality_choices_are_private_consumed_once_and_can_be_cancelled() {
     interactor.execute(input(CHAT_ID)).await.unwrap();
     assert!(fixture.queue.read_next(&mut fixture.connection(), "test").await.unwrap().is_none());
     assert!(events.lock().unwrap().iter().any(|event| event.contains("expired")));
-    let cached = catalogs.get(&catalog.url, "", 1_000_000).await.unwrap().unwrap();
+    let cached = media_cache.get(&media.url, "", 1_000_000).await.unwrap().unwrap();
     assert_eq!(cached.description.as_deref(), Some("Synthetic description"));
     assert_eq!(cached.formats[1].format.acodec.as_deref(), Some("opus"));
     cache.set(CHAT_ID, "synthetic", &selection).await.unwrap();
@@ -1098,9 +1095,9 @@ async fn quality_choices_are_private_consumed_once_and_can_be_cancelled() {
     refreshed.description = Some("Updated description".into());
     refreshed.formats.reverse();
     refreshed.formats[0].format.filesize_approx = Some(2000);
-    let refreshed = catalogs.set(refreshed).await.unwrap();
-    assert_eq!(refreshed.id, catalog.id);
-    assert_eq!(refreshed.formats[0].id, catalog.formats[1].id);
+    let refreshed = media_cache.set(refreshed).await.unwrap();
+    assert_eq!(refreshed.id, media.id);
+    assert_eq!(refreshed.formats[0].id, media.formats[1].id);
     assert_eq!(refreshed.formats.len(), 2);
     interactor.execute(input(CHAT_ID)).await.unwrap();
     let reordered_job = fixture
@@ -1114,7 +1111,7 @@ async fn quality_choices_are_private_consumed_once_and_can_be_cancelled() {
     cache.set(CHAT_ID, "synthetic", &selection).await.unwrap();
     let mut removed = refreshed;
     removed.formats.remove(0);
-    catalogs.set(removed).await.unwrap();
+    media_cache.set(removed).await.unwrap();
     let before = events.lock().unwrap().len();
     interactor.execute(input(CHAT_ID)).await.unwrap();
     let updates = events.lock().unwrap()[before..].to_vec();

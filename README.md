@@ -77,8 +77,8 @@ A bare link in a private chat is downloaded automatically with media-type detect
 
 Use `/quality <url>` in a private chat to choose a resolution, then a codec/container
 and frame-rate variant. You can return to the resolution list. Sizes include audio when known;
-**Best available** uses the usual automatic selection. Catalogs and descriptions are cached in
-the database for fifteen minutes as structured fields. `overwrite=true` refreshes the catalog.
+**Best available** uses the usual automatic selection. Format lists and descriptions are cached in
+the database for fifteen minutes as structured fields. `overwrite=true` refreshes this information.
 The menu also expires after fifteen minutes. If a selected format disappears, the bot updates
 the buttons automatically; it does not download another format without a choice.
 This mode supports one video and uses yt-dlp's format list. Sources downloaded through snapsave

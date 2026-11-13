@@ -6,9 +6,9 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    #[sea_orm(unique_key = "idx_media_formats_catalog_format")]
-    pub catalog_id: Uuid,
-    #[sea_orm(unique_key = "idx_media_formats_catalog_format")]
+    #[sea_orm(unique_key = "idx_media_formats_media_format")]
+    pub media_id: Uuid,
+    #[sea_orm(unique_key = "idx_media_formats_media_format")]
     pub format_id: String,
     pub position: i32,
     pub ext: String,
@@ -18,8 +18,8 @@ pub struct Model {
     pub vcodec: Option<String>,
     pub acodec: Option<String>,
     pub filesize_approx: Option<i64>,
-    #[sea_orm(belongs_to, from = "catalog_id", to = "id", on_update = "Cascade", on_delete = "Cascade")]
-    pub media_catalogs: HasOne<super::media_catalogs::Entity>,
+    #[sea_orm(belongs_to, from = "media_id", to = "id", on_update = "Cascade", on_delete = "Cascade")]
+    pub media: HasOne<super::media::Entity>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

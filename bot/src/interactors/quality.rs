@@ -10,12 +10,12 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::{
-    entities::{language::Language, ChatConfig, DownloadJob, JobTarget, MediaCatalog, MediaCatalogFormat, MediaFormat, Params, Range},
+    entities::{language::Language, CachedMedia, CachedMediaFormat, ChatConfig, DownloadJob, JobTarget, MediaFormat, Params, Range},
     handlers_utils::progress,
     interactors::Interactor,
     locale::Locale,
     services::{
-        media_catalog_cache::MediaCatalogCache,
+        media_cache::MediaCache,
         messenger::{AnswerCallbackRequest, Button, ButtonAction, EditMenuRequest, Keyboard, MenuMessage, MessengerPort, TextFormat},
         node_router::{get_media_info, NodeRouter},
         quality_selection_cache::{QualitySelection, QualitySelectionCache},
@@ -34,7 +34,7 @@ pub struct Open<Messenger> {
     messenger: Arc<Messenger>,
     node_router: Arc<NodeRouter>,
     cache: Arc<QualitySelectionCache>,
-    catalogs: Arc<MediaCatalogCache>,
+    media_cache: Arc<MediaCache>,
     error_formatter: Arc<ErrorFormatter>,
 }
 
@@ -43,14 +43,14 @@ impl<Messenger> Open<Messenger> {
         messenger: Arc<Messenger>,
         node_router: Arc<NodeRouter>,
         cache: Arc<QualitySelectionCache>,
-        catalogs: Arc<MediaCatalogCache>,
+        media_cache: Arc<MediaCache>,
         error_formatter: Arc<ErrorFormatter>,
     ) -> Self {
         Self {
             messenger,
             node_router,
             cache,
-            catalogs,
+            media_cache,
             error_formatter,
         }
     }
@@ -117,11 +117,11 @@ impl<Messenger: MessengerPort> Interactor<OpenInput<'_>> for &Open<Messenger> {
             .0
             .get("lang")
             .map_or_else(Language::default, |lang| Language::from_str(lang).unwrap());
-        let catalog = match self
-            .load_catalog(url, &language, input.force_refresh || input.params.get_bool("overwrite"))
+        let media = match self
+            .load_media(url, &language, input.force_refresh || input.params.get_bool("overwrite"))
             .await
         {
-            Ok(Some(catalog)) => catalog,
+            Ok(Some(media)) => media,
             result => {
                 let key = if let Err(err) = result {
                     error!(%err, "Get quality options error");
@@ -152,7 +152,7 @@ impl<Messenger: MessengerPort> Interactor<OpenInput<'_>> for &Open<Messenger> {
                     message_id: input.message_id,
                 },
             ),
-            catalog_id: catalog.id,
+            media_id: media.id,
         };
         let session = Uuid::now_v7().simple().to_string();
         if let Err(err) = self.cache.set(input.chat_id, &session, &selection).await {
@@ -167,7 +167,7 @@ impl<Messenger: MessengerPort> Interactor<OpenInput<'_>> for &Open<Messenger> {
                 .map_err(HandlerError::new)?;
             return Ok(());
         }
-        let (text, keyboard) = render_resolutions(&catalog, &session, 0, locale);
+        let (text, keyboard) = render_resolutions(&media, &session, 0, locale);
         self.messenger
             .edit_menu(EditMenuRequest {
                 target,
@@ -180,17 +180,17 @@ impl<Messenger: MessengerPort> Interactor<OpenInput<'_>> for &Open<Messenger> {
 }
 
 impl<Messenger> Open<Messenger> {
-    async fn load_catalog(&self, url: &Url, language: &Language, overwrite: bool) -> Result<Option<MediaCatalog>, String> {
+    async fn load_media(&self, url: &Url, language: &Language, overwrite: bool) -> Result<Option<CachedMedia>, String> {
         let max_file_size = i64::try_from(self.node_router.max_file_size()).unwrap_or(i64::MAX);
         let audio_language = language.language.as_deref().unwrap_or_default();
         if !overwrite {
-            if let Some(catalog) = self
-                .catalogs
+            if let Some(media) = self
+                .media_cache
                 .get(url.as_str(), audio_language, max_file_size)
                 .await
                 .map_err(|err| err.to_string())?
             {
-                return Ok(Some(catalog));
+                return Ok(Some(media));
             }
         }
         let response = timeout(
@@ -212,17 +212,17 @@ impl<Messenger> Open<Messenger> {
         .await
         .map_err(|err| err.to_string())?
         .map_err(|err| self.error_formatter.format(&err).into_owned())?;
-        let Some(catalog) = catalog_from_response(response, url, audio_language, max_file_size) else {
+        let Some(media) = cached_media_from_response(response, url, audio_language, max_file_size) else {
             return Ok(None);
         };
-        self.catalogs.set(catalog).await.map(Some).map_err(|err| err.to_string())
+        self.media_cache.set(media).await.map(Some).map_err(|err| err.to_string())
     }
 }
 
 pub struct Select<Messenger> {
     messenger: Arc<Messenger>,
     cache: Arc<QualitySelectionCache>,
-    catalogs: Arc<MediaCatalogCache>,
+    media_cache: Arc<MediaCache>,
     open: Arc<Open<Messenger>>,
     queue: Arc<RedisJobQueue>,
 }
@@ -231,14 +231,14 @@ impl<Messenger> Select<Messenger> {
     pub const fn new(
         messenger: Arc<Messenger>,
         cache: Arc<QualitySelectionCache>,
-        catalogs: Arc<MediaCatalogCache>,
+        media_cache: Arc<MediaCache>,
         open: Arc<Open<Messenger>>,
         queue: Arc<RedisJobQueue>,
     ) -> Self {
         Self {
             messenger,
             cache,
-            catalogs,
+            media_cache,
             open,
             queue,
         }
@@ -287,8 +287,8 @@ impl<Messenger: MessengerPort> Interactor<SelectInput<'_>> for &Select<Messenger
             chat_id: input.chat_id,
             message_id: input.message_id,
         };
-        let catalog = match self.catalogs.get_catalog(selection.catalog_id).await {
-            Ok(Some(catalog)) => catalog,
+        let media = match self.media_cache.get_by_id(selection.media_id).await {
+            Ok(Some(media)) => media,
             Ok(None) => {
                 let _ = self
                     .messenger
@@ -323,7 +323,7 @@ impl<Messenger: MessengerPort> Interactor<SelectInput<'_>> for &Select<Messenger
             }
             result => {
                 let key = if let Err(err) = result {
-                    error!(%err, "Read quality catalog error");
+                    error!(%err, "Read cached media error");
                     "quality.error"
                 } else {
                     "quality.expired"
@@ -338,28 +338,28 @@ impl<Messenger: MessengerPort> Interactor<SelectInput<'_>> for &Select<Messenger
                 return Ok(());
             }
         };
-        let groups = resolutions(&catalog);
+        let groups = resolutions(&media);
         let screen = match input.data.action {
             QualityAction::Page(page) if page <= groups.len().saturating_sub(1) / PAGE_SIZE => {
-                Some(render_resolutions(&catalog, &input.data.session, page, locale))
+                Some(render_resolutions(&media, &input.data.session, page, locale))
             }
-            QualityAction::Resolution(id) => Some(if let Some(index) = resolution_position(&catalog, id) {
-                render_formats(&catalog, &input.data.session, index, 0, locale)
+            QualityAction::Resolution(id) => Some(if let Some(index) = resolution_position(&media, id) {
+                render_formats(&media, &input.data.session, index, 0, locale)
             } else {
-                render_resolutions(&catalog, &input.data.session, 0, locale)
+                render_resolutions(&media, &input.data.session, 0, locale)
             }),
             QualityAction::FormatsPage { resolution, page } => {
-                let screen = resolution_position(&catalog, resolution)
-                    .filter(|index| page <= formats_at_resolution(&catalog, groups[*index]).len().saturating_sub(1) / PAGE_SIZE)
+                let screen = resolution_position(&media, resolution)
+                    .filter(|index| page <= formats_at_resolution(&media, groups[*index]).len().saturating_sub(1) / PAGE_SIZE)
                     .map_or_else(
-                        || render_resolutions(&catalog, &input.data.session, 0, locale),
-                        |index| render_formats(&catalog, &input.data.session, index, page, locale),
+                        || render_resolutions(&media, &input.data.session, 0, locale),
+                        |index| render_formats(&media, &input.data.session, index, page, locale),
                     );
                 Some(screen)
             }
             QualityAction::Best | QualityAction::Cancel => None,
-            QualityAction::Video(id) if catalog.formats.iter().any(|format| format.id == id) => None,
-            QualityAction::Video(_) => Some(render_resolutions(&catalog, &input.data.session, 0, locale)),
+            QualityAction::Video(id) if media.formats.iter().any(|format| format.id == id) => None,
+            QualityAction::Video(_) => Some(render_resolutions(&media, &input.data.session, 0, locale)),
             QualityAction::Page(_) => return Ok(()),
         };
         if let Some((text, keyboard)) = screen {
@@ -428,7 +428,7 @@ impl<Messenger: MessengerPort> Interactor<SelectInput<'_>> for &Select<Messenger
             return Ok(());
         }
         if let QualityAction::Video(index) = input.data.action {
-            selection.job.video_quality = catalog
+            selection.job.video_quality = media
                 .formats
                 .iter()
                 .find(|format| format.id == index)
@@ -456,12 +456,12 @@ impl<Messenger: MessengerPort> Interactor<SelectInput<'_>> for &Select<Messenger
     }
 }
 
-fn catalog_from_response(response: MediaInfoResponse, url: &Url, audio_language: &str, max_file_size: i64) -> Option<MediaCatalog> {
+fn cached_media_from_response(response: MediaInfoResponse, url: &Url, audio_language: &str, max_file_size: i64) -> Option<CachedMedia> {
     if !response.video_format_selection_supported || response.entries.len() != 1 {
         return None;
     }
     let entry = response.entries.into_iter().next()?;
-    let mut formats: Vec<MediaCatalogFormat> = vec![];
+    let mut formats: Vec<CachedMediaFormat> = vec![];
     for format in entry.formats {
         if format.format_id.is_empty() || VideoQuality::new(format.width, format.height, format.fps).is_none() {
             continue;
@@ -469,7 +469,7 @@ fn catalog_from_response(response: MediaInfoResponse, url: &Url, audio_language:
         if formats.iter().any(|existing| existing.format.format_id == format.format_id) {
             continue;
         }
-        formats.push(MediaCatalogFormat {
+        formats.push(CachedMediaFormat {
             id: 0,
             format: MediaFormat {
                 format_id: format.format_id,
@@ -488,24 +488,21 @@ fn catalog_from_response(response: MediaInfoResponse, url: &Url, audio_language:
     if formats.is_empty() {
         return None;
     }
-    Some(MediaCatalog {
+    Some(CachedMedia {
         id: Uuid::now_v7(),
         url: url.to_string(),
         audio_language: audio_language.to_owned(),
         max_file_size,
-        media_id: entry.id.clone(),
-        webpage_url: entry.webpage_url,
         title: entry.title.unwrap_or(entry.id),
         description: entry.description,
-        duration: entry.duration,
         updated_at: OffsetDateTime::now_utc(),
         formats,
     })
 }
 
-fn resolutions(catalog: &MediaCatalog) -> Vec<(i64, i64)> {
+fn resolutions(media: &CachedMedia) -> Vec<(i64, i64)> {
     let mut resolutions = vec![];
-    for entry in &catalog.formats {
+    for entry in &media.formats {
         let format = &entry.format;
         let resolution = (format.width.unwrap(), format.height.unwrap());
         if !resolutions.contains(&resolution) {
@@ -517,17 +514,17 @@ fn resolutions(catalog: &MediaCatalog) -> Vec<(i64, i64)> {
     resolutions
 }
 
-fn formats_at_resolution(catalog: &MediaCatalog, resolution: (i64, i64)) -> Vec<&MediaCatalogFormat> {
-    catalog
+fn formats_at_resolution(media: &CachedMedia, resolution: (i64, i64)) -> Vec<&CachedMediaFormat> {
+    media
         .formats
         .iter()
         .filter(|entry| (entry.format.width.unwrap(), entry.format.height.unwrap()) == resolution)
         .collect()
 }
 
-fn resolution_position(catalog: &MediaCatalog, id: i64) -> Option<usize> {
-    let format = &catalog.formats.iter().find(|format| format.id == id)?.format;
-    resolutions(catalog)
+fn resolution_position(media: &CachedMedia, id: i64) -> Option<usize> {
+    let format = &media.formats.iter().find(|format| format.id == id)?.format;
+    resolutions(media)
         .iter()
         .position(|resolution| *resolution == (format.width.unwrap(), format.height.unwrap()))
 }
@@ -546,13 +543,13 @@ fn button(text: String, session: &str, action: QualityAction) -> Vec<Button> {
     }]
 }
 
-fn menu_text(catalog: &MediaCatalog, prompt: &str) -> String {
-    let title: String = catalog.title.chars().take(512).collect();
+fn menu_text(media: &CachedMedia, prompt: &str) -> String {
+    let title: String = media.title.chars().take(512).collect();
     format!("<b>{}</b>\n{prompt}", html_quote(&title))
 }
 
-fn render_resolutions(catalog: &MediaCatalog, session: &str, page: usize, locale: Locale) -> (String, Keyboard) {
-    let groups = resolutions(catalog);
+fn render_resolutions(media: &CachedMedia, session: &str, page: usize, locale: Locale) -> (String, Keyboard) {
+    let groups = resolutions(media);
     let mut rows = vec![button(
         t!("quality.best", locale = locale.as_str()).into_owned(),
         session,
@@ -562,7 +559,7 @@ fn render_resolutions(catalog: &MediaCatalog, session: &str, page: usize, locale
         rows.push(button(
             format!("{width}×{height}"),
             session,
-            QualityAction::Resolution(formats_at_resolution(catalog, (*width, *height))[0].id),
+            QualityAction::Resolution(formats_at_resolution(media, (*width, *height))[0].id),
         ));
     }
     if page > 0 {
@@ -585,14 +582,14 @@ fn render_resolutions(catalog: &MediaCatalog, session: &str, page: usize, locale
         QualityAction::Cancel,
     ));
     (
-        menu_text(catalog, &t!("quality.choose_resolution", locale = locale.as_str())),
+        menu_text(media, &t!("quality.choose_resolution", locale = locale.as_str())),
         Keyboard { rows },
     )
 }
 
-fn render_formats(catalog: &MediaCatalog, session: &str, resolution: usize, page: usize, locale: Locale) -> (String, Keyboard) {
-    let group = resolutions(catalog)[resolution];
-    let formats = formats_at_resolution(catalog, group);
+fn render_formats(media: &CachedMedia, session: &str, resolution: usize, page: usize, locale: Locale) -> (String, Keyboard) {
+    let group = resolutions(media)[resolution];
+    let formats = formats_at_resolution(media, group);
     let mut rows = vec![];
     for entry in formats.iter().skip(page * PAGE_SIZE).take(PAGE_SIZE) {
         let format = &entry.format;
@@ -645,7 +642,7 @@ fn render_formats(catalog: &MediaCatalog, session: &str, resolution: usize, page
     ));
     (
         menu_text(
-            catalog,
+            media,
             &format!(
                 "{} · {}×{}",
                 t!("quality.choose_format", locale = locale.as_str()),

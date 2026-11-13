@@ -2,21 +2,21 @@ use std::{convert::Infallible, sync::Arc};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
-use crate::{database::TxManager, entities::MediaCatalog, errors::ErrorKind};
+use crate::{database::TxManager, entities::CachedMedia, errors::ErrorKind};
 
-pub struct MediaCatalogCache {
+pub struct MediaCache {
     tx_manager: Arc<Box<dyn TxManager>>,
 }
 
-impl MediaCatalogCache {
+impl MediaCache {
     #[must_use]
     pub const fn new(tx_manager: Arc<Box<dyn TxManager>>) -> Self {
         Self { tx_manager }
     }
 
-    pub async fn get(&self, url: &str, audio_language: &str, max_file_size: i64) -> Result<Option<MediaCatalog>, ErrorKind<Infallible>> {
+    pub async fn get(&self, url: &str, audio_language: &str, max_file_size: i64) -> Result<Option<CachedMedia>, ErrorKind<Infallible>> {
         self.tx_manager
-            .media_catalog_reader()
+            .media_reader()
             .get_by_url(
                 url,
                 audio_language,
@@ -26,17 +26,17 @@ impl MediaCatalogCache {
             .await
     }
 
-    pub async fn get_catalog(&self, id: Uuid) -> Result<Option<MediaCatalog>, ErrorKind<Infallible>> {
-        self.tx_manager.media_catalog_reader().get(id).await
+    pub async fn get_by_id(&self, id: Uuid) -> Result<Option<CachedMedia>, ErrorKind<Infallible>> {
+        self.tx_manager.media_reader().get(id).await
     }
 
-    pub async fn set(&self, catalog: MediaCatalog) -> Result<MediaCatalog, ErrorKind<Infallible>> {
+    pub async fn set(&self, media: CachedMedia) -> Result<CachedMedia, ErrorKind<Infallible>> {
         let tx = self.tx_manager.begin().await?;
-        let result = tx.media_catalog_repo().replace(catalog).await;
+        let result = tx.media_repo().replace(media).await;
         match result {
-            Ok(catalog) => {
+            Ok(media) => {
                 tx.commit().await?;
-                Ok(catalog)
+                Ok(media)
             }
             Err(err) => {
                 let _ = tx.rollback().await;

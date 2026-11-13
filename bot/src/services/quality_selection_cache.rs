@@ -16,7 +16,7 @@ const CACHE_TIMEOUT: Duration = Duration::from_secs(2);
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QualitySelection {
     pub job: DownloadJob,
-    pub catalog_id: Uuid,
+    pub media_id: Uuid,
 }
 
 pub struct QualitySelectionCache {

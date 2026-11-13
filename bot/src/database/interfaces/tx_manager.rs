@@ -12,7 +12,7 @@ use crate::{
         chat::{ChatReader, ChatRepo},
         chat_config::{ChatConfigReader, ChatConfigRepo},
         downloaded_media::{DownloadedMediaReader, DownloadedMediaRepo},
-        media_catalog::{MediaCatalogReader, MediaCatalogRepo},
+        media::{MediaReader, MediaRepo},
     },
     errors::database::{BeginError, CommitError, RollbackError},
 };
@@ -25,7 +25,7 @@ pub trait TxManager: Send + Sync {
     fn chat_reader(&self) -> Box<dyn ChatReader + '_>;
     fn chat_config_reader(&self) -> Box<dyn ChatConfigReader + '_>;
     fn downloaded_media_reader(&self) -> Box<dyn DownloadedMediaReader + '_>;
-    fn media_catalog_reader(&self) -> Box<dyn MediaCatalogReader + '_>;
+    fn media_reader(&self) -> Box<dyn MediaReader + '_>;
 }
 
 /// Owns an active transaction and creates repos scoped to it.
@@ -37,5 +37,5 @@ pub trait ActiveTxManager: Send {
     fn chat_repo(&self) -> Box<dyn ChatRepo + '_>;
     fn chat_config_repo(&self) -> Box<dyn ChatConfigRepo + '_>;
     fn downloaded_media_repo(&self) -> Box<dyn DownloadedMediaRepo + '_>;
-    fn media_catalog_repo(&self) -> Box<dyn MediaCatalogRepo + '_>;
+    fn media_repo(&self) -> Box<dyn MediaRepo + '_>;
 }
