@@ -706,22 +706,25 @@ where
 
         let description = prefetched.as_ref().and_then(GetMediaByURLKind::description);
         let sent_message = match media_type {
-            MediaType::Video => {
-                self.video
-                    .execute(super::video::DownloadInput {
-                        current_message: input.current_message,
-                        message_id: input.message_id,
-                        chat_id: input.chat_id,
-                        params: input.params,
-                        url: input.url,
-                        chat_cfg: input.chat_cfg,
-                        link_is_visible: input.link_is_visible,
-                        prefetched,
-                        video_quality: None,
-                        progress_message_id: None,
-                    })
-                    .await
-            }
+            MediaType::Video => self
+                .video
+                .execute(super::video::DownloadInput {
+                    current_message: input.current_message,
+                    message_id: input.message_id,
+                    chat_id: input.chat_id,
+                    params: input.params,
+                    url: input.url,
+                    chat_cfg: input.chat_cfg,
+                    link_is_visible: input.link_is_visible,
+                    prefetched,
+                    video_quality: None,
+                    progress_message_id: None,
+                })
+                .await
+                .map(|result| match result {
+                    super::video::DownloadResult::Sent(message) => message,
+                    super::video::DownloadResult::FormatUnavailable => None,
+                }),
             MediaType::Audio => {
                 self.audio
                     .execute(super::audio::DownloadInput {
@@ -803,6 +806,8 @@ mod tests {
             width: None,
             height: None,
             fps: None,
+            vcodec: None,
+            acodec: None,
             aspect_ratio: None,
             filesize_approx: None,
         };

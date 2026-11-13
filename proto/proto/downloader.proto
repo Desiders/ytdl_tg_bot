@@ -28,6 +28,10 @@ message VideoQuality {
   int64 width = 1;
   int64 height = 2;
   optional double fps = 3;
+  optional string format_id = 4;
+  optional string ext = 5;
+  optional string vcodec = 6;
+  optional string acodec = 7;
 }
 
 message MediaFormatEntry {
@@ -41,6 +45,8 @@ message MediaFormatEntry {
   string raw_info_json = 7;
   string raw_format_json = 8;
   optional double fps = 9;
+  optional string vcodec = 10;
+  optional string acodec = 11;
 }
 
 message MediaEntry {
@@ -70,6 +76,7 @@ message MediaInfoResponse {
   repeated MediaEntry entries = 1;
   repeated PostEntry posts = 2;
   bool video_quality_supported = 3;
+  bool video_format_selection_supported = 4;
 }
 
 message DownloadRequest {

@@ -3,7 +3,7 @@ use crate::{
     entities::{language::Language, Playlist, Range, Sections},
     utils::{process_exit_error, ProcessGroup},
 };
-use proto::downloader::VideoQuality;
+use proto::{downloader::VideoQuality, VIDEO_FORMAT_UNAVAILABLE};
 
 use serde::de::DeserializeOwned;
 use std::{
@@ -66,6 +66,8 @@ pub enum ParseJsonErrorKind {
 
 #[derive(Debug, thiserror::Error)]
 pub enum GetInfoErrorKind {
+    #[error("Requested video format is unavailable")]
+    FormatUnavailable,
     #[error(transparent)]
     Ndjson(#[from] ParseJsonErrorKind),
     #[error("Yt-dlp requires a different node context: {0}")]
@@ -78,6 +80,7 @@ impl From<GetInfoErrorKind> for Status {
     fn from(err: GetInfoErrorKind) -> Self {
         match err {
             GetInfoErrorKind::Retryable(kind) => Status::aborted(kind.to_string()),
+            GetInfoErrorKind::FormatUnavailable => Status::not_found(VIDEO_FORMAT_UNAVAILABLE),
             err => Status::internal(err.to_string()),
         }
     }
@@ -239,7 +242,21 @@ pub fn build_formats_string(strategy: &FormatStrategy, heights: &[u32], audio_la
     formats.join(",")
 }
 
+fn format_id_selector(format_id: &str) -> String {
+    format_id
+        .split('+')
+        .map(|id| {
+            let id = id.replace('\\', "\\\\").replace('"', "\\\"");
+            format!("b*[format_id=\"{id}\"]")
+        })
+        .collect::<Vec<_>>()
+        .join("+")
+}
+
 pub fn video_quality_formats(quality: Option<&VideoQuality>, audio_language: &Language) -> String {
+    if let Some(format_id) = quality.and_then(|quality| quality.format_id.as_ref()) {
+        return format_id_selector(format_id);
+    }
     let video = if let Some(quality) = quality {
         let fps = quality.fps.map_or_else(|| "[fps<=?0]".to_owned(), |fps| format!("[fps={fps}]"));
         format!("[width={}][height={}]{fps}[vcodec!*=av01]", quality.width, quality.height)
@@ -356,6 +373,9 @@ pub async fn get_media_info(
                 }
             } else {
                 error!("{stderr}");
+                if video_formats.is_some() && stderr.contains("Requested format is not available") {
+                    return Err(GetInfoErrorKind::FormatUnavailable);
+                }
                 if let Some(kind) = classify_retryable_error(&stderr) {
                     return Err(GetInfoErrorKind::Retryable(kind));
                 }
@@ -388,6 +408,7 @@ pub async fn download_media(
     let max_filesize = max_filesize.to_string();
     let output_dir_path = output_dir_path.to_string_lossy();
     let info_file_path = info_file_path.to_string_lossy();
+    let format_id = format_id_selector(format_id);
     let extractor_arg = format!("youtubepot-bgutilhttp:base_url={pot_provider_url}");
     let audio_ext = match &strategy {
         FormatStrategy::VideoAndAudio => None,
@@ -542,6 +563,7 @@ pub async fn stream_media(
 
     let max_filesize = max_filesize.to_string();
     let info_file_path = info_file_path.to_string_lossy();
+    let format_id = format_id_selector(format_id);
     let extractor_arg = format!("youtubepot-bgutilhttp:base_url={pot_provider_url}");
 
     let mut args = vec![
@@ -567,7 +589,7 @@ pub async fn stream_media(
         "--load-info-json",
         &info_file_path,
         "-f",
-        format_id,
+        &format_id,
         "-o",
         "-",
     ];

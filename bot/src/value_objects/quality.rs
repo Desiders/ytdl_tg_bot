@@ -3,7 +3,9 @@ use telers::{CallbackData, CallbackDataError, CallbackDataValue};
 #[derive(Debug, Clone, Copy)]
 pub enum QualityAction {
     Best,
-    Video(usize),
+    Resolution(i64),
+    Video(i64),
+    FormatsPage { resolution: i64, page: usize },
     Page(usize),
     Cancel,
 }
@@ -12,6 +14,8 @@ impl CallbackDataValue for QualityAction {
     fn encode(&self) -> Result<String, CallbackDataError> {
         Ok(match self {
             Self::Best => "best".to_owned(),
+            Self::Resolution(index) => format!("r{index}"),
+            Self::FormatsPage { resolution, page } => format!("f{resolution}.{page}"),
             Self::Video(index) => format!("v{index}"),
             Self::Page(index) => format!("p{index}"),
             Self::Cancel => "cancel".to_owned(),
@@ -28,9 +32,17 @@ impl CallbackDataValue for QualityAction {
             field,
             value: value.into(),
         };
-        let index = value.get(1..).ok_or_else(invalid)?.parse().map_err(|_| invalid())?;
+        if let Some(page) = value.strip_prefix('f') {
+            let (resolution, page) = page.split_once('.').ok_or_else(invalid)?;
+            return Ok(Self::FormatsPage {
+                resolution: resolution.parse().map_err(|_| invalid())?,
+                page: page.parse().map_err(|_| invalid())?,
+            });
+        }
+        let index: usize = value.get(1..).ok_or_else(invalid)?.parse().map_err(|_| invalid())?;
         match value.get(..1) {
-            Some("v") => Ok(Self::Video(index)),
+            Some("r") => Ok(Self::Resolution(i64::try_from(index).map_err(|_| invalid())?)),
+            Some("v") => Ok(Self::Video(i64::try_from(index).map_err(|_| invalid())?)),
             Some("p") => Ok(Self::Page(index)),
             _ => Err(invalid()),
         }

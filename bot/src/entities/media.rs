@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use crate::value_objects::VideoQuality;
+
 use bytes::Bytes;
 use futures_util::Stream;
 use serde::Deserialize;
@@ -31,11 +33,22 @@ pub struct MediaFormat {
     pub width: Option<i64>,
     pub height: Option<i64>,
     pub fps: Option<f64>,
+    pub vcodec: Option<String>,
+    pub acodec: Option<String>,
     pub aspect_ratio: Option<f32>,
     pub filesize_approx: Option<u64>,
 }
 
 impl MediaFormat {
+    pub fn video_quality(&self) -> Option<VideoQuality> {
+        let mut quality = VideoQuality::new(self.width, self.height, self.fps)?;
+        quality.format_id = Some(self.format_id.clone());
+        quality.ext = Some(self.ext.clone());
+        quality.vcodec.clone_from(&self.vcodec);
+        quality.acodec.clone_from(&self.acodec);
+        Some(quality)
+    }
+
     #[inline]
     pub fn aspect_ratio_kind(&self) -> Option<AspectKind> {
         self.aspect_ratio.map(AspectKind::new)
@@ -367,6 +380,8 @@ impl From<MediaWithFormat> for MediaFormat {
             width,
             height,
             fps,
+            vcodec: None,
+            acodec: None,
             aspect_ratio,
             filesize_approx,
         }

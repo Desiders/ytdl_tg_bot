@@ -11,8 +11,11 @@ use crate::database::{
         chat::{ChatReader, ChatRepo},
         chat_config::{ChatConfigReader, ChatConfigRepo},
         downloaded_media::{DownloadedMediaReader, DownloadedMediaRepo},
+        media_catalog::{MediaCatalogReader, MediaCatalogRepo},
     },
+    readers::media_catalog::SeaOrmMediaCatalogReader,
     readers::{chat::SeaOrmChatReader, chat_config::SeaOrmChatConfigReader, downloaded_media::SeaOrmDownloadedMediaReader},
+    repos::media_catalog::SeaOrmMediaCatalogRepo,
     repos::{chat::SeaOrmChatRepo, chat_config::SeaOrmChatConfigRepo, downloaded_media::SeaOrmDownloadedMediaRepo},
 };
 
@@ -42,6 +45,14 @@ pub trait DownloadedMediaRepoFactory: Send + Sync {
     fn create<'a>(&self, conn: &'a DatabaseTransaction) -> Box<dyn DownloadedMediaRepo + 'a>;
 }
 
+pub trait MediaCatalogReaderFactory: Send + Sync {
+    fn create<'a>(&self, conn: &'a DatabaseConnection) -> Box<dyn MediaCatalogReader + 'a>;
+}
+
+pub trait MediaCatalogRepoFactory: Send + Sync {
+    fn create<'a>(&self, conn: &'a DatabaseTransaction) -> Box<dyn MediaCatalogRepo + 'a>;
+}
+
 /// Factory collection injected into `SeaOrmTxManager`. Add a field per entity reader/repo.
 pub struct TxManagerFactories {
     pub chat_reader: Box<dyn ChatReaderFactory>,
@@ -50,10 +61,13 @@ pub struct TxManagerFactories {
     pub chat_config_repo: Box<dyn ChatConfigRepoFactory>,
     pub downloaded_media_reader: Box<dyn DownloadedMediaReaderFactory>,
     pub downloaded_media_repo: Box<dyn DownloadedMediaRepoFactory>,
+    pub media_catalog_reader: Box<dyn MediaCatalogReaderFactory>,
+    pub media_catalog_repo: Box<dyn MediaCatalogRepoFactory>,
 }
 
 impl TxManagerFactories {
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         chat_reader: Box<dyn ChatReaderFactory>,
         chat_repo: Box<dyn ChatRepoFactory>,
@@ -61,6 +75,8 @@ impl TxManagerFactories {
         chat_config_repo: Box<dyn ChatConfigRepoFactory>,
         downloaded_media_reader: Box<dyn DownloadedMediaReaderFactory>,
         downloaded_media_repo: Box<dyn DownloadedMediaRepoFactory>,
+        media_catalog_reader: Box<dyn MediaCatalogReaderFactory>,
+        media_catalog_repo: Box<dyn MediaCatalogRepoFactory>,
     ) -> Self {
         Self {
             chat_reader,
@@ -69,6 +85,8 @@ impl TxManagerFactories {
             chat_config_repo,
             downloaded_media_reader,
             downloaded_media_repo,
+            media_catalog_reader,
+            media_catalog_repo,
         }
     }
 }
@@ -121,6 +139,22 @@ impl DownloadedMediaRepoFactory for DefaultDownloadedMediaRepoFactory {
     }
 }
 
+#[derive(Clone)]
+pub struct DefaultMediaCatalogReaderFactory;
+impl MediaCatalogReaderFactory for DefaultMediaCatalogReaderFactory {
+    fn create<'a>(&self, conn: &'a DatabaseConnection) -> Box<dyn MediaCatalogReader + 'a> {
+        Box::new(SeaOrmMediaCatalogReader::new(conn))
+    }
+}
+
+#[derive(Clone)]
+pub struct DefaultMediaCatalogRepoFactory;
+impl MediaCatalogRepoFactory for DefaultMediaCatalogRepoFactory {
+    fn create<'a>(&self, conn: &'a DatabaseTransaction) -> Box<dyn MediaCatalogRepo + 'a> {
+        Box::new(SeaOrmMediaCatalogRepo::new(conn))
+    }
+}
+
 impl Default for TxManagerFactories {
     fn default() -> Self {
         Self::new(
@@ -130,6 +164,8 @@ impl Default for TxManagerFactories {
             Box::new(DefaultChatConfigRepoFactory),
             Box::new(DefaultDownloadedMediaReaderFactory),
             Box::new(DefaultDownloadedMediaRepoFactory),
+            Box::new(DefaultMediaCatalogReaderFactory),
+            Box::new(DefaultMediaCatalogRepoFactory),
         )
     }
 }

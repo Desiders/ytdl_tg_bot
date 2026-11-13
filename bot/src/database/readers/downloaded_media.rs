@@ -307,8 +307,8 @@ mod tests {
             .await
             .unwrap()
             .is_none());
-        Migrator::down(&db.conn, Some(1)).await.unwrap();
-        Migrator::up(&db.conn, Some(1)).await.unwrap();
+        Migrator::down(&db.conn, Some(2)).await.unwrap();
+        Migrator::up(&db.conn, Some(2)).await.unwrap();
         let automatic = reader
             .get("synthetic-id", EXAMPLE, Some("en"), MediaType::Video, Some(0), Some(10), "")
             .await

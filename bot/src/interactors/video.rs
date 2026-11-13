@@ -69,6 +69,11 @@ impl<Messenger> Download<Messenger> {
     }
 }
 
+pub enum DownloadResult {
+    Sent(Option<SentMessage>),
+    FormatUnavailable,
+}
+
 pub struct DownloadInput<'a> {
     pub current_message: &'a watch::Sender<Option<(i64, i64)>>,
     pub message_id: i64,
@@ -86,7 +91,7 @@ impl<Messenger> Interactor<DownloadInput<'_>> for &Download<Messenger>
 where
     Messenger: MessengerPort,
 {
-    type Output = Option<SentMessage>;
+    type Output = DownloadResult;
     type Err = HandlerError;
 
     #[instrument(skip_all, fields(message_id = input.message_id, url = input.url.as_str(), ?input.params))]
@@ -110,7 +115,7 @@ where
                 Ok(progress_message) => progress_message,
                 Err(err) => {
                     error!(err = %self.error_formatter.format(&err), "Send progress error");
-                    return Ok(None);
+                    return Ok(DownloadResult::Sent(None));
                 }
             };
             progress_message.message_id
@@ -136,7 +141,7 @@ where
                         Some(TextFormat::Html),
                     )
                     .await;
-                    return Ok(None);
+                    return Ok(DownloadResult::Sent(None));
                 }
             },
             None => Range::default(),
@@ -161,7 +166,7 @@ where
                         Some(TextFormat::Html),
                     )
                     .await;
-                    return Ok(None);
+                    return Ok(DownloadResult::Sent(None));
                 }
             }),
             None => None,
@@ -282,7 +287,7 @@ where
 
                     if input
                         .video_quality
-                        .is_some_and(|quality| VideoQuality::new(format.width, format.height, format.fps).as_ref() != Some(quality))
+                        .is_some_and(|quality| format.video_quality().is_none_or(|actual| !quality.matches(&actual)))
                     {
                         failed_media.push(progress::FailedMedia {
                             webpage_url: media.webpage_url.clone(),
@@ -414,6 +419,11 @@ where
                 )
                 .await;
             }
+            Err(get_media::GetMediaByURLErrorKind::GetInfo(get_media::GetInfoErrorKind::FormatUnavailable))
+                if input.video_quality.is_some() =>
+            {
+                return Ok(DownloadResult::FormatUnavailable)
+            }
             Err(err) => {
                 error!(err = %self.error_formatter.format(&err), "Get error");
                 let text = format!(
@@ -433,7 +443,7 @@ where
             }
         }
 
-        Ok(sent_message)
+        Ok(DownloadResult::Sent(sent_message))
     }
 }
 

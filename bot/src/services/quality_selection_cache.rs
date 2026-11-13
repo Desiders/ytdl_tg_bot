@@ -7,22 +7,16 @@ use redis::{aio::ConnectionManager, RedisResult};
 use serde::{Deserialize, Serialize};
 use tokio::time::timeout;
 
-use crate::{entities::DownloadJob, value_objects::VideoQuality};
+use crate::entities::DownloadJob;
+use uuid::Uuid;
 
 const CACHE_TTL_SECS: u64 = 900;
 const CACHE_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QualityOption {
-    pub quality: VideoQuality,
-    pub filesize_approx: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QualitySelection {
     pub job: DownloadJob,
-    pub title: String,
-    pub options: Vec<QualityOption>,
+    pub catalog_id: Uuid,
 }
 
 pub struct QualitySelectionCache {

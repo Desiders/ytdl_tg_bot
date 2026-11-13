@@ -27,7 +27,9 @@ use crate::{
     services::{
         chat,
         download::media,
-        downloaded_media, file_download, get_media, menu_access,
+        downloaded_media, file_download, get_media,
+        media_catalog_cache::MediaCatalogCache,
+        menu_access,
         menu_message_cache::MenuMessageCache,
         messenger::telegram::TelegramMessenger,
         node_router::{self, DownloaderServiceTarget, NodeRouter},
@@ -273,11 +275,12 @@ registry! {
     ],
 
     scope(Request) [
-        provide(|Inject(messenger): Inject<Messenger>, Inject(node_router), Inject(cache), Inject(error_formatter)| async move {
-            Ok(quality::Open::new(messenger, node_router, cache, error_formatter))
+        provide(|Inject(tx_manager)| async move { Ok(MediaCatalogCache::new(tx_manager)) }),
+        provide(|Inject(messenger): Inject<Messenger>, Inject(node_router), Inject(cache), Inject(catalogs), Inject(error_formatter)| async move {
+            Ok(quality::Open::new(messenger, node_router, cache, catalogs, error_formatter))
         }),
-        provide(|Inject(messenger): Inject<Messenger>, Inject(cache), Inject(queue)| async move {
-            Ok(quality::Select::new(messenger, cache, queue))
+        provide(|Inject(messenger): Inject<Messenger>, Inject(cache), Inject(catalogs), Inject(open), Inject(queue)| async move {
+            Ok(quality::Select::new(messenger, cache, catalogs, open, queue))
         }),
         provide(|Inject(tx_manager)| async move { Ok(chat::SaveChat::new(tx_manager)) }),
         provide(|Inject(tx_manager)| async move { Ok(chat::GetChatConfig::new(tx_manager)) }),

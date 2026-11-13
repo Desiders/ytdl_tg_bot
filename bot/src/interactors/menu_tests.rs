@@ -885,22 +885,100 @@ async fn menu_delivery_keeps_failed_commands_and_reports_missing_permissions() {
 #[tokio::test]
 async fn quality_choices_are_private_consumed_once_and_can_be_cancelled() {
     use crate::{
-        entities::{DownloadJob, JobTarget, Params},
-        interactors::quality::{Select, SelectInput},
-        services::quality_selection_cache::{QualityOption, QualitySelection, QualitySelectionCache},
+        entities::{DownloadJob, JobTarget, MediaCatalog, MediaCatalogFormat, MediaFormat, Params},
+        interactors::quality::{Open, OpenInput, Select, SelectInput},
+        services::{
+            media_catalog_cache::MediaCatalogCache,
+            quality_selection_cache::{QualitySelection, QualitySelectionCache},
+        },
         value_objects::{
             quality::{QualityAction, SelectQuality},
-            MediaType, VideoQuality,
+            MediaType,
         },
     };
 
-    let fixture = queue::test_support::Fixture::new().await;
+    use time::OffsetDateTime;
+    use uuid::Uuid;
+
+    let db = Fixture::new(&[]).await;
+    let fixture = &db._redis;
     fixture.queue.ensure_group().await.unwrap();
     let cache = Arc::new(QualitySelectionCache::new(fixture.connection()));
     let events = Arc::new(Mutex::new(vec![]));
     let messenger = Arc::new(RecordingMessenger(events.clone(), Arc::new(Mutex::new(None))));
-    let interactor = Select::new(messenger, cache.clone(), fixture.queue.clone());
-    let quality = VideoQuality::new(Some(1276), Some(718), Some(59.94)).unwrap();
+    let catalogs = Arc::new(MediaCatalogCache::new(db.tx_manager.clone()));
+    let catalog = MediaCatalog {
+        id: Uuid::now_v7(),
+        url: "https://source.example.test/video".into(),
+        audio_language: String::new(),
+        max_file_size: 1_000_000,
+        media_id: "synthetic".into(),
+        webpage_url: "https://source.example.test/video".into(),
+        title: "Synthetic video".into(),
+        description: Some("Synthetic description".into()),
+        duration: Some(12.0),
+        updated_at: OffsetDateTime::now_utc(),
+        formats: vec![
+            MediaCatalogFormat {
+                id: 0,
+                format: MediaFormat {
+                    format_id: "video1+audio1".into(),
+                    format_note: None,
+                    ext: "mp4".into(),
+                    width: Some(1276),
+                    height: Some(718),
+                    fps: Some(59.94),
+                    vcodec: Some("avc1".into()),
+                    acodec: Some("aac".into()),
+                    aspect_ratio: None,
+                    filesize_approx: None,
+                },
+            },
+            MediaCatalogFormat {
+                id: 0,
+                format: MediaFormat {
+                    format_id: "video2+audio2".into(),
+                    format_note: None,
+                    ext: "webm".into(),
+                    width: Some(1276),
+                    height: Some(718),
+                    fps: Some(59.94),
+                    vcodec: Some("vp9".into()),
+                    acodec: Some("opus".into()),
+                    aspect_ratio: None,
+                    filesize_approx: Some(1000),
+                },
+            },
+        ],
+    };
+    let catalog = catalogs.set(catalog).await.unwrap();
+    let opener = Arc::new(Open::new(
+        messenger.clone(),
+        test_support::router(1),
+        cache.clone(),
+        catalogs.clone(),
+        db.formatter.clone(),
+    ));
+    let interactor = Select::new(messenger, cache.clone(), catalogs.clone(), opener.clone(), fixture.queue.clone());
+    let url = catalog.url.parse().unwrap();
+    let chat_cfg = ChatConfig::new(CHAT_ID, false, "en".into());
+    timeout(
+        Duration::from_secs(5),
+        opener.execute(OpenInput {
+            chat_id: CHAT_ID,
+            message_id: 10,
+            is_private: true,
+            progress_message_id: None,
+            force_refresh: false,
+            url: Some(&url),
+            params: &Params::default(),
+            chat_cfg: &chat_cfg,
+        }),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let quality = catalog.formats[1].format.video_quality().unwrap();
     let selection = QualitySelection {
         job: DownloadJob::new(
             MediaType::Video,
@@ -913,11 +991,7 @@ async fn quality_choices_are_private_consumed_once_and_can_be_cancelled() {
                 message_id: 10,
             },
         ),
-        title: "Synthetic video".into(),
-        options: vec![QualityOption {
-            quality: quality.clone(),
-            filesize_approx: None,
-        }],
+        catalog_id: catalog.id,
     };
     cache.set(CHAT_ID, "synthetic", &selection).await.unwrap();
     let ttl: i64 = redis::cmd("TTL")
@@ -928,7 +1002,7 @@ async fn quality_choices_are_private_consumed_once_and_can_be_cancelled() {
     assert!(ttl > 0 && ttl <= 900);
     let data = SelectQuality {
         session: "synthetic".into(),
-        action: QualityAction::Video(0),
+        action: QualityAction::Video(catalog.formats[1].id),
     };
     let input = |user_id| SelectInput {
         chat_id: user_id,
@@ -938,6 +1012,35 @@ async fn quality_choices_are_private_consumed_once_and_can_be_cancelled() {
         data: &data,
         locale: Locale::En,
     };
+    let resolution = SelectQuality {
+        action: QualityAction::Resolution(catalog.formats[0].id),
+        ..data.clone()
+    };
+    interactor
+        .execute(SelectInput {
+            data: &resolution,
+            ..input(CHAT_ID)
+        })
+        .await
+        .unwrap();
+    let back = SelectQuality {
+        action: QualityAction::Page(0),
+        ..data.clone()
+    };
+    interactor
+        .execute(SelectInput {
+            data: &back,
+            ..input(CHAT_ID)
+        })
+        .await
+        .unwrap();
+    assert!(cache.get(CHAT_ID, "synthetic").await.unwrap().is_some());
+    assert!(events
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|event| event.contains("WEBM") && event.contains("vp9")));
+    assert!(events.lock().unwrap().iter().any(|event| event.contains("quality:synthetic:p0")));
     interactor.execute(input(2)).await.unwrap();
     assert_eq!(fixture.queue.stats().await.unwrap().waiting, 0);
     let (first, second) = tokio::join!(interactor.execute(input(CHAT_ID)), interactor.execute(input(CHAT_ID)));
@@ -987,4 +1090,37 @@ async fn quality_choices_are_private_consumed_once_and_can_be_cancelled() {
     interactor.execute(input(CHAT_ID)).await.unwrap();
     assert!(fixture.queue.read_next(&mut fixture.connection(), "test").await.unwrap().is_none());
     assert!(events.lock().unwrap().iter().any(|event| event.contains("expired")));
+    let cached = catalogs.get(&catalog.url, "", 1_000_000).await.unwrap().unwrap();
+    assert_eq!(cached.description.as_deref(), Some("Synthetic description"));
+    assert_eq!(cached.formats[1].format.acodec.as_deref(), Some("opus"));
+    cache.set(CHAT_ID, "synthetic", &selection).await.unwrap();
+    let mut refreshed = cached;
+    refreshed.description = Some("Updated description".into());
+    refreshed.formats.reverse();
+    refreshed.formats[0].format.filesize_approx = Some(2000);
+    let refreshed = catalogs.set(refreshed).await.unwrap();
+    assert_eq!(refreshed.id, catalog.id);
+    assert_eq!(refreshed.formats[0].id, catalog.formats[1].id);
+    assert_eq!(refreshed.formats.len(), 2);
+    interactor.execute(input(CHAT_ID)).await.unwrap();
+    let reordered_job = fixture
+        .queue
+        .read_next(&mut fixture.connection(), "test")
+        .await
+        .unwrap()
+        .unwrap()
+        .job;
+    assert_eq!(reordered_job.video_quality.as_ref().unwrap().vcodec.as_deref(), Some("vp9"));
+    cache.set(CHAT_ID, "synthetic", &selection).await.unwrap();
+    let mut removed = refreshed;
+    removed.formats.remove(0);
+    catalogs.set(removed).await.unwrap();
+    let before = events.lock().unwrap().len();
+    interactor.execute(input(CHAT_ID)).await.unwrap();
+    let updates = events.lock().unwrap()[before..].to_vec();
+    assert_eq!(updates[0], "answer None");
+    assert!(updates.last().unwrap().starts_with("edit "));
+    assert!(updates.last().unwrap().contains("1276×718"));
+    assert!(cache.get(CHAT_ID, "synthetic").await.unwrap().is_some());
+    assert!(fixture.queue.read_next(&mut fixture.connection(), "test").await.unwrap().is_none());
 }

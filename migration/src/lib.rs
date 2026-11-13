@@ -14,6 +14,8 @@ mod m20261105_000000_add_downloaded_media_description;
 
 mod m20261107_000000_add_downloaded_media_quality;
 
+mod m20261113_000000_add_media_catalog;
+
 pub struct Migrator;
 
 #[async_trait::async_trait]
@@ -32,6 +34,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260501_000000_add_photo_media_type::Migration),
             Box::new(m20261105_000000_add_downloaded_media_description::Migration),
             Box::new(m20261107_000000_add_downloaded_media_quality::Migration),
+            Box::new(m20261113_000000_add_media_catalog::Migration),
         ]
     }
 }

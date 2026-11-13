@@ -1,7 +1,11 @@
 use std::{convert::Infallible, sync::Arc};
 
-use proto::downloader::{MediaInfoRequest, MediaInfoResponse};
+use proto::{
+    downloader::{MediaInfoRequest, MediaInfoResponse},
+    VIDEO_FORMAT_UNAVAILABLE,
+};
 use reqwest::Client;
+use tonic::Code;
 use tracing::{debug, info, instrument, warn};
 use url::Url;
 
@@ -27,6 +31,8 @@ use crate::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum GetInfoErrorKind {
+    #[error("Selected video format is unavailable")]
+    FormatUnavailable,
     #[error(transparent)]
     Client(#[from] ClientGetMediaInfoErrorKind),
     #[error(transparent)]
@@ -380,6 +386,11 @@ async fn get_media_by_url(
 
     let map_get_info_err = |err| match GetInfoErrorKind::from(err) {
         GetInfoErrorKind::Client(ClientGetMediaInfoErrorKind::NodeUnavailable) => GetMediaByURLErrorKind::NodeUnavailable,
+        GetInfoErrorKind::Client(ClientGetMediaInfoErrorKind::Rpc(status))
+            if status.code() == Code::NotFound && status.message() == VIDEO_FORMAT_UNAVAILABLE =>
+        {
+            GetMediaByURLErrorKind::GetInfo(GetInfoErrorKind::FormatUnavailable)
+        }
         err => GetMediaByURLErrorKind::GetInfo(err),
     };
     let response = match resolved_urls.as_deref() {
@@ -489,15 +500,11 @@ fn select_by_range(urls: Vec<Url>, range: Range) -> Vec<Url> {
 #[allow(clippy::result_large_err)]
 fn playlist_from_response(response: MediaInfoResponse, video_quality: Option<&VideoQuality>) -> Result<Playlist, GetInfoErrorKind> {
     if let Some(quality) = video_quality {
-        if !response.video_quality_supported
-            || response.entries.len() != 1
-            || response.entries[0].formats.is_empty()
-            || response.entries[0]
-                .formats
-                .iter()
-                .any(|format| VideoQuality::new(format.width, format.height, format.fps).as_ref() != Some(quality))
-        {
-            return Err(GetInfoErrorKind::InvalidResponse("Selected video quality is unavailable".into()));
+        if !response.video_quality_supported || (quality.format_id.is_some() && !response.video_format_selection_supported) {
+            return Err(GetInfoErrorKind::InvalidResponse("Video format selection is unsupported".into()));
+        }
+        if response.entries.len() != 1 || response.entries[0].formats.is_empty() {
+            return Err(GetInfoErrorKind::FormatUnavailable);
         }
     }
 
@@ -533,19 +540,22 @@ fn playlist_from_response(response: MediaInfoResponse, video_quality: Option<&Vi
                             .map_err(|err| GetInfoErrorKind::InvalidResponse(format!("Invalid info JSON: {err}").into()))?
                     };
 
-                    Ok((
-                        MediaFormat {
-                            format_id: format.format_id,
-                            format_note: None,
-                            ext: format.ext,
-                            width: format.width,
-                            height: format.height,
-                            fps: format.fps,
-                            aspect_ratio: format.aspect_ratio,
-                            filesize_approx: format.filesize_approx,
-                        },
-                        raw,
-                    ))
+                    let media_format = MediaFormat {
+                        format_id: format.format_id,
+                        format_note: None,
+                        ext: format.ext,
+                        width: format.width,
+                        height: format.height,
+                        fps: format.fps,
+                        vcodec: format.vcodec,
+                        acodec: format.acodec,
+                        aspect_ratio: format.aspect_ratio,
+                        filesize_approx: format.filesize_approx,
+                    };
+                    if video_quality.is_some_and(|quality| media_format.video_quality().is_none_or(|actual| !quality.matches(&actual))) {
+                        return Err(GetInfoErrorKind::FormatUnavailable);
+                    }
+                    Ok((media_format, raw))
                 })
                 .collect::<Result<_, GetInfoErrorKind>>()?;
             Ok::<_, GetInfoErrorKind>((media, formats))
@@ -607,6 +617,54 @@ mod tests {
             format.fps = fps;
             assert!(playlist_from_response(changed, Some(&quality)).is_err());
         }
+    }
+
+    #[test]
+    fn exact_format_keeps_codec_container_and_native_id() {
+        use crate::value_objects::VideoQuality;
+        let mut quality = VideoQuality::new(Some(1920), Some(1080), Some(30.0)).unwrap();
+        quality.format_id = Some("video1+audio1".into());
+        quality.ext = Some("mp4".into());
+        quality.vcodec = Some("avc1".into());
+        quality.acodec = Some("aac".into());
+        let format = MediaFormatEntry {
+            format_id: "video1+audio1".into(),
+            ext: "mp4".into(),
+            width: Some(1920),
+            height: Some(1080),
+            fps: Some(30.0),
+            vcodec: Some("avc1".into()),
+            acodec: Some("aac".into()),
+            ..Default::default()
+        };
+        let response = MediaInfoResponse {
+            entries: vec![MediaEntry {
+                id: "synthetic".into(),
+                webpage_url: "https://source.example.test/video".into(),
+                playlist_index: 1,
+                formats: vec![format],
+                ..Default::default()
+            }],
+            video_quality_supported: true,
+            video_format_selection_supported: true,
+            ..Default::default()
+        };
+        assert!(playlist_from_response(response.clone(), Some(&quality)).is_ok());
+        for changed_field in ["format_id", "ext", "vcodec", "acodec", "support"] {
+            let mut changed = response.clone();
+            let format = &mut changed.entries[0].formats[0];
+            match changed_field {
+                "format_id" => format.format_id = "video2+audio2".into(),
+                "ext" => format.ext = "webm".into(),
+                "vcodec" => format.vcodec = Some("vp9".into()),
+                "acodec" => format.acodec = Some("opus".into()),
+                _ => changed.video_format_selection_supported = false,
+            }
+            assert!(playlist_from_response(changed, Some(&quality)).is_err());
+        }
+        let mut other = quality.clone();
+        other.format_id = Some("video2+audio2".into());
+        assert_ne!(quality.cache_key(), other.cache_key());
     }
 
     #[test]

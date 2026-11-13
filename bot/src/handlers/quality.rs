@@ -28,6 +28,8 @@ pub async fn open<Messenger: MessengerPort>(
             chat_id: message.chat().id(),
             message_id: message.message_id(),
             is_private: ChatType::from(message.chat()) == ChatType::Private,
+            progress_message_id: None,
+            force_refresh: false,
             url: url.as_ref().map(|url| &url.0),
             params: &params,
             chat_cfg: &chat_cfg,

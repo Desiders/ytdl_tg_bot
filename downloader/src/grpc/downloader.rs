@@ -288,10 +288,14 @@ impl DownloaderService {
                     {
                         format.filesize_approx = None;
                     }
+                    format.raw_info_json.clear();
+                    format.raw_format_json.clear();
                 }
+                entry.raw_info_json.clear();
             }
         }
         response.video_quality_supported = quality_selection;
+        response.video_format_selection_supported = quality_selection;
         Ok(Response::new(response))
     }
 
@@ -1012,6 +1016,8 @@ fn map_playlist_response(playlist: Playlist, max_file_size: u64) -> Result<Media
                     width: format.width,
                     height: format.height,
                     fps: format.fps,
+                    vcodec: format.vcodec,
+                    acodec: format.acodec,
                     aspect_ratio: format.aspect_ratio,
                     filesize_approx: format.filesize_approx,
                     raw_info_json: String::new(),
@@ -1600,6 +1606,38 @@ mod tests {
             max_concurrent: u32::try_from(capacity).unwrap(),
             semaphore: Arc::new(tokio::sync::Semaphore::new(capacity)),
         }
+    }
+
+    #[tokio::test]
+    async fn missing_selected_format_has_a_known_metadata_failure() {
+        use proto::{
+            downloader::{MediaInfoRequest, Range, VideoQuality},
+            VIDEO_FORMAT_UNAVAILABLE,
+        };
+        use tonic::Request;
+        let service = test_service("echo 'ERROR: Requested format is not available' >&2; exit 1", 1);
+        let error = service
+            .get_media_info_inner(Request::new(MediaInfoRequest {
+                url: "https://source.example.test/video".into(),
+                media_type: "video".into(),
+                playlist_range: Some(Range {
+                    start: 1,
+                    count: 1,
+                    step: 1,
+                }),
+                video_quality: Some(VideoQuality {
+                    width: 1920,
+                    height: 1080,
+                    fps: Some(30.0),
+                    format_id: Some("video1+audio1".into()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }))
+            .await
+            .unwrap_err();
+        assert_eq!(error.code(), Code::NotFound);
+        assert_eq!(error.message(), VIDEO_FORMAT_UNAVAILABLE);
     }
 
     #[tokio::test]
@@ -2207,6 +2245,8 @@ print(json.dumps({"id":"synthetic", "webpage_url":sys.argv[-1], "ext":"mp4", "fo
             width: None,
             height: None,
             fps: None,
+            vcodec: None,
+            acodec: None,
             aspect_ratio: None,
             filesize_approx: None,
         };

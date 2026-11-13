@@ -16,6 +16,8 @@ pub struct MediaFormat {
     pub width: Option<i64>,
     pub height: Option<i64>,
     pub fps: Option<f64>,
+    pub vcodec: Option<String>,
+    pub acodec: Option<String>,
     pub aspect_ratio: Option<f32>,
     pub filesize_approx: Option<u64>,
 }
@@ -305,6 +307,8 @@ impl From<MediaWithFormat> for MediaFormat {
             width,
             height,
             fps,
+            vcodec,
+            acodec,
             aspect_ratio,
             filesize_approx,
             filesize,
@@ -318,6 +322,8 @@ impl From<MediaWithFormat> for MediaFormat {
             width,
             height,
             fps,
+            vcodec,
+            acodec,
             aspect_ratio,
             filesize_approx: filesize_approx.or(filesize),
         }

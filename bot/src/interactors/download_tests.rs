@@ -1,3 +1,4 @@
+use proto::VIDEO_FORMAT_UNAVAILABLE;
 use std::{
     collections::VecDeque,
     pin::Pin,
@@ -101,7 +102,12 @@ impl Downloader for FakeNode {
     type DownloadMediaStream = Pin<Box<dyn Stream<Item = Result<DownloadChunk, Status>> + Send>>;
 
     async fn get_media_info(&self, request: Request<MediaInfoRequest>) -> Result<Response<MediaInfoResponse>, Status> {
-        assert_eq!(request.into_inner().media_type, "post", "Media tests use prefetched metadata");
+        let request = request.into_inner();
+        if request.media_type == "video" {
+            assert!(request.video_quality.unwrap().format_id.is_some());
+            return Err(Status::not_found(VIDEO_FORMAT_UNAVAILABLE));
+        }
+        assert_eq!(request.media_type, "post", "Media tests use prefetched metadata");
         assert!(self
             .0
             .events
@@ -486,6 +492,10 @@ impl Fixture {
                     progress_message_id: progress.map(|(message_id, _)| message_id),
                 })
                 .await
+                .map(|result| match result {
+                    video::DownloadResult::Sent(message) => message,
+                    video::DownloadResult::FormatUnavailable => None,
+                })
                 .unwrap()
         } else {
             photo::Download::new(
@@ -642,6 +652,8 @@ fn playlist(count: i16) -> GetMediaByURLKind {
                             width: None,
                             height: None,
                             fps: None,
+                            vcodec: None,
+                            acodec: None,
                             aspect_ratio: None,
                             filesize_approx: None,
                         },
@@ -1376,4 +1388,54 @@ async fn post_text_enriches_delivered_media_without_repeating_downloads() {
     })
     .await
     .unwrap();
+}
+
+#[tokio::test]
+async fn missing_selected_format_returns_to_selection_before_any_download() {
+    use crate::value_objects::VideoQuality;
+    let fixture = Fixture::new(State::default()).await;
+    let interactor = video::Download::new(
+        fixture.cfg.clone(),
+        fixture.formatter.clone(),
+        fixture.messenger.clone(),
+        Arc::new(get_media::GetVideoByURL::new(
+            fixture.router.clone(),
+            fixture.cleaner.clone(),
+            fixture.tx.clone(),
+        )),
+        Arc::new(media::DownloadVideo::new(fixture.router.clone())),
+        Arc::new(send_media::upload::SendVideo::new(fixture.messenger.clone())),
+        Arc::new(send_media::id::SendVideo::new(fixture.messenger.clone())),
+        Arc::new(send_media::id::SendVideoPlaylist::new(fixture.messenger.clone())),
+        Arc::new(downloaded_media::AddVideo::new(fixture.tx.clone())),
+    );
+    let current = watch::channel(None).0;
+    let mut params = Params::default();
+    params.0.insert("overwrite".into(), "true".into());
+    let chat = ChatConfig::new(1, false, "en".into());
+    let mut quality = VideoQuality::new(Some(1920), Some(1080), Some(30.0)).unwrap();
+    quality.format_id = Some("video1+audio1".into());
+    let result = interactor
+        .execute(video::DownloadInput {
+            current_message: &current,
+            message_id: 1,
+            chat_id: 1,
+            params: &params,
+            url: &fixture.url,
+            chat_cfg: &chat,
+            link_is_visible: false,
+            prefetched: None,
+            video_quality: Some(&quality),
+            progress_message_id: Some(2),
+        })
+        .await
+        .unwrap();
+    assert!(matches!(result, video::DownloadResult::FormatUnavailable));
+    assert!(!fixture
+        .state
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|event| event.starts_with("download ")));
 }

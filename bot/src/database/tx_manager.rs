@@ -12,6 +12,7 @@ use crate::{
             chat::{ChatReader, ChatRepo},
             chat_config::{ChatConfigReader, ChatConfigRepo},
             downloaded_media::{DownloadedMediaReader, DownloadedMediaRepo},
+            media_catalog::{MediaCatalogReader, MediaCatalogRepo},
             tx_manager::{ActiveTxManager, TxManager},
         },
     },
@@ -53,6 +54,10 @@ impl TxManager for SeaOrmTxManager {
         self.factories.chat_config_reader.create(self.pool.as_ref())
     }
 
+    fn media_catalog_reader(&self) -> Box<dyn MediaCatalogReader + '_> {
+        self.factories.media_catalog_reader.create(self.pool.as_ref())
+    }
+
     fn downloaded_media_reader(&self) -> Box<dyn DownloadedMediaReader + '_> {
         self.factories.downloaded_media_reader.create(self.pool.as_ref())
     }
@@ -76,6 +81,10 @@ impl ActiveTxManager for SeaOrmActiveTxManager {
 
     fn chat_config_repo(&self) -> Box<dyn ChatConfigRepo + '_> {
         self.factories.chat_config_repo.create(&self.transaction)
+    }
+
+    fn media_catalog_repo(&self) -> Box<dyn MediaCatalogRepo + '_> {
+        self.factories.media_catalog_repo.create(&self.transaction)
     }
 
     fn downloaded_media_repo(&self) -> Box<dyn DownloadedMediaRepo + '_> {

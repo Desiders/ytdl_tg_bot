@@ -215,7 +215,7 @@ btn_help_inline = "🔎 Inline-режим"
 btn_help_guest = "👋 Гостьовий режим"
 
 [quality]
-choose = "Обери якість відео:"
+choose_resolution = "Обери роздільну здатність:"
 best = "Найкраща доступна"
 cancel = "Скасувати"
 cancelled = "Скасовано"
@@ -228,3 +228,5 @@ private_only = "Використовуй /quality в особистому чат
 single_video = "Вибір якості підтримує одне відео. Прибери аргумент items."
 usage = "Надішли /quality з посиланням або у відповідь на повідомлення з ним."
 selected_unavailable = "Обрана якість відео більше недоступна. Надішли /quality ще раз."
+choose_format = "Обери формат:"
+back = "До роздільних здатностей"

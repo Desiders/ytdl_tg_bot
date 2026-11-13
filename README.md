@@ -75,13 +75,14 @@ If the menu context expires, the bot tries to send the result in a private chat.
 
 A bare link in a private chat is downloaded automatically with media-type detection; in groups the same happens silently. In groups, add `yv2t_bot=false` to the URL query to skip automatic downloading.
 
-Use `/quality <url>` in a private chat to choose an available resolution and frame rate.
-Sizes include audio when known. Choose **Best available** to use the usual automatic selection.
-The choice expires after 15 minutes; a selected quality that becomes unavailable fails instead
-of downloading a lower quality. This mode uses yt-dlp's format list and supports one video;
-links, `/vd`, playlists and inline mode keep their existing behavior. Sources downloaded through
-snapsave may not expose a yt-dlp quality list. Apply database migrations before deploying the
-updated bot; the quality cache is separate from the automatic cache.
+Use `/quality <url>` in a private chat to choose a resolution, then a codec/container
+and frame-rate variant. You can return to the resolution list. Sizes include audio when known;
+**Best available** uses the usual automatic selection. Catalogs and descriptions are cached in
+the database for fifteen minutes as structured fields. `overwrite=true` refreshes the catalog.
+The menu also expires after fifteen minutes. If a selected format disappears, the bot updates
+the buttons automatically; it does not download another format without a choice.
+This mode supports one video and uses yt-dlp's format list. Sources downloaded through snapsave
+may not expose one. Apply database migrations and update both bot and downloader before use.
 
 Automatic downloads add available post text and context after sending media; explicit media
 commands skip this step. Long text is truncated to Telegram limits and uses expandable quotes.

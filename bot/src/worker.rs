@@ -23,7 +23,7 @@ use crate::{
     config::{DomainsWithReactionsConfig, PROGRESS_REFRESH_INTERVAL_SECS},
     entities::{DownloadJob, JobTarget},
     handlers_utils::progress,
-    interactors::{audio, auto, chosen_inline, photo, post, video, Interactor as _},
+    interactors::{audio, auto, chosen_inline, photo, post, quality, video, Interactor as _},
     services::{
         messenger::{telegram::TelegramMessenger, MessengerError},
         node_router::NodeRouter,
@@ -399,7 +399,7 @@ async fn run_in_scope(child: &Container, job: &DownloadJob, current_message: &wa
             match if job.auto { MediaType::Video } else { job.media_type } {
                 MediaType::Video => {
                     let interactor = child.get::<video::Download<TelegramMessenger>>().await.unwrap();
-                    Box::pin(interactor.execute(video::DownloadInput {
+                    let result = Box::pin(interactor.execute(video::DownloadInput {
                         current_message,
                         message_id: *message_id,
                         chat_id: *chat_id,
@@ -412,6 +412,20 @@ async fn run_in_scope(child: &Container, job: &DownloadJob, current_message: &wa
                         progress_message_id: job.progress_message_id,
                     }))
                     .await?;
+                    if matches!(result, video::DownloadResult::FormatUnavailable) {
+                        let menu = child.get::<quality::Open<TelegramMessenger>>().await.unwrap();
+                        Box::pin(menu.execute(quality::OpenInput {
+                            chat_id: *chat_id,
+                            message_id: *message_id,
+                            is_private: true,
+                            progress_message_id: job.progress_message_id,
+                            force_refresh: true,
+                            url: Some(url),
+                            params: &job.params,
+                            chat_cfg: &job.chat_cfg,
+                        }))
+                        .await?;
+                    }
                 }
                 MediaType::Audio => {
                     let interactor = child.get::<audio::Download<TelegramMessenger>>().await.unwrap();
